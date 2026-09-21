@@ -1,0 +1,27 @@
+{
+  "name": "modulo-movil-oncologia",
+  "version": "0.0.0",
+  "private": true,
+  "description": "Monorepositorio del módulo móvil de acompañamiento para pacientes en quimioterapia.",
+  "packageManager": "pnpm@11.19.0",
+  "engines": {
+    "node": "^22.13.0 || ^24.0.0",
+    "pnpm": ">=11.19.0 <12"
+  },
+  "scripts": {
+    "format": "prettier --write .",
+    "format:check": "prettier --check .",
+    "lint": "eslint . --max-warnings=0",
+    "typecheck": "tsc --project tsconfig.json --noEmit",
+    "check": "pnpm run format:check && pnpm run lint && pnpm run typecheck"
+  },
+  "devDependencies": {
+    "@eslint/js": "10.0.1",
+    "eslint": "10.9.1",
+    "eslint-config-prettier": "10.1.8",
+    "globals": "17.11.0",
+    "prettier": "3.7.4",
+    "typescript": "5.9.3",
+    "typescript-eslint": "8.68.0"
+  }
+}
