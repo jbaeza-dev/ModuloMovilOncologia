@@ -5,8 +5,9 @@ Aplicación Android de acompañamiento para pacientes en tratamiento de **quimio
 ## Estado actual
 
 El repositorio dispone de la base del monorrepositorio, configuración compartida de TypeScript,
-ESLint y Prettier. Todavía no hay aplicación ejecutable, pasarela, API simulada ni servicios
-desplegados; cada componente se incorporará en una rama y un pull request propios.
+ESLint y Prettier, e integración continua para comprobar formato, lint y tipos en cada PR hacia
+`main`. Todavía no hay aplicación ejecutable, pasarela, API simulada ni servicios desplegados;
+cada componente se incorporará en una rama y un pull request propios.
 
 ## Componentes previstos
 
@@ -50,4 +51,4 @@ aplicación o paquete incorporará su propia comprobación de tipos cuando se cr
 
 ## Colaboración
 
-Cada tarea parte de `main` en una rama corta, se revisa mediante un pull request por la otra persona del equipo y se integra tras superar las comprobaciones disponibles. Este arranque está asociado con [SCRUM-26](https://proyecto-movil-oncologico.atlassian.net/browse/SCRUM-26). Las ramas posteriores incorporarán contratos, Expo, CI, pasarela y simulador de forma independiente.
+Cada tarea parte de `main` en una rama corta, se revisa mediante un pull request por la otra persona del equipo y se integra tras superar las comprobaciones disponibles. Este arranque está asociado con [SCRUM-26](https://proyecto-movil-oncologico.atlassian.net/browse/SCRUM-26); la integración continua inicial corresponde a [SCRUM-46](https://proyecto-movil-oncologico.atlassian.net/browse/SCRUM-46). Las ramas posteriores incorporarán contratos, Expo, pasarela y simulador de forma independiente.
