@@ -1,0 +1,55 @@
+# Dependencias y cachés del gestor de paquetes
+node_modules/
+.pnpm-store/
+.npm/
+
+# Salidas de compilación y pruebas
+dist/
+build/
+coverage/
+web-build/
+test-results/
+*.tsbuildinfo
+.cache/
+
+# Archivos locales de Expo y prebuild nativo generado
+.expo/
+.expo-shared/
+/apps/mobile/android/
+/apps/mobile/ios/
+
+# Logs
+*.log
+npm-debug.log*
+pnpm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+
+# Variables y credenciales locales; los ejemplos sí se versionan
+.env
+.env.*
+!.env.example
+!*.env.example
+*.keystore
+*.jks
+*.p12
+*.pem
+*.mobileprovision
+
+# Datos locales SQLite/PostgreSQL y volúmenes de podman-compose
+*.sqlite
+*.sqlite3
+*.db
+*.sqlite-*
+*.sqlite3-*
+*.db-*
+/infra/local/data/
+/infra/local/volumes/
+
+# Archivos del editor o del sistema operativo
+.DS_Store
+Thumbs.db
+.idea/
+.vscode/
+
+# Los archivos de bloqueo del gestor de paquetes se deben versionar.
