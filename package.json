@@ -12,7 +12,7 @@
     "format": "prettier --write .",
     "format:check": "prettier --check .",
     "lint": "eslint . --max-warnings=0",
-    "typecheck": "tsc --project tsconfig.json --noEmit",
+    "typecheck": "tsc --project tsconfig.json --noEmit && pnpm -r --stream run typecheck",
     "check": "pnpm run format:check && pnpm run lint && pnpm run typecheck"
   },
   "devDependencies": {
@@ -21,7 +21,7 @@
     "eslint-config-prettier": "10.1.8",
     "globals": "17.11.0",
     "prettier": "3.7.4",
-    "typescript": "5.9.3",
+    "typescript": "~6.0.3",
     "typescript-eslint": "8.68.0"
   }
 }

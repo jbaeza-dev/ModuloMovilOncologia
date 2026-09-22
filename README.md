@@ -6,16 +6,16 @@ Aplicación Android de acompañamiento para pacientes en tratamiento de **quimio
 
 El repositorio dispone de la base del monorrepositorio, configuración compartida de TypeScript,
 ESLint y Prettier, e integración continua para comprobar formato, lint y tipos en cada PR hacia
-`main`. Todavía no hay aplicación ejecutable, pasarela, API simulada ni servicios desplegados;
-cada componente se incorporará en una rama y un pull request propios.
+`main`. La app Expo tiene una pantalla inicial técnica. Todavía no hay flujos clínicos, pasarela,
+API simulada ni servicios desplegados; cada componente se incorporará en su propio pull request.
 
 ## Componentes previstos
 
-Las aplicaciones y paquetes concretos se incorporarán progresivamente dentro de estas rutas:
+Las aplicaciones y paquetes se incorporan progresivamente dentro de estas rutas:
 
 | Ruta prevista                 | Responsabilidad                                                                                  |
 | ----------------------------- | ------------------------------------------------------------------------------------------------ |
-| `apps/mobile/`                | React Native + Expo + TypeScript + Expo Router para Android.                                     |
+| `apps/mobile/`                | Base React Native + Expo + TypeScript + Expo Router para Android; todavía sin datos clínicos.    |
 | `apps/gateway/`               | Pasarela Node.js + Express para chatbot y sesiones/tokens de dispositivo, con autenticación JWT. |
 | `apps/central-api-simulator/` | Simulador local de la API clínica del otro módulo, con datos sintéticos.                         |
 | `packages/contracts/`         | Contratos y esquemas compartidos cuando se acuerden con el módulo central.                       |
@@ -27,7 +27,7 @@ La app leerá los datos de referencia clínicos desde SQLite replicado por Power
 
 - Node.js 22.23.2 LTS recomendado (también se admite Node.js 24 LTS). Si se utiliza `nvm`, ejecutar `nvm use` desde la raíz.
 - pnpm 11.19.0, fijado en `package.json`.
-- Entorno de desarrollo Android para ejecutar la app una vez inicializada.
+- Dispositivo o emulador Android para validar la app de forma nativa cuando esté disponible.
 - Podman y `podman-compose` para los servicios locales que se agregarán después.
 
 Instalar las herramientas de desarrollo desde la raíz:
@@ -42,12 +42,42 @@ Comprobar formato, lint y tipos con un único comando:
 pnpm check
 ```
 
+Iniciar el servidor de desarrollo de la app desde la raíz:
+
+```bash
+pnpm --filter @modulo-movil-oncologia/mobile start
+```
+
+Para abrirla en un dispositivo o emulador Android configurado:
+
+```bash
+pnpm --filter @modulo-movil-oncologia/mobile android
+```
+
+Comprobar la salud y compatibilidad de dependencias Expo:
+
+```bash
+pnpm --filter @modulo-movil-oncologia/mobile doctor
+```
+
+Generar el bundle JavaScript para Android (valida empaquetado y Metro sin emulador):
+
+```bash
+pnpm --filter @modulo-movil-oncologia/mobile bundle:android
+```
+
+Esta base no contiene PowerSync ni persistencia clínica. Expo Go sirve para comprobar la pantalla
+inicial, pero no valida el driver nativo previsto para PowerSync. Antes de integrar PowerSync se
+definirá un `android.package` estable y se probará una _development build_ en Android. La
+exportación del bundle Android tampoco sustituye esa prueba nativa.
+
 El repositorio mantiene un solo `pnpm-lock.yaml` en la raíz. No deben generarse lockfiles dentro
 de `apps/` ni `packages/`. La configuración de workspaces y `nodeLinker: hoisted` está definida en
 `pnpm-workspace.yaml`.
 
-Por ahora `typecheck` valida la configuración raíz, porque aún no hay código TypeScript. Cada
-aplicación o paquete incorporará su propia comprobación de tipos cuando se cree.
+`typecheck` valida recursivamente la configuración raíz y el código TypeScript de todos los paquetes
+del workspace (`apps/*` y `packages/*`). Los futuros componentes se evaluarán automáticamente al
+declarar su script `typecheck`.
 
 ## Colaboración
 

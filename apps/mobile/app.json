@@ -1,0 +1,9 @@
+{
+  "expo": {
+    "name": "Módulo Móvil Oncológico",
+    "slug": "modulo-movil-oncologia",
+    "version": "0.1.0",
+    "orientation": "portrait",
+    "plugins": ["expo-router"]
+  }
+}

@@ -23,7 +23,12 @@ jobs:
       - name: Set up Node.js and pnpm
         uses: pnpm/setup@v3
         with:
+          node-version-file: .nvmrc
           cache: true
           require-lockfile: true
       - name: Check format, lint, and TypeScript
         run: pnpm run check
+      - name: Check Expo dependencies
+        run: pnpm --filter @modulo-movil-oncologia/mobile run doctor
+      - name: Export Android JavaScript bundle
+        run: pnpm --filter @modulo-movil-oncologia/mobile run bundle:android
