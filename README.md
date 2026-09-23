@@ -6,20 +6,20 @@ Aplicación Android de acompañamiento para pacientes en tratamiento de **quimio
 
 El repositorio dispone de la base del monorrepositorio, configuración compartida de TypeScript,
 ESLint y Prettier, e integración continua para comprobar formato, lint y tipos en cada PR hacia
-`main`. La app Expo tiene una pantalla inicial técnica. Todavía no hay flujos clínicos, pasarela,
+`main`. La app Expo incluye la navegación de QuimioCare: cuatro pestañas y destinos mínimos para perfil, registro y asistente. Todavía no hay flujos clínicos, pasarela,
 API simulada ni servicios desplegados; cada componente se incorporará en su propio pull request.
 
 ## Componentes previstos
 
 Las aplicaciones y paquetes se incorporan progresivamente dentro de estas rutas:
 
-| Ruta prevista                 | Responsabilidad                                                                                  |
-| ----------------------------- | ------------------------------------------------------------------------------------------------ |
-| `apps/mobile/`                | Base React Native + Expo + TypeScript + Expo Router para Android; todavía sin datos clínicos.    |
-| `apps/gateway/`               | Pasarela Node.js + Express para chatbot y sesiones/tokens de dispositivo, con autenticación JWT. |
-| `apps/central-api-simulator/` | Simulador local de la API clínica del otro módulo, con datos sintéticos.                         |
-| `packages/contracts/`         | Contratos y esquemas compartidos cuando se acuerden con el módulo central.                       |
-| `infra/local/`                | Entorno de pruebas locales mediante `podman-compose`.                                            |
+| Ruta prevista                 | Responsabilidad                                                                                    |
+| ----------------------------- | -------------------------------------------------------------------------------------------------- |
+| `apps/mobile/`                | React Native + Expo + TypeScript + Expo Router para Android; navegación local, sin datos clínicos. |
+| `apps/gateway/`               | Pasarela Node.js + Express para chatbot y sesiones/tokens de dispositivo, con autenticación JWT.   |
+| `apps/central-api-simulator/` | Simulador local de la API clínica del otro módulo, con datos sintéticos.                           |
+| `packages/contracts/`         | Contratos y esquemas compartidos cuando se acuerden con el módulo central.                         |
+| `infra/local/`                | Entorno de pruebas locales mediante `podman-compose`.                                              |
 
 La app leerá los datos de referencia clínicos desde SQLite replicado por PowerSync. Cuando recupere conectividad, su implementación de `uploadData()` enviará las escrituras clínicas directamente a los endpoints de la API central. **El gateway no transportará esas escrituras** ni incluirá un endpoint `/sync/batch`. El simulador permitirá probar esos flujos sin depender de la disponibilidad del módulo central. Los datos de prueba serán ficticios.
 
@@ -57,7 +57,7 @@ pnpm --filter @modulo-movil-oncologia/mobile android
 Comprobar la salud y compatibilidad de dependencias Expo:
 
 ```bash
-pnpm --filter @modulo-movil-oncologia/mobile doctor
+pnpm --filter @modulo-movil-oncologia/mobile run doctor
 ```
 
 Generar el bundle JavaScript para Android (valida empaquetado y Metro sin emulador):

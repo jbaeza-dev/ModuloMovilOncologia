@@ -1,82 +1,66 @@
 # @modulo-movil-oncologia/mobile
 
-Base técnica para la aplicación Android del **Módulo Móvil Oncológico**, diseñada para el acompañamiento de pacientes durante su tratamiento de quimioterapia.
-
-Construida con:
-
-- React Native 0.86
-- Expo SDK 57
-- TypeScript
-- Expo Router
+Base Android de **QuimioCare**, nombre provisional del módulo de acompañamiento para pacientes en quimioterapia. React Native + Expo + TypeScript + Expo Router.
 
 ## Estado actual
 
-Esta aplicación corresponde a la inicialización técnica del PR lógico 5 ([SCRUM-26](https://proyecto-movil-oncologico.atlassian.net/browse/SCRUM-26)). Presenta una pantalla inicial neutra de bienvenida que identifica el módulo sin simular datos clínicos ni navegación ficticia.
+El PR lógico 9 (SCRUM-25) incorpora navegación sobre la base Expo del PR5 (SCRUM-26).
+Hay cuatro pestañas: Inicio, Vitales, Formulario y Educación. Inicio ofrece accesos a
+registro de signos vitales, síntomas, perfil y asistente. Perfil contiene los accesos
+a información clínica, vinculación y preferencias.
 
-> [!NOTE]
-> Todavía no incluye integración con contratos clínicos, pasarela, clientes HTTP, autenticación JWT, SQLite ni PowerSync. Dichos componentes se incorporarán en sus respectivos PRs lógicos.
+Los destinos marcados **Próximamente** son pantallas mínimas de navegación. No se
+recogen ni almacenan datos de pacientes. La apertura directa en Inicio es temporal:
+no demuestra autenticación ni constituye una sesión de paciente.
 
-## Requisitos y gestión del workspace
+## Desarrollo local
 
-- **Node.js**: 22.23.2 LTS recomendado (o Node.js 24 LTS).
-- **pnpm**: 11.19.0.
-
-Las dependencias se gestionan de forma centralizada desde la raíz del monorrepositorio con un único `pnpm-lock.yaml`. **No debe ejecutarse `npm` ni generarse un lockfile propio dentro de `apps/mobile/`**.
-
-## Comandos disponibles
-
-Todos los comandos pueden ejecutarse directamente dentro del directorio `apps/mobile/` o desde la raíz utilizando el filtro `--filter @modulo-movil-oncologia/mobile`.
-
-### Iniciar servidor de desarrollo (Metro)
+Usar Node.js y pnpm en las versiones fijadas en la raíz. Mantener un único lockfile.
 
 ```bash
-# Desde apps/mobile:
-pnpm run start
-
-# Desde la raíz:
+pnpm install --frozen-lockfile
 pnpm --filter @modulo-movil-oncologia/mobile start
-```
-
-### Iniciar con destino Android
-
-```bash
-# Desde apps/mobile:
-pnpm run android
-
-# Desde la raíz:
 pnpm --filter @modulo-movil-oncologia/mobile android
 ```
 
-### Comprobación de tipos (TypeScript)
+## Comprobaciones
+
+Desde la raíz:
 
 ```bash
-# Desde apps/mobile:
-pnpm run typecheck
-
-# Desde la raíz (recursivo en todos los paquetes):
-pnpm run typecheck
-```
-
-### Comprobación de salud y dependencias Expo
-
-Valida que las dependencias instaladas sean compatibles con Expo SDK 57:
-
-```bash
-# Desde apps/mobile:
-pnpm run doctor
-
-# Desde la raíz:
-pnpm --filter @modulo-movil-oncologia/mobile doctor
-```
-
-### Exportación del bundle JavaScript para Android
-
-Compila y valida la resolución de módulos y assets con Metro sin requerir un emulador o dispositivo conectado:
-
-```bash
-# Desde apps/mobile:
-pnpm run bundle:android
-
-# Desde la raíz:
+pnpm check
+pnpm --filter @modulo-movil-oncologia/mobile run doctor
 pnpm --filter @modulo-movil-oncologia/mobile bundle:android
 ```
+
+La exportación comprueba el empaquetado Android; no sustituye probar la app en un
+dispositivo o emulador. Expo Go sirve para esta navegación, pero no acredita la
+integración futura de PowerSync.
+
+## Organización
+
+- `src/app/`: rutas y layouts de Expo Router.
+- `src/components/`: pantalla base, acciones de navegación y destinos mínimos.
+- `src/features/`: pantallas por funcionalidad.
+- `src/theme.ts`: colores monocromáticos, espacios y radios compartidos.
+
+Cada pestaña tiene una pila. Perfil y Asistente pertenecen a Inicio; el registro de
+signos vitales pertenece a Vitales. `router.navigate` evita apilar reiteradamente el
+mismo destino y `withAnchor` conserva la raíz de la pila al entrar en una ruta interna.
+La barra inferior permanece visible; Atrás recorre la pila y luego vuelve a Inicio.
+La navegación desconocida permite reemplazar la ruta por Inicio.
+
+Los iconos son Feather mediante `@expo/vector-icons`; `expo-font` carga su fuente
+local antes de mostrar la interfaz. No necesitan descargar recursos al abrir la app.
+
+## Arquitectura prevista
+
+Las pantallas clínicas completas se incorporan desde PR10. Consumirán hooks y
+repositorios; SQLite integrada con PowerSync será la fuente de datos replicados.
+`uploadData()` enviará escrituras a la API clínica o su simulador directamente.
+El gateway se reserva para chat y sesiones/dispositivos. No hay clientes HTTP,
+bases de datos ni contratos clínicos en esta navegación.
+
+Las futuras pruebas de componentes nativos usarán herramientas compatibles con
+Expo y React Native. La skill Vitest queda para contratos y lógica TypeScript
+independiente; instalarla como dependencia no es necesario para este PR.
