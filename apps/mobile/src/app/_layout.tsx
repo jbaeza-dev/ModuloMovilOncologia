@@ -1,7 +1,7 @@
 import Feather from '@expo/vector-icons/Feather';
 import { useFonts } from 'expo-font';
 import { Stack } from 'expo-router';
-import { StatusBar } from 'expo-status-bar';
+import { Platform, StatusBar } from 'react-native';
 
 export { ErrorBoundary } from 'expo-router';
 
@@ -14,7 +14,11 @@ export default function RootLayout() {
 
   return (
     <>
-      <StatusBar style="dark" />
+      <StatusBar
+        barStyle="dark-content"
+        backgroundColor={Platform.OS === 'android' ? 'transparent' : undefined}
+        translucent
+      />
       <Stack screenOptions={{ headerShown: false }}>
         <Stack.Screen name="(tabs)" />
         <Stack.Screen name="+not-found" />

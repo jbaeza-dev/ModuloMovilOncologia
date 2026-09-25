@@ -2,8 +2,14 @@
   "expo": {
     "name": "QuimioCare",
     "slug": "modulo-movil-oncologia",
+    "scheme": "quimiocare",
     "version": "0.1.0",
     "orientation": "portrait",
+    "androidStatusBar": {
+      "barStyle": "dark-content",
+      "backgroundColor": "#FFFFFF",
+      "translucent": true
+    },
     "plugins": ["expo-router", "expo-font"]
   }
 }
