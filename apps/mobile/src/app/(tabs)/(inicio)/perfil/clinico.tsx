@@ -1,1 +1,1 @@
-export { ClinicalProfileScreen as default } from '../../../../features/navigation/Destinations';
+export { ClinicalProfileScreen as default } from '../../../../features/profile/ProfileScreen';

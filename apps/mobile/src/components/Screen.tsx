@@ -1,7 +1,15 @@
 import Feather from '@expo/vector-icons/Feather';
 import { router, type Href } from 'expo-router';
 import type { ReactNode } from 'react';
-import { Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
+import {
+  KeyboardAvoidingView,
+  Platform,
+  Pressable,
+  ScrollView,
+  StyleSheet,
+  Text,
+  View,
+} from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 
 import { theme } from '../theme';
@@ -11,9 +19,20 @@ type Props = {
   title?: string;
   backTo?: Href;
   showProfile?: boolean;
+  scroll?: boolean;
 };
 
-export function Screen({ children, title, backTo, showProfile = false }: Props) {
+export function Screen({ children, title, backTo, showProfile = false, scroll = true }: Props) {
+  const content = (
+    <>
+      {title ? (
+        <Text accessibilityRole="header" style={styles.title}>
+          {title}
+        </Text>
+      ) : null}
+      {children}
+    </>
+  );
   return (
     <SafeAreaView style={styles.safeArea} edges={['top', 'left', 'right']}>
       <View style={styles.header}>
@@ -46,20 +65,25 @@ export function Screen({ children, title, backTo, showProfile = false }: Props) 
           <View style={styles.headerAction} />
         )}
       </View>
-      <ScrollView contentContainerStyle={styles.content}>
-        {title ? (
-          <Text accessibilityRole="header" style={styles.title}>
-            {title}
-          </Text>
-        ) : null}
-        {children}
-      </ScrollView>
+      <KeyboardAvoidingView
+        style={styles.body}
+        behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
+      >
+        {scroll ? (
+          <ScrollView keyboardShouldPersistTaps="handled" contentContainerStyle={styles.content}>
+            {content}
+          </ScrollView>
+        ) : (
+          <View style={styles.staticContent}>{content}</View>
+        )}
+      </KeyboardAvoidingView>
     </SafeAreaView>
   );
 }
 
 const styles = StyleSheet.create({
   safeArea: { flex: 1, backgroundColor: theme.colors.background },
+  body: { flex: 1 },
   header: {
     flexDirection: 'row',
     alignItems: 'center',
@@ -89,6 +113,7 @@ const styles = StyleSheet.create({
     gap: theme.spacing.lg,
     paddingBottom: theme.spacing.xl,
   },
+  staticContent: { flex: 1, padding: theme.spacing.lg, gap: theme.spacing.lg },
   title: { fontSize: 28, fontWeight: '700', color: theme.colors.text },
   pressed: { backgroundColor: theme.colors.pressed },
 });

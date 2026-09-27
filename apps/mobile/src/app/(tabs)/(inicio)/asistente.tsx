@@ -1,1 +1,1 @@
-export { AssistantScreen as default } from '../../../features/navigation/Destinations';
+export { AssistantScreen as default } from '../../../features/assistant/AssistantScreen';
