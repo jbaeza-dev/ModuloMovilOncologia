@@ -56,4 +56,4 @@ local antes de mostrar la interfaz. No necesitan descargar recursos al abrir la 
 La arquitectura futura contempla hooks y repositorios, SQLite con PowerSync y servicios para las operaciones clínicas. La ruta de escritura y sincronización debe resolverse como decisión explícita del proyecto antes de implementarla. El gateway y el simulador también pertenecen a entregas posteriores. La interfaz actual no incluye clientes HTTP, base de datos ni contratos clínicos.
 
 Las futuras pruebas de componentes nativos usarán herramientas compatibles con
-Expo y React Native. 
+Expo y React Native.
