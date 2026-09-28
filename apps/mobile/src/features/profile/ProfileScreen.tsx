@@ -1,7 +1,7 @@
 import Feather from '@expo/vector-icons/Feather';
 import { useLocalSearchParams } from 'expo-router';
 import { useState } from 'react';
-import { Pressable, StyleSheet, Text } from 'react-native';
+import { Pressable, StyleSheet, Text, View } from 'react-native';
 
 import { NavigationCard } from '../../components/NavigationCard';
 import { Screen } from '../../components/Screen';
@@ -14,9 +14,11 @@ import {
   SectionTitle,
   StatusPill,
 } from '../../components/Visual';
-import { theme } from '../../theme';
+import { useAppTheme } from '../../providers/ThemeProvider';
+import { PALETTE_OPTIONS, theme } from '../../theme';
 
 export function ProfileScreen() {
+  const styles = useStyles();
   return (
     <Screen title="Mi perfil" backTo="/">
       <DemoBadge />
@@ -91,6 +93,8 @@ const clinicalSections = [
 ] as const;
 
 export function ClinicalProfileScreen() {
+  const styles = useStyles();
+  const { theme: appTheme } = useAppTheme();
   const [open, setOpen] = useState<string | null>('Información personal');
   return (
     <Screen title="Perfil clínico" backTo="/perfil">
@@ -113,7 +117,7 @@ export function ClinicalProfileScreen() {
             <Feather
               name={open === section.title ? 'chevron-up' : 'chevron-down'}
               size={22}
-              color={theme.colors.text}
+              color={appTheme.colors.text}
             />
           </Pressable>
           {open === section.title
@@ -128,6 +132,7 @@ export function ClinicalProfileScreen() {
 }
 
 export function LinkCodeScreen() {
+  const styles = useStyles();
   const { estado } = useLocalSearchParams<{ estado?: string }>();
   const view = estado === 'vinculado' || estado === 'sin-codigo' ? estado : 'codigo';
   return (
@@ -164,10 +169,45 @@ export function LinkCodeScreen() {
 }
 
 export function PreferencesScreen() {
+  const styles = useStyles();
+  const { theme: appTheme, paletteId, selectPalette } = useAppTheme();
   const [notices, setNotices] = useState(true);
   return (
     <Screen title="Preferencias" backTo="/perfil">
-      <DemoBadge />
+      <InfoCard>
+        <SectionTitle>Accesibilidad y apariencia</SectionTitle>
+        <BodyText>
+          El modo claro u oscuro sigue el ajuste de tu dispositivo. El color principal se guarda en
+          este dispositivo.
+        </BodyText>
+        <View accessibilityRole="radiogroup" accessibilityLabel="Color principal">
+          {PALETTE_OPTIONS.map((palette) => {
+            const selected = paletteId === palette.id;
+            const swatchColor = appTheme.colorScheme === 'dark' ? palette.dark : palette.light;
+
+            return (
+              <Pressable
+                key={palette.id}
+                accessibilityRole="radio"
+                accessibilityLabel={`Color principal ${palette.label}`}
+                accessibilityState={{ selected }}
+                accessibilityHint="Cambia el color principal de la aplicación."
+                onPress={() => selectPalette(palette.id)}
+                style={[styles.paletteOption, selected && styles.paletteOptionSelected]}
+              >
+                <View style={[styles.paletteSwatch, { backgroundColor: swatchColor }]} />
+                <Text style={styles.heading}>{palette.label}</Text>
+                <Feather
+                  name={selected ? 'check-circle' : 'circle'}
+                  size={22}
+                  color={selected ? appTheme.colors.primary : appTheme.colors.secondary}
+                  accessible={false}
+                />
+              </Pressable>
+            );
+          })}
+        </View>
+      </InfoCard>
       <InfoCard>
         <SectionTitle>Avisos</SectionTitle>
         <Pressable
@@ -181,7 +221,7 @@ export function PreferencesScreen() {
           <Feather
             name={notices ? 'toggle-right' : 'toggle-left'}
             size={28}
-            color={theme.colors.text}
+            color={appTheme.colors.text}
           />
         </Pressable>
         <BodyText>
@@ -212,21 +252,40 @@ export function ConsentReviewScreen() {
   );
 }
 
-const styles = StyleSheet.create({
-  heading: { flex: 1, fontSize: 18, fontWeight: '700', color: theme.colors.text },
-  disclosure: {
-    minHeight: 48,
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'space-between',
-    gap: theme.spacing.sm,
-  },
-  code: {
-    fontSize: 34,
-    fontWeight: '700',
-    letterSpacing: 5,
-    color: theme.colors.text,
-    textAlign: 'center',
-    paddingVertical: theme.spacing.md,
-  },
-});
+function useStyles() {
+  const { theme: appTheme } = useAppTheme();
+  const colors = appTheme.colors;
+  return StyleSheet.create({
+    heading: { flex: 1, fontSize: 18, fontWeight: '700', color: colors.text },
+    disclosure: {
+      minHeight: 48,
+      flexDirection: 'row',
+      alignItems: 'center',
+      justifyContent: 'space-between',
+      gap: theme.spacing.sm,
+    },
+    code: {
+      fontSize: 34,
+      fontWeight: '700',
+      letterSpacing: 5,
+      color: colors.text,
+      textAlign: 'center',
+      paddingVertical: theme.spacing.md,
+    },
+    paletteOption: {
+      minHeight: 56,
+      flexDirection: 'row',
+      alignItems: 'center',
+      gap: theme.spacing.md,
+      paddingHorizontal: theme.spacing.sm,
+      borderWidth: 2,
+      borderColor: 'transparent',
+      borderRadius: theme.radius.sm,
+    },
+    paletteOptionSelected: {
+      borderColor: colors.primary,
+      backgroundColor: colors.primaryContainer,
+    },
+    paletteSwatch: { width: 28, height: 28, borderRadius: 14 },
+  });
+}

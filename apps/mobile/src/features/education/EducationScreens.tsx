@@ -12,10 +12,13 @@ import {
   StatusPill,
   VisualButton,
 } from '../../components/Visual';
+import { useAppTheme } from '../../providers/ThemeProvider';
 import { theme } from '../../theme';
 import { educationCategories, educationResources } from '../preview/fixtures';
 
 export function EducationScreen() {
+  const { theme: appTheme } = useAppTheme();
+  const styles = useStyles();
   return (
     <Screen title="Contenido educativo">
       <DemoBadge />
@@ -28,18 +31,20 @@ export function EducationScreen() {
           onPress={() => router.navigate('/educacion/categoria?categoria=' + String(index))}
           style={styles.row}
         >
-          <Feather name={category.icon} size={30} color={theme.colors.text} />
+          <Feather name={category.icon} size={30} color={appTheme.colors.primary} />
           <View style={styles.copy}>
             <Text style={styles.heading}>{category.title}</Text>
             <BodyText>{category.count}</BodyText>
           </View>
-          <Feather name="chevron-right" size={22} color={theme.colors.text} />
+          <Feather name="chevron-right" size={22} color={appTheme.colors.text} />
         </Pressable>
       ))}
     </Screen>
   );
 }
 export function EducationCategoryScreen() {
+  const { theme: appTheme } = useAppTheme();
+  const styles = useStyles();
   const [expanded, setExpanded] = useState<string | null>(null);
   const { categoria } = useLocalSearchParams<{ categoria?: string }>();
   const categoryIndex = categoria === '1' || categoria === '2' ? Number(categoria) : 0;
@@ -60,7 +65,7 @@ export function EducationCategoryScreen() {
             <Feather
               name={resource.type === 'Video' ? 'play' : 'file-text'}
               size={26}
-              color={theme.colors.text}
+              color={appTheme.colors.primary}
             />
             <View style={styles.copy}>
               <Text style={styles.heading}>{resource.title}</Text>
@@ -71,7 +76,7 @@ export function EducationCategoryScreen() {
             <Feather
               name={expanded === resource.title ? 'chevron-up' : 'chevron-down'}
               size={22}
-              color={theme.colors.text}
+              color={appTheme.colors.text}
             />
           </Pressable>
           {expanded === resource.title ? (
@@ -95,6 +100,8 @@ export function EducationCategoryScreen() {
   );
 }
 export function EducationResourceScreen() {
+  const { theme: appTheme } = useAppTheme();
+  const styles = useStyles();
   const { recurso } = useLocalSearchParams<{ recurso?: string }>();
   const requestedIndex = Number(recurso);
   const resource =
@@ -113,7 +120,7 @@ export function EducationResourceScreen() {
           <Feather
             name={resource.type === 'Video' ? 'play-circle' : 'file-text'}
             size={60}
-            color={theme.colors.text}
+            color={appTheme.colors.primary}
           />
         </View>
         <SectionTitle>
@@ -155,24 +162,27 @@ export function EducationStateScreen() {
     </Screen>
   );
 }
-const styles = StyleSheet.create({
-  row: {
-    minHeight: 72,
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: theme.spacing.md,
-    padding: theme.spacing.md,
-    borderRadius: theme.radius.md,
-    backgroundColor: theme.colors.surface,
-  },
-  copy: { flex: 1, gap: theme.spacing.xs },
-  heading: { fontSize: 17, fontWeight: '700', color: theme.colors.text },
-  stack: { gap: theme.spacing.md },
-  placeholder: {
-    height: 180,
-    alignItems: 'center',
-    justifyContent: 'center',
-    borderRadius: theme.radius.sm,
-    backgroundColor: theme.colors.mutedSurface,
-  },
-});
+function useStyles() {
+  const { theme: appTheme } = useAppTheme();
+  return StyleSheet.create({
+    row: {
+      minHeight: 72,
+      flexDirection: 'row',
+      alignItems: 'center',
+      gap: theme.spacing.md,
+      padding: theme.spacing.md,
+      borderRadius: theme.radius.md,
+      backgroundColor: appTheme.colors.surface,
+    },
+    copy: { flex: 1, gap: theme.spacing.xs },
+    heading: { fontSize: 17, fontWeight: '700', color: appTheme.colors.text },
+    stack: { gap: theme.spacing.md },
+    placeholder: {
+      height: 180,
+      alignItems: 'center',
+      justifyContent: 'center',
+      borderRadius: theme.radius.sm,
+      backgroundColor: appTheme.colors.mutedSurface,
+    },
+  });
+}

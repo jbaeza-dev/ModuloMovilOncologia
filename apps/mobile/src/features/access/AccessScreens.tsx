@@ -13,9 +13,12 @@ import {
   VisualButton,
   VisualField,
 } from '../../components/Visual';
+import { useAppTheme } from '../../providers/ThemeProvider';
 import { theme } from '../../theme';
 
 function AccessIntro({ subtitle }: { subtitle: string }) {
+  const { theme: appTheme } = useAppTheme();
+  const styles = createStyles(appTheme.colors);
   return (
     <View style={styles.intro}>
       <Text style={styles.logo}>Q</Text>
@@ -201,19 +204,21 @@ export function NewPasswordScreen() {
   );
 }
 
-const styles = StyleSheet.create({
-  intro: { alignItems: 'center', gap: theme.spacing.sm, paddingVertical: theme.spacing.lg },
-  logo: {
-    width: 72,
-    height: 72,
-    overflow: 'hidden',
-    borderRadius: 18,
-    backgroundColor: theme.colors.mutedSurface,
-    textAlign: 'center',
-    textAlignVertical: 'center',
-    fontSize: 34,
-    fontWeight: '700',
-    color: theme.colors.text,
-  },
-  brand: { fontSize: 28, fontWeight: '700', color: theme.colors.text },
-});
+function createStyles(colors: ReturnType<typeof useAppTheme>['theme']['colors']) {
+  return StyleSheet.create({
+    intro: { alignItems: 'center', gap: theme.spacing.sm, paddingVertical: theme.spacing.lg },
+    logo: {
+      width: 72,
+      height: 72,
+      overflow: 'hidden',
+      borderRadius: 18,
+      backgroundColor: colors.primaryContainer,
+      textAlign: 'center',
+      textAlignVertical: 'center',
+      fontSize: 34,
+      fontWeight: '700',
+      color: colors.primary,
+    },
+    brand: { fontSize: 28, fontWeight: '700', color: colors.primary },
+  });
+}

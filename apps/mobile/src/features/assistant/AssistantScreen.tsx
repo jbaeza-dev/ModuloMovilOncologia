@@ -10,9 +10,12 @@ import {
   VisualButton,
   VisualField,
 } from '../../components/Visual';
+import { useAppTheme } from '../../providers/ThemeProvider';
 import { theme } from '../../theme';
 
 export function AssistantScreen() {
+  const { theme: appTheme } = useAppTheme();
+  const styles = createStyles(appTheme.colors);
   const { estado } = useLocalSearchParams<{ estado?: string }>();
   const [message, setMessage] = useState('');
   const state =
@@ -64,26 +67,28 @@ export function AssistantScreen() {
     </Screen>
   );
 }
-const styles = StyleSheet.create({
-  chat: { gap: theme.spacing.md },
-  assistantBubble: {
-    alignSelf: 'flex-start',
-    maxWidth: '82%',
-    padding: theme.spacing.md,
-    borderRadius: theme.radius.md,
-    backgroundColor: theme.colors.surface,
-    color: theme.colors.text,
-    fontSize: 15,
-    lineHeight: 23,
-  },
-  userBubble: {
-    alignSelf: 'flex-end',
-    maxWidth: '82%',
-    padding: theme.spacing.md,
-    borderRadius: theme.radius.md,
-    backgroundColor: theme.colors.mutedSurface,
-    color: theme.colors.text,
-    fontSize: 15,
-    lineHeight: 23,
-  },
-});
+function createStyles(colors: ReturnType<typeof useAppTheme>['theme']['colors']) {
+  return StyleSheet.create({
+    chat: { gap: theme.spacing.md },
+    assistantBubble: {
+      alignSelf: 'flex-start',
+      maxWidth: '82%',
+      padding: theme.spacing.md,
+      borderRadius: theme.radius.md,
+      backgroundColor: colors.surface,
+      color: colors.text,
+      fontSize: 15,
+      lineHeight: 23,
+    },
+    userBubble: {
+      alignSelf: 'flex-end',
+      maxWidth: '82%',
+      padding: theme.spacing.md,
+      borderRadius: theme.radius.md,
+      backgroundColor: colors.primaryContainer,
+      color: colors.onPrimaryContainer,
+      fontSize: 15,
+      lineHeight: 23,
+    },
+  });
+}

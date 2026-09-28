@@ -16,12 +16,15 @@ import {
   VisualButton,
   VisualField,
 } from '../../components/Visual';
+import { useAppTheme } from '../../providers/ThemeProvider';
 import { theme } from '../../theme';
 import { vitalRecords } from '../preview/fixtures';
 
 type RecordItem = (typeof vitalRecords)[number];
 
 function RecordCard({ item }: { item: RecordItem }) {
+  const { theme: appTheme } = useAppTheme();
+  const styles = useStyles();
   return (
     <Pressable
       accessibilityRole="button"
@@ -31,7 +34,7 @@ function RecordCard({ item }: { item: RecordItem }) {
     >
       <View style={styles.row}>
         <Text style={styles.recordTitle}>{item.date}</Text>
-        <Feather name="chevron-right" size={20} color={theme.colors.text} />
+        <Feather name="chevron-right" size={20} color={appTheme.colors.text} />
       </View>
       <Text style={styles.small}>
         {item.temperature} · {item.pressure} · {item.pulse}
@@ -42,6 +45,7 @@ function RecordCard({ item }: { item: RecordItem }) {
 }
 
 export function VitalsScreen() {
+  const styles = useStyles();
   const [days, setDays] = useState(7);
   const { vista } = useLocalSearchParams<{ vista?: string }>();
   const state = [
@@ -239,12 +243,14 @@ const resultCopy: Record<
 };
 
 export function VitalResultScreen({ kind }: { kind: ResultKind }) {
+  const { theme: appTheme } = useAppTheme();
+  const styles = useStyles();
   const copy = resultCopy[kind];
   return (
     <Screen backTo="/vitales">
       <DemoBadge />
       <View style={styles.result}>
-        <Feather name={copy.icon} size={64} color={theme.colors.text} />
+        <Feather name={copy.icon} size={64} color={appTheme.colors.primary} />
         <Text accessibilityRole="header" style={styles.resultTitle}>
           {copy.title}
         </Text>
@@ -260,20 +266,28 @@ export function VitalResultScreen({ kind }: { kind: ResultKind }) {
   );
 }
 
-const styles = StyleSheet.create({
-  list: { flexGrow: 1, gap: theme.spacing.md, paddingBottom: theme.spacing.xl },
-  stack: { gap: theme.spacing.md },
-  chips: { flexDirection: 'row', flexWrap: 'wrap', gap: theme.spacing.sm },
-  record: {
-    minHeight: 100,
-    gap: theme.spacing.sm,
-    padding: theme.spacing.md,
-    borderRadius: theme.radius.md,
-    backgroundColor: theme.colors.surface,
-  },
-  row: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' },
-  recordTitle: { fontSize: 17, fontWeight: '700', color: theme.colors.text },
-  small: { fontSize: 14, color: theme.colors.secondary },
-  result: { alignItems: 'center', gap: theme.spacing.md, paddingVertical: theme.spacing.lg },
-  resultTitle: { fontSize: 25, fontWeight: '700', color: theme.colors.text, textAlign: 'center' },
-});
+function useStyles() {
+  const { theme: appTheme } = useAppTheme();
+  return StyleSheet.create({
+    list: { flexGrow: 1, gap: theme.spacing.md, paddingBottom: theme.spacing.xl },
+    stack: { gap: theme.spacing.md },
+    chips: { flexDirection: 'row', flexWrap: 'wrap', gap: theme.spacing.sm },
+    record: {
+      minHeight: 100,
+      gap: theme.spacing.sm,
+      padding: theme.spacing.md,
+      borderRadius: theme.radius.md,
+      backgroundColor: appTheme.colors.surface,
+    },
+    row: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' },
+    recordTitle: { fontSize: 17, fontWeight: '700', color: appTheme.colors.text },
+    small: { fontSize: 14, color: appTheme.colors.secondary },
+    result: { alignItems: 'center', gap: theme.spacing.md, paddingVertical: theme.spacing.lg },
+    resultTitle: {
+      fontSize: 25,
+      fontWeight: '700',
+      color: appTheme.colors.text,
+      textAlign: 'center',
+    },
+  });
+}

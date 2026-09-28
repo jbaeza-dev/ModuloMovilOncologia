@@ -3,6 +3,8 @@ import { useFonts } from 'expo-font';
 import { Stack } from 'expo-router';
 import { Platform, StatusBar } from 'react-native';
 
+import { ThemeProvider, useAppTheme } from '../providers/ThemeProvider';
+
 export { ErrorBoundary } from 'expo-router';
 
 export const unstable_settings = { initialRouteName: '(tabs)' };
@@ -13,9 +15,19 @@ export default function RootLayout() {
   if (!loaded) return null;
 
   return (
+    <ThemeProvider>
+      <AppNavigator />
+    </ThemeProvider>
+  );
+}
+
+function AppNavigator() {
+  const { theme } = useAppTheme();
+
+  return (
     <>
       <StatusBar
-        barStyle="dark-content"
+        barStyle={theme.colorScheme === 'dark' ? 'light-content' : 'dark-content'}
         backgroundColor={Platform.OS === 'android' ? 'transparent' : undefined}
         translucent
       />

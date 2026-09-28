@@ -4,9 +4,12 @@ import { StyleSheet, Text, View } from 'react-native';
 import { NavigationCard } from '../../components/NavigationCard';
 import { Screen } from '../../components/Screen';
 import { DemoBadge, DetailRow, InfoCard, SectionTitle, StatusPill } from '../../components/Visual';
+import { useAppTheme } from '../../providers/ThemeProvider';
 import { theme } from '../../theme';
 
 export function HomeScreen() {
+  const { theme: appTheme } = useAppTheme();
+  const styles = createStyles(appTheme.colors);
   const { vista } = useLocalSearchParams<{ vista?: string }>();
   const empty = vista === 'vacia';
   return (
@@ -77,18 +80,20 @@ export function HomeScreen() {
   );
 }
 
-const styles = StyleSheet.create({
-  introduction: { gap: theme.spacing.sm },
-  eyebrow: { fontSize: 12, fontWeight: '600', letterSpacing: 1, color: theme.colors.secondary },
-  title: { fontSize: 30, fontWeight: '700', color: theme.colors.text },
-  description: { fontSize: 16, lineHeight: 24, color: theme.colors.secondary },
-  section: { gap: theme.spacing.md },
-  row: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-    gap: theme.spacing.sm,
-  },
-  cardTitle: { fontSize: 18, fontWeight: '700', color: theme.colors.text },
-  helper: { fontSize: 12, lineHeight: 18, color: theme.colors.secondary },
-});
+function createStyles(colors: ReturnType<typeof useAppTheme>['theme']['colors']) {
+  return StyleSheet.create({
+    introduction: { gap: theme.spacing.sm },
+    eyebrow: { fontSize: 12, fontWeight: '600', letterSpacing: 1, color: colors.secondary },
+    title: { fontSize: 30, fontWeight: '700', color: colors.text },
+    description: { fontSize: 16, lineHeight: 24, color: colors.secondary },
+    section: { gap: theme.spacing.md },
+    row: {
+      flexDirection: 'row',
+      justifyContent: 'space-between',
+      alignItems: 'center',
+      gap: theme.spacing.sm,
+    },
+    cardTitle: { fontSize: 18, fontWeight: '700', color: colors.text },
+    helper: { fontSize: 12, lineHeight: 18, color: colors.secondary },
+  });
+}

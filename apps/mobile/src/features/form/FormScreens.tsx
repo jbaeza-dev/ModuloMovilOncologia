@@ -12,6 +12,7 @@ import {
   SectionTitle,
   VisualButton,
 } from '../../components/Visual';
+import { useAppTheme } from '../../providers/ThemeProvider';
 import { theme } from '../../theme';
 
 const sections = [
@@ -27,6 +28,7 @@ const sections = [
   },
 ];
 export function FormScreen() {
+  const styles = useStyles();
   const [section, setSection] = useState(0);
   const [answers, setAnswers] = useState<Record<number, string>>({});
   const current = sections[section];
@@ -88,8 +90,11 @@ export function FormResultScreen() {
     </Screen>
   );
 }
-const styles = StyleSheet.create({
-  stack: { gap: theme.spacing.sm },
-  progress: { fontSize: 14, fontWeight: '600', color: theme.colors.secondary },
-  question: { fontSize: 18, fontWeight: '700', color: theme.colors.text },
-});
+function useStyles() {
+  const { theme: appTheme } = useAppTheme();
+  return StyleSheet.create({
+    stack: { gap: theme.spacing.sm },
+    progress: { fontSize: 14, fontWeight: '600', color: appTheme.colors.secondary },
+    question: { fontSize: 18, fontWeight: '700', color: appTheme.colors.text },
+  });
+}
