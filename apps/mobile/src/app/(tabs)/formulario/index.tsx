@@ -1,1 +1,1 @@
-export { FormScreen as default } from '../../../features/navigation/Destinations';
+export { FormScreen as default } from '../../../features/form/FormScreens';

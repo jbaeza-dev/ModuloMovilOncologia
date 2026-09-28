@@ -1,1 +1,1 @@
-export { PreferencesScreen as default } from '../../../../features/navigation/Destinations';
+export { PreferencesScreen as default } from '../../../../features/profile/ProfileScreen';

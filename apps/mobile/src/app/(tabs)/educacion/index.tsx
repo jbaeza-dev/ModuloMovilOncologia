@@ -1,1 +1,1 @@
-export { EducationScreen as default } from '../../../features/navigation/Destinations';
+export { EducationScreen as default } from '../../../features/education/EducationScreens';

@@ -1,1 +1,1 @@
-export { LinkCodeScreen as default } from '../../../../features/navigation/Destinations';
+export { LinkCodeScreen as default } from '../../../../features/profile/ProfileScreen';

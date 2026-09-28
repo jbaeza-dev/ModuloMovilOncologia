@@ -1,0 +1,110 @@
+export const vitalRecords = [
+  {
+    id: 'a',
+    date: '12 sep · 09:40',
+    temperature: '36,8 °C',
+    pressure: '118/76 mmHg',
+    pulse: '72 lpm',
+    saturation: '98 %',
+    period: 7,
+  },
+  {
+    id: 'b',
+    date: '10 sep · 09:20',
+    temperature: '36,9 °C',
+    pressure: '120/78 mmHg',
+    pulse: '74 lpm',
+    saturation: '97 %',
+    period: 7,
+  },
+  {
+    id: 'c',
+    date: '23 ago · 10:15',
+    temperature: '37,0 °C',
+    pressure: '116/75 mmHg',
+    pulse: '70 lpm',
+    saturation: '98 %',
+    period: 30,
+  },
+  {
+    id: 'd',
+    date: '18 jul · 08:30',
+    temperature: '36,7 °C',
+    pressure: '119/77 mmHg',
+    pulse: '71 lpm',
+    saturation: '99 %',
+    period: 90,
+  },
+] as const;
+
+export const educationCategories = [
+  { title: 'Conocer la quimioterapia', count: '3 recursos', icon: 'book-open' },
+  { title: 'Cuidados cotidianos', count: '4 recursos', icon: 'heart' },
+  { title: 'Alimentación y bienestar', count: '2 recursos', icon: 'coffee' },
+] as const;
+
+export const educationResources = [
+  {
+    category: 0,
+    title: 'Prepararse para una sesión',
+    type: 'Video',
+    duration: '3:24 min',
+    state: 'Requiere conexión',
+  },
+  {
+    category: 0,
+    title: 'Cuidados en casa',
+    type: 'Infografía',
+    duration: 'Lectura breve',
+    state: 'Descargado · ejemplo',
+  },
+  {
+    category: 0,
+    title: 'Preguntas frecuentes',
+    type: 'Video',
+    duration: '4:10 min',
+    state: 'Pendiente · ejemplo',
+  },
+  {
+    category: 1,
+    title: 'Organizar tus preguntas',
+    type: 'Infografía',
+    duration: 'Lectura breve',
+    state: 'Descargado · ejemplo',
+  },
+  {
+    category: 1,
+    title: 'Rutina cotidiana',
+    type: 'Video',
+    duration: '2:50 min',
+    state: 'Requiere conexión',
+  },
+  {
+    category: 1,
+    title: 'Descanso y acompañamiento',
+    type: 'Infografía',
+    duration: 'Lectura breve',
+    state: 'Pendiente · ejemplo',
+  },
+  {
+    category: 1,
+    title: 'Apoyo familiar',
+    type: 'Video',
+    duration: '3:00 min',
+    state: 'Requiere conexión',
+  },
+  {
+    category: 2,
+    title: 'Alimentación diaria',
+    type: 'Infografía',
+    duration: 'Lectura breve',
+    state: 'Descargado · ejemplo',
+  },
+  {
+    category: 2,
+    title: 'Bienestar general',
+    type: 'Video',
+    duration: '3:30 min',
+    state: 'Pendiente · ejemplo',
+  },
+] as const;

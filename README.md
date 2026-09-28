@@ -1,13 +1,12 @@
 # Módulo Móvil Oncológico
 
-Aplicación Android de acompañamiento para pacientes en tratamiento de **quimioterapia**. Este repositorio corresponde al módulo móvil del proyecto de título y está en su etapa de inicialización.
+Aplicación Android de acompañamiento para pacientes en tratamiento de **quimioterapia**. Este repositorio corresponde al módulo móvil del proyecto de título y se desarrolla como un monorepositorio pnpm.
 
 ## Estado actual
 
-El repositorio dispone de la base del monorrepositorio, configuración compartida de TypeScript,
-ESLint y Prettier, e integración continua para comprobar formato, lint y tipos en cada PR hacia
-`main`. La app Expo incluye la navegación de QuimioCare: cuatro pestañas y destinos mínimos para perfil, registro y asistente. Todavía no hay flujos clínicos, pasarela,
-API simulada ni servicios desplegados; cada componente se incorporará en su propio pull request.
+El repositorio contiene la base Expo y la navegación principal de QuimioCare, además de un prototipo visual navegable de las pantallas previstas para el Sprint 1. La interfaz incluye Inicio, Perfil, acceso, vinculación, vitales, síntomas, educación, asistente y reportes, con datos de demostración. En Perfil → Preferencias se puede elegir entre cuatro paletas; el modo claro u oscuro sigue la configuración del dispositivo y la paleta se conserva localmente.
+
+Estas pantallas todavía son una experiencia de presentación: no hay autenticación, persistencia de registros clínicos, triaje, sincronización, descargas, exportación ni servicios desplegados. Las respuestas y resultados médicos no se calculan. La rama `feat/pantallas-visuales` reúne esta implementación visual y de apariencia.
 
 ## Componentes previstos
 
@@ -21,7 +20,7 @@ Las aplicaciones y paquetes se incorporan progresivamente dentro de estas rutas:
 | `packages/contracts/`         | Contratos y esquemas compartidos cuando se acuerden con el módulo central.                         |
 | `infra/local/`                | Entorno de pruebas locales mediante `podman-compose`.                                              |
 
-La app leerá los datos de referencia clínicos desde SQLite replicado por PowerSync. Cuando recupere conectividad, su implementación de `uploadData()` enviará las escrituras clínicas directamente a los endpoints de la API central. **El gateway no transportará esas escrituras** ni incluirá un endpoint `/sync/batch`. El simulador permitirá probar esos flujos sin depender de la disponibilidad del módulo central. Los datos de prueba serán ficticios.
+La arquitectura futura contempla datos de referencia clínicos desde SQLite replicado por PowerSync. La ruta de las escrituras clínicas aún debe acordarse antes de implementarla; las skills y documentación externas no sustituyen esa decisión del proyecto. El simulador permitirá probar flujos con datos ficticios. Ninguno de esos servicios forma parte de la interfaz actual.
 
 ## Requisitos para el desarrollo local
 
@@ -66,10 +65,7 @@ Generar el bundle JavaScript para Android (valida empaquetado y Metro sin emulad
 pnpm --filter @modulo-movil-oncologia/mobile bundle:android
 ```
 
-Esta base no contiene PowerSync ni persistencia clínica. Expo Go sirve para comprobar la pantalla
-inicial, pero no valida el driver nativo previsto para PowerSync. Antes de integrar PowerSync se
-definirá un `android.package` estable y se probará una _development build_ en Android. La
-exportación del bundle Android tampoco sustituye esa prueba nativa.
+La aplicación aún no contiene PowerSync ni persistencia clínica. Expo Go permite revisar la interfaz y navegación actuales, pero no valida una futura integración nativa. La exportación del bundle Android comprueba el empaquetado de JavaScript y no sustituye la revisión en dispositivo o emulador.
 
 El repositorio mantiene un solo `pnpm-lock.yaml` en la raíz. No deben generarse lockfiles dentro
 de `apps/` ni `packages/`. La configuración de workspaces y `nodeLinker: hoisted` está definida en
@@ -81,4 +77,4 @@ declarar su script `typecheck`.
 
 ## Colaboración
 
-Cada tarea parte de `main` en una rama corta, se revisa mediante un pull request por la otra persona del equipo y se integra tras superar las comprobaciones disponibles. Este arranque está asociado con [SCRUM-26](https://proyecto-movil-oncologico.atlassian.net/browse/SCRUM-26); la integración continua inicial corresponde a [SCRUM-46](https://proyecto-movil-oncologico.atlassian.net/browse/SCRUM-46). Las ramas posteriores incorporarán contratos, Expo, pasarela y simulador de forma independiente.
+El repositorio ya cuenta con la base Expo (PR5), la navegación principal (PR9) y las pantallas visuales previstas para PR10–PR13, además de la selección de apariencia accesible. El trabajo visual no completa los requisitos funcionales de esas entregas. Los siguientes cambios deben partir de `main` y mantener la separación entre interfaz, lógica clínica y servicios.
