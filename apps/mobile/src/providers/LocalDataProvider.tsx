@@ -58,7 +58,11 @@ export function LocalDataProvider({ children }: { children: ReactNode }) {
       } catch (failure) {
         if (native) await native.closeAsync().catch(() => undefined);
         if (active)
-          setError(failure instanceof Error ? failure.message : 'No se pudo abrir SQLite.');
+          setError(
+            failure instanceof Error
+              ? failure.message
+              : 'No se pudo abrir el almacenamiento local.',
+          );
       }
     }
     void open();

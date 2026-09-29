@@ -69,7 +69,7 @@ export function ReportsScreen() {
         <DetailRow label="Período" value={`${days} días`} />
         <DetailRow label="Formato" value={format} />
         <DetailRow
-          label="Registros en SQLite"
+          label="Registros guardados"
           value={
             loading
               ? 'Calculando…'
@@ -88,7 +88,7 @@ export function ReportsScreen() {
             value={`${summary.avgPulse.toLocaleString('es-CL')} lpm`}
           />
         ) : null}
-        <StatusPill>Almacenamiento local SQLite</StatusPill>
+        <StatusPill>Almacenamiento local</StatusPill>
       </InfoCard>
 
       {summary.total === 0 ? (

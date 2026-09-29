@@ -38,7 +38,7 @@ export function ProfileScreen() {
       <InfoCard>
         <Text style={styles.heading}>{profile?.nombre ?? 'Paciente en tratamiento'}</Text>
         <BodyText>{profile?.email ?? 'paciente@quimiocare.test'}</BodyText>
-        <StatusPill>Datos locales SQLite</StatusPill>
+        <StatusPill>Disponible sin conexión</StatusPill>
       </InfoCard>
       <NavigationCard
         title="Datos personales"
@@ -108,8 +108,7 @@ export function PersonalDataScreen() {
         />
       </InfoCard>
       <BodyText>
-        Datos sintéticos almacenados localmente en SQLite para consulta offline sin depender de
-        conexión.
+        Información del paciente guardada en este dispositivo para consulta sin conexión.
       </BodyText>
     </Screen>
   );
@@ -194,7 +193,7 @@ export function ClinicalProfileScreen() {
       ) : null}
 
       <BodyText>
-        Información de tratamiento guardada en SQLite propio. No realiza evaluación clínica
+        Información de tratamiento disponible sin conexión. No realiza evaluación clínica
         automática.
       </BodyText>
     </Screen>
@@ -237,8 +236,8 @@ export function LinkCodeScreen() {
           {linkCode ? `Válido hasta ${formatDate(linkCode.expira_en)}` : 'Sin código'}
         </StatusPill>
         <BodyText>
-          Compártelo únicamente con tu equipo de salud. Este código se guarda en este dispositivo en
-          SQLite para consulta sin conexión.
+          Compártelo únicamente con tu equipo de salud. Este código se conserva en este dispositivo
+          para consulta sin conexión.
         </BodyText>
         <VisualButton
           label={busy ? 'Generando…' : 'Generar nuevo código'}
