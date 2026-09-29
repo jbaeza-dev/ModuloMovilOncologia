@@ -4,9 +4,9 @@ Aplicación Android **QuimioCare** para acompañamiento de pacientes en quimiote
 
 ## Estado actual
 
-La rama actual contiene la base Expo (PR5/SCRUM-26), la navegación principal (PR9/SCRUM-25) y la implementación visual de las pantallas del Sprint 1 (alcance visual de PR10–PR13). La aplicación ofrece cuatro pestañas: Inicio, Vitales, Formulario y Educación. Desde ellas se puede recorrer Perfil, acceso, vinculación, formularios y resultados de demostración, recursos educativos, Asistente y Reportes.
+La aplicación contiene la base Expo (PR5/SCRUM-26), la navegación principal (PR9/SCRUM-25), las pantallas visuales de PR10–PR13 y una primera implementación SQLite de SCRUM-19. Tiene cuatro pestañas: Inicio, Vitales, Formulario y Educación. Inicio, Vitales y Formulario muestran registros locales del paciente de prueba activo; las demás funciones continúan como demostración.
 
-El contenido clínico que se muestra es ficticio y sirve para revisar la interfaz. No se autentica a usuarios, no se guardan registros clínicos, no se evalúan síntomas ni signos vitales y no se envían datos. Los estados de carga, error y conectividad son presentacionales. Las operaciones reales y los requisitos funcionales de PR10–PR13 siguen pendientes.
+Durante desarrollo se selecciona explícitamente el paciente sintético A o B. Signos vitales y descripciones de síntomas se guardan en `quimiocare_local.db`, sobreviven al reinicio y se muestran solo para el paciente seleccionado. Cada alta crea una operación `pendiente` en la misma transacción. No hay autenticación, envío REST, sincronización ni evaluación clínica. La galería conserva las variantes visuales antiguas con datos ficticios.
 
 En Perfil → Preferencias → Accesibilidad y apariencia, se puede seleccionar Turquesa, Azul, Violeta o Ámbar. El modo claro u oscuro sigue el ajuste del dispositivo y la paleta elegida se guarda localmente con AsyncStorage. Alertas y estados clínicos mantienen colores semánticos independientes de la paleta.
 
@@ -26,6 +26,7 @@ Desde la raíz:
 
 ```bash
 pnpm check
+pnpm run test:local
 pnpm --filter @modulo-movil-oncologia/mobile run doctor
 pnpm --filter @modulo-movil-oncologia/mobile bundle:android
 ```
@@ -39,8 +40,10 @@ integración futura de PowerSync.
 - `src/app/`: rutas y layouts de Expo Router.
 - `src/components/`: pantalla base, acciones de navegación y destinos mínimos.
 - `src/features/`: pantallas por funcionalidad.
+- `src/data/local/`: migración versionada, validación, repositorios y adaptador de `expo-sqlite`.
 - `src/theme.ts`: paletas, tokens semánticos, espacios y radios compartidos.
 - `src/providers/ThemeProvider.tsx`: selección de paleta, modo claro/oscuro del dispositivo y persistencia local de la preferencia.
+- `src/providers/LocalDataProvider.tsx`: apertura de SQLite y selección de paciente sintético en desarrollo.
 
 Cada pestaña tiene una pila. Perfil y Asistente pertenecen a Inicio; el registro de
 signos vitales pertenece a Vitales. `router.navigate` evita apilar reiteradamente el
@@ -53,7 +56,7 @@ local antes de mostrar la interfaz. No necesitan descargar recursos al abrir la 
 
 ## Arquitectura prevista
 
-La arquitectura futura contempla hooks y repositorios, SQLite con PowerSync y servicios para las operaciones clínicas. La ruta de escritura y sincronización debe resolverse como decisión explícita del proyecto antes de implementarla. El gateway y el simulador también pertenecen a entregas posteriores. La interfaz actual no incluye clientes HTTP, base de datos ni contratos clínicos.
+La app usa su propio SQLite para registros y cola local; PowerSync administrará otra base para el catálogo educativo cuando se implemente. El contrato v0 sigue en revisión y esta rama no incluye cliente HTTP ni worker de envío. Las pruebas con Vitest ejercitan migraciones y repositorios sobre SQLite real en Node; el recorrido en Android valida el adaptador nativo por separado.
 
 Las futuras pruebas de componentes nativos usarán herramientas compatibles con
 Expo y React Native.
