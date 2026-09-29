@@ -1,6 +1,5 @@
 import Feather from '@expo/vector-icons/Feather';
-import { useLocalSearchParams } from 'expo-router';
-import { useState } from 'react';
+import { useCallback, useState } from 'react';
 import { Pressable, StyleSheet, Text, View } from 'react-native';
 
 import { NavigationCard } from '../../components/NavigationCard';
@@ -13,22 +12,61 @@ import {
   InfoCard,
   SectionTitle,
   StatusPill,
+  VisualButton,
 } from '../../components/Visual';
+import {
+  formatDate,
+  formatLinkCode,
+  type LinkCodeRecord,
+  type PatientProfileRecord,
+  type TreatmentRecord,
+} from '../../data/local/repository';
+import { useFocusedValue } from '../../data/local/use-local-query';
+import { useLocalData } from '../../providers/LocalDataProvider';
 import { useAppTheme } from '../../providers/ThemeProvider';
 import { PALETTE_OPTIONS, theme } from '../../theme';
 
 export function ProfileScreen() {
   const styles = useStyles();
+  const { repository } = useLocalData();
+  const load = useCallback(
+    () => (repository ? repository.profile() : Promise.resolve(null)),
+    [repository],
+  );
+  const {
+    value: profile,
+    loading,
+    error,
+    refresh,
+  } = useFocusedValue(load, null as PatientProfileRecord | null);
+
   return (
     <Screen title="Mi perfil" backTo="/">
-      <DemoBadge />
-      <InfoCard>
-        <Text style={styles.heading}>Paciente de ejemplo</Text>
-        <BodyText>paciente.ejemplo@quimiocare.test</BodyText>
-      </InfoCard>
+      {loading ? (
+        <InfoCard>
+          <BodyText>Cargando perfil…</BodyText>
+        </InfoCard>
+      ) : error ? (
+        <InfoCard>
+          <Text style={styles.heading}>Error al cargar perfil</Text>
+          <BodyText>No se pudo consultar el almacenamiento local.</BodyText>
+          <VisualButton label="Reintentar" onPress={refresh} />
+        </InfoCard>
+      ) : !profile ? (
+        <InfoCard>
+          <Text style={styles.heading}>Sin perfil asignado</Text>
+          <BodyText>No hay datos registrados para este paciente.</BodyText>
+        </InfoCard>
+      ) : (
+        <InfoCard>
+          <Text style={styles.heading}>{profile.nombre}</Text>
+          <BodyText>{profile.email ?? 'Sin correo registrado'}</BodyText>
+          <StatusPill>Disponible sin conexión</StatusPill>
+        </InfoCard>
+      )}
       <NavigationCard
         title="Datos personales"
-        description="Información de consulta."
+        description="Información y antecedentes del paciente."
         icon="user"
         href="/perfil/datos"
       />
@@ -40,7 +78,7 @@ export function ProfileScreen() {
       />
       <NavigationCard
         title="Código de vinculación"
-        description="Vista para compartir con el equipo de salud."
+        description="Código para compartir con tu equipo de salud."
         icon="link"
         href="/perfil/vinculacion"
       />
@@ -52,7 +90,7 @@ export function ProfileScreen() {
       />
       <NavigationCard
         title="Preferencias"
-        description="Presentación de avisos y cuenta."
+        description="Presentación de avisos y apariencia."
         icon="settings"
         href="/perfil/preferencias"
       />
@@ -61,106 +99,209 @@ export function ProfileScreen() {
 }
 
 export function PersonalDataScreen() {
+  const { repository } = useLocalData();
+  const load = useCallback(
+    () => (repository ? repository.profile() : Promise.resolve(null)),
+    [repository],
+  );
+  const {
+    value: profile,
+    loading,
+    error,
+    refresh,
+  } = useFocusedValue(load, null as PatientProfileRecord | null);
+
   return (
     <Screen title="Datos personales" backTo="/perfil">
-      <DemoBadge />
-      <InfoCard>
-        <DetailRow label="Nombre" value="Paciente" />
-        <DetailRow label="Apellido" value="Ejemplo" />
-        <DetailRow label="Correo" value="paciente.ejemplo@quimiocare.test" />
-        <DetailRow label="Teléfono" value="+56 9 0000 0000" />
-        <DetailRow label="Fecha de nacimiento" value="01/01/1990" />
-      </InfoCard>
+      {loading ? (
+        <InfoCard>
+          <BodyText>Cargando información del paciente…</BodyText>
+        </InfoCard>
+      ) : error ? (
+        <InfoCard>
+          <BodyText>No se pudo cargar la información del paciente.</BodyText>
+          <VisualButton label="Reintentar" onPress={refresh} />
+        </InfoCard>
+      ) : !profile ? (
+        <EmptyState
+          icon="user"
+          title="Sin datos registrados"
+          description="No hay información de perfil disponible para este paciente."
+        />
+      ) : (
+        <InfoCard>
+          <DetailRow label="Nombre" value={profile.nombre} />
+          <DetailRow label="RUT" value={profile.rut ?? 'Sin registro'} />
+          <DetailRow label="Correo" value={profile.email ?? 'Sin registro'} />
+        </InfoCard>
+      )}
       <BodyText>
-        Datos ficticios de presentación. La edición de la información personal no forma parte de
-        este prototipo.
+        Información del paciente guardada en este dispositivo para consulta sin conexión.
       </BodyText>
     </Screen>
   );
 }
 
-const clinicalSections = [
-  {
-    title: 'Información personal',
-    rows: [
-      ['Sexo', 'Dato de ejemplo'],
-      ['Ciudad', 'Ciudad de ejemplo'],
-    ],
-  },
-  { title: 'Antecedentes médicos', rows: [['Antecedentes', 'Información de ejemplo']] },
-  { title: 'Tratamiento farmacológico', rows: [['Tratamiento', 'Consulta de ejemplo']] },
-  { title: 'Estilo de vida', rows: [['Información', 'Disponible en una etapa posterior']] },
-] as const;
-
 export function ClinicalProfileScreen() {
   const styles = useStyles();
   const { theme: appTheme } = useAppTheme();
-  const [open, setOpen] = useState<string | null>('Información personal');
+  const { repository } = useLocalData();
+  const load = useCallback(
+    () => (repository ? repository.treatment() : Promise.resolve(null)),
+    [repository],
+  );
+  const {
+    value: treatment,
+    loading,
+    error,
+    refresh,
+  } = useFocusedValue(load, null as TreatmentRecord | null);
+  const [open, setOpen] = useState<string | null>('Parámetros de tratamiento');
+
+  let params: {
+    ciclo_actual?: number;
+    total_ciclos?: number;
+    observaciones?: string;
+  } | null = null;
+
+  if (treatment?.parametros_json) {
+    try {
+      params = JSON.parse(treatment.parametros_json) as {
+        ciclo_actual?: number;
+        total_ciclos?: number;
+        observaciones?: string;
+      };
+    } catch {
+      params = null;
+    }
+  }
+
   return (
     <Screen title="Perfil clínico" backTo="/perfil">
-      <DemoBadge />
-      <InfoCard>
-        <SectionTitle>Tratamiento de quimioterapia</SectionTitle>
-        <DetailRow label="Equipo tratante" value="Centro de ejemplo" />
-        <DetailRow label="Inicio" value="Fecha de ejemplo" />
-      </InfoCard>
-      {clinicalSections.map((section) => (
-        <InfoCard key={section.title}>
-          <Pressable
-            accessibilityRole="button"
-            accessibilityLabel={section.title}
-            accessibilityState={{ expanded: open === section.title }}
-            onPress={() => setOpen(open === section.title ? null : section.title)}
-            style={styles.disclosure}
-          >
-            <Text style={styles.heading}>{section.title}</Text>
-            <Feather
-              name={open === section.title ? 'chevron-up' : 'chevron-down'}
-              size={22}
-              color={appTheme.colors.text}
-            />
-          </Pressable>
-          {open === section.title
-            ? section.rows.map(([label, value]) => (
-                <DetailRow key={label} label={label} value={value} />
-              ))
-            : null}
+      {loading ? (
+        <InfoCard>
+          <BodyText>Cargando tratamiento…</BodyText>
         </InfoCard>
-      ))}
+      ) : error ? (
+        <InfoCard>
+          <BodyText>No se pudo consultar el tratamiento local.</BodyText>
+          <VisualButton label="Reintentar" onPress={refresh} />
+        </InfoCard>
+      ) : !treatment ? (
+        <EmptyState
+          icon="file-text"
+          title="Sin tratamiento registrado"
+          description="No se encontró un esquema de quimioterapia para este paciente."
+        />
+      ) : (
+        <>
+          <InfoCard>
+            <SectionTitle>Tratamiento de quimioterapia</SectionTitle>
+            <DetailRow
+              label="Tratamiento"
+              value={treatment.nombre ?? 'Tratamiento de quimioterapia'}
+            />
+            {params?.ciclo_actual != null && params?.total_ciclos != null ? (
+              <DetailRow
+                label="Ciclo actual"
+                value={`Ciclo ${params.ciclo_actual} de ${params.total_ciclos}`}
+              />
+            ) : null}
+            <DetailRow label="Inicio" value={treatment.fecha_inicio ?? 'Sin fecha'} />
+            <DetailRow label="Término estimado" value={treatment.fecha_termino ?? 'En curso'} />
+            <DetailRow label="Estado" value={treatment.estado} />
+          </InfoCard>
+
+          {params?.observaciones ? (
+            <InfoCard>
+              <Pressable
+                accessibilityRole="button"
+                accessibilityLabel="Parámetros de tratamiento"
+                accessibilityState={{ expanded: open === 'Parámetros de tratamiento' }}
+                onPress={() =>
+                  setOpen(open === 'Parámetros de tratamiento' ? null : 'Parámetros de tratamiento')
+                }
+                style={styles.disclosure}
+              >
+                <Text style={styles.heading}>Parámetros de tratamiento</Text>
+                <Feather
+                  name={open === 'Parámetros de tratamiento' ? 'chevron-up' : 'chevron-down'}
+                  size={22}
+                  color={appTheme.colors.text}
+                />
+              </Pressable>
+              {open === 'Parámetros de tratamiento' ? (
+                <DetailRow label="Observaciones" value={params.observaciones} />
+              ) : null}
+            </InfoCard>
+          ) : null}
+        </>
+      )}
+
+      <BodyText>
+        Información de tratamiento disponible sin conexión. No realiza evaluación clínica
+        automática.
+      </BodyText>
     </Screen>
   );
 }
 
 export function LinkCodeScreen() {
   const styles = useStyles();
-  const { estado } = useLocalSearchParams<{ estado?: string }>();
-  const view = estado === 'vinculado' || estado === 'sin-codigo' ? estado : 'codigo';
+  const { repository } = useLocalData();
+  const load = useCallback(
+    () => (repository ? repository.linkCode() : Promise.resolve(null)),
+    [repository],
+  );
+  const {
+    value: linkCode,
+    loading,
+    error,
+    refresh,
+  } = useFocusedValue(load, null as LinkCodeRecord | null);
+
+  const isExpired = linkCode ? new Date(linkCode.expira_en).getTime() <= Date.now() : false;
+  const isPending = linkCode?.estado_conocido === 'pendiente';
+  const isValid = Boolean(linkCode && !isExpired && isPending);
+
   return (
     <Screen title="Código de vinculación" backTo="/perfil">
-      <DemoBadge />
-      {view === 'sin-codigo' ? (
+      {loading ? (
+        <InfoCard>
+          <BodyText>Consultando código de vinculación…</BodyText>
+        </InfoCard>
+      ) : error ? (
+        <InfoCard>
+          <BodyText>No se pudo consultar el código de vinculación.</BodyText>
+          <VisualButton label="Reintentar" onPress={refresh} />
+        </InfoCard>
+      ) : !linkCode ? (
         <EmptyState
           icon="link-2"
           title="Código no disponible"
-          description="Cuando el servicio de vinculación esté conectado, el estado aparecerá aquí."
+          description="Cuando el servicio de vinculación esté conectado, el código emitido por el equipo de salud aparecerá aquí. La aplicación no genera códigos sin conexión."
         />
-      ) : view === 'vinculado' ? (
+      ) : !isValid ? (
         <InfoCard>
-          <SectionTitle>Vínculo establecido</SectionTitle>
-          <StatusPill>Ejemplo visual</StatusPill>
+          <SectionTitle>Código no vigente</SectionTitle>
+          <Text style={styles.code}>{formatLinkCode(linkCode.codigo)}</Text>
+          <StatusPill>
+            {linkCode.estado_conocido === 'usado' ? 'Código ya utilizado' : 'Código expirado'}
+          </StatusPill>
           <BodyText>
-            Esta vista muestra cómo se presentaría un vínculo confirmado por el servicio
-            correspondiente.
+            {linkCode.estado_conocido === 'usado'
+              ? 'Este código ya fue utilizado para vincular tu dispositivo con el equipo tratante.'
+              : `Este código venció el ${formatDate(linkCode.expira_en)}. Solicita uno nuevo cuando cuentes con conexión.`}
           </BodyText>
         </InfoCard>
       ) : (
         <InfoCard>
           <SectionTitle>Comparte este código</SectionTitle>
-          <Text style={styles.code}>ABC 123</Text>
-          <StatusPill>Código ficticio</StatusPill>
+          <Text style={styles.code}>{formatLinkCode(linkCode.codigo)}</Text>
+          <StatusPill>Válido hasta {formatDate(linkCode.expira_en)}</StatusPill>
           <BodyText>
-            Compártelo únicamente con tu equipo de salud. Esta vista no genera ni copia códigos
-            reales.
+            Compártelo únicamente con tu equipo de salud. Este código se conserva en este
+            dispositivo para consulta sin conexión.
           </BodyText>
         </InfoCard>
       )}
