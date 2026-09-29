@@ -10,7 +10,8 @@ export const unstable_settings = { initialRouteName: '(inicio)' };
 export default function TabsLayout() {
   const { theme: appTheme } = useAppTheme();
   const insets = useSafeAreaInsets();
-  const { fontScale } = useWindowDimensions();
+  const { width, fontScale } = useWindowDimensions();
+  const compactLabels = width < 400 && fontScale >= 1.2;
   const styles = StyleSheet.create({
     bar: {
       backgroundColor: appTheme.colors.background,
@@ -18,7 +19,14 @@ export default function TabsLayout() {
       elevation: 0,
     },
     item: { minHeight: 64, paddingVertical: 8 },
-    label: { fontSize: 12, fontWeight: '600', textAlign: 'center', paddingHorizontal: 2 },
+    label: {
+      width: '100%',
+      flexShrink: 1,
+      fontSize: 12,
+      fontWeight: '600',
+      textAlign: 'center',
+      paddingHorizontal: 2,
+    },
   });
   return (
     <Tabs
@@ -32,10 +40,16 @@ export default function TabsLayout() {
         tabBarLabelPosition: 'below-icon',
         tabBarAllowFontScaling: true,
         tabBarLabel: ({ color, children }) => (
-          <Text style={[styles.label, { color }]}>{children}</Text>
+          <Text numberOfLines={2} style={[styles.label, { color }]}>
+            {compactLabels && children === 'Formulario'
+              ? 'Formu\nlario'
+              : compactLabels && children === 'Educación'
+                ? 'Educa\nción'
+                : children}
+          </Text>
         ),
         tabBarItemStyle: styles.item,
-        tabBarStyle: [styles.bar, { height: 76 + 36 * Math.max(0, fontScale - 1) + insets.bottom }],
+        tabBarStyle: [styles.bar, { height: 76 + 56 * Math.max(0, fontScale - 1) + insets.bottom }],
       }}
     >
       <Tabs.Screen

@@ -4,6 +4,7 @@ import { Stack } from 'expo-router';
 import { Platform, StatusBar } from 'react-native';
 
 import { ThemeProvider, useAppTheme } from '../providers/ThemeProvider';
+import { LocalDataProvider } from '../providers/LocalDataProvider';
 
 export { ErrorBoundary } from 'expo-router';
 
@@ -16,7 +17,9 @@ export default function RootLayout() {
 
   return (
     <ThemeProvider>
-      <AppNavigator />
+      <LocalDataProvider>
+        <AppNavigator />
+      </LocalDataProvider>
     </ThemeProvider>
   );
 }

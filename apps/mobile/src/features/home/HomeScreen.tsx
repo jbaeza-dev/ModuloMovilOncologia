@@ -1,17 +1,36 @@
-import { useLocalSearchParams } from 'expo-router';
+import { useCallback } from 'react';
 import { StyleSheet, Text, View } from 'react-native';
 
 import { NavigationCard } from '../../components/NavigationCard';
 import { Screen } from '../../components/Screen';
-import { DemoBadge, DetailRow, InfoCard, SectionTitle, StatusPill } from '../../components/Visual';
+import {
+  BodyText,
+  DetailRow,
+  InfoCard,
+  SectionTitle,
+  StatusPill,
+  VisualButton,
+} from '../../components/Visual';
+import { formatDate, formatVital, type VitalRecord } from '../../data/local/repository';
+import { useFocusedValue } from '../../data/local/use-local-query';
+import { DEMO_PATIENTS, useLocalData } from '../../providers/LocalDataProvider';
 import { useAppTheme } from '../../providers/ThemeProvider';
 import { theme } from '../../theme';
 
 export function HomeScreen() {
   const { theme: appTheme } = useAppTheme();
   const styles = createStyles(appTheme.colors);
-  const { vista } = useLocalSearchParams<{ vista?: string }>();
-  const empty = vista === 'vacia';
+  const { repository, patientId, changePatient, saving } = useLocalData();
+  const load = useCallback(
+    () => (repository ? repository.latestVital() : Promise.resolve(null)),
+    [repository],
+  );
+  const {
+    value: latest,
+    loading,
+    error,
+    refresh,
+  } = useFocusedValue(load, null as VitalRecord | null);
   return (
     <Screen showProfile>
       <View style={styles.introduction}>
@@ -21,40 +40,61 @@ export function HomeScreen() {
         </Text>
         <Text style={styles.description}>Un espacio para tu seguimiento y cuidado diario.</Text>
       </View>
-      <DemoBadge />
+      {__DEV__ ? (
+        <InfoCard>
+          <BodyText>
+            Datos sintéticos · {DEMO_PATIENTS.find((patient) => patient.id === patientId)?.label}
+          </BodyText>
+          <VisualButton
+            label="Cambiar paciente de prueba"
+            secondary
+            disabled={saving}
+            onPress={changePatient}
+          />
+        </InfoCard>
+      ) : null}
       <View style={styles.section}>
         <SectionTitle>Tu seguimiento</SectionTitle>
-        {empty ? (
+        {loading || error || !latest ? (
           <InfoCard>
-            <Text style={styles.cardTitle}>Aún no hay registros</Text>
-            <Text style={styles.description}>
-              Tus mediciones aparecerán aquí cuando se incorporen los registros.
+            <Text style={styles.cardTitle}>
+              {loading
+                ? 'Cargando registros'
+                : error
+                  ? 'No se pudo leer el último registro'
+                  : 'Aún no hay registros'}
             </Text>
+            <Text style={styles.description}>
+              {error
+                ? 'Reintenta la consulta local.'
+                : 'Tus mediciones aparecerán aquí después de guardarlas.'}
+            </Text>
+            {error ? <VisualButton label="Reintentar" onPress={refresh} /> : null}
           </InfoCard>
         ) : (
           <InfoCard>
             <View style={styles.row}>
               <Text style={styles.cardTitle}>Último registro</Text>
-              <StatusPill>Ejemplo</StatusPill>
+              <StatusPill>Pendiente de envío</StatusPill>
             </View>
-            <DetailRow label="Fecha" value="12 de septiembre · 09:40" />
-            <DetailRow label="Temperatura" value="36,8 °C" />
-            <DetailRow label="Pulso" value="72 lpm" />
+            <DetailRow label="Fecha" value={formatDate(latest.fecha_registro)} />
+            <DetailRow label="Temperatura" value={formatVital(latest.temperatura, '°C')} />
+            <DetailRow label="Pulso" value={formatVital(latest.pulso, 'lpm')} />
             <Text style={styles.helper}>
-              Los valores son ficticios y no representan una evaluación clínica.
+              Datos sintéticos locales; no representan una evaluación clínica.
             </Text>
           </InfoCard>
         )}
         <NavigationCard
           title="Registrar signos vitales"
-          description="Vista del registro de mediciones."
+          description="Guarda mediciones en este dispositivo."
           icon="activity"
           href="/vitales/registrar"
           primary
         />
         <NavigationCard
           title="Síntomas de hoy"
-          description="Vista del formulario de síntomas."
+          description="Guarda una descripción de síntomas."
           icon="clipboard"
           href="/formulario"
         />
@@ -89,8 +129,9 @@ function createStyles(colors: ReturnType<typeof useAppTheme>['theme']['colors'])
     section: { gap: theme.spacing.md },
     row: {
       flexDirection: 'row',
+      flexWrap: 'wrap',
       justifyContent: 'space-between',
-      alignItems: 'center',
+      alignItems: 'flex-start',
       gap: theme.spacing.sm,
     },
     cardTitle: { fontSize: 18, fontWeight: '700', color: colors.text },

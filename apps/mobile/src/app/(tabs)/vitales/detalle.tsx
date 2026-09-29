@@ -1,1 +1,1 @@
-export { VitalDetailScreen as default } from '../../../features/vitals/VitalsScreens';
+export { VitalDataDetailScreen as default } from '../../../features/vitals/VitalsDataScreens';

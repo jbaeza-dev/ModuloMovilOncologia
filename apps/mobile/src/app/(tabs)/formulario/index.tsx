@@ -1,1 +1,1 @@
-export { FormScreen as default } from '../../../features/form/FormScreens';
+export { SymptomDataScreen as default } from '../../../features/form/SymptomDataScreen';

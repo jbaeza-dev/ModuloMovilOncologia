@@ -18,8 +18,7 @@ const groups: { title: string; links: { label: string; href: Href }[] }[] = [
   {
     title: 'Inicio y perfil',
     links: [
-      { label: 'Inicio con registro', href: '/' },
-      { label: 'Inicio vacío', href: '/?vista=vacia' },
+      { label: 'Inicio con registros locales', href: '/' },
       { label: 'Mi perfil', href: '/perfil' },
       { label: 'Datos personales', href: '/perfil/datos' },
       { label: 'Perfil clínico', href: '/perfil/clinico' },
@@ -34,14 +33,14 @@ const groups: { title: string; links: { label: string; href: Href }[] }[] = [
     title: 'Vitales y reportes',
     links: [
       { label: 'Historial', href: '/vitales' },
-      { label: 'Historial vacío', href: '/vitales?vista=vacia' },
-      { label: 'Historial cargando', href: '/vitales?vista=cargando' },
-      { label: 'Historial con error', href: '/vitales?vista=error' },
-      { label: 'Historial sin conexión', href: '/vitales?vista=sin-conexion' },
-      { label: 'Pendiente de sincronización', href: '/vitales?vista=pendiente' },
-      { label: 'Sincronizando', href: '/vitales?vista=sincronizando' },
-      { label: 'Sincronizado', href: '/vitales?vista=sincronizado' },
-      { label: 'Detalle de registro', href: '/vitales/detalle' },
+      { label: 'Historial vacío de ejemplo', href: '/vitales/demo?vista=vacia' },
+      { label: 'Historial cargando de ejemplo', href: '/vitales/demo?vista=cargando' },
+      { label: 'Historial con error de ejemplo', href: '/vitales/demo?vista=error' },
+      { label: 'Historial sin conexión de ejemplo', href: '/vitales/demo?vista=sin-conexion' },
+      { label: 'Pendiente de sincronización de ejemplo', href: '/vitales/demo?vista=pendiente' },
+      { label: 'Sincronizando de ejemplo', href: '/vitales/demo?vista=sincronizando' },
+      { label: 'Sincronizado de ejemplo', href: '/vitales/demo?vista=sincronizado' },
+      { label: 'Detalle de ejemplo', href: '/vitales/demo-detalle' },
       { label: 'Registrar vitales', href: '/vitales/registrar' },
       { label: 'Registro guardado', href: '/vitales/resultado-guardado' },
       { label: 'Evaluación sin alertas', href: '/vitales/estado-normal' },
@@ -56,7 +55,8 @@ const groups: { title: string; links: { label: string; href: Href }[] }[] = [
   {
     title: 'Síntomas',
     links: [
-      { label: 'Formulario por secciones', href: '/formulario' },
+      { label: 'Registro local de síntomas', href: '/formulario' },
+      { label: 'Cuestionario por secciones de ejemplo', href: '/formulario/demo' },
       { label: 'Resumen', href: '/formulario/resumen' },
       { label: 'Resultado de ejemplo', href: '/formulario/resultado' },
     ],

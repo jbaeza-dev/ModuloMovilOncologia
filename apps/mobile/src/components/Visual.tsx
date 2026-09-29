@@ -70,6 +70,8 @@ type FieldProps = {
   placeholder?: string;
   secureTextEntry?: boolean;
   keyboardType?: 'default' | 'email-address' | 'numeric' | 'phone-pad';
+  multiline?: boolean;
+  maxLength?: number;
 };
 
 export function VisualField({ label, ...input }: FieldProps) {
@@ -83,7 +85,7 @@ export function VisualField({ label, ...input }: FieldProps) {
         accessibilityLabel={label}
         autoCapitalize={input.keyboardType === 'email-address' ? 'none' : 'sentences'}
         placeholderTextColor={appTheme.colors.secondary}
-        style={styles.input}
+        style={[styles.input, input.multiline && styles.multilineInput]}
       />
     </View>
   );
@@ -205,6 +207,7 @@ function useStyles() {
       color: colors.text,
       fontSize: 16,
     },
+    multilineInput: { minHeight: 112, textAlignVertical: 'top', paddingVertical: theme.spacing.md },
     row: {
       flexDirection: 'row',
       justifyContent: 'space-between',

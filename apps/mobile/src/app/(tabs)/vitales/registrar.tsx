@@ -1,1 +1,1 @@
-export { RegisterVitalsScreen as default } from '../../../features/vitals/VitalsScreens';
+export { RegisterVitalsDataScreen as default } from '../../../features/vitals/VitalsDataScreens';

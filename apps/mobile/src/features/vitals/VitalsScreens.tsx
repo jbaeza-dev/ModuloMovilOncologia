@@ -29,7 +29,7 @@ function RecordCard({ item }: { item: RecordItem }) {
     <Pressable
       accessibilityRole="button"
       accessibilityLabel={'Ver registro del ' + item.date}
-      onPress={() => router.navigate('/vitales/detalle?id=' + item.id)}
+      onPress={() => router.navigate('/vitales/demo-detalle')}
       style={styles.record}
     >
       <View style={styles.row}>
