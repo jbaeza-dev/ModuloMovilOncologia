@@ -11,7 +11,7 @@ import {
   VisualButton,
   VisualField,
 } from '../../components/Visual';
-import { formatDate, type SymptomRecord } from '../../data/local/repository';
+import { formatDate, type SymptomWithSyncRecord } from '../../data/local/repository';
 import { useFocusedList } from '../../data/local/use-local-query';
 import { InputError, parseSymptomDescription } from '../../data/local/validation';
 import { useLocalData } from '../../providers/LocalDataProvider';
@@ -66,14 +66,18 @@ export function SymptomDataScreen() {
 
   return (
     <Screen title="Síntomas de hoy" scroll={false}>
-      <FlatList<SymptomRecord>
+      <FlatList<SymptomWithSyncRecord>
         data={list.items}
         keyExtractor={(item) => item.id}
         renderItem={({ item }) => (
           <InfoCard>
             <SectionTitle>{formatDate(item.fecha_registro)}</SectionTitle>
             <BodyText>{item.descripcion}</BodyText>
-            <StatusPill>Pendiente de envío</StatusPill>
+            <StatusPill>
+              {item.estado_envio === 'pendiente' || !item.estado_envio
+                ? 'Pendiente de sincronización'
+                : `Estado: ${item.estado_envio}`}
+            </StatusPill>
           </InfoCard>
         )}
         contentContainerStyle={styles.list}
@@ -120,7 +124,7 @@ export function SymptomDataScreen() {
             )}
             {error ? <Text accessibilityRole="alert">{error}</Text> : null}
             {saved ? (
-              <StatusPill>Guardado en este dispositivo · Pendiente de envío</StatusPill>
+              <StatusPill>Guardado en este dispositivo · Pendiente de sincronización</StatusPill>
             ) : null}
             <SectionTitle>Historial local</SectionTitle>
           </View>

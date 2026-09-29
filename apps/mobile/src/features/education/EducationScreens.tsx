@@ -1,7 +1,8 @@
 import Feather from '@expo/vector-icons/Feather';
 import { router, useLocalSearchParams } from 'expo-router';
-import { useState } from 'react';
+import { useCallback, useState } from 'react';
 import { Pressable, StyleSheet, Text, View } from 'react-native';
+
 import { Screen } from '../../components/Screen';
 import {
   BodyText,
@@ -12,6 +13,15 @@ import {
   StatusPill,
   VisualButton,
 } from '../../components/Visual';
+import type { DownloadRecord } from '../../data/local/repository';
+import {
+  deleteResourceFile,
+  readResourceFile,
+  resourceFileExists,
+  writeResourceFile,
+} from '../../data/local/resource-storage';
+import { useFocusedList, useFocusedValue } from '../../data/local/use-local-query';
+import { useLocalData } from '../../providers/LocalDataProvider';
 import { useAppTheme } from '../../providers/ThemeProvider';
 import { theme } from '../../theme';
 import { educationCategories, educationResources } from '../preview/fixtures';
@@ -42,76 +52,178 @@ export function EducationScreen() {
     </Screen>
   );
 }
+
 export function EducationCategoryScreen() {
   const { theme: appTheme } = useAppTheme();
+  const { repository } = useLocalData();
   const styles = useStyles();
   const [expanded, setExpanded] = useState<string | null>(null);
   const { categoria } = useLocalSearchParams<{ categoria?: string }>();
   const categoryIndex = categoria === '1' || categoria === '2' ? Number(categoria) : 0;
   const resources = educationResources.filter((resource) => resource.category === categoryIndex);
+
+  const loadDownloads = useCallback(
+    () => (repository ? repository.downloads() : Promise.resolve([])),
+    [repository],
+  );
+  const { items: downloads } = useFocusedList(loadDownloads);
+  const downloadedIds = new Set(
+    downloads.filter((d) => d.estado === 'descargado').map((d) => d.contenido_id),
+  );
+
   return (
     <Screen title={educationCategories[categoryIndex].title} backTo="/educacion">
       <DemoBadge />
-      <BodyText>Títulos y estados de ejemplo. El contenido definitivo requiere revisión.</BodyText>
-      {resources.map((resource) => (
-        <InfoCard key={resource.title}>
-          <Pressable
-            accessibilityRole="button"
-            accessibilityLabel={'Ver descripción de ' + resource.title}
-            accessibilityState={{ expanded: expanded === resource.title }}
-            onPress={() => setExpanded(expanded === resource.title ? null : resource.title)}
-            style={styles.row}
-          >
-            <Feather
-              name={resource.type === 'Video' ? 'play' : 'file-text'}
-              size={26}
-              color={appTheme.colors.primary}
-            />
-            <View style={styles.copy}>
-              <Text style={styles.heading}>{resource.title}</Text>
-              <BodyText>
-                {resource.type} · {resource.duration}
-              </BodyText>
-            </View>
-            <Feather
-              name={expanded === resource.title ? 'chevron-up' : 'chevron-down'}
-              size={22}
-              color={appTheme.colors.text}
-            />
-          </Pressable>
-          {expanded === resource.title ? (
-            <View style={styles.stack}>
-              <BodyText>Descripción de muestra del recurso educativo.</BodyText>
-              <StatusPill>{resource.state}</StatusPill>
-              <VisualButton
-                label="Ver detalle"
-                secondary
-                onPress={() =>
-                  router.navigate(
-                    '/educacion/recurso?recurso=' + String(educationResources.indexOf(resource)),
-                  )
-                }
+      <BodyText>
+        Material de muestra neutro para demostración técnica del almacenamiento local.
+      </BodyText>
+      {resources.map((resource) => {
+        const isDownloaded = downloadedIds.has(resource.id);
+        return (
+          <InfoCard key={resource.id}>
+            <Pressable
+              accessibilityRole="button"
+              accessibilityLabel={'Ver descripción de ' + resource.title}
+              accessibilityState={{ expanded: expanded === resource.id }}
+              onPress={() => setExpanded(expanded === resource.id ? null : resource.id)}
+              style={styles.row}
+            >
+              <Feather
+                name={resource.type === 'Video' ? 'play' : 'file-text'}
+                size={26}
+                color={appTheme.colors.primary}
               />
-            </View>
-          ) : null}
-        </InfoCard>
-      ))}
+              <View style={styles.copy}>
+                <Text style={styles.heading}>{resource.title}</Text>
+                <BodyText>
+                  {resource.type} · {resource.duration}
+                </BodyText>
+              </View>
+              <Feather
+                name={expanded === resource.id ? 'chevron-up' : 'chevron-down'}
+                size={22}
+                color={appTheme.colors.text}
+              />
+            </Pressable>
+            {expanded === resource.id ? (
+              <View style={styles.stack}>
+                <BodyText>
+                  Descripción de muestra para demostración técnica de persistencia de archivos.
+                </BodyText>
+                <StatusPill>{isDownloaded ? 'Disponible sin conexión' : resource.state}</StatusPill>
+                <VisualButton
+                  label="Ver detalle"
+                  secondary
+                  onPress={() =>
+                    router.navigate('/educacion/recurso?recurso=' + encodeURIComponent(resource.id))
+                  }
+                />
+              </View>
+            ) : null}
+          </InfoCard>
+        );
+      })}
     </Screen>
   );
 }
+
 export function EducationResourceScreen() {
   const { theme: appTheme } = useAppTheme();
+  const { patientId, repository, runSave, saving } = useLocalData();
   const styles = useStyles();
   const { recurso } = useLocalSearchParams<{ recurso?: string }>();
-  const requestedIndex = Number(recurso);
   const resource =
-    educationResources[
-      Number.isInteger(requestedIndex) &&
-      requestedIndex >= 0 &&
-      requestedIndex < educationResources.length
-        ? requestedIndex
-        : 0
-    ];
+    educationResources.find((r) => r.id === recurso) ??
+    (Number.isInteger(Number(recurso)) ? educationResources[Number(recurso)] : null);
+
+  const loadDownload = useCallback(
+    () => (repository && resource ? repository.download(resource.id) : Promise.resolve(null)),
+    [repository, resource],
+  );
+  const { value: downloadRecord, refresh: refreshDownload } = useFocusedValue(
+    loadDownload,
+    null as DownloadRecord | null,
+  );
+
+  const [readingContent, setReadingContent] = useState<string | null>(null);
+  const [opError, setOpError] = useState<string | null>(null);
+  const [actionBusy, setActionBusy] = useState(false);
+
+  if (!resource) {
+    return (
+      <Screen title="Recurso no encontrado" backTo="/educacion">
+        <DemoBadge />
+        <EmptyState
+          icon="alert-circle"
+          title="Recurso no disponible"
+          description="No se encontró el recurso educativo solicitado."
+        />
+      </Screen>
+    );
+  }
+
+  const fileExists = patientId ? resourceFileExists(patientId, resource.id) : false;
+  const isDownloaded = downloadRecord?.estado === 'descargado' && fileExists;
+  const busy = actionBusy || saving;
+
+  async function handleSave() {
+    if (!repository || !patientId || !resource || busy) return;
+    setActionBusy(true);
+    setOpError(null);
+    try {
+      await runSave(async () => {
+        const filePath = await writeResourceFile(patientId, resource.id, resource.content);
+        try {
+          await repository.saveDownload({
+            contenido_id: resource.id,
+            ruta_local: filePath,
+          });
+        } catch (dbErr) {
+          await deleteResourceFile(patientId, resource.id).catch(() => undefined);
+          throw dbErr;
+        }
+      });
+      refreshDownload();
+    } catch {
+      setOpError('No se pudo guardar la copia sin conexión en el dispositivo.');
+    } finally {
+      setActionBusy(false);
+    }
+  }
+
+  async function handleDelete() {
+    if (!repository || !patientId || !resource || busy) return;
+    setActionBusy(true);
+    setOpError(null);
+    try {
+      await runSave(async () => {
+        await deleteResourceFile(patientId, resource.id).catch(() => undefined);
+        await repository.removeDownload(resource.id);
+      });
+      setReadingContent(null);
+      refreshDownload();
+    } catch {
+      setOpError('No se pudo eliminar la copia local.');
+    } finally {
+      setActionBusy(false);
+    }
+  }
+
+  async function handleRead() {
+    if (!patientId || !resource) return;
+    setOpError(null);
+    const content = await readResourceFile(patientId, resource.id);
+    if (content !== null) {
+      setReadingContent(content);
+      if (repository) {
+        await repository.markDownloadViewed(resource.id).catch(() => undefined);
+        refreshDownload();
+      }
+    } else {
+      setOpError('El archivo físico no se encuentra en el dispositivo.');
+    }
+  }
+
   return (
     <Screen title={resource.title} backTo="/educacion">
       <DemoBadge />
@@ -126,21 +238,55 @@ export function EducationResourceScreen() {
         <SectionTitle>
           {resource.type} · {resource.duration}
         </SectionTitle>
-        <StatusPill>{resource.state}</StatusPill>
+        <StatusPill>
+          {isDownloaded ? 'Disponible sin conexión' : 'Disponible para guardar'}
+        </StatusPill>
         <BodyText>
-          Descripción de ejemplo. El material final será revisado por el equipo correspondiente.
+          Material de muestra neutro para demostración técnica del almacenamiento local de archivos
+          en este dispositivo.
         </BodyText>
+        {downloadRecord?.visualizada ? (
+          <BodyText>Lectura local registrada en el dispositivo.</BodyText>
+        ) : null}
       </InfoCard>
-      <VisualButton
-        label={
-          resource.type === 'Video'
-            ? 'Reproducir · disponible más adelante'
-            : 'Abrir recurso · disponible más adelante'
-        }
-      />
+
+      {readingContent ? (
+        <InfoCard>
+          <SectionTitle>Contenido local del archivo</SectionTitle>
+          <BodyText>{readingContent}</BodyText>
+        </InfoCard>
+      ) : null}
+
+      {opError ? (
+        <Text accessibilityRole="alert" style={styles.errorText}>
+          {opError}
+        </Text>
+      ) : null}
+
+      {isDownloaded ? (
+        <>
+          <VisualButton
+            label={readingContent ? 'Cerrar lectura' : 'Leer recurso sin conexión'}
+            onPress={readingContent ? () => setReadingContent(null) : () => void handleRead()}
+          />
+          <VisualButton
+            label={busy ? 'Eliminando…' : 'Eliminar copia local'}
+            secondary
+            disabled={busy}
+            onPress={() => void handleDelete()}
+          />
+        </>
+      ) : (
+        <VisualButton
+          label={busy ? 'Guardando copia…' : 'Guardar copia sin conexión'}
+          disabled={busy || !repository}
+          onPress={() => void handleSave()}
+        />
+      )}
     </Screen>
   );
 }
+
 export function EducationStateScreen() {
   const { estado } = useLocalSearchParams<{ estado?: string }>();
   const state =
@@ -162,6 +308,7 @@ export function EducationStateScreen() {
     </Screen>
   );
 }
+
 function useStyles() {
   const { theme: appTheme } = useAppTheme();
   return StyleSheet.create({
@@ -184,5 +331,6 @@ function useStyles() {
       borderRadius: theme.radius.sm,
       backgroundColor: appTheme.colors.mutedSurface,
     },
+    errorText: { color: appTheme.colors.error, fontSize: 14, fontWeight: '600' },
   });
 }

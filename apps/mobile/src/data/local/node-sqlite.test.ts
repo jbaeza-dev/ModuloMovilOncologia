@@ -1,5 +1,13 @@
 import { DatabaseSync } from 'node:sqlite';
-import { mkdtempSync, rmSync } from 'node:fs';
+import {
+  existsSync,
+  mkdirSync,
+  mkdtempSync,
+  readFileSync,
+  rmSync,
+  unlinkSync,
+  writeFileSync,
+} from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { afterEach, describe, expect, it } from 'vitest';
@@ -7,6 +15,7 @@ import { afterEach, describe, expect, it } from 'vitest';
 import { migrateDatabase } from './migrations';
 import { REGISTROS_SQL } from './migrations/001_registros';
 import { CONTEXTO_SQL } from './migrations/002_contexto';
+import { DESCARGAS_SQL } from './migrations/003_descargas';
 import { createPatientRepository, seedPatientContextIfEmpty, sinceDays } from './repository';
 import type { SqlConnection, SqlValue } from './sql';
 import { InputError, parseSymptomDescription, parseVitalInput } from './validation';
@@ -88,7 +97,7 @@ describe('migraciones SQLite', () => {
     await migrateDatabase(second);
     expect(
       (await second.first<{ user_version: number }>('PRAGMA user_version'))?.user_version,
-    ).toBe(2);
+    ).toBe(3);
     expect(
       (await createPatientRepository(second, patientA, ids()).vitals('2026-01-01', 30, 0)).map(
         (row) => row.id,
@@ -96,8 +105,9 @@ describe('migraciones SQLite', () => {
     ).toEqual(['v1']);
   });
 
-  it('aplica migración incremental 1 -> 2 preservando registros previos', async () => {
+  it('aplica migración incremental 1 -> 2 -> 3 preservando registros previos', async () => {
     const database = open();
+    // Paso 1: Inicializar en versión 1 e insertar datos clínicos
     await migrateDatabase(database, [{ version: 1, sql: REGISTROS_SQL }]);
     expect(
       (await database.first<{ user_version: number }>('PRAGMA user_version'))?.user_version,
@@ -111,14 +121,42 @@ describe('migraciones SQLite', () => {
     await repo1.createVitals(validVitals);
     await repo1.createSymptom('Molestia previa');
 
-    await migrateDatabase(database);
+    // Paso 2: Migrar a versión 2 (contexto de paciente)
+    await migrateDatabase(database, [
+      { version: 1, sql: REGISTROS_SQL },
+      { version: 2, sql: CONTEXTO_SQL },
+    ]);
     expect(
       (await database.first<{ user_version: number }>('PRAGMA user_version'))?.user_version,
     ).toBe(2);
 
-    const repo2 = createPatientRepository(database, patientA, ids());
-    expect(await repo2.vitals('2026-01-01')).toHaveLength(1);
-    expect(await repo2.symptoms()).toHaveLength(1);
+    await seedPatientContextIfEmpty(database, patientA, patientB);
+    const profileA = await repo1.profile();
+    expect(profileA?.nombre).toBe('Paciente A de Prueba');
+
+    // Paso 3: Migrar a versión 3 (descargas y recursos educativos)
+    await migrateDatabase(database, [
+      { version: 1, sql: REGISTROS_SQL },
+      { version: 2, sql: CONTEXTO_SQL },
+      { version: 3, sql: DESCARGAS_SQL },
+    ]);
+    expect(
+      (await database.first<{ user_version: number }>('PRAGMA user_version'))?.user_version,
+    ).toBe(3);
+
+    // Comprobar que registros previos de v1 y v2 se conservan íntegros
+    const repo3 = createPatientRepository(database, patientA, ids());
+    const vitalsList = await repo3.vitals('2026-01-01');
+    expect(vitalsList).toHaveLength(1);
+    expect(vitalsList[0].id).toBe('v1');
+    expect(vitalsList[0].estado_envio).toBe('pendiente');
+
+    const symptomsList = await repo3.symptoms();
+    expect(symptomsList).toHaveLength(1);
+    expect(symptomsList[0].descripcion).toBe('Molestia previa');
+    expect(symptomsList[0].estado_envio).toBe('pendiente');
+
+    expect((await repo3.profile())?.nombre).toBe('Paciente A de Prueba');
 
     expect(
       await database.first("SELECT name FROM sqlite_master WHERE name = 'paciente_cache'"),
@@ -131,11 +169,17 @@ describe('migraciones SQLite', () => {
         "SELECT name FROM sqlite_master WHERE name = 'codigo_vinculacion_cache'",
       ),
     ).not.toBeNull();
+    expect(
+      await database.first("SELECT name FROM sqlite_master WHERE name = 'descarga'"),
+    ).not.toBeNull();
   });
 
   it('revierte una migración fallida sin perder la versión anterior', async () => {
     const database = open();
-    await migrateDatabase(database);
+    await migrateDatabase(database, [
+      { version: 1, sql: REGISTROS_SQL },
+      { version: 2, sql: CONTEXTO_SQL },
+    ]);
     await createPatientRepository(database, patientA, ids('v1', 'q1'), () => measured).createVitals(
       validVitals,
     );
@@ -470,5 +514,193 @@ describe('contexto y perfil clínico offline', () => {
     expect(summaryB.total).toBe(0);
     expect(summaryB.avgTemperature).toBeNull();
     expect(summaryB.avgPulse).toBeNull();
+  });
+});
+
+describe('descargas y recursos educativos offline', () => {
+  it('hace cumplir las restricciones de CHECK y clave foránea en la tabla descarga', async () => {
+    const database = open();
+    await migrateDatabase(database);
+    await seedPatientContextIfEmpty(database, patientA, patientB);
+
+    // 1. Estado 'descargado' válido con ruta y fecha
+    await database.run(
+      `INSERT INTO descarga (paciente_id, contenido_id, ruta_local, estado, fecha_descarga)
+       VALUES (?, 'edu-valido', '/data/res.md', 'descargado', '2026-09-29T10:00:00Z')`,
+      [patientA],
+    );
+
+    // 2. Estado 'descargado' sin ruta_local debe fallar CHECK
+    await expect(
+      database.run(
+        `INSERT INTO descarga (paciente_id, contenido_id, ruta_local, estado, fecha_descarga)
+         VALUES (?, 'edu-sin-ruta', NULL, 'descargado', '2026-09-29T10:00:00Z')`,
+        [patientA],
+      ),
+    ).rejects.toThrow();
+
+    // 3. Estado 'descargado' sin fecha_descarga debe fallar CHECK
+    await expect(
+      database.run(
+        `INSERT INTO descarga (paciente_id, contenido_id, ruta_local, estado, fecha_descarga)
+         VALUES (?, 'edu-sin-fecha', '/data/res.md', 'descargado', NULL)`,
+        [patientA],
+      ),
+    ).rejects.toThrow();
+
+    // 4. Estados 'pendiente', 'descargando' y 'error' permiten ruta_local y fecha_descarga nulas
+    await database.run(
+      `INSERT INTO descarga (paciente_id, contenido_id, ruta_local, estado, fecha_descarga)
+       VALUES (?, 'edu-pendiente', NULL, 'pendiente', NULL)`,
+      [patientA],
+    );
+    await database.run(
+      `INSERT INTO descarga (paciente_id, contenido_id, ruta_local, estado, fecha_descarga)
+       VALUES (?, 'edu-descargando', NULL, 'descargando', NULL)`,
+      [patientA],
+    );
+    await database.run(
+      `INSERT INTO descarga (paciente_id, contenido_id, ruta_local, estado, fecha_descarga)
+       VALUES (?, 'edu-error', NULL, 'error', NULL)`,
+      [patientA],
+    );
+
+    // 5. Estado inválido debe fallar CHECK
+    await expect(
+      database.run(
+        `INSERT INTO descarga (paciente_id, contenido_id, ruta_local, estado, fecha_descarga)
+         VALUES (?, 'edu-invalido', '/data/res.md', 'completado', '2026-09-29T10:00:00Z')`,
+        [patientA],
+      ),
+    ).rejects.toThrow();
+
+    // 6. Paciente inexistente debe fallar restricción de clave foránea
+    await expect(
+      database.run(
+        `INSERT INTO descarga (paciente_id, contenido_id, ruta_local, estado, fecha_descarga)
+         VALUES ('paciente-fantasma', 'edu-1', '/data/res.md', 'descargado', '2026-09-29T10:00:00Z')`,
+      ),
+    ).rejects.toThrow(/FOREIGN KEY/i);
+
+    // PRAGMA foreign_key_check no debe reportar violaciones
+    expect(await database.all('PRAGMA foreign_key_check')).toHaveLength(0);
+  });
+
+  it('gestiona ciclo de vida de descarga, visualización y eliminación en el repositorio', async () => {
+    const database = open();
+    await migrateDatabase(database);
+    await seedPatientContextIfEmpty(database, patientA, patientB);
+
+    const repoA = createPatientRepository(database, patientA, ids());
+    expect(await repoA.download('edu-prep-sesion')).toBeNull();
+    expect(await repoA.downloads()).toHaveLength(0);
+
+    // Guardar descarga
+    await repoA.saveDownload({
+      contenido_id: 'edu-prep-sesion',
+      ruta_local: '/documentos/recursos_educativos/pacienteA/edu-prep-sesion.md',
+    });
+
+    const record = await repoA.download('edu-prep-sesion');
+    expect(record).not.toBeNull();
+    expect(record?.estado).toBe('descargado');
+    expect(record?.ruta_local).toContain('edu-prep-sesion.md');
+    expect(record?.visualizada).toBe(0);
+    expect(record?.visualizada_en).toBeNull();
+
+    // Marcar como visualizada
+    await repoA.markDownloadViewed('edu-prep-sesion');
+    const viewed = await repoA.download('edu-prep-sesion');
+    expect(viewed?.visualizada).toBe(1);
+    expect(viewed?.visualizada_en).toBeTruthy();
+
+    // Eliminar descarga
+    await repoA.removeDownload('edu-prep-sesion');
+    expect(await repoA.download('edu-prep-sesion')).toBeNull();
+    expect(await repoA.downloads()).toHaveLength(0);
+  });
+
+  it('garantiza aislamiento A/B tanto en SQLite como a nivel de ruta física por paciente', async () => {
+    const database = open();
+    await migrateDatabase(database);
+    await seedPatientContextIfEmpty(database, patientA, patientB);
+
+    const repoA = createPatientRepository(database, patientA, ids());
+    const repoB = createPatientRepository(database, patientB, ids());
+
+    // Directorio temporal emulando Paths.document/recursos_educativos/{paciente_id}
+    const tempBase = mkdtempSync(join(tmpdir(), 'quimiocare-fs-'));
+    temporary.push(tempBase);
+
+    const dirA = join(tempBase, 'recursos_educativos', patientA);
+    const dirB = join(tempBase, 'recursos_educativos', patientB);
+    mkdirSync(dirA, { recursive: true });
+    mkdirSync(dirB, { recursive: true });
+
+    const fileA = join(dirA, 'edu-compartido.md');
+    const fileB = join(dirB, 'edu-compartido.md');
+
+    // Ambos pacientes guardan el mismo recurso en sus respectivas rutas y base de datos
+    writeFileSync(fileA, 'Contenido Paciente A', 'utf8');
+    writeFileSync(fileB, 'Contenido Paciente B', 'utf8');
+
+    await repoA.saveDownload({ contenido_id: 'edu-compartido', ruta_local: fileA });
+    await repoB.saveDownload({ contenido_id: 'edu-compartido', ruta_local: fileB });
+
+    expect(await repoA.download('edu-compartido')).not.toBeNull();
+    expect(await repoB.download('edu-compartido')).not.toBeNull();
+
+    // Paciente A elimina su recurso físico y registro en SQLite
+    unlinkSync(fileA);
+    await repoA.removeDownload('edu-compartido');
+
+    // Paciente A ya no tiene el registro ni el archivo
+    expect(await repoA.download('edu-compartido')).toBeNull();
+    expect(existsSync(fileA)).toBe(false);
+
+    // Paciente B conserva íntegro su registro en SQLite y su archivo físico
+    const bRecord = await repoB.download('edu-compartido');
+    expect(bRecord).not.toBeNull();
+    expect(bRecord?.contenido_id).toBe('edu-compartido');
+    expect(existsSync(fileB)).toBe(true);
+    expect(readFileSync(fileB, 'utf8')).toBe('Contenido Paciente B');
+  });
+
+  it('permite que el seeder sea idempotente cuando el Paciente A ya existía previamente', async () => {
+    const database = open();
+    await migrateDatabase(database);
+
+    // Pre-insertar únicamente Paciente A (simulando estado existente de migración previa)
+    await database.run(
+      `INSERT INTO paciente_cache (paciente_id, nombre, email, rut, obtenido_en)
+       VALUES (?, 'Paciente A Preexistente', 'a.pre@test.com', '1-1', '2026-09-01T00:00:00Z')`,
+      [patientA],
+    );
+
+    // Ejecutar el seeder
+    await seedPatientContextIfEmpty(database, patientA, patientB);
+
+    // Paciente A conserva sus datos preexistentes (INSERT OR IGNORE no sobreescribe)
+    const repoA = createPatientRepository(database, patientA, ids());
+    const profileA = await repoA.profile();
+    expect(profileA?.nombre).toBe('Paciente A Preexistente');
+
+    // Paciente B fue insertado correctamente
+    const repoB = createPatientRepository(database, patientB, ids());
+    const profileB = await repoB.profile();
+    expect(profileB?.nombre).toBe('Paciente B de Prueba');
+
+    // Segunda ejecución del seeder no duplica ni falla
+    await seedPatientContextIfEmpty(database, patientA, patientB);
+    const countA = await database.first<{ total: number }>(
+      'SELECT count(*) as total FROM paciente_cache WHERE paciente_id = ?',
+      [patientA],
+    );
+    const countB = await database.first<{ total: number }>(
+      'SELECT count(*) as total FROM paciente_cache WHERE paciente_id = ?',
+      [patientB],
+    );
+    expect(countA?.total).toBe(1);
+    expect(countB?.total).toBe(1);
   });
 });
