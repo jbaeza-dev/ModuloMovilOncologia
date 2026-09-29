@@ -31,7 +31,12 @@ export function ReportsScreen() {
         : Promise.resolve({ total: 0, avgTemperature: null, avgPulse: null }),
     [repository, days],
   );
-  const { value: summary, loading } = useFocusedValue(load, {
+  const {
+    value: summary,
+    loading,
+    error,
+    refresh,
+  } = useFocusedValue(load, {
     total: 0,
     avgTemperature: null,
     avgPulse: null,
@@ -64,49 +69,66 @@ export function ReportsScreen() {
           />
         ))}
       </View>
-      <InfoCard>
-        <SectionTitle>Resumen de mediciones</SectionTitle>
-        <DetailRow label="Período" value={`${days} días`} />
-        <DetailRow label="Formato" value={format} />
-        <DetailRow
-          label="Registros guardados"
-          value={
-            loading
-              ? 'Calculando…'
-              : `${summary.total} ${summary.total === 1 ? 'registro' : 'registros'}`
-          }
-        />
-        {summary.avgTemperature !== null ? (
-          <DetailRow
-            label="Temperatura prom."
-            value={`${summary.avgTemperature.toLocaleString('es-CL')} °C`}
-          />
-        ) : null}
-        {summary.avgPulse !== null ? (
-          <DetailRow
-            label="Pulso prom."
-            value={`${summary.avgPulse.toLocaleString('es-CL')} lpm`}
-          />
-        ) : null}
-        <StatusPill>Almacenamiento local</StatusPill>
-      </InfoCard>
 
-      {summary.total === 0 ? (
-        <BodyText>
-          No hay mediciones registradas para este paciente en los últimos {days} días.
-        </BodyText>
-      ) : null}
+      {error ? (
+        <>
+          <EmptyState
+            icon="alert-circle"
+            title="Error al consultar mediciones"
+            description="No se pudieron cargar los datos de evolución clínica en este dispositivo."
+          />
+          <VisualButton label="Reintentar" secondary onPress={refresh} />
+        </>
+      ) : (
+        <>
+          <InfoCard>
+            <SectionTitle>Resumen de mediciones</SectionTitle>
+            <DetailRow label="Período" value={`${days} días`} />
+            <DetailRow label="Formato" value={format} />
+            <DetailRow
+              label="Registros guardados"
+              value={
+                loading
+                  ? 'Calculando…'
+                  : `${summary.total} ${summary.total === 1 ? 'registro' : 'registros'}`
+              }
+            />
+            {summary.avgTemperature !== null ? (
+              <DetailRow
+                label="Temperatura prom."
+                value={`${summary.avgTemperature.toLocaleString('es-CL')} °C`}
+              />
+            ) : null}
+            {summary.avgPulse !== null ? (
+              <DetailRow
+                label="Pulso prom."
+                value={`${summary.avgPulse.toLocaleString('es-CL')} lpm`}
+              />
+            ) : null}
+            <StatusPill>Almacenamiento local</StatusPill>
+          </InfoCard>
 
-      <VisualButton
-        label={summary.total > 0 ? 'Previsualizar estado del reporte' : 'Registrar signos vitales'}
-        onPress={() => {
-          if (summary.total > 0) {
-            router.navigate('/vitales/reporte-estado?estado=disponible');
-          } else {
-            router.navigate('/vitales/registrar');
-          }
-        }}
-      />
+          {!loading && summary.total === 0 ? (
+            <BodyText>
+              No hay mediciones registradas para este paciente en los últimos {days} días.
+            </BodyText>
+          ) : null}
+
+          <VisualButton
+            label={
+              summary.total > 0 ? 'Previsualizar estado del reporte' : 'Registrar signos vitales'
+            }
+            disabled={loading}
+            onPress={() => {
+              if (summary.total > 0) {
+                router.navigate('/vitales/reporte-estado?estado=disponible');
+              } else {
+                router.navigate('/vitales/registrar');
+              }
+            }}
+          />
+        </>
+      )}
     </Screen>
   );
 }

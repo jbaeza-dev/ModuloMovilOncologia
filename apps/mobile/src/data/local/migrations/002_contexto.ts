@@ -6,10 +6,6 @@ CREATE TABLE paciente_cache (
   nombre TEXT NOT NULL,
   email TEXT,
   rut TEXT,
-  telefono TEXT,
-  fecha_nacimiento TEXT,
-  ciudad TEXT,
-  activo INTEGER NOT NULL DEFAULT 1 CHECK (activo IN (0, 1)),
   obtenido_en TEXT NOT NULL
 );
 
@@ -18,15 +14,12 @@ CREATE TABLE tratamiento_cache (
   paciente_id TEXT NOT NULL,
   tipo TEXT NOT NULL CHECK (tipo = 'quimioterapia'),
   estado TEXT NOT NULL,
-  nombre TEXT NOT NULL,
-  equipo_tratante TEXT,
-  ciclo_actual INTEGER,
-  total_ciclos INTEGER,
+  nombre TEXT,
   parametros_json TEXT,
   fecha_inicio TEXT,
   fecha_termino TEXT,
   obtenido_en TEXT NOT NULL,
-  FOREIGN KEY (paciente_id) REFERENCES paciente_cache(paciente_id) ON DELETE CASCADE
+  FOREIGN KEY (paciente_id) REFERENCES paciente_cache(paciente_id)
 );
 
 CREATE INDEX idx_tratamiento_paciente_estado
@@ -39,6 +32,6 @@ CREATE TABLE codigo_vinculacion_cache (
   estado_conocido TEXT NOT NULL DEFAULT 'pendiente'
     CHECK (estado_conocido IN ('pendiente', 'usado', 'expirado')),
   obtenido_en TEXT NOT NULL,
-  FOREIGN KEY (paciente_id) REFERENCES paciente_cache(paciente_id) ON DELETE CASCADE
+  FOREIGN KEY (paciente_id) REFERENCES paciente_cache(paciente_id)
 );
 `;

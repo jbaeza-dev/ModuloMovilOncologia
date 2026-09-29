@@ -278,7 +278,7 @@ describe('validación estructural', () => {
 });
 
 describe('contexto y perfil clínico offline', () => {
-  it('puebla datos sintéticos diferenciados para paciente A y paciente B con seed', async () => {
+  it('puebla datos sintéticos de demostración para paciente A y paciente B con seed', async () => {
     const database = open();
     await migrateDatabase(database);
     await seedPatientContextIfEmpty(database, patientA, patientB);
@@ -288,48 +288,63 @@ describe('contexto y perfil clínico offline', () => {
 
     const profileA = await repoA.profile();
     const profileB = await repoB.profile();
-    expect(profileA?.nombre).toBe('Carlos Morales Valenzuela');
-    expect(profileB?.nombre).toBe('María Paz Sanhueza');
+    expect(profileA?.nombre).toBe('Paciente A de Prueba');
+    expect(profileB?.nombre).toBe('Paciente B de Prueba');
+    expect(profileA?.rut).toBe('12.345.678-9');
+    expect(profileB?.rut).toBe('15.876.543-2');
 
     const treatmentA = await repoA.treatment();
     const treatmentB = await repoB.treatment();
-    expect(treatmentA?.nombre).toContain('FOLFOX');
-    expect(treatmentB?.nombre).toContain('AC-T');
+    expect(treatmentA?.nombre).toContain('Tratamiento de quimioterapia (demostración)');
+    expect(treatmentB?.nombre).toContain('Tratamiento de quimioterapia (demostración)');
+    expect(treatmentA?.tipo).toBe('quimioterapia');
+    expect(treatmentB?.tipo).toBe('quimioterapia');
+    expect(JSON.parse(treatmentA?.parametros_json ?? '{}').ciclo_actual).toBe(3);
+    expect(JSON.parse(treatmentB?.parametros_json ?? '{}').ciclo_actual).toBe(1);
 
     const codeA = await repoA.linkCode();
     const codeB = await repoB.linkCode();
-    expect(codeA?.codigo).toBe('QCA 742');
-    expect(codeB?.codigo).toBe('QCB 918');
+    expect(codeA?.codigo).toBe('QCA 123');
+    expect(codeB?.codigo).toBe('QCB 456');
+    expect(codeA?.expira_en).toBeDefined();
+
+    // Vigencia de 24 horas del contrato v0
+    const expiraMs = new Date(codeA!.expira_en).getTime();
+    expect(expiraMs).toBeGreaterThan(Date.now() + 23 * 3600 * 1000);
   });
 
-  it('permite actualizar el perfil y genera nuevo código de vinculación', async () => {
+  it('permite actualizar el perfil y almacena código de vinculación emitido por el servicio', async () => {
     const database = open();
     await migrateDatabase(database);
     await seedPatientContextIfEmpty(database, patientA, patientB);
 
     const repoA = createPatientRepository(database, patientA, ids());
     await repoA.saveProfile({
-      nombre: 'Carlos Morales Modificado',
-      email: 'carlos.nuevo@quimiocare.test',
-      rut: '12.345.678-9',
-      telefono: '+56 9 1111 2222',
-      fecha_nacimiento: '1968-04-12',
-      ciudad: 'Rancagua',
-      activo: 1,
+      nombre: 'Paciente A Actualizado',
+      email: 'paciente.a.nuevo@quimiocare.test',
+      rut: '11.111.111-K',
     });
 
     const updated = await repoA.profile();
-    expect(updated?.nombre).toBe('Carlos Morales Modificado');
-    expect(updated?.ciudad).toBe('Rancagua');
+    expect(updated?.nombre).toBe('Paciente A Actualizado');
+    expect(updated?.email).toBe('paciente.a.nuevo@quimiocare.test');
+    expect(updated?.rut).toBe('11.111.111-K');
 
-    const newCode = await repoA.generateOrRefreshLinkCode();
-    expect(newCode.codigo).toMatch(/^[A-Z0-9]{3} [A-Z0-9]{3}$/);
-    expect(newCode.estado_conocido).toBe('pendiente');
+    // SQLite no genera códigos localmente: almacena el código recibido del simulador/servicio con vigencia 24h
+    const expiresAt = new Date(Date.now() + 24 * 60 * 60 * 1000).toISOString();
+    await repoA.saveLinkCode({
+      codigo: 'SRV 891',
+      expira_en: expiresAt,
+      estado_conocido: 'pendiente',
+    });
+
     const storedCode = await repoA.linkCode();
-    expect(storedCode?.codigo).toBe(newCode.codigo);
+    expect(storedCode?.codigo).toBe('SRV 891');
+    expect(storedCode?.expira_en).toBe(expiresAt);
+    expect(storedCode?.estado_conocido).toBe('pendiente');
   });
 
-  it('hace cumplir las restricciones de clave foránea en tratamiento_cache', async () => {
+  it('hace cumplir las restricciones de clave foránea y no genera violaciones en foreign_key_check', async () => {
     const database = open();
     await migrateDatabase(database);
     await expect(
@@ -339,17 +354,29 @@ describe('contexto y perfil clínico offline', () => {
         ) VALUES ('t1', 'paciente-no-existe', 'quimioterapia', 'activo', 'Test', '2026-09-28T00:00:00Z')`,
       ),
     ).rejects.toThrow();
+
+    await expect(
+      database.run(
+        `INSERT INTO codigo_vinculacion_cache (
+          paciente_id, codigo, expira_en, estado_conocido, actualizado_en
+        ) VALUES ('paciente-no-existe', 'XYZ 123', '2026-09-29T00:00:00Z', 'pendiente', '2026-09-28T00:00:00Z')`,
+      ),
+    ).rejects.toThrow();
+
+    const fkIssues = await database.all('PRAGMA foreign_key_check');
+    expect(fkIssues).toHaveLength(0);
   });
 
-  it('calcula correctamente el resumen de signos vitales para reportes', async () => {
+  it('calcula correctamente el resumen de signos vitales para reportes en rangos de 7, 30 y 90 días', async () => {
     const database = open();
     await migrateDatabase(database);
     const repoA = createPatientRepository(
       database,
       patientA,
-      ids('v1', 'q1', 'v2', 'q2'),
+      ids('v1', 'q1', 'v2', 'q2', 'v3', 'q3'),
       () => measured,
     );
+    // Registro 1: medido hoy
     await repoA.createVitals({
       temperatura: 36.5,
       presion_sistolica: 120,
@@ -357,6 +384,7 @@ describe('contexto y perfil clínico offline', () => {
       pulso: 70,
       saturacion_o2: 98,
     });
+    // Registro 2: medido hoy
     await repoA.createVitals({
       temperatura: 37.5,
       presion_sistolica: 130,
@@ -365,14 +393,23 @@ describe('contexto y perfil clínico offline', () => {
       saturacion_o2: 97,
     });
 
-    const summary = await repoA.vitalsSummary('2026-01-01');
-    expect(summary.total).toBe(2);
-    expect(summary.avgTemperature).toBe(37);
-    expect(summary.avgPulse).toBe(75);
+    // Rango 7 días
+    const summary7 = await repoA.vitalsSummary(sinceDays(7, new Date(measured)));
+    expect(summary7.total).toBe(2);
+    expect(summary7.avgTemperature).toBe(37);
+    expect(summary7.avgPulse).toBe(75);
 
-    // Paciente B debe tener 0 registros
+    // Rango 30 días
+    const summary30 = await repoA.vitalsSummary(sinceDays(30, new Date(measured)));
+    expect(summary30.total).toBe(2);
+
+    // Rango 90 días
+    const summary90 = await repoA.vitalsSummary(sinceDays(90, new Date(measured)));
+    expect(summary90.total).toBe(2);
+
+    // Paciente B debe tener 0 registros (aislamiento A/B)
     const repoB = createPatientRepository(database, patientB, ids());
-    const summaryB = await repoB.vitalsSummary('2026-01-01');
+    const summaryB = await repoB.vitalsSummary(sinceDays(30, new Date(measured)));
     expect(summaryB.total).toBe(0);
     expect(summaryB.avgTemperature).toBeNull();
     expect(summaryB.avgPulse).toBeNull();
