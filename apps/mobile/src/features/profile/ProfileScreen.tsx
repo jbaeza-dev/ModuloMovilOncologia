@@ -1,6 +1,5 @@
 import Feather from '@expo/vector-icons/Feather';
-import { useLocalSearchParams } from 'expo-router';
-import { useState } from 'react';
+import { useCallback, useState } from 'react';
 import { Pressable, StyleSheet, Text, View } from 'react-native';
 
 import { NavigationCard } from '../../components/NavigationCard';
@@ -9,38 +8,53 @@ import {
   BodyText,
   DemoBadge,
   DetailRow,
-  EmptyState,
   InfoCard,
   SectionTitle,
   StatusPill,
+  VisualButton,
 } from '../../components/Visual';
+import {
+  formatDate,
+  type LinkCodeRecord,
+  type PatientProfileRecord,
+  type TreatmentRecord,
+} from '../../data/local/repository';
+import { useFocusedValue } from '../../data/local/use-local-query';
+import { useLocalData } from '../../providers/LocalDataProvider';
 import { useAppTheme } from '../../providers/ThemeProvider';
 import { PALETTE_OPTIONS, theme } from '../../theme';
 
 export function ProfileScreen() {
   const styles = useStyles();
+  const { repository } = useLocalData();
+  const load = useCallback(
+    () => (repository ? repository.profile() : Promise.resolve(null)),
+    [repository],
+  );
+  const { value: profile } = useFocusedValue(load, null as PatientProfileRecord | null);
+
   return (
     <Screen title="Mi perfil" backTo="/">
-      <DemoBadge />
       <InfoCard>
-        <Text style={styles.heading}>Paciente de ejemplo</Text>
-        <BodyText>paciente.ejemplo@quimiocare.test</BodyText>
+        <Text style={styles.heading}>{profile?.nombre ?? 'Paciente en tratamiento'}</Text>
+        <BodyText>{profile?.email ?? 'paciente@quimiocare.test'}</BodyText>
+        <StatusPill>Datos locales SQLite</StatusPill>
       </InfoCard>
       <NavigationCard
         title="Datos personales"
-        description="Información de consulta."
+        description="Información y antecedentes del paciente."
         icon="user"
         href="/perfil/datos"
       />
       <NavigationCard
         title="Perfil clínico"
-        description="Información de quimioterapia."
+        description="Información de quimioterapia y equipo médico."
         icon="file-text"
         href="/perfil/clinico"
       />
       <NavigationCard
         title="Código de vinculación"
-        description="Vista para compartir con el equipo de salud."
+        description="Código para compartir con tu equipo de salud."
         icon="link"
         href="/perfil/vinculacion"
       />
@@ -52,7 +66,7 @@ export function ProfileScreen() {
       />
       <NavigationCard
         title="Preferencias"
-        description="Presentación de avisos y cuenta."
+        description="Presentación de avisos y apariencia."
         icon="settings"
         href="/perfil/preferencias"
       />
@@ -61,109 +75,178 @@ export function ProfileScreen() {
 }
 
 export function PersonalDataScreen() {
+  const { repository } = useLocalData();
+  const load = useCallback(
+    () => (repository ? repository.profile() : Promise.resolve(null)),
+    [repository],
+  );
+  const { value: profile, loading } = useFocusedValue(load, null as PatientProfileRecord | null);
+
   return (
     <Screen title="Datos personales" backTo="/perfil">
-      <DemoBadge />
       <InfoCard>
-        <DetailRow label="Nombre" value="Paciente" />
-        <DetailRow label="Apellido" value="Ejemplo" />
-        <DetailRow label="Correo" value="paciente.ejemplo@quimiocare.test" />
-        <DetailRow label="Teléfono" value="+56 9 0000 0000" />
-        <DetailRow label="Fecha de nacimiento" value="01/01/1990" />
+        <DetailRow
+          label="Nombre"
+          value={profile?.nombre ?? (loading ? 'Cargando…' : 'Sin registro')}
+        />
+        <DetailRow label="RUT" value={profile?.rut ?? (loading ? 'Cargando…' : 'Sin registro')} />
+        <DetailRow
+          label="Correo"
+          value={profile?.email ?? (loading ? 'Cargando…' : 'Sin registro')}
+        />
+        <DetailRow
+          label="Teléfono"
+          value={profile?.telefono ?? (loading ? 'Cargando…' : 'Sin registro')}
+        />
+        <DetailRow
+          label="Fecha de nacimiento"
+          value={profile?.fecha_nacimiento ?? (loading ? 'Cargando…' : 'Sin registro')}
+        />
+        <DetailRow
+          label="Ciudad"
+          value={profile?.ciudad ?? (loading ? 'Cargando…' : 'Sin registro')}
+        />
       </InfoCard>
       <BodyText>
-        Datos ficticios de presentación. La edición de la información personal no forma parte de
-        este prototipo.
+        Datos sintéticos almacenados localmente en SQLite para consulta offline sin depender de
+        conexión.
       </BodyText>
     </Screen>
   );
 }
 
-const clinicalSections = [
-  {
-    title: 'Información personal',
-    rows: [
-      ['Sexo', 'Dato de ejemplo'],
-      ['Ciudad', 'Ciudad de ejemplo'],
-    ],
-  },
-  { title: 'Antecedentes médicos', rows: [['Antecedentes', 'Información de ejemplo']] },
-  { title: 'Tratamiento farmacológico', rows: [['Tratamiento', 'Consulta de ejemplo']] },
-  { title: 'Estilo de vida', rows: [['Información', 'Disponible en una etapa posterior']] },
-] as const;
-
 export function ClinicalProfileScreen() {
   const styles = useStyles();
   const { theme: appTheme } = useAppTheme();
-  const [open, setOpen] = useState<string | null>('Información personal');
+  const { repository } = useLocalData();
+  const load = useCallback(
+    () => (repository ? repository.treatment() : Promise.resolve(null)),
+    [repository],
+  );
+  const { value: treatment, loading } = useFocusedValue(load, null as TreatmentRecord | null);
+  const [open, setOpen] = useState<string | null>('Detalle farmacológico');
+
+  const params = treatment?.parametros_json
+    ? (JSON.parse(treatment.parametros_json) as {
+        drogas?: string[];
+        frecuencia?: string;
+        observaciones?: string;
+      })
+    : null;
+
   return (
     <Screen title="Perfil clínico" backTo="/perfil">
-      <DemoBadge />
       <InfoCard>
         <SectionTitle>Tratamiento de quimioterapia</SectionTitle>
-        <DetailRow label="Equipo tratante" value="Centro de ejemplo" />
-        <DetailRow label="Inicio" value="Fecha de ejemplo" />
+        <DetailRow
+          label="Esquema"
+          value={treatment?.nombre ?? (loading ? 'Cargando…' : 'Sin tratamiento asignado')}
+        />
+        <DetailRow
+          label="Equipo tratante"
+          value={treatment?.equipo_tratante ?? (loading ? 'Cargando…' : 'Sin asignar')}
+        />
+        <DetailRow
+          label="Ciclo actual"
+          value={
+            treatment?.ciclo_actual != null && treatment?.total_ciclos != null
+              ? `Ciclo ${treatment.ciclo_actual} de ${treatment.total_ciclos}`
+              : 'En curso'
+          }
+        />
+        <DetailRow label="Inicio" value={treatment?.fecha_inicio ?? 'Sin fecha'} />
+        <DetailRow label="Término estimado" value={treatment?.fecha_termino ?? 'En evaluación'} />
+        <DetailRow label="Estado" value={treatment?.estado ?? 'activo'} />
       </InfoCard>
-      {clinicalSections.map((section) => (
-        <InfoCard key={section.title}>
+
+      {params ? (
+        <InfoCard>
           <Pressable
             accessibilityRole="button"
-            accessibilityLabel={section.title}
-            accessibilityState={{ expanded: open === section.title }}
-            onPress={() => setOpen(open === section.title ? null : section.title)}
+            accessibilityLabel="Detalle farmacológico"
+            accessibilityState={{ expanded: open === 'Detalle farmacológico' }}
+            onPress={() =>
+              setOpen(open === 'Detalle farmacológico' ? null : 'Detalle farmacológico')
+            }
             style={styles.disclosure}
           >
-            <Text style={styles.heading}>{section.title}</Text>
+            <Text style={styles.heading}>Detalle farmacológico</Text>
             <Feather
-              name={open === section.title ? 'chevron-up' : 'chevron-down'}
+              name={open === 'Detalle farmacológico' ? 'chevron-up' : 'chevron-down'}
               size={22}
               color={appTheme.colors.text}
             />
           </Pressable>
-          {open === section.title
-            ? section.rows.map(([label, value]) => (
-                <DetailRow key={label} label={label} value={value} />
-              ))
-            : null}
+          {open === 'Detalle farmacológico' ? (
+            <>
+              {params.drogas ? (
+                <DetailRow label="Fármacos" value={params.drogas.join(', ')} />
+              ) : null}
+              {params.frecuencia ? (
+                <DetailRow label="Frecuencia" value={params.frecuencia} />
+              ) : null}
+              {params.observaciones ? (
+                <DetailRow label="Monitoreo" value={params.observaciones} />
+              ) : null}
+            </>
+          ) : null}
         </InfoCard>
-      ))}
+      ) : null}
+
+      <BodyText>
+        Información de tratamiento guardada en SQLite propio. No realiza evaluación clínica
+        automática.
+      </BodyText>
     </Screen>
   );
 }
 
 export function LinkCodeScreen() {
   const styles = useStyles();
-  const { estado } = useLocalSearchParams<{ estado?: string }>();
-  const view = estado === 'vinculado' || estado === 'sin-codigo' ? estado : 'codigo';
+  const { repository, runSave, saving } = useLocalData();
+  const load = useCallback(
+    () => (repository ? repository.linkCode() : Promise.resolve(null)),
+    [repository],
+  );
+  const {
+    value: linkCode,
+    loading,
+    refresh,
+  } = useFocusedValue(load, null as LinkCodeRecord | null);
+
+  const [generating, setGenerating] = useState(false);
+  const busy = generating || saving;
+
+  async function handleRefreshCode() {
+    if (busy || !repository) return;
+    setGenerating(true);
+    try {
+      await runSave(() => repository.generateOrRefreshLinkCode());
+      refresh();
+    } finally {
+      setGenerating(false);
+    }
+  }
+
   return (
     <Screen title="Código de vinculación" backTo="/perfil">
-      <DemoBadge />
-      {view === 'sin-codigo' ? (
-        <EmptyState
-          icon="link-2"
-          title="Código no disponible"
-          description="Cuando el servicio de vinculación esté conectado, el estado aparecerá aquí."
+      <InfoCard>
+        <SectionTitle>Comparte este código</SectionTitle>
+        <Text style={styles.code}>{linkCode?.codigo ?? (loading ? '…' : '--- ---')}</Text>
+        <StatusPill>
+          {linkCode ? `Válido hasta ${formatDate(linkCode.expira_en)}` : 'Sin código'}
+        </StatusPill>
+        <BodyText>
+          Compártelo únicamente con tu equipo de salud. Este código se guarda en este dispositivo en
+          SQLite para consulta sin conexión.
+        </BodyText>
+        <VisualButton
+          label={busy ? 'Generando…' : 'Generar nuevo código'}
+          secondary
+          disabled={busy || !repository}
+          onPress={() => void handleRefreshCode()}
         />
-      ) : view === 'vinculado' ? (
-        <InfoCard>
-          <SectionTitle>Vínculo establecido</SectionTitle>
-          <StatusPill>Ejemplo visual</StatusPill>
-          <BodyText>
-            Esta vista muestra cómo se presentaría un vínculo confirmado por el servicio
-            correspondiente.
-          </BodyText>
-        </InfoCard>
-      ) : (
-        <InfoCard>
-          <SectionTitle>Comparte este código</SectionTitle>
-          <Text style={styles.code}>ABC 123</Text>
-          <StatusPill>Código ficticio</StatusPill>
-          <BodyText>
-            Compártelo únicamente con tu equipo de salud. Esta vista no genera ni copia códigos
-            reales.
-          </BodyText>
-        </InfoCard>
-      )}
+      </InfoCard>
     </Screen>
   );
 }

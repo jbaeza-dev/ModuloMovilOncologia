@@ -1,5 +1,5 @@
 import { router, useLocalSearchParams } from 'expo-router';
-import { useState } from 'react';
+import { useCallback, useState } from 'react';
 import { StyleSheet, View } from 'react-native';
 
 import { Screen } from '../../components/Screen';
@@ -14,23 +14,42 @@ import {
   StatusPill,
   VisualButton,
 } from '../../components/Visual';
+import { sinceDays, type VitalsSummary } from '../../data/local/repository';
+import { useFocusedValue } from '../../data/local/use-local-query';
+import { useLocalData } from '../../providers/LocalDataProvider';
 import { theme } from '../../theme';
 
 export function ReportsScreen() {
-  const [period, setPeriod] = useState('30 días');
+  const [days, setDays] = useState<7 | 30 | 90>(30);
   const [format, setFormat] = useState('PDF');
+  const { repository } = useLocalData();
+
+  const load = useCallback(
+    () =>
+      repository
+        ? repository.vitalsSummary(sinceDays(days))
+        : Promise.resolve({ total: 0, avgTemperature: null, avgPulse: null }),
+    [repository, days],
+  );
+  const { value: summary, loading } = useFocusedValue(load, {
+    total: 0,
+    avgTemperature: null,
+    avgPulse: null,
+  } as VitalsSummary);
+
   return (
     <Screen title="Reportes" backTo="/vitales">
-      <DemoBadge />
-      <BodyText>Previsualización del flujo de exportación. No se crean archivos.</BodyText>
+      <BodyText>
+        Resumen de evolución clínica generado a partir de registros en este dispositivo.
+      </BodyText>
       <SectionTitle>Período</SectionTitle>
       <View style={styles.chips}>
-        {['7 días', '30 días', '90 días'].map((item) => (
+        {([7, 30, 90] as const).map((item) => (
           <ChoiceChip
             key={item}
-            label={item}
-            selected={period === item}
-            onPress={() => setPeriod(item)}
+            label={`${item} días`}
+            selected={days === item}
+            onPress={() => setDays(item)}
           />
         ))}
       </View>
@@ -46,12 +65,48 @@ export function ReportsScreen() {
         ))}
       </View>
       <InfoCard>
-        <SectionTitle>Resumen de ejemplo</SectionTitle>
-        <DetailRow label="Período" value={period} />
+        <SectionTitle>Resumen de mediciones</SectionTitle>
+        <DetailRow label="Período" value={`${days} días`} />
         <DetailRow label="Formato" value={format} />
-        <DetailRow label="Registros" value="4 ficticios" />
+        <DetailRow
+          label="Registros en SQLite"
+          value={
+            loading
+              ? 'Calculando…'
+              : `${summary.total} ${summary.total === 1 ? 'registro' : 'registros'}`
+          }
+        />
+        {summary.avgTemperature !== null ? (
+          <DetailRow
+            label="Temperatura prom."
+            value={`${summary.avgTemperature.toLocaleString('es-CL')} °C`}
+          />
+        ) : null}
+        {summary.avgPulse !== null ? (
+          <DetailRow
+            label="Pulso prom."
+            value={`${summary.avgPulse.toLocaleString('es-CL')} lpm`}
+          />
+        ) : null}
+        <StatusPill>Almacenamiento local SQLite</StatusPill>
       </InfoCard>
-      <VisualButton label="Generar reporte · disponible más adelante" />
+
+      {summary.total === 0 ? (
+        <BodyText>
+          No hay mediciones registradas para este paciente en los últimos {days} días.
+        </BodyText>
+      ) : null}
+
+      <VisualButton
+        label={summary.total > 0 ? 'Previsualizar estado del reporte' : 'Registrar signos vitales'}
+        onPress={() => {
+          if (summary.total > 0) {
+            router.navigate('/vitales/reporte-estado?estado=disponible');
+          } else {
+            router.navigate('/vitales/registrar');
+          }
+        }}
+      />
     </Screen>
   );
 }

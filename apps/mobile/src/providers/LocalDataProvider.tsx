@@ -15,7 +15,7 @@ import { Screen } from '../components/Screen';
 import { BodyText, InfoCard, VisualButton } from '../components/Visual';
 import { createExpoConnection } from '../data/local/expo-connection';
 import { migrateDatabase } from '../data/local/migrations';
-import { createPatientRepository } from '../data/local/repository';
+import { createPatientRepository, seedPatientContextIfEmpty } from '../data/local/repository';
 import type { SqlConnection } from '../data/local/sql';
 
 export const DEMO_PATIENTS = [
@@ -50,6 +50,9 @@ export function LocalDataProvider({ children }: { children: ReactNode }) {
         native = await SQLite.openDatabaseAsync('quimiocare_local.db');
         const connection = createExpoConnection(native);
         await migrateDatabase(connection);
+        if (__DEV__) {
+          await seedPatientContextIfEmpty(connection, DEMO_PATIENTS[0].id, DEMO_PATIENTS[1].id);
+        }
         if (active) setDatabase(connection);
         else await native.closeAsync();
       } catch (failure) {
