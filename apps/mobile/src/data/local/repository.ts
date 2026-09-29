@@ -214,7 +214,7 @@ export function createPatientRepository(
 
     treatment() {
       return database.first<TreatmentRecord>(
-        'SELECT * FROM tratamiento_cache WHERE paciente_id = ? ORDER BY obtenido_en DESC LIMIT 1',
+        "SELECT * FROM tratamiento_cache WHERE paciente_id = ? AND estado = 'activo' ORDER BY obtenido_en DESC LIMIT 1",
         [patientId],
       );
     },
@@ -231,6 +231,7 @@ export function createPatientRepository(
       expira_en: string;
       estado_conocido?: 'pendiente' | 'usado' | 'expirado';
     }): Promise<void> {
+      const canonicalCode = data.codigo.replace(/\s+/g, '').toUpperCase();
       const timestamp = now();
       await database.run(
         `INSERT INTO codigo_vinculacion_cache (
@@ -241,7 +242,7 @@ export function createPatientRepository(
           expira_en = excluded.expira_en,
           estado_conocido = excluded.estado_conocido,
           obtenido_en = excluded.obtenido_en`,
-        [patientId, data.codigo, data.expira_en, data.estado_conocido ?? 'pendiente', timestamp],
+        [patientId, canonicalCode, data.expira_en, data.estado_conocido ?? 'pendiente', timestamp],
       );
     },
 
@@ -277,7 +278,6 @@ export async function seedPatientContextIfEmpty(
   if ((existing?.total ?? 0) > 0) return;
 
   const timestamp = now();
-  const expiresAt = new Date(Date.now() + 24 * 60 * 60 * 1000).toISOString();
   await database.transaction(async (tx) => {
     // Paciente A (demostración)
     await tx.run(
@@ -303,12 +303,6 @@ export async function seedPatientContextIfEmpty(
         '2027-02-01',
         timestamp,
       ],
-    );
-    await tx.run(
-      `INSERT INTO codigo_vinculacion_cache (
-        paciente_id, codigo, expira_en, estado_conocido, obtenido_en
-      ) VALUES (?, 'QCA 123', ?, 'pendiente', ?)`,
-      [patientAId, expiresAt, timestamp],
     );
 
     // Paciente B (demostración)
@@ -336,12 +330,6 @@ export async function seedPatientContextIfEmpty(
         timestamp,
       ],
     );
-    await tx.run(
-      `INSERT INTO codigo_vinculacion_cache (
-        paciente_id, codigo, expira_en, estado_conocido, obtenido_en
-      ) VALUES (?, 'QCB 456', ?, 'pendiente', ?)`,
-      [patientBId, expiresAt, timestamp],
-    );
   });
 }
 
@@ -355,4 +343,12 @@ export function formatDate(iso: string): string {
 
 export function formatVital(value: number | null, unit: string): string {
   return value === null ? 'Sin registro' : `${value.toLocaleString('es-CL')} ${unit}`;
+}
+
+export function formatLinkCode(code: string): string {
+  const clean = code.replace(/\s+/g, '').toUpperCase();
+  if (clean.length === 6) {
+    return `${clean.slice(0, 3)} ${clean.slice(3)}`;
+  }
+  return clean;
 }

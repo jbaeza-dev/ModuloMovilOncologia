@@ -16,6 +16,7 @@ import {
 } from '../../components/Visual';
 import {
   formatDate,
+  formatLinkCode,
   type LinkCodeRecord,
   type PatientProfileRecord,
   type TreatmentRecord,
@@ -157,13 +158,23 @@ export function ClinicalProfileScreen() {
   } = useFocusedValue(load, null as TreatmentRecord | null);
   const [open, setOpen] = useState<string | null>('Parámetros de tratamiento');
 
-  const params = treatment?.parametros_json
-    ? (JSON.parse(treatment.parametros_json) as {
+  let params: {
+    ciclo_actual?: number;
+    total_ciclos?: number;
+    observaciones?: string;
+  } | null = null;
+
+  if (treatment?.parametros_json) {
+    try {
+      params = JSON.parse(treatment.parametros_json) as {
         ciclo_actual?: number;
         total_ciclos?: number;
         observaciones?: string;
-      })
-    : null;
+      };
+    } catch {
+      params = null;
+    }
+  }
 
   return (
     <Screen title="Perfil clínico" backTo="/perfil">
@@ -250,6 +261,8 @@ export function LinkCodeScreen() {
   } = useFocusedValue(load, null as LinkCodeRecord | null);
 
   const isExpired = linkCode ? new Date(linkCode.expira_en).getTime() <= Date.now() : false;
+  const isPending = linkCode?.estado_conocido === 'pendiente';
+  const isValid = Boolean(linkCode && !isExpired && isPending);
 
   return (
     <Screen title="Código de vinculación" backTo="/perfil">
@@ -262,16 +275,29 @@ export function LinkCodeScreen() {
           <BodyText>No se pudo consultar el código de vinculación.</BodyText>
           <VisualButton label="Reintentar" onPress={refresh} />
         </InfoCard>
-      ) : !linkCode || isExpired ? (
+      ) : !linkCode ? (
         <EmptyState
           icon="link-2"
           title="Código no disponible"
           description="Cuando el servicio de vinculación esté conectado, el código emitido por el equipo de salud aparecerá aquí. La aplicación no genera códigos sin conexión."
         />
+      ) : !isValid ? (
+        <InfoCard>
+          <SectionTitle>Código no vigente</SectionTitle>
+          <Text style={styles.code}>{formatLinkCode(linkCode.codigo)}</Text>
+          <StatusPill>
+            {linkCode.estado_conocido === 'usado' ? 'Código ya utilizado' : 'Código expirado'}
+          </StatusPill>
+          <BodyText>
+            {linkCode.estado_conocido === 'usado'
+              ? 'Este código ya fue utilizado para vincular tu dispositivo con el equipo tratante.'
+              : `Este código venció el ${formatDate(linkCode.expira_en)}. Solicita uno nuevo cuando cuentes con conexión.`}
+          </BodyText>
+        </InfoCard>
       ) : (
         <InfoCard>
           <SectionTitle>Comparte este código</SectionTitle>
-          <Text style={styles.code}>{linkCode.codigo}</Text>
+          <Text style={styles.code}>{formatLinkCode(linkCode.codigo)}</Text>
           <StatusPill>Válido hasta {formatDate(linkCode.expira_en)}</StatusPill>
           <BodyText>
             Compártelo únicamente con tu equipo de salud. Este código se conserva en este
