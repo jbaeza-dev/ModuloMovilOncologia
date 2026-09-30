@@ -17,6 +17,7 @@ import { createExpoConnection } from '../data/local/expo-connection';
 import { migrateDatabase } from '../data/local/migrations';
 import { createPatientRepository, seedPatientContextIfEmpty } from '../data/local/repository';
 import type { SqlConnection } from '../data/local/sql';
+import { isDemoMode } from '../utils/environment';
 
 export const DEMO_PATIENTS = [
   { id: '11111111-1111-4111-8111-111111111111', label: 'Paciente de prueba A' },
@@ -50,7 +51,7 @@ export function LocalDataProvider({ children }: { children: ReactNode }) {
         native = await SQLite.openDatabaseAsync('quimiocare_local.db');
         const connection = createExpoConnection(native);
         await migrateDatabase(connection);
-        if (__DEV__) {
+        if (isDemoMode()) {
           await seedPatientContextIfEmpty(connection, DEMO_PATIENTS[0].id, DEMO_PATIENTS[1].id);
         }
         if (active) setDatabase(connection);
@@ -123,7 +124,7 @@ export function LocalDataProvider({ children }: { children: ReactNode }) {
 
   return (
     <DataContext.Provider value={context}>
-      {__DEV__ && !patientId ? (
+      {isDemoMode() && !patientId ? (
         <Screen title="Selecciona un paciente de prueba">
           <InfoCard>
             <Text>Solo se utilizarán datos sintéticos guardados en este dispositivo.</Text>

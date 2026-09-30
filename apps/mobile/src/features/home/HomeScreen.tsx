@@ -16,6 +16,7 @@ import { useFocusedValue } from '../../data/local/use-local-query';
 import { DEMO_PATIENTS, useLocalData } from '../../providers/LocalDataProvider';
 import { useAppTheme } from '../../providers/ThemeProvider';
 import { theme } from '../../theme';
+import { isDemoMode } from '../../utils/environment';
 
 export function HomeScreen() {
   const { theme: appTheme } = useAppTheme();
@@ -40,7 +41,7 @@ export function HomeScreen() {
         </Text>
         <Text style={styles.description}>Un espacio para tu seguimiento y cuidado diario.</Text>
       </View>
-      {__DEV__ ? (
+      {isDemoMode() ? (
         <InfoCard>
           <BodyText>
             Datos sintéticos · {DEMO_PATIENTS.find((patient) => patient.id === patientId)?.label}
