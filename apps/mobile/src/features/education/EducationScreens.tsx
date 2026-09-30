@@ -66,7 +66,11 @@ export function EducationCategoryScreen() {
     () => (repository ? repository.downloads() : Promise.resolve([])),
     [repository],
   );
-  const { items: downloads } = useFocusedList(loadDownloads);
+  const {
+    items: downloads,
+    loading: loadingDownloads,
+    error: downloadsError,
+  } = useFocusedList(loadDownloads);
   const downloadedIds = new Set(
     downloads.filter((d) => d.estado === 'descargado').map((d) => d.contenido_id),
   );
@@ -112,7 +116,15 @@ export function EducationCategoryScreen() {
                 <BodyText>
                   Descripción de muestra para demostración técnica de persistencia de archivos.
                 </BodyText>
-                <StatusPill>{isDownloaded ? 'Disponible sin conexión' : resource.state}</StatusPill>
+                <StatusPill>
+                  {loadingDownloads
+                    ? 'Comprobando…'
+                    : downloadsError
+                      ? 'Estado no disponible'
+                      : isDownloaded
+                        ? 'Disponible sin conexión'
+                        : resource.state}
+                </StatusPill>
                 <VisualButton
                   label="Ver detalle"
                   secondary
@@ -247,7 +259,6 @@ export function EducationResourceScreen() {
           <VisualButton label="Reintentar consulta" secondary onPress={refreshDownload} />
         </InfoCard>
       ) : null}
-      {loadingDownload ? <BodyText>Comprobando almacenamiento local…</BodyText> : null}
       <InfoCard>
         <View style={styles.placeholder}>
           <Feather
@@ -260,13 +271,19 @@ export function EducationResourceScreen() {
           {resource.type} · {resource.duration}
         </SectionTitle>
         <StatusPill>
-          {isDownloaded ? 'Disponible sin conexión' : 'Disponible para guardar'}
+          {loadingDownload
+            ? 'Comprobando disponibilidad…'
+            : downloadError
+              ? 'Estado no disponible'
+              : isDownloaded
+                ? 'Disponible sin conexión'
+                : 'Disponible para guardar'}
         </StatusPill>
         <BodyText>
           Material de muestra neutro para demostración técnica del almacenamiento local de archivos
           en este dispositivo.
         </BodyText>
-        {downloadRecord?.visualizada ? (
+        {!loadingDownload && !downloadError && downloadRecord?.visualizada ? (
           <BodyText>Lectura local registrada en el dispositivo.</BodyText>
         ) : null}
       </InfoCard>
@@ -284,10 +301,13 @@ export function EducationResourceScreen() {
         </Text>
       ) : null}
 
-      {isDownloaded ? (
+      {downloadError ? null : loadingDownload ? (
+        <BodyText>Comprobando almacenamiento local…</BodyText>
+      ) : isDownloaded ? (
         <>
           <VisualButton
             label={readingContent ? 'Cerrar lectura' : 'Leer recurso sin conexión'}
+            disabled={busy}
             onPress={readingContent ? () => setReadingContent(null) : () => void handleRead()}
           />
           <VisualButton
