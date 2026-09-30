@@ -333,7 +333,9 @@ export function createPatientRepository(
         ON CONFLICT(paciente_id, contenido_id) DO UPDATE SET
           ruta_local = excluded.ruta_local,
           estado = excluded.estado,
-          fecha_descarga = excluded.fecha_descarga`,
+          fecha_descarga = excluded.fecha_descarga,
+          visualizada = 0,
+          visualizada_en = NULL`,
         [patientId, data.contenido_id, data.ruta_local, data.estado ?? 'descargado', timestamp],
       );
     },

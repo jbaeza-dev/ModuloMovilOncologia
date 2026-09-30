@@ -4,9 +4,9 @@ Aplicación Android **QuimioCare** para acompañamiento de pacientes en quimiote
 
 ## Estado actual
 
-La aplicación contiene la base Expo (PR5/SCRUM-26), la navegación principal (PR9/SCRUM-25), las pantallas visuales de PR10–PR13 y una primera implementación SQLite de SCRUM-19. Tiene cuatro pestañas: Inicio, Vitales, Formulario y Educación. Inicio, Vitales y Formulario muestran registros locales del paciente de prueba activo; las demás funciones continúan como demostración.
+La aplicación contiene la base Expo (PR5/SCRUM-26), la navegación principal (PR9/SCRUM-25), las pantallas visuales de PR10–PR13 y la persistencia local de SCRUM-19 y SCRUM-20. Tiene cuatro pestañas: Inicio, Vitales, Formulario y Educación. Inicio, Vitales, Formulario y Educación muestran registros, contexto y descargas locales del paciente de prueba activo; Asistente y Reportes continúan como demostración técnica.
 
-Durante desarrollo se selecciona explícitamente el paciente sintético A o B. Signos vitales y descripciones de síntomas se guardan en `quimiocare_local.db`, sobreviven al reinicio y se muestran solo para el paciente seleccionado. Cada alta crea una operación `pendiente` en la misma transacción. No hay autenticación, envío REST, sincronización ni evaluación clínica. La galería conserva las variantes visuales antiguas con datos ficticios.
+Durante desarrollo se selecciona explícitamente el paciente sintético A o B. Signos vitales, síntomas, contexto del paciente (perfil, tratamiento, código de vinculación) y descargas educativas se guardan en `quimiocare_local.db` y en el sistema de archivos del dispositivo (`expo-file-system`), sobreviven al reinicio y se aíslan físicamente por paciente en `recursos_educativos/{paciente_id}/{contenido_id}.md`. Cada alta clínica crea una operación `pendiente` en la misma transacción. No hay autenticación con servidor, envío REST, sincronización remota ni evaluación clínica. La galería conserva las variantes visuales antiguas con datos ficticios.
 
 En Perfil → Preferencias → Accesibilidad y apariencia, se puede seleccionar Turquesa, Azul, Violeta o Ámbar. El modo claro u oscuro sigue el ajuste del dispositivo y la paleta elegida se guarda localmente con AsyncStorage. Alertas y estados clínicos mantienen colores semánticos independientes de la paleta.
 

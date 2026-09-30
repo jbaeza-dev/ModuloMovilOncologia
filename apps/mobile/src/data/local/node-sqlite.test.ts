@@ -614,6 +614,16 @@ describe('descargas y recursos educativos offline', () => {
     expect(viewed?.visualizada).toBe(1);
     expect(viewed?.visualizada_en).toBeTruthy();
 
+    // Re-guardar o actualizar descarga previa debe reiniciar visualizada a 0 y visualizada_en a null
+    await repoA.saveDownload({
+      contenido_id: 'edu-prep-sesion',
+      ruta_local: '/documentos/recursos_educativos/pacienteA/edu-prep-sesion-v2.md',
+    });
+    const updated = await repoA.download('edu-prep-sesion');
+    expect(updated?.ruta_local).toContain('edu-prep-sesion-v2.md');
+    expect(updated?.visualizada).toBe(0);
+    expect(updated?.visualizada_en).toBeNull();
+
     // Eliminar descarga
     await repoA.removeDownload('edu-prep-sesion');
     expect(await repoA.download('edu-prep-sesion')).toBeNull();

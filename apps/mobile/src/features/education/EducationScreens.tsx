@@ -55,7 +55,7 @@ export function EducationScreen() {
 
 export function EducationCategoryScreen() {
   const { theme: appTheme } = useAppTheme();
-  const { repository } = useLocalData();
+  const { repository, patientId } = useLocalData();
   const styles = useStyles();
   const [expanded, setExpanded] = useState<string | null>(null);
   const { categoria } = useLocalSearchParams<{ categoria?: string }>();
@@ -78,7 +78,9 @@ export function EducationCategoryScreen() {
         Material de muestra neutro para demostración técnica del almacenamiento local.
       </BodyText>
       {resources.map((resource) => {
-        const isDownloaded = downloadedIds.has(resource.id);
+        const isDownloaded =
+          downloadedIds.has(resource.id) &&
+          (patientId ? resourceFileExists(patientId, resource.id) : false);
         return (
           <InfoCard key={resource.id}>
             <Pressable
@@ -140,10 +142,12 @@ export function EducationResourceScreen() {
     () => (repository && resource ? repository.download(resource.id) : Promise.resolve(null)),
     [repository, resource],
   );
-  const { value: downloadRecord, refresh: refreshDownload } = useFocusedValue(
-    loadDownload,
-    null as DownloadRecord | null,
-  );
+  const {
+    value: downloadRecord,
+    loading: loadingDownload,
+    error: downloadError,
+    refresh: refreshDownload,
+  } = useFocusedValue(loadDownload, null as DownloadRecord | null);
 
   const [readingContent, setReadingContent] = useState<string | null>(null);
   const [opError, setOpError] = useState<string | null>(null);
@@ -197,13 +201,17 @@ export function EducationResourceScreen() {
     setOpError(null);
     try {
       await runSave(async () => {
-        await deleteResourceFile(patientId, resource.id).catch(() => undefined);
+        // El borrado físico debe ejecutarse sin silenciar fallos.
+        // Si falla, no se borra la fila SQLite y se informa el error.
+        await deleteResourceFile(patientId, resource.id);
         await repository.removeDownload(resource.id);
       });
       setReadingContent(null);
       refreshDownload();
     } catch {
-      setOpError('No se pudo eliminar la copia local.');
+      setOpError(
+        'No se pudo eliminar el archivo local en el dispositivo. Se conserva el registro.',
+      );
     } finally {
       setActionBusy(false);
     }
@@ -212,21 +220,34 @@ export function EducationResourceScreen() {
   async function handleRead() {
     if (!patientId || !resource) return;
     setOpError(null);
-    const content = await readResourceFile(patientId, resource.id);
-    if (content !== null) {
-      setReadingContent(content);
-      if (repository) {
-        await repository.markDownloadViewed(resource.id).catch(() => undefined);
-        refreshDownload();
+    try {
+      const content = await readResourceFile(patientId, resource.id);
+      if (content !== null) {
+        setReadingContent(content);
+        if (repository) {
+          await repository.markDownloadViewed(resource.id).catch(() => undefined);
+          refreshDownload();
+        }
+      } else {
+        setOpError('El archivo físico no se encuentra en el dispositivo.');
       }
-    } else {
-      setOpError('El archivo físico no se encuentra en el dispositivo.');
+    } catch {
+      setOpError('No se pudo leer el archivo local del dispositivo.');
     }
   }
 
   return (
     <Screen title={resource.title} backTo="/educacion">
       <DemoBadge />
+      {downloadError ? (
+        <InfoCard>
+          <Text accessibilityRole="alert" style={styles.errorText}>
+            No se pudo consultar el estado de la copia local.
+          </Text>
+          <VisualButton label="Reintentar consulta" secondary onPress={refreshDownload} />
+        </InfoCard>
+      ) : null}
+      {loadingDownload ? <BodyText>Comprobando almacenamiento local…</BodyText> : null}
       <InfoCard>
         <View style={styles.placeholder}>
           <Feather
