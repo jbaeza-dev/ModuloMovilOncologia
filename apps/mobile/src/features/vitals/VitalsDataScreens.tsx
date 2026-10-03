@@ -15,14 +15,19 @@ import {
   VisualButton,
   VisualField,
 } from '../../components/Visual';
-import { formatDate, formatVital, sinceDays, type VitalRecord } from '../../data/local/repository';
+import {
+  formatDate,
+  formatVital,
+  sinceDays,
+  type VitalWithSyncRecord,
+} from '../../data/local/repository';
 import { useFocusedList, useFocusedValue } from '../../data/local/use-local-query';
 import { InputError, parseVitalInput, type VitalInput } from '../../data/local/validation';
 import { useLocalData } from '../../providers/LocalDataProvider';
 import { useAppTheme } from '../../providers/ThemeProvider';
 import { theme } from '../../theme';
 
-const pendingLabel = 'Guardado en este dispositivo · Pendiente de envío';
+const pendingLabel = 'Guardado en este dispositivo · Pendiente de sincronización';
 const initialValues: VitalInput = {
   temperature: '',
   systolic: '',
@@ -31,9 +36,13 @@ const initialValues: VitalInput = {
   saturation: '',
 };
 
-function RecordCard({ item }: { item: VitalRecord }) {
+function RecordCard({ item }: { item: VitalWithSyncRecord }) {
   const { theme: appTheme } = useAppTheme();
   const styles = useStyles();
+  const syncLabel =
+    item.estado_envio === 'pendiente' || !item.estado_envio
+      ? 'Pendiente de sincronización'
+      : `Estado: ${item.estado_envio}`;
   return (
     <Pressable
       accessibilityRole="button"
@@ -48,7 +57,7 @@ function RecordCard({ item }: { item: VitalRecord }) {
       <Text style={styles.small}>
         {formatVital(item.temperatura, '°C')} · {formatVital(item.pulso, 'lpm')}
       </Text>
-      <StatusPill>Pendiente de envío</StatusPill>
+      <StatusPill>{syncLabel}</StatusPill>
     </Pressable>
   );
 }
@@ -218,7 +227,7 @@ export function VitalDataDetailScreen() {
     loading,
     error,
     refresh,
-  } = useFocusedValue(load, null as VitalRecord | null);
+  } = useFocusedValue(load, null as VitalWithSyncRecord | null);
   return (
     <Screen title="Detalle del registro" backTo="/vitales">
       {loading ? (
@@ -250,7 +259,11 @@ export function VitalDataDetailScreen() {
             <DetailRow label="Pulso" value={formatVital(record.pulso, 'lpm')} />
             <DetailRow label="Saturación" value={formatVital(record.saturacion_o2, '%')} />
           </InfoCard>
-          <StatusPill>{pendingLabel}</StatusPill>
+          <StatusPill>
+            {record.estado_envio === 'pendiente' || !record.estado_envio
+              ? pendingLabel
+              : `Estado de sincronización: ${record.estado_envio}`}
+          </StatusPill>
           <BodyText>El registro no se ha enviado ni evaluado clínicamente.</BodyText>
         </>
       )}

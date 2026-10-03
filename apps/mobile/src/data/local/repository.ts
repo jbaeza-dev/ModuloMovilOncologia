@@ -7,12 +7,38 @@ export type VitalRecord = VitalValues & {
   fecha_registro: string;
   fecha_subida: string | null;
 };
+export type QueueState =
+  | 'pendiente'
+  | 'enviando'
+  | 'enviado'
+  | 'error_reintentable'
+  | 'requiere_sesion'
+  | 'conflicto';
+
+export type VitalWithSyncRecord = VitalRecord & {
+  estado_envio: QueueState | null;
+};
+
 export type SymptomRecord = {
   id: string;
   paciente_id: string;
   fecha_registro: string;
   descripcion: string;
   fecha_subida: string | null;
+};
+
+export type SymptomWithSyncRecord = SymptomRecord & {
+  estado_envio: QueueState | null;
+};
+
+export type DownloadRecord = {
+  paciente_id: string;
+  contenido_id: string;
+  ruta_local: string | null;
+  estado: 'pendiente' | 'descargando' | 'descargado' | 'error';
+  fecha_descarga: string | null;
+  visualizada: number;
+  visualizada_en: string | null;
 };
 
 export type PatientProfileRecord = {
@@ -149,33 +175,48 @@ export function createPatientRepository(
     },
 
     latestVital() {
-      return database.first<VitalRecord>(
-        `SELECT * FROM signos_vitales WHERE paciente_id = ?
-         ORDER BY fecha_registro DESC, id DESC LIMIT 1`,
+      return database.first<VitalWithSyncRecord>(
+        `SELECT v.*, c.estado AS estado_envio
+         FROM signos_vitales AS v
+         LEFT JOIN cola_envio AS c
+           ON c.tipo_entidad = 'signos_vitales' AND c.registro_id = v.id
+         WHERE v.paciente_id = ?
+         ORDER BY v.fecha_registro DESC, v.id DESC LIMIT 1`,
         [patientId],
       );
     },
 
     vital(id: string) {
-      return database.first<VitalRecord>(
-        'SELECT * FROM signos_vitales WHERE paciente_id = ? AND id = ?',
+      return database.first<VitalWithSyncRecord>(
+        `SELECT v.*, c.estado AS estado_envio
+         FROM signos_vitales AS v
+         LEFT JOIN cola_envio AS c
+           ON c.tipo_entidad = 'signos_vitales' AND c.registro_id = v.id
+         WHERE v.paciente_id = ? AND v.id = ?`,
         [patientId, id],
       );
     },
 
     vitals(since: string, limit = 30, offset = 0) {
-      return database.all<VitalRecord>(
-        `SELECT * FROM signos_vitales
-         WHERE paciente_id = ? AND fecha_registro >= ?
-         ORDER BY fecha_registro DESC, id DESC LIMIT ? OFFSET ?`,
+      return database.all<VitalWithSyncRecord>(
+        `SELECT v.*, c.estado AS estado_envio
+         FROM signos_vitales AS v
+         LEFT JOIN cola_envio AS c
+           ON c.tipo_entidad = 'signos_vitales' AND c.registro_id = v.id
+         WHERE v.paciente_id = ? AND v.fecha_registro >= ?
+         ORDER BY v.fecha_registro DESC, v.id DESC LIMIT ? OFFSET ?`,
         [patientId, since, limit, offset],
       );
     },
 
     symptoms(limit = 30, offset = 0) {
-      return database.all<SymptomRecord>(
-        `SELECT * FROM sintomas WHERE paciente_id = ?
-         ORDER BY fecha_registro DESC, id DESC LIMIT ? OFFSET ?`,
+      return database.all<SymptomWithSyncRecord>(
+        `SELECT s.*, c.estado AS estado_envio
+         FROM sintomas AS s
+         LEFT JOIN cola_envio AS c
+           ON c.tipo_entidad = 'sintomas' AND c.registro_id = s.id
+         WHERE s.paciente_id = ?
+         ORDER BY s.fecha_registro DESC, s.id DESC LIMIT ? OFFSET ?`,
         [patientId, limit, offset],
       );
     },
@@ -263,6 +304,58 @@ export function createPatientRepository(
         avgPulse: row?.avg_pulse != null ? Math.round(row.avg_pulse) : null,
       };
     },
+
+    download(contenidoId: string) {
+      return database.first<DownloadRecord>(
+        'SELECT * FROM descarga WHERE paciente_id = ? AND contenido_id = ?',
+        [patientId, contenidoId],
+      );
+    },
+
+    downloads() {
+      return database.all<DownloadRecord>(
+        `SELECT * FROM descarga WHERE paciente_id = ?
+         ORDER BY fecha_descarga DESC, contenido_id ASC`,
+        [patientId],
+      );
+    },
+
+    async saveDownload(data: {
+      contenido_id: string;
+      ruta_local: string;
+      estado?: 'descargado';
+    }): Promise<void> {
+      const timestamp = now();
+      await database.run(
+        `INSERT INTO descarga (
+          paciente_id, contenido_id, ruta_local, estado, fecha_descarga, visualizada, visualizada_en
+        ) VALUES (?, ?, ?, ?, ?, 0, NULL)
+        ON CONFLICT(paciente_id, contenido_id) DO UPDATE SET
+          ruta_local = excluded.ruta_local,
+          estado = excluded.estado,
+          fecha_descarga = excluded.fecha_descarga,
+          visualizada = 0,
+          visualizada_en = NULL`,
+        [patientId, data.contenido_id, data.ruta_local, data.estado ?? 'descargado', timestamp],
+      );
+    },
+
+    async markDownloadViewed(contenidoId: string): Promise<void> {
+      const timestamp = now();
+      await database.run(
+        `UPDATE descarga
+         SET visualizada = 1, visualizada_en = ?
+         WHERE paciente_id = ? AND contenido_id = ?`,
+        [timestamp, patientId, contenidoId],
+      );
+    },
+
+    async removeDownload(contenidoId: string): Promise<void> {
+      await database.run('DELETE FROM descarga WHERE paciente_id = ? AND contenido_id = ?', [
+        patientId,
+        contenidoId,
+      ]);
+    },
   };
 }
 
@@ -272,22 +365,17 @@ export async function seedPatientContextIfEmpty(
   patientBId: string,
   now: Clock = () => new Date().toISOString(),
 ) {
-  const existing = await database.first<{ total: number }>(
-    'SELECT count(*) as total FROM paciente_cache',
-  );
-  if ((existing?.total ?? 0) > 0) return;
-
   const timestamp = now();
   await database.transaction(async (tx) => {
     // Paciente A (demostración)
     await tx.run(
-      `INSERT INTO paciente_cache (
+      `INSERT OR IGNORE INTO paciente_cache (
         paciente_id, nombre, email, rut, obtenido_en
       ) VALUES (?, ?, ?, ?, ?)`,
       [patientAId, 'Paciente A de Prueba', 'paciente.a@quimiocare.test', '12.345.678-9', timestamp],
     );
     await tx.run(
-      `INSERT INTO tratamiento_cache (
+      `INSERT OR IGNORE INTO tratamiento_cache (
         id, paciente_id, tipo, estado, nombre, parametros_json, fecha_inicio, fecha_termino, obtenido_en
       ) VALUES (?, ?, 'quimioterapia', 'activo', ?, ?, ?, ?, ?)`,
       [
@@ -307,13 +395,13 @@ export async function seedPatientContextIfEmpty(
 
     // Paciente B (demostración)
     await tx.run(
-      `INSERT INTO paciente_cache (
+      `INSERT OR IGNORE INTO paciente_cache (
         paciente_id, nombre, email, rut, obtenido_en
       ) VALUES (?, ?, ?, ?, ?)`,
       [patientBId, 'Paciente B de Prueba', 'paciente.b@quimiocare.test', '15.876.543-2', timestamp],
     );
     await tx.run(
-      `INSERT INTO tratamiento_cache (
+      `INSERT OR IGNORE INTO tratamiento_cache (
         id, paciente_id, tipo, estado, nombre, parametros_json, fecha_inicio, fecha_termino, obtenido_en
       ) VALUES (?, ?, 'quimioterapia', 'activo', ?, ?, ?, ?, ?)`,
       [

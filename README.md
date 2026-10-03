@@ -6,7 +6,7 @@ Aplicación Android de acompañamiento para pacientes en tratamiento de **quimio
 
 El repositorio contiene la base Expo y la navegación principal de QuimioCare, además de un prototipo visual navegable de las pantallas previstas para el Sprint 1. La interfaz incluye Inicio, Perfil, acceso, vinculación, vitales, síntomas, educación, asistente y reportes, con datos de demostración. En Perfil → Preferencias se puede elegir entre cuatro paletas; el modo claro u oscuro sigue la configuración del dispositivo y la paleta se conserva localmente.
 
-La rama de persistencia añade SQLite para guardar signos vitales y descripciones de síntomas sintéticos, consultar historiales por paciente de prueba y conservar operaciones pendientes. Las demás pantallas clínicas siguen siendo una experiencia de presentación. No hay autenticación, envío de datos, triaje, sincronización, descargas, exportación ni servicios desplegados.
+La rama de persistencia añade SQLite para guardar signos vitales, descripciones de síntomas sintéticos, contexto de paciente (perfil, tratamiento, código de vinculación) y copias de recursos educativos sin conexión mediante `expo-file-system` aisladas físicamente por paciente (`recursos_educativos/{paciente_id}/{contenido_id}.md`). Cada registro clínico conserva operaciones pendientes en la cola local. Asistente y Reportes continúan como demostración técnica. No hay autenticación con servidor, envío de datos remotos, triaje, sincronización bidireccional ni servicios desplegados.
 
 ## Componentes previstos
 
@@ -20,7 +20,7 @@ Las aplicaciones y paquetes se incorporan progresivamente dentro de estas rutas:
 | `packages/contracts/`         | Contratos y esquemas compartidos cuando se acuerden con el módulo central.                         |
 | `infra/local/`                | Entorno de pruebas locales mediante `podman-compose`.                                              |
 
-Para la demostración de Sprint 1 se acordó guardar registros en SQLite propio y preparar su futuro envío REST mediante una cola local. PowerSync se incorporará por separado para el catálogo educativo. El contrato v0 del simulador continúa en revisión, por lo que la app todavía no transmite registros.
+Para la demostración de Sprint 1 se acordó guardar registros clínicos y descargas educativas en SQLite propio y almacenamiento de archivos local, preparando el futuro envío REST mediante una cola local. PowerSync se incorporará por separado para el catálogo educativo cuando se disponga de la infraestructura central. El contrato v0 del simulador continúa en revisión, por lo que la app todavía no transmite registros.
 
 ## Requisitos para el desarrollo local
 
@@ -48,10 +48,16 @@ Iniciar el servidor de desarrollo de la app desde la raíz:
 pnpm --filter @modulo-movil-oncologia/mobile start
 ```
 
-Para abrirla en un dispositivo o emulador Android configurado:
+Para compilar y ejecutar la **Development Build** en un dispositivo o emulador Android configurado:
 
 ```bash
 pnpm --filter @modulo-movil-oncologia/mobile android
+```
+
+Para generar e instalar la **Build Demo Release autónoma** (JavaScript embebido y selector A/B para pruebas 100% offline sin Metro ni PC):
+
+```bash
+pnpm --filter @modulo-movil-oncologia/mobile run run:android:demo
 ```
 
 Comprobar la salud y compatibilidad de dependencias Expo:
@@ -66,7 +72,7 @@ Generar el bundle JavaScript para Android (valida empaquetado y Metro sin emulad
 pnpm --filter @modulo-movil-oncologia/mobile bundle:android
 ```
 
-La aplicación aún no contiene PowerSync. Los datos de prueba de signos y síntomas se guardan en SQLite dentro del dispositivo. Expo Go incluye `expo-sqlite` para revisar esta etapa; una futura integración PowerSync requerirá validación nativa propia. La exportación del bundle Android comprueba el empaquetado de JavaScript y no sustituye la revisión en dispositivo o emulador.
+La aplicación aún no contiene PowerSync. Los datos de prueba de signos, síntomas y descargas educativas se guardan en SQLite y en el sistema de archivos del dispositivo de manera aislada por paciente. QuimioCare ahora cuenta con su propia **Development Build** nativa (`expo-dev-client`) con paquete `cl.ubiobio.quimiocare`, reemplazando el uso de Expo Go para dar soporte completo a dependencias nativas presentes y futuras. La exportación del bundle Android comprueba el empaquetado de JavaScript y no sustituye la revisión en dispositivo o emulador.
 
 El repositorio mantiene un solo `pnpm-lock.yaml` en la raíz. No deben generarse lockfiles dentro
 de `apps/` ni `packages/`. La configuración de workspaces y `nodeLinker: hoisted` está definida en

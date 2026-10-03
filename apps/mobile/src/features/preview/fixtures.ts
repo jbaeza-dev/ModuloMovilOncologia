@@ -43,68 +43,96 @@ export const educationCategories = [
   { title: 'Alimentación y bienestar', count: '2 recursos', icon: 'coffee' },
 ] as const;
 
-export const educationResources = [
+export type EducationResource = {
+  id: string;
+  category: number;
+  title: string;
+  type: string;
+  duration: string;
+  state: string;
+  content: string;
+};
+
+export const educationResources: readonly EducationResource[] = [
   {
+    id: 'edu-prep-sesion',
     category: 0,
     title: 'Prepararse para una sesión',
-    type: 'Video',
-    duration: '3:24 min',
-    state: 'Requiere conexión',
+    type: 'Guía',
+    duration: 'Lectura de 3 min',
+    state: 'Disponible para guardar',
+    content: `# Prepararse para una sesión\n\nEste texto es material de muestra neutro para la demostración técnica del guardado y lectura de archivos sin conexión en el dispositivo móvil.\n\nNo contiene indicaciones médicas, umbrales clínicos ni recomendaciones de tratamiento, los cuales serán incorporados tras la correspondiente validación clínica del equipo de salud.`,
   },
   {
+    id: 'edu-cuidados-casa',
     category: 0,
     title: 'Cuidados en casa',
-    type: 'Infografía',
-    duration: 'Lectura breve',
-    state: 'Descargado · ejemplo',
+    type: 'Guía',
+    duration: 'Lectura de 4 min',
+    state: 'Disponible para guardar',
+    content: `# Cuidados en el hogar\n\nMaterial de demostración técnica para validar la persistencia local de recursos educativos.\n\nEste contenido es un texto de prueba neutro para comprobar el almacenamiento físico del archivo en el teléfono y su posterior visualización sin red.`,
   },
   {
+    id: 'edu-preguntas-frecuentes',
     category: 0,
     title: 'Preguntas frecuentes',
-    type: 'Video',
-    duration: '4:10 min',
-    state: 'Pendiente · ejemplo',
+    type: 'Guía',
+    duration: 'Lectura de 5 min',
+    state: 'Disponible para guardar',
+    content: `# Preguntas frecuentes sobre el acompañamiento\n\nTexto de muestra utilizado exclusivamente para validar el aislamiento de archivos por paciente y la lectura local sin conexión en QuimioCare.`,
   },
   {
+    id: 'edu-organizar-preguntas',
     category: 1,
     title: 'Organizar tus preguntas',
-    type: 'Infografía',
-    duration: 'Lectura breve',
-    state: 'Descargado · ejemplo',
+    type: 'Guía',
+    duration: 'Lectura de 3 min',
+    state: 'Disponible para guardar',
+    content: `# Organizar tus consultas\n\nDocumento de prueba técnica para verificar que el almacenamiento de copias locales funciona de manera aislada por paciente en el dispositivo.`,
   },
   {
+    id: 'edu-rutina-cotidiana',
     category: 1,
     title: 'Rutina cotidiana',
-    type: 'Video',
-    duration: '2:50 min',
-    state: 'Requiere conexión',
+    type: 'Guía',
+    duration: 'Lectura de 3 min',
+    state: 'Disponible para guardar',
+    content: `# Rutina diaria de ejemplo\n\nMaterial de prueba sin recomendaciones clínicas para la verificación de almacenamiento y borrado físico de archivos.`,
   },
   {
+    id: 'edu-descanso-acompanamiento',
     category: 1,
     title: 'Descanso y acompañamiento',
-    type: 'Infografía',
-    duration: 'Lectura breve',
-    state: 'Pendiente · ejemplo',
+    type: 'Guía',
+    duration: 'Lectura de 4 min',
+    state: 'Disponible para guardar',
+    content: `# Descanso y bienestar\n\nTexto demostrativo para la evaluación técnica del módulo móvil.`,
   },
   {
+    id: 'edu-apoyo-familiar',
     category: 1,
     title: 'Apoyo familiar',
-    type: 'Video',
-    duration: '3:00 min',
-    state: 'Requiere conexión',
+    type: 'Guía',
+    duration: 'Lectura de 3 min',
+    state: 'Disponible para guardar',
+    content: `# Red de apoyo y acompañamiento\n\nDocumento neutral para pruebas de lectura fuera de línea.`,
   },
   {
+    id: 'edu-alimentacion-diaria',
     category: 2,
     title: 'Alimentación diaria',
-    type: 'Infografía',
-    duration: 'Lectura breve',
-    state: 'Descargado · ejemplo',
+    type: 'Guía',
+    duration: 'Lectura de 4 min',
+    state: 'Disponible para guardar',
+    content: `# Información sobre alimentación\n\nTexto de prueba técnica. El contenido clínico definitivo será suministrado por el equipo tratante en futuras etapas del proyecto.`,
   },
   {
+    id: 'edu-bienestar-general',
     category: 2,
     title: 'Bienestar general',
-    type: 'Video',
-    duration: '3:30 min',
-    state: 'Pendiente · ejemplo',
+    type: 'Guía',
+    duration: 'Lectura de 4 min',
+    state: 'Disponible para guardar',
+    content: `# Bienestar y seguimiento\n\nMaterial de demostración técnica para la persistencia SQLite en QuimioCare.`,
   },
 ] as const;

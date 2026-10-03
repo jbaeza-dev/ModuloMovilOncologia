@@ -11,6 +11,12 @@
       "backgroundColor": "#FFFFFF",
       "translucent": true
     },
-    "plugins": ["expo-router", "expo-font", "expo-system-ui"]
+    "android": {
+      "package": "cl.ubiobio.quimiocare",
+      "adaptiveIcon": {
+        "backgroundColor": "#FFFFFF"
+      }
+    },
+    "plugins": ["expo-router", "expo-font", "expo-system-ui", "expo-dev-client"]
   }
 }
