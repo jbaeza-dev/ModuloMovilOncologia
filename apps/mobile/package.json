@@ -7,7 +7,7 @@
     "start": "expo start",
     "android": "expo run:android",
     "run:android": "expo run:android",
-    "run:android:demo": "expo run:android --variant release",
+    "run:android:demo": "cross-env EXPO_PUBLIC_DEMO_MODE=true expo run:android --variant release",
     "bundle:android": "expo export --platform android",
     "doctor": "expo-doctor",
     "typecheck": "tsc --noEmit"
@@ -33,6 +33,7 @@
   },
   "devDependencies": {
     "@types/react": "~19.2.2",
+    "cross-env": "^10.1.0",
     "expo-doctor": "~1.20.4",
     "typescript": "~6.0.3"
   }
