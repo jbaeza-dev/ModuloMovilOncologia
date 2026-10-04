@@ -138,6 +138,19 @@ export function LocalDataProvider({ children }: { children: ReactNode }) {
             />
           ))}
         </Screen>
+      ) : !isDemoMode() && !patientId ? (
+        <Screen title="Sesión requerida">
+          <InfoCard>
+            <BodyText>
+              Para utilizar la aplicación en modo estándar se requiere una sesión activa o vincular
+              una cuenta de paciente.
+            </BodyText>
+            <BodyText>
+              Los servicios de autenticación y sincronización con el servidor central se integrarán
+              en una etapa posterior tras la aprobación del contrato OpenAPI.
+            </BodyText>
+          </InfoCard>
+        </Screen>
       ) : (
         <>{children}</>
       )}

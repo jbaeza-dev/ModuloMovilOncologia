@@ -46,6 +46,10 @@ export function HomeScreen() {
           <BodyText>
             Datos sintéticos · {DEMO_PATIENTS.find((patient) => patient.id === patientId)?.label}
           </BodyText>
+          <BodyText>
+            Datos de prueba locales guardados en este dispositivo. No representan una sesión
+            autenticada ni sustituyen una evaluación médica.
+          </BodyText>
           <VisualButton
             label="Cambiar paciente de prueba"
             secondary
