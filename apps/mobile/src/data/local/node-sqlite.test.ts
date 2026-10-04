@@ -20,6 +20,7 @@ import { reconcileCopiesCore } from './reconciliation';
 import { createPatientRepository, seedPatientContextIfEmpty, sinceDays } from './repository';
 import type { SqlConnection, SqlValue } from './sql';
 import { InputError, parseSymptomDescription, parseVitalInput } from './validation';
+import { buildReportHtml } from '../../features/reports/report-template';
 
 const patientA = '11111111-1111-4111-8111-111111111111';
 const patientB = '22222222-2222-4222-8222-222222222222';
@@ -839,5 +840,86 @@ describe('copias educativas y descargas locales', () => {
     expect(existsSync(oldFilePath)).toBe(true);
     expect(readFileSync(oldFilePath, 'utf-8')).toBe('Contenido previo');
     expect(existsSync(newFilePath)).toBe(false);
+  });
+});
+
+describe('reportes locales y generación de contenido para PDF', () => {
+  it('recupera mediciones para reporte cronológicamente y sin límite arbitrario con vitalsForReport', async () => {
+    const database = open();
+    await migrateDatabase(database);
+    await seedPatientContextIfEmpty(database, patientA, patientB);
+
+    const repo = createPatientRepository(
+      database,
+      patientA,
+      ids('v1', 'q1', 'v2', 'q2', 'v3', 'q3'),
+      () => measured,
+    );
+
+    // Insertar registros con fechas conocidas
+    await repo.createVitals({ ...validVitals, temperatura: 36.5 });
+    await repo.createVitals({ ...validVitals, temperatura: 37.1 });
+    await repo.createVitals({ ...validVitals, temperatura: 36.9 });
+
+    const vitals = await repo.vitalsForReport(sinceDays(30, new Date('2026-10-01T00:00:00Z')));
+    expect(vitals).toHaveLength(3);
+    // Orden cronológico ascendente para el reporte
+    expect(vitals[0].temperatura).toBe(36.5);
+    expect(vitals[1].temperatura).toBe(37.1);
+    expect(vitals[2].temperatura).toBe(36.9);
+  });
+
+  it('genera plantilla HTML válida con datos del paciente, resumen y disclaimer sintético', () => {
+    const html = buildReportHtml({
+      pacienteId: patientA,
+      periodDays: 30,
+      profile: {
+        paciente_id: patientA,
+        nombre: 'Paciente A de Prueba',
+        rut: '12.345.678-9',
+        email: 'paciente.a@quimiocare.cl',
+        obtenido_en: '2026-09-28T12:00:00Z',
+      },
+      treatment: {
+        id: 't1',
+        paciente_id: patientA,
+        tipo: 'quimioterapia',
+        estado: 'activo',
+        nombre: 'Ciclo FOLFOX de muestra',
+        parametros_json: null,
+        fecha_inicio: '2026-08-01',
+        fecha_termino: null,
+        obtenido_en: '2026-09-28T12:00:00Z',
+      },
+      summary: {
+        total: 2,
+        avgTemperature: 36.8,
+        avgPulse: 72,
+      },
+      vitals: [
+        {
+          id: 'v1',
+          paciente_id: patientA,
+          fecha_registro: '2026-09-28T08:00:00Z',
+          presion_sistolica: 120,
+          presion_diastolica: 80,
+          pulso: 72,
+          temperatura: 36.8,
+          saturacion_o2: 98,
+          fecha_subida: null,
+        },
+      ],
+    });
+
+    expect(html).toContain('QuimioCare');
+    expect(html).toContain('Paciente A de Prueba');
+    expect(html).toContain('12.345.678-9');
+    expect(html).toContain('Ciclo FOLFOX de muestra');
+    expect(html).toContain('Últimos 30 días');
+    expect(html).toContain('Aviso técnico y demostrativo');
+    expect(html).toContain('36,8 °C');
+    expect(html).toContain('120/80 mmHg');
+    expect(html).toContain('72 lpm');
+    expect(html).toContain('98 %');
   });
 });

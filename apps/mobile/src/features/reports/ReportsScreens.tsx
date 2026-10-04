@@ -1,6 +1,6 @@
 import { router, useLocalSearchParams } from 'expo-router';
 import { useCallback, useState } from 'react';
-import { StyleSheet, View } from 'react-native';
+import { StyleSheet, Text, View } from 'react-native';
 
 import { Screen } from '../../components/Screen';
 import {
@@ -15,14 +15,23 @@ import {
   VisualButton,
 } from '../../components/Visual';
 import { sinceDays, type VitalsSummary } from '../../data/local/repository';
+import { shareReportPdf } from '../../data/local/report-storage';
 import { useFocusedValue } from '../../data/local/use-local-query';
 import { useLocalData } from '../../providers/LocalDataProvider';
+import { useAppTheme } from '../../providers/ThemeProvider';
 import { theme } from '../../theme';
+import { generateAndPersistReportPdf } from './report-pdf';
 
 export function ReportsScreen() {
+  const { theme: appTheme } = useAppTheme();
+  const styles = createStyles(appTheme.colors);
   const [days, setDays] = useState<7 | 30 | 90>(30);
   const [format, setFormat] = useState('PDF');
-  const { repository } = useLocalData();
+  const [generating, setGenerating] = useState(false);
+  const [reportFeedback, setReportFeedback] = useState<string | null>(null);
+  const [reportError, setReportError] = useState<string | null>(null);
+
+  const { repository, patientId } = useLocalData();
 
   const load = useCallback(
     () =>
@@ -42,6 +51,32 @@ export function ReportsScreen() {
     avgPulse: null,
   } as VitalsSummary);
 
+  async function handleSharePdf() {
+    if (!repository || !patientId || generating) return;
+    setGenerating(true);
+    setReportFeedback(null);
+    setReportError(null);
+    try {
+      const profile = await repository.profile();
+      const treatment = await repository.treatment();
+      const vitals = await repository.vitalsForReport(sinceDays(days));
+      const persistentUri = await generateAndPersistReportPdf({
+        pacienteId: patientId,
+        periodDays: days,
+        profile,
+        treatment,
+        summary,
+        vitals,
+      });
+      setReportFeedback('Reporte guardado en almacenamiento persistente del dispositivo.');
+      await shareReportPdf(persistentUri);
+    } catch {
+      setReportError('No se pudo generar ni compartir el reporte PDF en este dispositivo.');
+    } finally {
+      setGenerating(false);
+    }
+  }
+
   return (
     <Screen title="Reportes" backTo="/vitales">
       <BodyText>
@@ -54,7 +89,11 @@ export function ReportsScreen() {
             key={item}
             label={`${item} días`}
             selected={days === item}
-            onPress={() => setDays(item)}
+            onPress={() => {
+              setDays(item);
+              setReportFeedback(null);
+              setReportError(null);
+            }}
           />
         ))}
       </View>
@@ -65,10 +104,23 @@ export function ReportsScreen() {
             key={item}
             label={item}
             selected={format === item}
-            onPress={() => setFormat(item)}
+            onPress={() => {
+              setFormat(item);
+              setReportFeedback(null);
+              setReportError(null);
+            }}
           />
         ))}
       </View>
+
+      {format === 'Excel' ? (
+        <InfoCard>
+          <Text style={styles.noticeText}>
+            Formato no disponible en demostración local. Selecciona PDF para generar y compartir el
+            documento.
+          </Text>
+        </InfoCard>
+      ) : null}
 
       {error ? (
         <>
@@ -106,6 +158,8 @@ export function ReportsScreen() {
               />
             ) : null}
             <StatusPill>Almacenamiento local</StatusPill>
+            {reportFeedback ? <StatusPill>{reportFeedback}</StatusPill> : null}
+            {reportError ? <Text style={styles.errorText}>{reportError}</Text> : null}
           </InfoCard>
 
           {!loading && summary.total === 0 ? (
@@ -114,19 +168,21 @@ export function ReportsScreen() {
             </BodyText>
           ) : null}
 
-          <VisualButton
-            label={
-              summary.total > 0 ? 'Previsualizar estado del reporte' : 'Registrar signos vitales'
-            }
-            disabled={loading}
-            onPress={() => {
-              if (summary.total > 0) {
-                router.navigate('/vitales/reporte-estado?estado=disponible');
-              } else {
-                router.navigate('/vitales/registrar');
-              }
-            }}
-          />
+          {format === 'Excel' ? (
+            <VisualButton label="Formato Excel no disponible" disabled onPress={() => {}} />
+          ) : summary.total === 0 ? (
+            <VisualButton
+              label="Registrar signos vitales"
+              disabled={loading}
+              onPress={() => router.navigate('/vitales/registrar')}
+            />
+          ) : (
+            <VisualButton
+              label={generating ? 'Generando PDF…' : 'Compartir PDF'}
+              disabled={loading || generating}
+              onPress={handleSharePdf}
+            />
+          )}
         </>
       )}
     </Screen>
@@ -146,21 +202,22 @@ export function ReportStatusScreen() {
         <EmptyState
           icon="clock"
           title="Preparando reporte"
-          description="Estado de presentación. No hay generación en curso."
+          description="Generación local de reporte en curso."
         />
       ) : state === 'disponible' ? (
         <InfoCard>
           <SectionTitle>Reporte disponible</SectionTitle>
-          <StatusPill>Ejemplo visual</StatusPill>
+          <StatusPill>Persistido en dispositivo</StatusPill>
           <BodyText>
-            En la versión funcional se podrá abrir o compartir el archivo generado.
+            El documento PDF fue guardado de manera persistente en el dispositivo y puede ser
+            compartido.
           </BodyText>
         </InfoCard>
       ) : (
         <EmptyState
           icon="alert-circle"
           title="No se pudo generar"
-          description="Estado de error de ejemplo. No se intentó crear ningún archivo."
+          description="Ocurrió un inconveniente al generar o compartir el archivo local."
         />
       )}
       <VisualButton
@@ -172,6 +229,18 @@ export function ReportStatusScreen() {
   );
 }
 
-const styles = StyleSheet.create({
-  chips: { flexDirection: 'row', flexWrap: 'wrap', gap: theme.spacing.sm },
-});
+function createStyles(colors: ReturnType<typeof useAppTheme>['theme']['colors']) {
+  return StyleSheet.create({
+    chips: { flexDirection: 'row', flexWrap: 'wrap', gap: theme.spacing.sm },
+    noticeText: {
+      fontSize: 14,
+      color: colors.secondary,
+      lineHeight: 20,
+    },
+    errorText: {
+      fontSize: 14,
+      color: colors.error,
+      marginTop: theme.spacing.xs,
+    },
+  });
+}
