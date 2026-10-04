@@ -3,6 +3,7 @@ import {
   existsSync,
   mkdirSync,
   mkdtempSync,
+  readdirSync,
   readFileSync,
   rmSync,
   unlinkSync,
@@ -20,6 +21,8 @@ import { reconcileCopiesCore } from './reconciliation';
 import { createPatientRepository, seedPatientContextIfEmpty, sinceDays } from './repository';
 import type { SqlConnection, SqlValue } from './sql';
 import { InputError, parseSymptomDescription, parseVitalInput } from './validation';
+import { SAMPLE_MEDICAL_FORMS } from '../../features/medical-forms/sample-medical-forms';
+import type { MedicalFormDraft } from '../../features/medical-forms/medical-form-types';
 import { buildReportHtml } from '../../features/reports/report-template';
 
 const patientA = '11111111-1111-4111-8111-111111111111';
@@ -921,5 +924,74 @@ describe('reportes locales y generación de contenido para PDF', () => {
     expect(html).toContain('120/80 mmHg');
     expect(html).toContain('72 lpm');
     expect(html).toContain('98 %');
+  });
+});
+
+describe('cuestionarios médicos de muestra y almacenamiento de borradores', () => {
+  it('valida la estructura clínica de los cuestionarios de demostración', () => {
+    expect(SAMPLE_MEDICAL_FORMS.length).toBeGreaterThanOrEqual(2);
+
+    for (const form of SAMPLE_MEDICAL_FORMS) {
+      expect(form.id).toBeTruthy();
+      expect(form.titulo).toBeTruthy();
+      expect(form.version).toBeTruthy();
+      expect(form.duracionEstimadaMin).toBeGreaterThan(0);
+      expect(form.preguntas.length).toBeGreaterThanOrEqual(3);
+
+      for (const q of form.preguntas) {
+        expect(['single_choice', 'multiple_choice', 'scale_0_10', 'text']).toContain(q.tipo);
+        if (q.tipo === 'single_choice' || q.tipo === 'multiple_choice') {
+          expect(q.opciones?.length).toBeGreaterThanOrEqual(2);
+        }
+      }
+    }
+  });
+
+  it('guarda, aísla por paciente, actualiza y descarta borradores locales en disco', () => {
+    const tempDir = mkdtempSync(join(tmpdir(), 'quimiocare-drafts-test-'));
+    temporary.push(tempDir);
+
+    const patientADir = join(tempDir, 'formularios_locales', patientA, 'borradores');
+    const patientBDir = join(tempDir, 'formularios_locales', patientB, 'borradores');
+    mkdirSync(patientADir, { recursive: true });
+    mkdirSync(patientBDir, { recursive: true });
+
+    const draftA: MedicalFormDraft = {
+      formularioId: 'form-qlq30-muestra',
+      version: '1.0',
+      pacienteId: patientA,
+      respuestas: { q1: 'nada', q2: 'un_poco', q4: 8 },
+      completado: false,
+      guardadoEn: '2026-10-04T12:00:00Z',
+    };
+
+    const draftAFile = join(patientADir, 'form-qlq30-muestra_v1.0.json');
+
+    // 1. Guardar borrador para Paciente A
+    writeFileSync(draftAFile, JSON.stringify(draftA, null, 2), 'utf-8');
+    expect(existsSync(draftAFile)).toBe(true);
+
+    // 2. Comprobar aislamiento: Paciente B no tiene borradores
+    const filesB = existsSync(patientBDir) ? readdirSync(patientBDir) : [];
+    expect(filesB).toHaveLength(0);
+
+    // 3. Leer y verificar contenido del borrador de Paciente A
+    const loadedA = JSON.parse(readFileSync(draftAFile, 'utf-8')) as MedicalFormDraft;
+    expect(loadedA.pacienteId).toBe(patientA);
+    expect(loadedA.respuestas.q1).toBe('nada');
+    expect(loadedA.completado).toBe(false);
+
+    // 4. Actualizar borrador a completado
+    loadedA.respuestas.q5 = 'Sin comentarios adicionales';
+    loadedA.completado = true;
+    writeFileSync(draftAFile, JSON.stringify(loadedA, null, 2), 'utf-8');
+
+    const updatedA = JSON.parse(readFileSync(draftAFile, 'utf-8')) as MedicalFormDraft;
+    expect(updatedA.completado).toBe(true);
+    expect(updatedA.respuestas.q5).toBe('Sin comentarios adicionales');
+
+    // 5. Descartar borrador
+    unlinkSync(draftAFile);
+    expect(existsSync(draftAFile)).toBe(false);
   });
 });

@@ -1,1 +1,1 @@
-export { SymptomDataScreen as default } from '../../../features/form/SymptomDataScreen';
+export { MedicalFormsHubScreen as default } from '../../../features/medical-forms/MedicalFormsScreens';

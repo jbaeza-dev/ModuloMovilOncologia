@@ -101,7 +101,7 @@ export function HomeScreen() {
           title="Síntomas de hoy"
           description="Guarda una descripción de síntomas."
           icon="clipboard"
-          href="/formulario"
+          href="/formulario/sintomas-libres"
         />
       </View>
       <View style={styles.section}>
