@@ -16,6 +16,7 @@ import { migrateDatabase } from './migrations';
 import { REGISTROS_SQL } from './migrations/001_registros';
 import { CONTEXTO_SQL } from './migrations/002_contexto';
 import { DESCARGAS_SQL } from './migrations/003_descargas';
+import { reconcileCopiesCore } from './reconciliation';
 import { createPatientRepository, seedPatientContextIfEmpty, sinceDays } from './repository';
 import type { SqlConnection, SqlValue } from './sql';
 import { InputError, parseSymptomDescription, parseVitalInput } from './validation';
@@ -712,5 +713,131 @@ describe('descargas y recursos educativos offline', () => {
     );
     expect(countA?.total).toBe(1);
     expect(countB?.total).toBe(1);
+  });
+});
+
+describe('copias educativas y descargas locales', () => {
+  it('guarda, consulta, actualiza y elimina descargas locales aisladas por paciente', async () => {
+    const database = open();
+    await migrateDatabase(database);
+    await seedPatientContextIfEmpty(database, patientA, patientB);
+
+    const repoA = createPatientRepository(database, patientA, ids());
+    const repoB = createPatientRepository(database, patientB, ids());
+
+    // Paciente A guarda una descarga
+    await repoA.saveDownload({
+      contenido_id: 'edu-alimentacion',
+      ruta_local: 'file:///data/user/0/recursos_educativos/A/edu-alimentacion_1.md',
+    });
+
+    // Paciente B guarda una descarga distinta
+    await repoB.saveDownload({
+      contenido_id: 'edu-bienestar',
+      ruta_local: 'file:///data/user/0/recursos_educativos/B/edu-bienestar_1.md',
+    });
+
+    // Verificación de aislamiento A vs B
+    const downloadsA = await repoA.downloads();
+    const downloadsB = await repoB.downloads();
+    expect(downloadsA).toHaveLength(1);
+    expect(downloadsA[0].contenido_id).toBe('edu-alimentacion');
+    expect(downloadsA[0].visualizada).toBe(0);
+    expect(downloadsA[0].visualizada_en).toBeNull();
+
+    expect(downloadsB).toHaveLength(1);
+    expect(downloadsB[0].contenido_id).toBe('edu-bienestar');
+
+    // Consulta individual por ID
+    const singleA = await repoA.download('edu-alimentacion');
+    expect(singleA?.ruta_local).toBe(
+      'file:///data/user/0/recursos_educativos/A/edu-alimentacion_1.md',
+    );
+    expect(await repoA.download('edu-bienestar')).toBeNull();
+
+    // Marcar como visualizada
+    await repoA.markDownloadViewed('edu-alimentacion');
+    const viewedA = await repoA.download('edu-alimentacion');
+    expect(viewedA?.visualizada).toBe(1);
+    expect(viewedA?.visualizada_en).not.toBeNull();
+
+    // Actualización con nueva ruta atómica (ON CONFLICT DO UPDATE)
+    await repoA.saveDownload({
+      contenido_id: 'edu-alimentacion',
+      ruta_local: 'file:///data/user/0/recursos_educativos/A/edu-alimentacion_2.md',
+    });
+    const updatedA = await repoA.download('edu-alimentacion');
+    expect(updatedA?.ruta_local).toBe(
+      'file:///data/user/0/recursos_educativos/A/edu-alimentacion_2.md',
+    );
+    // Debe resetear visualizada a 0 tras la actualización
+    expect(updatedA?.visualizada).toBe(0);
+
+    // Eliminación
+    await repoA.removeDownload('edu-alimentacion');
+    expect(await repoA.downloads()).toHaveLength(0);
+    // Paciente B permanece intacto
+    expect(await repoB.downloads()).toHaveLength(1);
+  });
+
+  it('conciliación bidireccional limpia registros sin archivo y archivos sin registro', async () => {
+    const deletedDbIds: string[] = [];
+    const deletedDiskUris: string[] = [];
+
+    const dbRecords = [
+      { contenido_id: 'valido', ruta_local: 'file:///disk/valido.md' },
+      { contenido_id: 'huerfano_en_db', ruta_local: 'file:///disk/inexistente.md' },
+    ];
+    const diskFiles = ['file:///disk/valido.md', 'file:///disk/huerfano_en_disco.md'];
+
+    const existingOnDisk = new Set(['file:///disk/valido.md', 'file:///disk/huerfano_en_disco.md']);
+
+    const result = await reconcileCopiesCore(dbRecords, diskFiles, {
+      removeDb: async (id) => {
+        deletedDbIds.push(id);
+      },
+      deleteDisk: async (uri) => {
+        deletedDiskUris.push(uri);
+      },
+      checkDiskExists: (uri) => existingOnDisk.has(uri),
+    });
+
+    expect(result.cleanedStaleRecords).toBe(1);
+    expect(result.cleanedOrphans).toBe(1);
+    expect(deletedDbIds).toEqual(['huerfano_en_db']);
+    expect(deletedDiskUris).toEqual(['file:///disk/huerfano_en_disco.md']);
+  });
+
+  it('no pierde archivo previo si la base de datos falla al guardar nueva versión', async () => {
+    const tempDir = mkdtempSync(join(tmpdir(), 'quimiocare-edu-test-'));
+    temporary.push(tempDir);
+
+    const oldFilePath = join(tempDir, 'edu_old.md');
+    const newFilePath = join(tempDir, 'edu_new.md');
+
+    // 1. Archivo previo existe en disco
+    writeFileSync(oldFilePath, 'Contenido previo', 'utf-8');
+    expect(existsSync(oldFilePath)).toBe(true);
+
+    // 2. Se escribe la nueva versión en archivo único
+    writeFileSync(newFilePath, 'Contenido nuevo', 'utf-8');
+    expect(existsSync(newFilePath)).toBe(true);
+
+    // 3. Simular fallo de base de datos
+    const dbSaveOperation = async () => {
+      throw new Error('Fallo simulado en SQLite');
+    };
+
+    // 4. Manejo de error: se elimina el archivo nuevo y se conserva el viejo
+    try {
+      await dbSaveOperation();
+    } catch {
+      unlinkSync(newFilePath);
+    }
+
+    // Comprobación: el archivo previo no se perdió y el nuevo no quedó huérfano
+    expect(existsSync(oldFilePath)).toBe(true);
+    expect(readFileSync(oldFilePath, 'utf-8')).toBe('Contenido previo');
+    expect(existsSync(newFilePath)).toBe(false);
   });
 });

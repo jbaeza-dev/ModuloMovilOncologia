@@ -15,8 +15,10 @@ import {
 } from '../../components/Visual';
 import type { DownloadRecord } from '../../data/local/repository';
 import {
+  deleteFileByUri,
   deleteResourceFile,
   readResourceFile,
+  reconcileResourceCopies,
   resourceFileExists,
   writeResourceFile,
 } from '../../data/local/resource-storage';
@@ -62,18 +64,17 @@ export function EducationCategoryScreen() {
   const categoryIndex = categoria === '1' || categoria === '2' ? Number(categoria) : 0;
   const resources = educationResources.filter((resource) => resource.category === categoryIndex);
 
-  const loadDownloads = useCallback(
-    () => (repository ? repository.downloads() : Promise.resolve([])),
-    [repository],
-  );
+  const loadDownloads = useCallback(async () => {
+    if (!repository || !patientId) return [];
+    await reconcileResourceCopies(patientId, repository).catch(() => undefined);
+    return repository.downloads();
+  }, [repository, patientId]);
   const {
     items: downloads,
     loading: loadingDownloads,
     error: downloadsError,
   } = useFocusedList(loadDownloads);
-  const downloadedIds = new Set(
-    downloads.filter((d) => d.estado === 'descargado').map((d) => d.contenido_id),
-  );
+  const downloadRecordMap = new Map(downloads.map((d) => [d.contenido_id, d]));
 
   return (
     <Screen title={educationCategories[categoryIndex].title} backTo="/educacion">
@@ -82,9 +83,10 @@ export function EducationCategoryScreen() {
         Material de muestra neutro para demostración técnica del almacenamiento local.
       </BodyText>
       {resources.map((resource) => {
+        const record = downloadRecordMap.get(resource.id);
         const isDownloaded =
-          downloadedIds.has(resource.id) &&
-          (patientId ? resourceFileExists(patientId, resource.id) : false);
+          record?.estado === 'descargado' &&
+          (patientId ? resourceFileExists(patientId, resource.id, record.ruta_local) : false);
         return (
           <InfoCard key={resource.id}>
             <Pressable
@@ -94,11 +96,7 @@ export function EducationCategoryScreen() {
               onPress={() => setExpanded(expanded === resource.id ? null : resource.id)}
               style={styles.row}
             >
-              <Feather
-                name={resource.type === 'Video' ? 'play' : 'file-text'}
-                size={26}
-                color={appTheme.colors.primary}
-              />
+              <Feather name="file-text" size={26} color={appTheme.colors.primary} />
               <View style={styles.copy}>
                 <Text style={styles.heading}>{resource.title}</Text>
                 <BodyText>
@@ -150,10 +148,11 @@ export function EducationResourceScreen() {
     educationResources.find((r) => r.id === recurso) ??
     (Number.isInteger(Number(recurso)) ? educationResources[Number(recurso)] : null);
 
-  const loadDownload = useCallback(
-    () => (repository && resource ? repository.download(resource.id) : Promise.resolve(null)),
-    [repository, resource],
-  );
+  const loadDownload = useCallback(async () => {
+    if (!repository || !patientId || !resource) return null;
+    await reconcileResourceCopies(patientId, repository).catch(() => undefined);
+    return repository.download(resource.id);
+  }, [repository, patientId, resource]);
   const {
     value: downloadRecord,
     loading: loadingDownload,
@@ -178,7 +177,9 @@ export function EducationResourceScreen() {
     );
   }
 
-  const fileExists = patientId ? resourceFileExists(patientId, resource.id) : false;
+  const fileExists = patientId
+    ? resourceFileExists(patientId, resource.id, downloadRecord?.ruta_local)
+    : false;
   const isDownloaded = downloadRecord?.estado === 'descargado' && fileExists;
   const busy = actionBusy || saving;
 
@@ -188,14 +189,20 @@ export function EducationResourceScreen() {
     setOpError(null);
     try {
       await runSave(async () => {
-        const filePath = await writeResourceFile(patientId, resource.id, resource.content);
+        const previousDownload = await repository.download(resource.id);
+        const previousPath = previousDownload?.ruta_local;
+
+        const newFilePath = await writeResourceFile(patientId, resource.id, resource.content);
         try {
           await repository.saveDownload({
             contenido_id: resource.id,
-            ruta_local: filePath,
+            ruta_local: newFilePath,
           });
+          if (previousPath && previousPath !== newFilePath) {
+            await deleteFileByUri(previousPath).catch(() => undefined);
+          }
         } catch (dbErr) {
-          await deleteResourceFile(patientId, resource.id).catch(() => undefined);
+          await deleteFileByUri(newFilePath).catch(() => undefined);
           throw dbErr;
         }
       });
@@ -213,9 +220,8 @@ export function EducationResourceScreen() {
     setOpError(null);
     try {
       await runSave(async () => {
-        // El borrado físico debe ejecutarse sin silenciar fallos.
-        // Si falla, no se borra la fila SQLite y se informa el error.
-        await deleteResourceFile(patientId, resource.id);
+        const current = await repository.download(resource.id);
+        await deleteResourceFile(patientId, resource.id, current?.ruta_local);
         await repository.removeDownload(resource.id);
       });
       setReadingContent(null);
@@ -233,7 +239,7 @@ export function EducationResourceScreen() {
     if (!patientId || !resource) return;
     setOpError(null);
     try {
-      const content = await readResourceFile(patientId, resource.id);
+      const content = await readResourceFile(patientId, resource.id, downloadRecord?.ruta_local);
       if (content !== null) {
         setReadingContent(content);
         if (repository) {
