@@ -26,6 +26,8 @@ export async function reconcileCopiesCore(
   let failedDeletions = 0;
   const validDbUris = new Set<string>();
 
+  const norm = (p: string) => p.replace(/\\/g, '/');
+
   // 1. Detección de archivos ausentes en disco
   for (const record of dbRecords) {
     if (!record.ruta_local) {
@@ -42,17 +44,21 @@ export async function reconcileCopiesCore(
         markedUnavailable++;
       }
     } else {
+      validDbUris.add(norm(record.ruta_local));
       validDbUris.add(record.ruta_local);
     }
   }
 
   // 2. Limpieza de disco: archivos huérfanos sin registro en base de datos
   for (const uri of diskFileUris) {
+    const normalizedUri = norm(uri);
     // Si la URI corresponde a una escritura activa en curso, se preserva
-    if (activeWrites && activeWrites.has(uri)) {
-      continue;
+    if (activeWrites) {
+      if (activeWrites.has(uri) || activeWrites.has(normalizedUri)) {
+        continue;
+      }
     }
-    if (!validDbUris.has(uri)) {
+    if (!validDbUris.has(uri) && !validDbUris.has(normalizedUri)) {
       const deleted = await ops.deleteDisk(uri);
       if (deleted) {
         cleanedOrphans++;

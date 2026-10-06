@@ -9,6 +9,7 @@ import {
   deleteFormDraft,
   listPatientDrafts,
   loadFormDraft,
+  recoverOrphanDraftBackups,
   saveFormDraft,
 } from './form-draft-storage';
 import { medicalFormsService } from './medical-form-service';
@@ -283,5 +284,149 @@ describe('almacenamiento de borradores con adaptador y reemplazo seguro', () => 
     // El temporal abandonado debió ser limpiado automáticamente
     const files = await adapter.listDirectory(patientDir);
     expect(files.some((f) => f.endsWith('.tmp'))).toBe(false);
+  });
+
+  it('recupera automáticamente respaldo huérfano .bak si el guardado fue interrumpido entre movimientos', async () => {
+    const baseDir = createTempDir();
+    const patientDir = join(baseDir, patientA, 'borradores');
+    const resolver = (pId: string) => join(baseDir, pId, 'borradores');
+    await adapter.ensureDirectory(patientDir);
+
+    const savedDraft: MedicalFormDraft = {
+      formularioId: 'form-esas-muestra',
+      version: '1.0',
+      pacienteId: patientA,
+      respuestas: { esas_dolor: 4, esas_fatiga: 5 },
+      completado: false,
+      guardadoEn: '2026-10-06T12:00:00Z',
+    };
+
+    // Simular estado posterior al movimiento de .json a .bak justo antes del cierre inesperado:
+    // Solo existe el archivo .bak y un .tmp no movido, pero NO existe el .json final
+    const bakFile = join(patientDir, 'form-esas-muestra_v1.0.bak');
+    const tmpFile = join(patientDir, 'form-esas-muestra_v1.0.999.tmp');
+    writeFileSync(bakFile, JSON.stringify(savedDraft, null, 2), 'utf-8');
+    writeFileSync(tmpFile, 'contenido temporal no completado', 'utf-8');
+
+    // 1. loadFormDraft debe detectar el .bak huérfano, restaurarlo a .json y retornar los datos intactos
+    const loaded = await loadFormDraft(patientA, 'form-esas-muestra', '1.0', adapter, resolver);
+    expect(loaded).not.toBeNull();
+    expect(loaded?.respuestas.esas_dolor).toBe(4);
+    expect(loaded?.respuestas.esas_fatiga).toBe(5);
+
+    // 2. Verificar que el archivo .json fue restaurado
+    const jsonFile = join(patientDir, 'form-esas-muestra_v1.0.json');
+    expect(await adapter.exists(jsonFile)).toBe(true);
+  });
+
+  it('listPatientDrafts recupera respaldos huérfanos antes de limpiar temporales sin perder el borrador', async () => {
+    const baseDir = createTempDir();
+    const patientDir = join(baseDir, patientA, 'borradores');
+    const resolver = (pId: string) => join(baseDir, pId, 'borradores');
+    await adapter.ensureDirectory(patientDir);
+
+    const savedDraft: MedicalFormDraft = {
+      formularioId: 'form-qlq30-muestra',
+      version: '1.0',
+      pacienteId: patientA,
+      respuestas: { q1: 'nada', q2: 'bastante' },
+      completado: true,
+      guardadoEn: '2026-10-06T14:00:00Z',
+    };
+
+    // Dejar un .bak huérfano y un .tmp
+    writeFileSync(
+      join(patientDir, 'form-qlq30-muestra_v1.0.bak'),
+      JSON.stringify(savedDraft, null, 2),
+      'utf-8',
+    );
+    writeFileSync(join(patientDir, 'incompleto.tmp'), 'residuo', 'utf-8');
+
+    // Listar borradores debe recuperar el respaldo a .json, limpiar el .tmp y devolver el borrador
+    const drafts = await listPatientDrafts(patientA, adapter, resolver);
+    expect(drafts).toHaveLength(1);
+    expect(drafts[0].formularioId).toBe('form-qlq30-muestra');
+    expect(drafts[0].respuestas.q1).toBe('nada');
+
+    // Comprobar que el .bak fue restaurado a .json y el .tmp fue eliminado
+    const files = await adapter.listDirectory(patientDir);
+    expect(files.some((f) => f.endsWith('.json'))).toBe(true);
+    expect(files.some((f) => f.endsWith('.tmp'))).toBe(false);
+  });
+
+  it('aborta y preserva el borrador existente si falla la creación del respaldo .bak', async () => {
+    const baseDir = createTempDir();
+    const resolver = (pId: string) => join(baseDir, pId, 'borradores');
+
+    const initialDraft: MedicalFormDraft = {
+      formularioId: 'form-esas-muestra',
+      version: '1.0',
+      pacienteId: patientA,
+      respuestas: { esas_dolor: 3 },
+      completado: false,
+      guardadoEn: '2026-10-06T10:00:00Z',
+    };
+
+    // Guardado inicial exitoso
+    await saveFormDraft(initialDraft, adapter, resolver);
+
+    // Adaptador que falla intencionalmente en el primer moveFile (al crear el respaldo .bak)
+    const backupFailAdapter: FileStorageAdapter = {
+      ...adapter,
+      exists: (p) => adapter.exists(p),
+      readText: (p) => adapter.readText(p),
+      writeText: (p, c) => adapter.writeText(p, c),
+      deleteFile: (p) => adapter.deleteFile(p),
+      listDirectory: (p) => adapter.listDirectory(p),
+      ensureDirectory: (p) => adapter.ensureDirectory(p),
+      moveFile: async (_src, dst, _opts) => {
+        if (dst.endsWith('.bak')) {
+          throw new Error('Fallo de permisos simulado al crear respaldo .bak');
+        }
+        return adapter.moveFile(_src, dst, _opts);
+      },
+    };
+
+    const updateAttempt: MedicalFormDraft = {
+      formularioId: 'form-esas-muestra',
+      version: '1.0',
+      pacienteId: patientA,
+      respuestas: { esas_dolor: 10 },
+      completado: true,
+      guardadoEn: '2026-10-06T15:00:00Z',
+    };
+
+    // Debe abortar con error
+    await expect(saveFormDraft(updateAttempt, backupFailAdapter, resolver)).rejects.toThrow(
+      'Fallo de permisos simulado al crear respaldo .bak',
+    );
+
+    // El borrador inicial .json debe preservarse intacto
+    const preserved = await loadFormDraft(patientA, 'form-esas-muestra', '1.0', adapter, resolver);
+    expect(preserved).not.toBeNull();
+    expect(preserved?.respuestas.esas_dolor).toBe(3);
+    expect(preserved?.completado).toBe(false);
+  });
+
+  it('recoverOrphanDraftBackups recupera directamente respaldos huérfanos sin sobreescribir', async () => {
+    const baseDir = createTempDir();
+    const patientDir = join(baseDir, patientA, 'borradores');
+    await adapter.ensureDirectory(patientDir);
+
+    const bakFile = join(patientDir, 'form-directo_1.0.bak');
+    const draftContent: MedicalFormDraft = {
+      formularioId: 'form-directo',
+      version: '1.0',
+      pacienteId: patientA,
+      respuestas: { esas_nauseas: 4 },
+      completado: false,
+      guardadoEn: '2026-10-06T12:00:00Z',
+    };
+    await adapter.writeText(bakFile, JSON.stringify(draftContent));
+
+    const recovered = await recoverOrphanDraftBackups(patientDir, adapter);
+    expect(recovered).toBe(1);
+    expect(await adapter.exists(join(patientDir, 'form-directo_1.0.json'))).toBe(true);
+    expect(await adapter.exists(bakFile)).toBe(false);
   });
 });

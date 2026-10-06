@@ -229,7 +229,10 @@ export function EducationResourceScreen() {
     try {
       await runSave(async () => {
         const current = await repository.download(resource.id);
-        await deleteResourceFile(patientId, resource.id, current?.ruta_local);
+        const fileDeleted = await deleteResourceFile(patientId, resource.id, current?.ruta_local);
+        if (!fileDeleted) {
+          throw new Error('No se pudo eliminar el archivo local en el dispositivo.');
+        }
         await repository.removeDownload(resource.id);
       });
       setReadingContent(null);

@@ -69,11 +69,14 @@ class File {
     }
   }
 
-  async move(dest) {
+  async move(dest, options) {
     const destPath = typeof dest === 'object' && dest ? dest.uri : String(dest);
     const parent = path.dirname(destPath);
     if (!fs.existsSync(parent)) {
       fs.mkdirSync(parent, { recursive: true });
+    }
+    if (fs.existsSync(destPath) && !options?.overwrite) {
+      throw new Error(`Destination file already exists and overwrite is false: ${destPath}`);
     }
     fs.renameSync(this.uri, destPath);
   }

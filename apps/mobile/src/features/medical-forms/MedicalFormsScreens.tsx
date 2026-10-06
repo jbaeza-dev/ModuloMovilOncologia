@@ -287,7 +287,11 @@ export function MedicalFormDetailScreen() {
     setBusy(true);
     setFeedback(null);
     try {
-      await deleteFormDraft(patientId, form.id, form.version);
+      const deleted = await deleteFormDraft(patientId, form.id, form.version);
+      if (!deleted) {
+        setFeedback('No se pudo descartar el archivo del borrador en el dispositivo.');
+        return;
+      }
       setAnswers({});
       setCompleted(false);
       setIsReviewing(false);

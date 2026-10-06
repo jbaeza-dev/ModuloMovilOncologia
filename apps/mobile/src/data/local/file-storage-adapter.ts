@@ -65,14 +65,7 @@ export class ExpoFileStorageAdapter implements FileStorageAdapter {
   ): Promise<void> {
     const source = new File(sourcePath);
     const dest = new File(destinationPath);
-    if (dest.exists && options?.overwrite) {
-      try {
-        await dest.delete();
-      } catch {
-        // Continuar al move
-      }
-    }
-    await source.move(dest);
+    await source.move(dest, { overwrite: options?.overwrite ?? false });
   }
 
   async listDirectory(dirPath: string): Promise<string[]> {

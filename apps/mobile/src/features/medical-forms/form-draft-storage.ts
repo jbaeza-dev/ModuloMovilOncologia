@@ -56,13 +56,10 @@ export async function saveFormDraft(
 
   const targetAlreadyExists = await adapter.exists(targetPath);
 
-  // 2. Si el destino existe, crear respaldo .bak
+  // 2. Si el destino existe, crear respaldo .bak obligatorio
   if (targetAlreadyExists) {
-    try {
-      await adapter.moveFile(targetPath, bakPath, { overwrite: true });
-    } catch {
-      // Continuar intentando el reemplazo
-    }
+    // Si la creación del respaldo falla, se aborta para no comprometer el borrador anterior
+    await adapter.moveFile(targetPath, bakPath, { overwrite: true });
   }
 
   // 3. Mover .tmp a destino
@@ -89,7 +86,44 @@ export async function saveFormDraft(
 }
 
 /**
+ * Escanea y recupera respaldos huérfanos (.bak) si el archivo final (.json) no existe
+ * debido a una interrupción o cierre inesperado durante el guardado.
+ */
+export async function recoverOrphanDraftBackups(
+  baseDir: string,
+  adapter: FileStorageAdapter = defaultExpoAdapter,
+): Promise<number> {
+  if (!(await adapter.exists(baseDir))) return 0;
+  let recovered = 0;
+  try {
+    const files = await adapter.listDirectory(baseDir);
+    for (const fileUri of files) {
+      if (fileUri.endsWith('.bak')) {
+        const correspondingJson = fileUri.slice(0, -4) + '.json';
+        const jsonExists = await adapter.exists(correspondingJson);
+        if (!jsonExists) {
+          try {
+            await adapter.moveFile(fileUri, correspondingJson, { overwrite: true });
+            recovered++;
+          } catch {
+            // Continuar
+          }
+        } else {
+          // El .json existe y está confirmado: el .bak es un residuo
+          await adapter.deleteFile(fileUri).catch(() => false);
+        }
+      }
+    }
+  } catch {
+    // Manejo seguro
+  }
+  return recovered;
+}
+
+/**
  * Recupera el borrador guardado para un paciente, formulario y versión específicos.
+ * Si el archivo .json no existe pero se encuentra un respaldo .bak huérfano,
+ * se restaura automáticamente antes de leer.
  */
 export async function loadFormDraft(
   pacienteId: string,
@@ -108,6 +142,22 @@ export async function loadFormDraft(
 
   const sep = baseDir.endsWith('/') ? '' : '/';
   const targetPath = `${baseDir}${sep}${getDraftFileName(formularioId, version)}`;
+  const bakPath = `${baseDir}${sep}${formularioId}_v${version}.bak`;
+
+  // Recuperación automática de respaldo si la aplicación cerró entre el movimiento a .bak y a .json
+  if (!(await adapter.exists(targetPath)) && (await adapter.exists(bakPath))) {
+    try {
+      await adapter.moveFile(bakPath, targetPath, { overwrite: true });
+    } catch {
+      // Fallback: intentar leer del .bak directamente
+      try {
+        const raw = await adapter.readText(bakPath);
+        return JSON.parse(raw) as MedicalFormDraft;
+      } catch {
+        return null;
+      }
+    }
+  }
 
   if (!(await adapter.exists(targetPath))) return null;
 
@@ -120,7 +170,7 @@ export async function loadFormDraft(
 }
 
 /**
- * Elimina el borrador del almacenamiento local del dispositivo.
+ * Elimina el borrador del almacenamiento local del dispositivo (incluyendo .bak residual).
  */
 export async function deleteFormDraft(
   pacienteId: string,
@@ -139,13 +189,21 @@ export async function deleteFormDraft(
 
   const sep = baseDir.endsWith('/') ? '' : '/';
   const targetPath = `${baseDir}${sep}${getDraftFileName(formularioId, version)}`;
+  const bakPath = `${baseDir}${sep}${formularioId}_v${version}.bak`;
 
-  return adapter.deleteFile(targetPath);
+  let success = true;
+  if (await adapter.exists(targetPath)) {
+    success = await adapter.deleteFile(targetPath);
+  }
+  if (await adapter.exists(bakPath)) {
+    await adapter.deleteFile(bakPath).catch(() => false);
+  }
+  return success;
 }
 
 /**
  * Lista todos los borradores almacenados localmente para el paciente indicado,
- * limpiando de paso archivos temporales o de respaldo abandonados.
+ * recuperando previamente cualquier respaldo huérfano antes de limpiar temporales.
  */
 export async function listPatientDrafts(
   pacienteId: string,
@@ -160,12 +218,15 @@ export async function listPatientDrafts(
 
   if (!(await adapter.exists(baseDir))) return [];
 
+  // Paso 1: Recuperar cualquier respaldo huérfano antes de listar o limpiar
+  await recoverOrphanDraftBackups(baseDir, adapter);
+
   const drafts: MedicalFormDraft[] = [];
   try {
     const files = await adapter.listDirectory(baseDir);
     for (const fileUri of files) {
-      // Limpieza de .tmp o .bak abandonados
-      if (fileUri.endsWith('.tmp') || fileUri.endsWith('.bak')) {
+      // Limpieza de .tmp abandonados
+      if (fileUri.endsWith('.tmp')) {
         await adapter.deleteFile(fileUri).catch(() => false);
         continue;
       }

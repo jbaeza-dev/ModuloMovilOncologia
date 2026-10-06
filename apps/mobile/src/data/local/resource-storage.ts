@@ -28,21 +28,30 @@ export function assertSafeVersion(version: string, fieldName: string): void {
   }
 }
 
+function normalizePath(p: string): string {
+  return p.replace(/\\/g, '/');
+}
+
 /**
  * Registro en memoria de escrituras de archivos en curso (in-flight).
  * La conciliación omite estos archivos para no borrarlos como huérfanos antes del commit en SQLite.
  */
 const activeWrites = new Set<string>();
 
-export function registerActiveWrite(fileUri: string): () => void {
-  activeWrites.add(fileUri);
+export function registerActiveWrite(fileUriOrUris: string | string[]): () => void {
+  const uris = (Array.isArray(fileUriOrUris) ? fileUriOrUris : [fileUriOrUris]).map(normalizePath);
+  for (const u of uris) {
+    activeWrites.add(u);
+  }
   return () => {
-    activeWrites.delete(fileUri);
+    for (const u of uris) {
+      activeWrites.delete(u);
+    }
   };
 }
 
 export function isFileWriteInFlight(fileUri: string): boolean {
-  return activeWrites.has(fileUri);
+  return activeWrites.has(normalizePath(fileUri));
 }
 
 export function getActiveWrites(): Set<string> {
@@ -54,6 +63,57 @@ const defaultExpoAdapter = new ExpoFileStorageAdapter();
 export function getPatientResourceDirectory(pacienteId: string): Directory {
   assertSafeId(pacienteId, 'pacienteId');
   return new Directory(Paths.document, 'recursos_educativos', pacienteId);
+}
+
+/**
+ * Comprueba si un nombre de archivo corresponde exactamente a un recurso educativo:
+ * Acepta exactamente `${contenidoId}.md` o `${contenidoId}_${timestamp}.md` (donde timestamp son dígitos).
+ * Previene colisiones por prefijo (ej. 'guia' vs 'guia_extra').
+ */
+export function isResourceFileForContent(fileName: string, contenidoId: string): boolean {
+  assertSafeId(contenidoId, 'contenidoId');
+  if (fileName === `${contenidoId}.md`) return true;
+  const prefix = `${contenidoId}_`;
+  if (!fileName.startsWith(prefix) || !fileName.endsWith('.md')) return false;
+  const middle = fileName.slice(prefix.length, -3);
+  return /^\d+$/.test(middle);
+}
+
+/**
+ * Valida estrictamente que una ruta pertenezca al directorio del paciente activo y no
+ * acceda a rutas de otros pacientes o del sistema mediante path traversal.
+ */
+export function isPathInPatientResourceDirectory(
+  ruta: string,
+  pacienteId: string,
+  contenidoId?: string,
+  baseDirResolver?: (pacienteId: string) => string,
+): boolean {
+  assertSafeId(pacienteId, 'pacienteId');
+  if (contenidoId) assertSafeId(contenidoId, 'contenidoId');
+
+  const baseDir = baseDirResolver
+    ? baseDirResolver(pacienteId)
+    : getPatientResourceDirectory(pacienteId).uri;
+
+  const normalizedBase = baseDir.replace(/\\/g, '/').replace(/\/+$/, '');
+  const normalizedRuta = ruta.replace(/\\/g, '/');
+
+  if (!normalizedRuta.startsWith(normalizedBase + '/')) {
+    return false;
+  }
+
+  const relative = normalizedRuta.slice(normalizedBase.length + 1);
+  if (relative.split('/').some((part) => part === '..' || part === '.' || part === '')) {
+    return false;
+  }
+
+  if (contenidoId) {
+    const basename = relative.split('/').pop() || '';
+    return isResourceFileForContent(basename, contenidoId);
+  }
+
+  return true;
 }
 
 /**
@@ -86,11 +146,11 @@ export async function writeResourceFile(
 
 /**
  * Coordinador de guardado seguro con compensación:
- * 1. Escribe en archivo temporal .tmp con token sincronizado.
- * 2. Mueve atómicamente a .md.
- * 3. Ejecuta inserción/actualización en SQLite.
- * 4. Si SQLite falla: compensación inmediata borrando el archivo físico de disco.
- * 5. Registra la URI en activeWrites para evitar colisiones con la conciliación concurrente.
+ * 1. Registra tanto .tmp como .md en activeWrites para evitar su borrado prematuro en conciliación/limpieza.
+ * 2. Escribe en archivo temporal .tmp con token sincronizado.
+ * 3. Mueve a .md con overwrite nativo.
+ * 4. Ejecuta inserción/actualización en SQLite.
+ * 5. Si SQLite falla: compensación inmediata borrando el archivo físico de disco.
  */
 export async function saveResourceWithCompensation(
   pacienteId: string,
@@ -114,7 +174,8 @@ export async function saveResourceWithCompensation(
   const tmpUri = baseDir.endsWith('/') ? `${baseDir}${token}.tmp` : `${baseDir}/${token}.tmp`;
   const finalUri = baseDir.endsWith('/') ? `${baseDir}${token}.md` : `${baseDir}/${token}.md`;
 
-  const unregister = registerActiveWrite(finalUri);
+  // Registra AMBOS archivos en activeWrites para proteger al .tmp y al .md durante todo el ciclo
+  const unregister = registerActiveWrite([tmpUri, finalUri]);
 
   try {
     // 1. Escritura en temporal
@@ -201,6 +262,10 @@ export async function deleteResourceFile(
 
   let success = true;
   if (rutaLocal) {
+    // Verificar estrictamente que la ruta pertenezca al paciente y coincida con el contenido
+    if (!isPathInPatientResourceDirectory(rutaLocal, pacienteId, contenidoId)) {
+      return false;
+    }
     const deleted = await deleteFileByUri(rutaLocal);
     if (!deleted) success = false;
   }
@@ -211,7 +276,7 @@ export async function deleteResourceFile(
     for (const entry of entries) {
       if (entry instanceof File) {
         const name = Paths.basename(entry.uri);
-        if (name === `${contenidoId}.md` || name.startsWith(`${contenidoId}_`)) {
+        if (isResourceFileForContent(name, contenidoId)) {
           try {
             await entry.delete();
           } catch {
@@ -238,11 +303,13 @@ export function resourceFileExists(
   assertSafeId(contenidoId, 'contenidoId');
 
   if (rutaLocal) {
-    try {
-      const file = new File(rutaLocal);
-      if (file.exists) return true;
-    } catch {
-      // Ignorar fallo de URI
+    if (isPathInPatientResourceDirectory(rutaLocal, pacienteId, contenidoId)) {
+      try {
+        const file = new File(rutaLocal);
+        if (file.exists) return true;
+      } catch {
+        // Ignorar fallo de URI
+      }
     }
   }
   const dir = getPatientResourceDirectory(pacienteId);
@@ -252,7 +319,7 @@ export function resourceFileExists(
     for (const entry of entries) {
       if (entry instanceof File) {
         const name = Paths.basename(entry.uri);
-        if (name === `${contenidoId}.md` || name.startsWith(`${contenidoId}_`)) {
+        if (isResourceFileForContent(name, contenidoId)) {
           return true;
         }
       }
@@ -275,13 +342,15 @@ export async function readResourceFile(
   assertSafeId(contenidoId, 'contenidoId');
 
   if (rutaLocal) {
-    try {
-      const file = new File(rutaLocal);
-      if (file.exists) {
-        return file.text();
+    if (isPathInPatientResourceDirectory(rutaLocal, pacienteId, contenidoId)) {
+      try {
+        const file = new File(rutaLocal);
+        if (file.exists) {
+          return file.text();
+        }
+      } catch {
+        // Continuar al fallback
       }
-    } catch {
-      // Continuar al fallback
     }
   }
   const dir = getPatientResourceDirectory(pacienteId);
@@ -291,7 +360,7 @@ export async function readResourceFile(
     for (const entry of entries) {
       if (entry instanceof File) {
         const name = Paths.basename(entry.uri);
-        if (name === `${contenidoId}.md` || name.startsWith(`${contenidoId}_`)) {
+        if (isResourceFileForContent(name, contenidoId)) {
           return entry.text();
         }
       }
