@@ -294,21 +294,25 @@ describe('guardado seguro con compensación y control de escrituras en curso', (
     expect(await adapter.readText(finalUri)).toBe('# Contenido en proceso');
   });
 
-  it('distingue con precisión identificadores para evitar colisiones por prefijo (guia vs guia_extra)', async () => {
+  it('distingue con precisión identificadores para evitar colisiones por prefijo (guia vs guia_extra y guia vs guia_123)', async () => {
     // 1. Pruebas directas de isResourceFileForContent
     expect(isResourceFileForContent('guia.md', 'guia')).toBe(true);
-    expect(isResourceFileForContent('guia_1791157123508.md', 'guia')).toBe(true);
-    expect(isResourceFileForContent('guia_123.md', 'guia')).toBe(true);
+    expect(isResourceFileForContent('guia.1791157123508.md', 'guia')).toBe(true);
+    expect(isResourceFileForContent('guia.123.md', 'guia')).toBe(true);
 
-    // No debe coincidir con recursos cuyo nombre empieza por el prefijo (ej. guia_extra)
+    // No debe coincidir con recursos de IDs distintos ni formatos ambiguos
     expect(isResourceFileForContent('guia_extra.md', 'guia')).toBe(false);
-    expect(isResourceFileForContent('guia_extra_1791157123508.md', 'guia')).toBe(false);
+    expect(isResourceFileForContent('guia_extra.1791157123508.md', 'guia')).toBe(false);
     expect(isResourceFileForContent('guia_nutricion_1.md', 'guia')).toBe(false);
     expect(isResourceFileForContent('guia_abc.md', 'guia')).toBe(false);
+    // El archivo de guia_123.md NO debe coincidir al buscar guia
+    expect(isResourceFileForContent('guia_123.md', 'guia')).toBe(false);
 
     // Pero sí debe coincidir con su propio contenidoId completo
-    expect(isResourceFileForContent('guia_extra_1791157123508.md', 'guia_extra')).toBe(true);
+    expect(isResourceFileForContent('guia_extra.1791157123508.md', 'guia_extra')).toBe(true);
     expect(isResourceFileForContent('guia_extra.md', 'guia_extra')).toBe(true);
+    expect(isResourceFileForContent('guia_123.md', 'guia_123')).toBe(true);
+    expect(isResourceFileForContent('guia_123.1791157123508.md', 'guia_123')).toBe(true);
   });
 
   it('valida pertenencia estricta al directorio del paciente y rechaza rutas ajenas o transversales', async () => {
@@ -320,8 +324,8 @@ describe('guardado seguro con compensación y control de escrituras en curso', (
     await adapter.ensureDirectory(patientADir);
     await adapter.ensureDirectory(patientBDir);
 
-    const validPathA = join(patientADir, 'guia_123.md');
-    const pathB = join(patientBDir, 'guia_123.md');
+    const validPathA = join(patientADir, 'guia.123.md');
+    const pathB = join(patientBDir, 'guia.123.md');
     const traversalPath = join(patientADir, '../malicioso.md');
     const systemPath = '/etc/passwd';
 
@@ -345,5 +349,117 @@ describe('guardado seguro con compensación y control de escrituras en curso', (
     expect(deleteAttempt).toBe(false);
     // El archivo de Paciente B sigue existiendo intacto
     expect(await adapter.exists(pathB)).toBe(true);
+  });
+
+  it('borrar el recurso guia no elimina el archivo guia_123.md de otro recurso', async () => {
+    const baseDir = createTempDir();
+    const resolver = (pId: string) => join(baseDir, pId);
+    const patientDir = resolver(patientA);
+    await adapter.ensureDirectory(patientDir);
+
+    const fileGuia = join(patientDir, 'guia.md');
+    const fileGuia123 = join(patientDir, 'guia_123.md');
+
+    await adapter.writeText(fileGuia, '# Contenido Guia');
+    await adapter.writeText(fileGuia123, '# Contenido Guia 123');
+
+    // Borrar exclusivamente la ruta de guia
+    const deleted = await deleteResourceFile(patientA, 'guia', fileGuia, adapter, resolver);
+    expect(deleted).toBe(true);
+    expect(await adapter.exists(fileGuia)).toBe(false);
+    // El archivo guia_123.md de otro recurso debe seguir intacto
+    expect(await adapter.exists(fileGuia123)).toBe(true);
+  });
+
+  it('la conciliación no borra un archivo guardado recientemente si la lectura inicial de SQLite fue pausada', async () => {
+    const baseDir = createTempDir();
+    const resolver = (pId: string) => join(baseDir, pId);
+    await adapter.ensureDirectory(resolver(patientA));
+
+    let unpauseSave: () => void = () => {};
+    const saveAllowedPromise = new Promise<void>((r) => {
+      unpauseSave = r;
+    });
+
+    let markSaveDone: () => void = () => {};
+    const saveDonePromise = new Promise<void>((r) => {
+      markSaveDone = r;
+    });
+
+    // Repositorio con base de datos en memoria para el test
+    const fakeDb: Array<{ contenido_id: string; ruta_local: string | null; estado?: string }> = [];
+
+    // Mock repository donde la primera lectura de downloads simula ser lenta o pausada
+    let firstRead = true;
+    const fakeRepo = {
+      downloads: async () => {
+        if (firstRead) {
+          firstRead = false;
+          // Permitir que el guardado ocurra mientras la conciliación leyó antes del commit
+          unpauseSave();
+          await saveDonePromise;
+          // Devolver el snapshot viejo (vacío) previo al guardado
+          return [];
+        }
+        // Lecturas posteriores devuelven el estado actualizado de la base de datos
+        return [...fakeDb];
+      },
+      markDownloadUnavailable: async () => {},
+    };
+
+    // Tarea de guardado que se ejecutará mientras la lectura de conciliación estuvo en curso
+    const runSaveTask = async () => {
+      await saveAllowedPromise;
+      await saveResourceWithCompensation(
+        patientA,
+        'recurso-nuevo',
+        '# Nuevo recurso confirmado',
+        async (uri) => {
+          fakeDb.push({
+            contenido_id: 'recurso-nuevo',
+            ruta_local: uri,
+            estado: 'descargado',
+          });
+        },
+        adapter,
+        resolver,
+      );
+      markSaveDone();
+    };
+
+    const saveBg = runSaveTask();
+
+    // Ejecutar conciliación con comprobación protegida antes de borrar
+    const initialRecords = await fakeRepo.downloads();
+    await saveBg;
+
+    // Obtener los archivos en disco (incluye el recién guardado)
+    const diskFiles = await adapter.listDirectory(resolver(patientA));
+    const newlySavedFile = diskFiles.find((f) => f.endsWith('.md'))!;
+    expect(newlySavedFile).toBeDefined();
+
+    // Conciliación utilizando el snapshot viejo inicial pero con isProtectedOrphan
+    const concilResult = await reconcileCopiesCore(
+      initialRecords, // snapshot viejo vacío
+      diskFiles,
+      {
+        markDbUnavailable: async () => {},
+        deleteDisk: async (uri) => adapter.deleteFile(uri),
+        checkDiskExists: (uri) => adapter.exists(uri),
+        isProtectedOrphan: async (uri) => {
+          const fresh = await fakeRepo.downloads();
+          const normUri = uri.replace(/\\/g, '/');
+          return fresh.some(
+            (r) =>
+              r.ruta_local &&
+              (r.ruta_local === uri || r.ruta_local.replace(/\\/g, '/') === normUri),
+          );
+        },
+      },
+    );
+
+    // No debe borrarse el archivo recién confirmado
+    expect(concilResult.cleanedOrphans).toBe(0);
+    expect(await adapter.exists(newlySavedFile)).toBe(true);
   });
 });

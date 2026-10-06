@@ -15,7 +15,6 @@ import {
 } from '../../components/Visual';
 import type { DownloadRecord } from '../../data/local/repository';
 import {
-  deleteFileByUri,
   deleteResourceFile,
   readResourceFile,
   reconcileResourceCopies,
@@ -209,7 +208,7 @@ export function EducationResourceScreen() {
               ruta_local: finalUri,
             });
             if (previousPath && previousPath !== finalUri) {
-              await deleteFileByUri(previousPath).catch(() => false);
+              await deleteResourceFile(patientId, resource.id, previousPath);
             }
           },
         );

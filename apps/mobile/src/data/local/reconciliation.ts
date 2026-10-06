@@ -8,12 +8,14 @@ export type ReconciliationOps = {
   markDbUnavailable: (contenidoId: string) => Promise<void>;
   deleteDisk: (uri: string) => Promise<boolean>;
   checkDiskExists: (uri: string) => boolean | Promise<boolean>;
+  isProtectedOrphan?: (uri: string) => boolean | Promise<boolean>;
 };
 
 /**
  * Conciliación bidireccional entre registros de descarga en base de datos y archivos físicos en disco.
  * 1) Detecta archivos ausentes en disco y actualiza su estado en base de datos a no disponible.
- * 2) Detecta y elimina archivos huérfanos en disco, ignorando aquellos con escrituras en curso.
+ * 2) Detecta y elimina archivos huérfanos en disco, ignorando aquellos con escrituras en curso
+ *    o protegidos por una comprobación en el momento del borrado.
  */
 export async function reconcileCopiesCore(
   dbRecords: Array<{ contenido_id: string; ruta_local: string | null; estado?: string }>,
@@ -59,6 +61,12 @@ export async function reconcileCopiesCore(
       }
     }
     if (!validDbUris.has(uri) && !validDbUris.has(normalizedUri)) {
+      if (ops.isProtectedOrphan) {
+        const isProtected = await ops.isProtectedOrphan(uri);
+        if (isProtected) {
+          continue;
+        }
+      }
       const deleted = await ops.deleteDisk(uri);
       if (deleted) {
         cleanedOrphans++;

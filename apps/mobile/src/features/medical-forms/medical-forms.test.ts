@@ -429,4 +429,149 @@ describe('almacenamiento de borradores con adaptador y reemplazo seguro', () => 
     expect(await adapter.exists(join(patientDir, 'form-directo_1.0.json'))).toBe(true);
     expect(await adapter.exists(bakFile)).toBe(false);
   });
+
+  it('listPatientDrafts durante una escritura pausada no elimina el .tmp activo ni recupera el .bak prematuramente', async () => {
+    const baseDir = createTempDir();
+    const resolver = (pId: string) => join(baseDir, pId, 'borradores');
+
+    let resolveWritePause: () => void = () => {};
+    const writePausedPromise = new Promise<void>((r) => {
+      resolveWritePause = r;
+    });
+
+    let pauseStartedResolve: () => void = () => {};
+    const pauseStartedPromise = new Promise<void>((r) => {
+      pauseStartedResolve = r;
+    });
+
+    const slowAdapter: FileStorageAdapter = {
+      ...adapter,
+      exists: (p) => adapter.exists(p),
+      readText: (p) => adapter.readText(p),
+      deleteFile: (p) => adapter.deleteFile(p),
+      moveFile: (src, dst, opts) => adapter.moveFile(src, dst, opts),
+      listDirectory: (p) => adapter.listDirectory(p),
+      ensureDirectory: (p) => adapter.ensureDirectory(p),
+      writeText: async (p, c) => {
+        await adapter.writeText(p, c);
+        if (p.endsWith('.tmp')) {
+          pauseStartedResolve();
+          await writePausedPromise;
+        }
+      },
+    };
+
+    const draft: MedicalFormDraft = {
+      formularioId: 'form-esas-muestra',
+      version: '1.0',
+      pacienteId: patientA,
+      respuestas: { esas_apetito: 5 },
+      completado: false,
+      guardadoEn: '2026-10-06T14:00:00Z',
+    };
+
+    // Iniciar guardado pausado
+    const savePromise = saveFormDraft(draft, slowAdapter, resolver);
+
+    // Esperar a que el archivo .tmp haya sido escrito y esté pausado
+    await pauseStartedPromise;
+
+    const patientDir = resolver(patientA);
+    const filesDuringPause = await adapter.listDirectory(patientDir);
+    const activeTmp = filesDuringPause.find((f) => f.endsWith('.tmp'));
+    expect(activeTmp).toBeDefined();
+
+    // Ejecutar listPatientDrafts concurrentemente
+    const draftsFound = await listPatientDrafts(patientA, adapter, resolver);
+    expect(draftsFound).toHaveLength(0);
+
+    // Comprobar que listPatientDrafts NO eliminó el archivo .tmp en vuelo
+    expect(await adapter.exists(activeTmp!)).toBe(true);
+
+    // Reanudar el guardado
+    resolveWritePause();
+    await savePromise;
+
+    // Ahora que terminó, el borrador .json existe y se puede listar
+    const draftsAfter = await listPatientDrafts(patientA, adapter, resolver);
+    expect(draftsAfter).toHaveLength(1);
+    expect(draftsAfter[0].respuestas.esas_apetito).toBe(5);
+  });
+
+  it('deleteFormDraft devuelve false si el borrado de .bak falla, evitando confirmar el descarte', async () => {
+    const baseDir = createTempDir();
+    const resolver = (pId: string) => join(baseDir, pId, 'borradores');
+    const patientDir = resolver(patientA);
+    await adapter.ensureDirectory(patientDir);
+
+    const jsonPath = join(patientDir, 'form-esas-muestra_v1.0.json');
+    const bakPath = join(patientDir, 'form-esas-muestra_v1.0.bak');
+
+    await adapter.writeText(jsonPath, JSON.stringify({ formularioId: 'form-esas-muestra' }));
+    await adapter.writeText(
+      bakPath,
+      JSON.stringify({ formularioId: 'form-esas-muestra', backup: true }),
+    );
+
+    // Adaptador que falla intencionalmente al borrar el archivo .bak
+    const failBakDeleteAdapter: FileStorageAdapter = {
+      ...adapter,
+      exists: (p) => adapter.exists(p),
+      readText: (p) => adapter.readText(p),
+      writeText: (p, c) => adapter.writeText(p, c),
+      moveFile: (src, dst, opts) => adapter.moveFile(src, dst, opts),
+      listDirectory: (p) => adapter.listDirectory(p),
+      ensureDirectory: (p) => adapter.ensureDirectory(p),
+      deleteFile: async (p) => {
+        if (p.endsWith('.bak')) {
+          return false; // Fallo simulado al borrar respaldo
+        }
+        return adapter.deleteFile(p);
+      },
+    };
+
+    const result = await deleteFormDraft(
+      patientA,
+      'form-esas-muestra',
+      '1.0',
+      failBakDeleteAdapter,
+      resolver,
+    );
+    // Debe devolver false porque el descarte no fue completo
+    expect(result).toBe(false);
+  });
+
+  it('recupera desde .bak si el archivo .json existente está corrupto o truncado', async () => {
+    const baseDir = createTempDir();
+    const resolver = (pId: string) => join(baseDir, pId, 'borradores');
+    const patientDir = resolver(patientA);
+    await adapter.ensureDirectory(patientDir);
+
+    const jsonPath = join(patientDir, 'form-esas-muestra_v1.0.json');
+    const bakPath = join(patientDir, 'form-esas-muestra_v1.0.bak');
+
+    // .json corrupto o truncado (ej. corte de energía a mitad de escritura)
+    await adapter.writeText(jsonPath, '{"formularioId": "form-esas-muestra", "incompleto":');
+
+    // .bak válido y saludable
+    const validDraft: MedicalFormDraft = {
+      formularioId: 'form-esas-muestra',
+      version: '1.0',
+      pacienteId: patientA,
+      respuestas: { esas_dolor: 2, esas_cansancio: 4 },
+      completado: false,
+      guardadoEn: '2026-10-06T16:00:00Z',
+    };
+    await adapter.writeText(bakPath, JSON.stringify(validDraft));
+
+    // loadFormDraft debe detectar el .json corrupto y restaurar el .bak
+    const loaded = await loadFormDraft(patientA, 'form-esas-muestra', '1.0', adapter, resolver);
+    expect(loaded).not.toBeNull();
+    expect(loaded?.respuestas.esas_dolor).toBe(2);
+    expect(loaded?.respuestas.esas_cansancio).toBe(4);
+
+    // El .json restaurado ahora es legible en disco
+    const jsonContent = await adapter.readText(jsonPath);
+    expect(jsonContent).not.toContain('incompleto');
+  });
 });

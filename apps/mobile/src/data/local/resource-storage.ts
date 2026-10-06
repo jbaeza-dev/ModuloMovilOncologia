@@ -58,6 +58,39 @@ export function getActiveWrites(): Set<string> {
   return new Set(activeWrites);
 }
 
+export class AsyncMutex {
+  private queue: Promise<void> = Promise.resolve();
+
+  async runExclusive<T>(task: () => Promise<T>): Promise<T> {
+    let release: () => void = () => {};
+    const wait = this.queue;
+    this.queue = new Promise<void>((resolve) => {
+      release = resolve;
+    });
+    await wait;
+    try {
+      return await task();
+    } finally {
+      release();
+    }
+  }
+}
+
+const patientResourceMutexes = new Map<string, AsyncMutex>();
+
+export function getPatientResourceMutex(pacienteId: string): AsyncMutex {
+  let mutex = patientResourceMutexes.get(pacienteId);
+  if (!mutex) {
+    mutex = new AsyncMutex();
+    patientResourceMutexes.set(pacienteId, mutex);
+  }
+  return mutex;
+}
+
+export function withPatientResourceLock<T>(pacienteId: string, task: () => Promise<T>): Promise<T> {
+  return getPatientResourceMutex(pacienteId).runExclusive(task);
+}
+
 const defaultExpoAdapter = new ExpoFileStorageAdapter();
 
 export function getPatientResourceDirectory(pacienteId: string): Directory {
@@ -67,13 +100,13 @@ export function getPatientResourceDirectory(pacienteId: string): Directory {
 
 /**
  * Comprueba si un nombre de archivo corresponde exactamente a un recurso educativo:
- * Acepta exactamente `${contenidoId}.md` o `${contenidoId}_${timestamp}.md` (donde timestamp son dígitos).
- * Previene colisiones por prefijo (ej. 'guia' vs 'guia_extra').
+ * Acepta exactamente `${contenidoId}.md` o `${contenidoId}.${timestamp}.md` (donde timestamp son dígitos).
+ * El separador de punto garantiza identificación inequívoca sin colisionar con IDs como 'guia_123'.
  */
 export function isResourceFileForContent(fileName: string, contenidoId: string): boolean {
   assertSafeId(contenidoId, 'contenidoId');
   if (fileName === `${contenidoId}.md`) return true;
-  const prefix = `${contenidoId}_`;
+  const prefix = `${contenidoId}.`;
   if (!fileName.startsWith(prefix) || !fileName.endsWith('.md')) return false;
   const middle = fileName.slice(prefix.length, -3);
   return /^\d+$/.test(middle);
@@ -131,7 +164,7 @@ export async function writeResourceFile(
   dir.create({ intermediates: true, idempotent: true });
 
   const timestamp = Date.now();
-  const token = `${contenidoId}_${timestamp}`;
+  const token = `${contenidoId}.${timestamp}`;
   const tmpName = `${token}.tmp`;
   const finalName = `${token}.md`;
 
@@ -145,12 +178,13 @@ export async function writeResourceFile(
 }
 
 /**
- * Coordinador de guardado seguro con compensación:
- * 1. Registra tanto .tmp como .md en activeWrites para evitar su borrado prematuro en conciliación/limpieza.
- * 2. Escribe en archivo temporal .tmp con token sincronizado.
- * 3. Mueve a .md con overwrite nativo.
- * 4. Ejecuta inserción/actualización en SQLite.
- * 5. Si SQLite falla: compensación inmediata borrando el archivo físico de disco.
+ * Coordinador de guardado seguro con compensación y exclusión mutua por paciente:
+ * 1. Coordina mediante withPatientResourceLock para evitar carreras con conciliación/lectura concurrente.
+ * 2. Registra tanto .tmp como .md en activeWrites para evitar su borrado prematuro.
+ * 3. Escribe en archivo temporal .tmp con token sincronizado.
+ * 4. Mueve a .md con overwrite nativo.
+ * 5. Ejecuta inserción/actualización en SQLite.
+ * 6. Si SQLite falla: compensación inmediata borrando el archivo físico de disco.
  */
 export async function saveResourceWithCompensation(
   pacienteId: string,
@@ -163,45 +197,48 @@ export async function saveResourceWithCompensation(
   assertSafeId(pacienteId, 'pacienteId');
   assertSafeId(contenidoId, 'contenidoId');
 
-  const baseDir = baseDirResolver
-    ? baseDirResolver(pacienteId)
-    : getPatientResourceDirectory(pacienteId).uri;
+  return withPatientResourceLock(pacienteId, async () => {
+    const baseDir = baseDirResolver
+      ? baseDirResolver(pacienteId)
+      : getPatientResourceDirectory(pacienteId).uri;
 
-  await adapter.ensureDirectory(baseDir);
+    await adapter.ensureDirectory(baseDir);
 
-  const timestamp = Date.now();
-  const token = `${contenidoId}_${timestamp}`;
-  const tmpUri = baseDir.endsWith('/') ? `${baseDir}${token}.tmp` : `${baseDir}/${token}.tmp`;
-  const finalUri = baseDir.endsWith('/') ? `${baseDir}${token}.md` : `${baseDir}/${token}.md`;
+    const baseDirClean = baseDir.replace(/\\/g, '/').replace(/\/+$/, '');
+    const timestamp = Date.now();
+    const token = `${contenidoId}.${timestamp}`;
+    const tmpUri = `${baseDirClean}/${token}.tmp`;
+    const finalUri = `${baseDirClean}/${token}.md`;
 
-  // Registra AMBOS archivos en activeWrites para proteger al .tmp y al .md durante todo el ciclo
-  const unregister = registerActiveWrite([tmpUri, finalUri]);
+    // Registra AMBOS archivos en activeWrites para proteger al .tmp y al .md durante todo el ciclo
+    const unregister = registerActiveWrite([tmpUri, finalUri]);
 
-  try {
-    // 1. Escritura en temporal
-    await adapter.writeText(tmpUri, content);
-
-    // 2. Mover temporal a destino final
-    await adapter.moveFile(tmpUri, finalUri, { overwrite: true });
-
-    // 3. Confirmar persistencia en SQLite
     try {
-      await saveToDb(finalUri);
-      return finalUri;
-    } catch (dbError) {
-      // 4. Compensación ante error de SQLite: eliminar archivo de disco
+      // 1. Escritura en temporal
+      await adapter.writeText(tmpUri, content);
+
+      // 2. Mover temporal a destino final
+      await adapter.moveFile(tmpUri, finalUri, { overwrite: true });
+
+      // 3. Confirmar persistencia en SQLite
       try {
-        if (await adapter.exists(finalUri)) {
-          await adapter.deleteFile(finalUri);
+        await saveToDb(finalUri);
+        return finalUri;
+      } catch (dbError) {
+        // 4. Compensación ante error de SQLite: eliminar archivo de disco
+        try {
+          if (await adapter.exists(finalUri)) {
+            await adapter.deleteFile(finalUri);
+          }
+        } catch {
+          // Registro de fallo de compensación
         }
-      } catch {
-        // Registro de fallo de compensación
+        throw dbError;
       }
-      throw dbError;
+    } finally {
+      unregister();
     }
-  } finally {
-    unregister();
-  }
+  });
 }
 
 /**
@@ -251,38 +288,40 @@ export async function deleteFileByUri(uri: string): Promise<boolean> {
 
 /**
  * Elimina cualquier copia física asociada a un contenidoId para el paciente dado.
+ * Si se especifica rutaLocal (la registrada en SQLite), opera exclusivamente sobre ella
+ * tras validar pertenencia estricta, sin barrer ni afectar otros archivos del paciente.
  */
 export async function deleteResourceFile(
   pacienteId: string,
   contenidoId: string,
   rutaLocal?: string | null,
+  adapter: FileStorageAdapter = defaultExpoAdapter,
+  baseDirResolver?: (pacienteId: string) => string,
 ): Promise<boolean> {
   assertSafeId(pacienteId, 'pacienteId');
   assertSafeId(contenidoId, 'contenidoId');
 
-  let success = true;
   if (rutaLocal) {
     // Verificar estrictamente que la ruta pertenezca al paciente y coincida con el contenido
-    if (!isPathInPatientResourceDirectory(rutaLocal, pacienteId, contenidoId)) {
+    if (!isPathInPatientResourceDirectory(rutaLocal, pacienteId, contenidoId, baseDirResolver)) {
       return false;
     }
-    const deleted = await deleteFileByUri(rutaLocal);
-    if (!deleted) success = false;
+    return adapter.deleteFile(rutaLocal);
   }
-  const dir = getPatientResourceDirectory(pacienteId);
-  if (!dir.exists) return success;
+
+  const baseDir = baseDirResolver
+    ? baseDirResolver(pacienteId)
+    : getPatientResourceDirectory(pacienteId).uri;
+
+  if (!(await adapter.exists(baseDir))) return true;
+  let success = true;
   try {
-    const entries = dir.list();
-    for (const entry of entries) {
-      if (entry instanceof File) {
-        const name = Paths.basename(entry.uri);
-        if (isResourceFileForContent(name, contenidoId)) {
-          try {
-            await entry.delete();
-          } catch {
-            success = false;
-          }
-        }
+    const files = await adapter.listDirectory(baseDir);
+    for (const fileUri of files) {
+      const name = fileUri.split(/[\\/]/).pop() || '';
+      if (isResourceFileForContent(name, contenidoId)) {
+        const deleted = await adapter.deleteFile(fileUri);
+        if (!deleted) success = false;
       }
     }
   } catch {
@@ -298,12 +337,13 @@ export function resourceFileExists(
   pacienteId: string,
   contenidoId: string,
   rutaLocal?: string | null,
+  baseDirResolver?: (pacienteId: string) => string,
 ): boolean {
   assertSafeId(pacienteId, 'pacienteId');
   assertSafeId(contenidoId, 'contenidoId');
 
   if (rutaLocal) {
-    if (isPathInPatientResourceDirectory(rutaLocal, pacienteId, contenidoId)) {
+    if (isPathInPatientResourceDirectory(rutaLocal, pacienteId, contenidoId, baseDirResolver)) {
       try {
         const file = new File(rutaLocal);
         if (file.exists) return true;
@@ -312,7 +352,9 @@ export function resourceFileExists(
       }
     }
   }
-  const dir = getPatientResourceDirectory(pacienteId);
+  const dir = baseDirResolver
+    ? new Directory(baseDirResolver(pacienteId))
+    : getPatientResourceDirectory(pacienteId);
   if (!dir.exists) return false;
   try {
     const entries = dir.list();
@@ -337,32 +379,33 @@ export async function readResourceFile(
   pacienteId: string,
   contenidoId: string,
   rutaLocal?: string | null,
+  adapter: FileStorageAdapter = defaultExpoAdapter,
+  baseDirResolver?: (pacienteId: string) => string,
 ): Promise<string | null> {
   assertSafeId(pacienteId, 'pacienteId');
   assertSafeId(contenidoId, 'contenidoId');
 
   if (rutaLocal) {
-    if (isPathInPatientResourceDirectory(rutaLocal, pacienteId, contenidoId)) {
+    if (isPathInPatientResourceDirectory(rutaLocal, pacienteId, contenidoId, baseDirResolver)) {
       try {
-        const file = new File(rutaLocal);
-        if (file.exists) {
-          return file.text();
+        if (await adapter.exists(rutaLocal)) {
+          return adapter.readText(rutaLocal);
         }
       } catch {
         // Continuar al fallback
       }
     }
   }
-  const dir = getPatientResourceDirectory(pacienteId);
-  if (!dir.exists) return null;
+  const baseDir = baseDirResolver
+    ? baseDirResolver(pacienteId)
+    : getPatientResourceDirectory(pacienteId).uri;
+  if (!(await adapter.exists(baseDir))) return null;
   try {
-    const entries = dir.list();
-    for (const entry of entries) {
-      if (entry instanceof File) {
-        const name = Paths.basename(entry.uri);
-        if (isResourceFileForContent(name, contenidoId)) {
-          return entry.text();
-        }
+    const files = await adapter.listDirectory(baseDir);
+    for (const fileUri of files) {
+      const name = fileUri.split(/[\\/]/).pop() || '';
+      if (isResourceFileForContent(name, contenidoId)) {
+        return adapter.readText(fileUri);
       }
     }
   } catch {
@@ -374,6 +417,8 @@ export async function readResourceFile(
 /**
  * Realiza la conciliación bidireccional entre la tabla `descarga` de SQLite
  * y el directorio físico de recursos del paciente en `expo-file-system`.
+ * Se coordina mediante withPatientResourceLock e incluye comprobación protegida
+ * antes del borrado para evitar eliminar archivos confirmados durante lecturas concurrentes.
  */
 export async function reconcileResourceCopies(
   pacienteId: string,
@@ -386,40 +431,52 @@ export async function reconcileResourceCopies(
 ): Promise<ReconciliationResult> {
   assertSafeId(pacienteId, 'pacienteId');
 
-  // Limpiar temporales abandonados en segundo plano
-  await cleanDanglingTempFiles(pacienteId).catch(() => 0);
+  return withPatientResourceLock(pacienteId, async () => {
+    // Limpiar temporales abandonados en segundo plano
+    await cleanDanglingTempFiles(pacienteId).catch(() => 0);
 
-  const dir = getPatientResourceDirectory(pacienteId);
-  const diskUris: string[] = [];
-  if (dir.exists) {
-    try {
-      const entries = dir.list();
-      for (const entry of entries) {
-        if (entry instanceof File && entry.uri.endsWith('.md')) {
-          diskUris.push(entry.uri);
+    const dir = getPatientResourceDirectory(pacienteId);
+    const diskUris: string[] = [];
+    if (dir.exists) {
+      try {
+        const entries = dir.list();
+        for (const entry of entries) {
+          if (entry instanceof File && entry.uri.endsWith('.md')) {
+            diskUris.push(entry.uri);
+          }
         }
+      } catch {
+        // Ignorar fallo al listar
       }
-    } catch {
-      // Ignorar fallo al listar
     }
-  }
 
-  const dbRecords = await repository.downloads();
+    const dbRecords = await repository.downloads();
 
-  return reconcileCopiesCore(
-    dbRecords,
-    diskUris,
-    {
-      markDbUnavailable: async (id) => repository.markDownloadUnavailable(id),
-      deleteDisk: async (uri) => deleteFileByUri(uri),
-      checkDiskExists: (uri) => {
-        try {
-          return new File(uri).exists;
-        } catch {
-          return false;
-        }
+    return reconcileCopiesCore(
+      dbRecords,
+      diskUris,
+      {
+        markDbUnavailable: async (id) => repository.markDownloadUnavailable(id),
+        deleteDisk: async (uri) => deleteFileByUri(uri),
+        checkDiskExists: (uri) => {
+          try {
+            return new File(uri).exists;
+          } catch {
+            return false;
+          }
+        },
+        isProtectedOrphan: async (uri) => {
+          if (isFileWriteInFlight(uri)) return true;
+          const fresh = await repository.downloads();
+          const normUri = uri.replace(/\\/g, '/');
+          return fresh.some(
+            (r) =>
+              r.ruta_local &&
+              (r.ruta_local === uri || r.ruta_local.replace(/\\/g, '/') === normUri),
+          );
+        },
       },
-    },
-    getActiveWrites(),
-  );
+      getActiveWrites(),
+    );
+  });
 }

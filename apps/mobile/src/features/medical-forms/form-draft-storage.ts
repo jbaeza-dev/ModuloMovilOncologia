@@ -4,8 +4,79 @@ import {
   ExpoFileStorageAdapter,
   type FileStorageAdapter,
 } from '../../data/local/file-storage-adapter';
-import { assertSafeId, assertSafeVersion } from '../../data/local/resource-storage';
+import { assertSafeId, assertSafeVersion, AsyncMutex } from '../../data/local/resource-storage';
 import type { MedicalFormDraft } from './medical-form-types';
+
+function normalizePath(p: string): string {
+  return p.replace(/\\/g, '/');
+}
+
+/**
+ * Registro de archivos de borradores en curso (temporales y respaldos activos)
+ * para evitar su eliminación o manipulación por limpiezas concurrentes.
+ */
+const activeDraftWrites = new Set<string>();
+
+export function registerActiveDraftWrite(fileUriOrUris: string | string[]): () => void {
+  const uris = (Array.isArray(fileUriOrUris) ? fileUriOrUris : [fileUriOrUris]).map(normalizePath);
+  for (const u of uris) {
+    activeDraftWrites.add(u);
+  }
+  return () => {
+    for (const u of uris) {
+      activeDraftWrites.delete(u);
+    }
+  };
+}
+
+export function isDraftWriteInFlight(fileUri: string): boolean {
+  return activeDraftWrites.has(normalizePath(fileUri));
+}
+
+const draftMutexes = new Map<string, AsyncMutex>();
+
+export function getDraftMutex(key: string): AsyncMutex {
+  let mutex = draftMutexes.get(key);
+  if (!mutex) {
+    mutex = new AsyncMutex();
+    draftMutexes.set(key, mutex);
+  }
+  return mutex;
+}
+
+export function withDraftLock<T>(key: string, task: () => Promise<T>): Promise<T> {
+  return getDraftMutex(key).runExclusive(task);
+}
+
+/**
+ * Comprueba si el contenido representa un borrador JSON legible, parseable y
+ * perteneciente al paciente, formulario y versión esperados.
+ */
+export function isValidDraftPayload(
+  content: string,
+  expectedPatientId?: string,
+  expectedFormId?: string,
+  expectedVersion?: string,
+): boolean {
+  try {
+    const parsed = JSON.parse(content) as MedicalFormDraft;
+    if (!parsed || typeof parsed !== 'object') return false;
+    if (
+      !parsed.formularioId ||
+      !parsed.version ||
+      !parsed.pacienteId ||
+      typeof parsed.respuestas !== 'object'
+    ) {
+      return false;
+    }
+    if (expectedPatientId && parsed.pacienteId !== expectedPatientId) return false;
+    if (expectedFormId && parsed.formularioId !== expectedFormId) return false;
+    if (expectedVersion && parsed.version !== expectedVersion) return false;
+    return true;
+  } catch {
+    return false;
+  }
+}
 
 const defaultExpoAdapter = new ExpoFileStorageAdapter();
 
@@ -22,11 +93,12 @@ export function getDraftFileName(formularioId: string, version: string): string 
 
 /**
  * Guarda o actualiza el borrador de un cuestionario usando el patrón de reemplazo seguro con respaldo:
- * 1. Escribe en archivo temporal .tmp.
- * 2. Si el archivo destino .json ya existe, se respalda temporalmente en .bak.
- * 3. Se mueve el .tmp a .json con overwrite = true.
- * 4. Si la operación tiene éxito, se elimina el .bak.
- * 5. Si falla el movimiento, se restaura el .bak a .json para no perder el borrador anterior.
+ * 1. Coordina con withDraftLock y registra activeDraftWrites para protegerlo de limpiezas concurrentes.
+ * 2. Escribe en archivo temporal .tmp.
+ * 3. Si el archivo destino .json ya existe, se respalda temporalmente en .bak.
+ * 4. Se mueve el .tmp a .json con overwrite = true.
+ * 5. Si la operación tiene éxito, se elimina el .bak.
+ * 6. Si falla el movimiento, se restaura el .bak a .json para no perder el borrador anterior.
  */
 export async function saveFormDraft(
   draft: MedicalFormDraft,
@@ -37,57 +109,69 @@ export async function saveFormDraft(
   assertSafeId(draft.formularioId, 'formularioId');
   assertSafeVersion(draft.version, 'version');
 
-  const baseDir = baseDirResolver
-    ? baseDirResolver(draft.pacienteId)
-    : getPatientDraftDirectory(draft.pacienteId).uri;
+  const draftKey = `${draft.pacienteId}:${draft.formularioId}:${draft.version}`;
 
-  await adapter.ensureDirectory(baseDir);
+  return withDraftLock(draftKey, async () => {
+    const baseDir = baseDirResolver
+      ? baseDirResolver(draft.pacienteId)
+      : getPatientDraftDirectory(draft.pacienteId).uri;
 
-  const baseName = `${draft.formularioId}_v${draft.version}`;
-  const sep = baseDir.endsWith('/') ? '' : '/';
-  const targetPath = `${baseDir}${sep}${baseName}.json`;
-  const bakPath = `${baseDir}${sep}${baseName}.bak`;
-  const tmpPath = `${baseDir}${sep}${baseName}.${Date.now()}_${Math.random().toString(36).slice(2, 6)}.tmp`;
+    await adapter.ensureDirectory(baseDir);
 
-  const payload = JSON.stringify(draft, null, 2);
+    const baseName = `${draft.formularioId}_v${draft.version}`;
+    const sep = baseDir.endsWith('/') ? '' : '/';
+    const targetPath = `${baseDir}${sep}${baseName}.json`;
+    const bakPath = `${baseDir}${sep}${baseName}.bak`;
+    const tmpPath = `${baseDir}${sep}${baseName}.${Date.now()}_${Math.random().toString(36).slice(2, 6)}.tmp`;
 
-  // 1. Escribir contenido en temporal
-  await adapter.writeText(tmpPath, payload);
+    // Proteger temporal, respaldo y destino de limpiezas o restauraciones concurrentes
+    const unregister = registerActiveDraftWrite([tmpPath, bakPath, targetPath]);
 
-  const targetAlreadyExists = await adapter.exists(targetPath);
+    try {
+      const payload = JSON.stringify(draft, null, 2);
 
-  // 2. Si el destino existe, crear respaldo .bak obligatorio
-  if (targetAlreadyExists) {
-    // Si la creación del respaldo falla, se aborta para no comprometer el borrador anterior
-    await adapter.moveFile(targetPath, bakPath, { overwrite: true });
-  }
+      // 1. Escribir contenido en temporal
+      await adapter.writeText(tmpPath, payload);
 
-  // 3. Mover .tmp a destino
-  try {
-    await adapter.moveFile(tmpPath, targetPath, { overwrite: true });
-    // 4. Éxito: eliminar archivo de respaldo
-    if (await adapter.exists(bakPath)) {
-      await adapter.deleteFile(bakPath);
-    }
-  } catch (moveError) {
-    // 5. Fallo: restaurar archivo de respaldo si existía
-    if (await adapter.exists(bakPath)) {
-      try {
-        await adapter.moveFile(bakPath, targetPath, { overwrite: true });
-      } catch {
-        // Fallo de restauración
+      const targetAlreadyExists = await adapter.exists(targetPath);
+
+      // 2. Si el destino existe, crear respaldo .bak obligatorio
+      if (targetAlreadyExists) {
+        // Si la creación del respaldo falla, se aborta para no comprometer el borrador anterior
+        await adapter.moveFile(targetPath, bakPath, { overwrite: true });
       }
+
+      // 3. Mover .tmp a destino
+      try {
+        await adapter.moveFile(tmpPath, targetPath, { overwrite: true });
+        // 4. Éxito: eliminar archivo de respaldo
+        if (await adapter.exists(bakPath)) {
+          await adapter.deleteFile(bakPath);
+        }
+      } catch (moveError) {
+        // 5. Fallo: restaurar archivo de respaldo si existía
+        if (await adapter.exists(bakPath)) {
+          try {
+            await adapter.moveFile(bakPath, targetPath, { overwrite: true });
+          } catch {
+            // Fallo de restauración
+          }
+        }
+        if (await adapter.exists(tmpPath)) {
+          await adapter.deleteFile(tmpPath);
+        }
+        throw moveError;
+      }
+    } finally {
+      unregister();
     }
-    if (await adapter.exists(tmpPath)) {
-      await adapter.deleteFile(tmpPath);
-    }
-    throw moveError;
-  }
+  });
 }
 
 /**
  * Escanea y recupera respaldos huérfanos (.bak) si el archivo final (.json) no existe
- * debido a una interrupción o cierre inesperado durante el guardado.
+ * o está corrupto, debido a una interrupción o cierre inesperado durante el guardado.
+ * No afecta archivos pertenecientes a escrituras en curso.
  */
 export async function recoverOrphanDraftBackups(
   baseDir: string,
@@ -98,18 +182,36 @@ export async function recoverOrphanDraftBackups(
   try {
     const files = await adapter.listDirectory(baseDir);
     for (const fileUri of files) {
-      if (fileUri.endsWith('.bak')) {
+      if (fileUri.endsWith('.bak') && !isDraftWriteInFlight(fileUri)) {
         const correspondingJson = fileUri.slice(0, -4) + '.json';
         const jsonExists = await adapter.exists(correspondingJson);
-        if (!jsonExists) {
+
+        let jsonValid = false;
+        if (jsonExists) {
           try {
-            await adapter.moveFile(fileUri, correspondingJson, { overwrite: true });
-            recovered++;
+            const jsonRaw = await adapter.readText(correspondingJson);
+            jsonValid = isValidDraftPayload(jsonRaw);
+          } catch {
+            jsonValid = false;
+          }
+        }
+
+        // Si el .json no existe o está corrupto, y el .bak es válido, restaurar el .bak
+        if (!jsonExists || !jsonValid) {
+          try {
+            const bakRaw = await adapter.readText(fileUri);
+            if (isValidDraftPayload(bakRaw)) {
+              await adapter.moveFile(fileUri, correspondingJson, { overwrite: true });
+              recovered++;
+            } else {
+              // Si tanto .json como .bak están corruptos, eliminar el .bak inservible
+              await adapter.deleteFile(fileUri).catch(() => false);
+            }
           } catch {
             // Continuar
           }
         } else {
-          // El .json existe y está confirmado: el .bak es un residuo
+          // El .json existe, es legible y válido: el .bak es un residuo seguro de eliminar
           await adapter.deleteFile(fileUri).catch(() => false);
         }
       }
@@ -122,7 +224,7 @@ export async function recoverOrphanDraftBackups(
 
 /**
  * Recupera el borrador guardado para un paciente, formulario y versión específicos.
- * Si el archivo .json no existe pero se encuentra un respaldo .bak huérfano,
+ * Si el archivo .json no existe o está corrupto pero se encuentra un respaldo .bak válido,
  * se restaura automáticamente antes de leer.
  */
 export async function loadFormDraft(
@@ -136,41 +238,59 @@ export async function loadFormDraft(
   assertSafeId(formularioId, 'formularioId');
   assertSafeVersion(version, 'version');
 
-  const baseDir = baseDirResolver
-    ? baseDirResolver(pacienteId)
-    : getPatientDraftDirectory(pacienteId).uri;
+  const draftKey = `${pacienteId}:${formularioId}:${version}`;
 
-  const sep = baseDir.endsWith('/') ? '' : '/';
-  const targetPath = `${baseDir}${sep}${getDraftFileName(formularioId, version)}`;
-  const bakPath = `${baseDir}${sep}${formularioId}_v${version}.bak`;
+  return withDraftLock(draftKey, async () => {
+    const baseDir = baseDirResolver
+      ? baseDirResolver(pacienteId)
+      : getPatientDraftDirectory(pacienteId).uri;
 
-  // Recuperación automática de respaldo si la aplicación cerró entre el movimiento a .bak y a .json
-  if (!(await adapter.exists(targetPath)) && (await adapter.exists(bakPath))) {
-    try {
-      await adapter.moveFile(bakPath, targetPath, { overwrite: true });
-    } catch {
-      // Fallback: intentar leer del .bak directamente
+    const sep = baseDir.endsWith('/') ? '' : '/';
+    const targetPath = `${baseDir}${sep}${getDraftFileName(formularioId, version)}`;
+    const bakPath = `${baseDir}${sep}${formularioId}_v${version}.bak`;
+
+    let jsonValid = false;
+    let loadedDraft: MedicalFormDraft | null = null;
+
+    if (await adapter.exists(targetPath)) {
       try {
-        const raw = await adapter.readText(bakPath);
-        return JSON.parse(raw) as MedicalFormDraft;
+        const raw = await adapter.readText(targetPath);
+        if (isValidDraftPayload(raw, pacienteId, formularioId, version)) {
+          jsonValid = true;
+          loadedDraft = JSON.parse(raw) as MedicalFormDraft;
+        }
       } catch {
-        return null;
+        jsonValid = false;
       }
     }
-  }
 
-  if (!(await adapter.exists(targetPath))) return null;
+    // Si el .json no existe o está corrupto, y existe un .bak, intentar recuperarlo
+    if (!jsonValid && (await adapter.exists(bakPath))) {
+      try {
+        const bakRaw = await adapter.readText(bakPath);
+        if (isValidDraftPayload(bakRaw, pacienteId, formularioId, version)) {
+          await adapter.moveFile(bakPath, targetPath, { overwrite: true });
+          return JSON.parse(bakRaw) as MedicalFormDraft;
+        }
+      } catch {
+        // Fallback
+      }
+    }
 
-  try {
-    const raw = await adapter.readText(targetPath);
-    return JSON.parse(raw) as MedicalFormDraft;
-  } catch {
+    if (jsonValid && loadedDraft) {
+      if ((await adapter.exists(bakPath)) && !isDraftWriteInFlight(bakPath)) {
+        await adapter.deleteFile(bakPath).catch(() => false);
+      }
+      return loadedDraft;
+    }
+
     return null;
-  }
+  });
 }
 
 /**
- * Elimina el borrador del almacenamiento local del dispositivo (incluyendo .bak residual).
+ * Elimina el borrador del almacenamiento local del dispositivo (tanto .json como .bak residual).
+ * Requiere que ambos borrados físicos sean exitosos para confirmar el descarte.
  */
 export async function deleteFormDraft(
   pacienteId: string,
@@ -183,27 +303,38 @@ export async function deleteFormDraft(
   assertSafeId(formularioId, 'formularioId');
   assertSafeVersion(version, 'version');
 
-  const baseDir = baseDirResolver
-    ? baseDirResolver(pacienteId)
-    : getPatientDraftDirectory(pacienteId).uri;
+  const draftKey = `${pacienteId}:${formularioId}:${version}`;
 
-  const sep = baseDir.endsWith('/') ? '' : '/';
-  const targetPath = `${baseDir}${sep}${getDraftFileName(formularioId, version)}`;
-  const bakPath = `${baseDir}${sep}${formularioId}_v${version}.bak`;
+  return withDraftLock(draftKey, async () => {
+    const baseDir = baseDirResolver
+      ? baseDirResolver(pacienteId)
+      : getPatientDraftDirectory(pacienteId).uri;
 
-  let success = true;
-  if (await adapter.exists(targetPath)) {
-    success = await adapter.deleteFile(targetPath);
-  }
-  if (await adapter.exists(bakPath)) {
-    await adapter.deleteFile(bakPath).catch(() => false);
-  }
-  return success;
+    const sep = baseDir.endsWith('/') ? '' : '/';
+    const targetPath = `${baseDir}${sep}${getDraftFileName(formularioId, version)}`;
+    const bakPath = `${baseDir}${sep}${formularioId}_v${version}.bak`;
+
+    let success = true;
+    if (await adapter.exists(targetPath)) {
+      const deletedJson = await adapter.deleteFile(targetPath);
+      if (!deletedJson) {
+        success = false;
+      }
+    }
+    if (await adapter.exists(bakPath)) {
+      const deletedBak = await adapter.deleteFile(bakPath).catch(() => false);
+      if (!deletedBak) {
+        success = false;
+      }
+    }
+    return success;
+  });
 }
 
 /**
  * Lista todos los borradores almacenados localmente para el paciente indicado,
  * recuperando previamente cualquier respaldo huérfano antes de limpiar temporales.
+ * Omite la eliminación de temporales pertenecientes a escrituras activas en curso.
  */
 export async function listPatientDrafts(
   pacienteId: string,
@@ -225,18 +356,18 @@ export async function listPatientDrafts(
   try {
     const files = await adapter.listDirectory(baseDir);
     for (const fileUri of files) {
-      // Limpieza de .tmp abandonados
+      // Limpieza de .tmp abandonados (omitiendo escrituras activas)
       if (fileUri.endsWith('.tmp')) {
-        await adapter.deleteFile(fileUri).catch(() => false);
+        if (!isDraftWriteInFlight(fileUri)) {
+          await adapter.deleteFile(fileUri).catch(() => false);
+        }
         continue;
       }
       if (fileUri.endsWith('.json')) {
         try {
           const raw = await adapter.readText(fileUri);
-          const parsed = JSON.parse(raw) as MedicalFormDraft;
-          // Validar que pertenezca al paciente
-          if (parsed && parsed.pacienteId === pacienteId) {
-            drafts.push(parsed);
+          if (isValidDraftPayload(raw, pacienteId)) {
+            drafts.push(JSON.parse(raw) as MedicalFormDraft);
           }
         } catch {
           // Ignorar archivos JSON corruptos
