@@ -13,7 +13,9 @@ import {
   deleteResourceFile,
   isPathInPatientResourceDirectory,
   isResourceFileForContent,
+  readResourceFile,
   registerActiveWrite,
+  resourceFileExists,
   saveResourceWithCompensation,
 } from './resource-storage';
 
@@ -300,19 +302,55 @@ describe('guardado seguro con compensación y control de escrituras en curso', (
     expect(isResourceFileForContent('guia.1791157123508.md', 'guia')).toBe(true);
     expect(isResourceFileForContent('guia.123.md', 'guia')).toBe(true);
 
-    // No debe coincidir con recursos de IDs distintos ni formatos ambiguos
+    // No debe coincidir con recursos de IDs distintos ni formatos ambiguos sin allowLegacy
     expect(isResourceFileForContent('guia_extra.md', 'guia')).toBe(false);
     expect(isResourceFileForContent('guia_extra.1791157123508.md', 'guia')).toBe(false);
     expect(isResourceFileForContent('guia_nutricion_1.md', 'guia')).toBe(false);
     expect(isResourceFileForContent('guia_abc.md', 'guia')).toBe(false);
-    // El archivo de guia_123.md NO debe coincidir al buscar guia
+    // El archivo de guia_123.md NO debe coincidir al buscar guia sin allowLegacy
     expect(isResourceFileForContent('guia_123.md', 'guia')).toBe(false);
+
+    // Con allowLegacy: true, admite formato histórico exacto ${contenidoId}_${digits}.md
+    expect(isResourceFileForContent('guia_123.md', 'guia', { allowLegacy: true })).toBe(true);
+    expect(isResourceFileForContent('guia_1791157123508.md', 'guia', { allowLegacy: true })).toBe(
+      true,
+    );
+    // Pero NO admite prefijos diferentes aunque tengan guion bajo
+    expect(isResourceFileForContent('guia_extra.md', 'guia', { allowLegacy: true })).toBe(false);
 
     // Pero sí debe coincidir con su propio contenidoId completo
     expect(isResourceFileForContent('guia_extra.1791157123508.md', 'guia_extra')).toBe(true);
     expect(isResourceFileForContent('guia_extra.md', 'guia_extra')).toBe(true);
     expect(isResourceFileForContent('guia_123.md', 'guia_123')).toBe(true);
     expect(isResourceFileForContent('guia_123.1791157123508.md', 'guia_123')).toBe(true);
+  });
+
+  it('permite leer, comprobar existencia y eliminar copias históricas registradas en SQLite con guion bajo', async () => {
+    const baseDir = createTempDir();
+    const resolver = (pId: string) => join(baseDir, pId);
+    const patientDir = resolver(patientA);
+    await adapter.ensureDirectory(patientDir);
+
+    const legacyPath = join(patientDir, 'guia_1791157123508.md');
+    await adapter.writeText(legacyPath, '# Guía histórica');
+
+    // 1. resourceFileExists reconoce la ruta registrada exacta de SQLite
+    const exists = resourceFileExists(patientA, 'guia', legacyPath, resolver);
+    expect(exists).toBe(true);
+
+    // 2. readResourceFile lee el contenido mediante la ruta registrada
+    const content = await readResourceFile(patientA, 'guia', legacyPath, adapter, resolver);
+    expect(content).toBe('# Guía histórica');
+
+    // 3. deleteResourceFile sin rutaLocal NO borra copias con guion bajo (evita barridos ambiguos)
+    const scanDelete = await deleteResourceFile(patientA, 'guia', null, adapter, resolver);
+    expect(scanDelete).toBe(true);
+    expect(await adapter.exists(legacyPath)).toBe(true);
+
+    // 4. deleteResourceFile con la rutaLocal registrada exacta la elimina con éxito
+    const exactDelete = await deleteResourceFile(patientA, 'guia', legacyPath, adapter, resolver);
+    expect(exactDelete).toBe(true);
+    expect(await adapter.exists(legacyPath)).toBe(false);
   });
 
   it('valida pertenencia estricta al directorio del paciente y rechaza rutas ajenas o transversales', async () => {

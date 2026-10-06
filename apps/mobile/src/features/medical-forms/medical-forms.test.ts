@@ -7,6 +7,7 @@ import type { FileStorageAdapter } from '../../data/local/file-storage-adapter';
 import { NodeFileStorageAdapter } from '../../data/local/node-file-storage-adapter';
 import {
   deleteFormDraft,
+  isValidDraftPayload,
   listPatientDrafts,
   loadFormDraft,
   recoverOrphanDraftBackups,
@@ -573,5 +574,163 @@ describe('almacenamiento de borradores con adaptador y reemplazo seguro', () => 
     // El .json restaurado ahora es legible en disco
     const jsonContent = await adapter.readText(jsonPath);
     expect(jsonContent).not.toContain('incompleto');
+  });
+
+  it('recupera desde .bak si el archivo .json existente es sintácticamente válido pero con estructura incompleta (respuestas: null)', async () => {
+    const baseDir = createTempDir();
+    const resolver = (pId: string) => join(baseDir, pId, 'borradores');
+    const patientDir = resolver(patientA);
+    await adapter.ensureDirectory(patientDir);
+
+    const jsonPath = join(patientDir, 'form-esas-muestra_v1.0.json');
+    const bakPath = join(patientDir, 'form-esas-muestra_v1.0.bak');
+
+    // .json parseable pero inválido: respuestas es null (typeof null === 'object')
+    const invalidJsonPayload = {
+      formularioId: 'form-esas-muestra',
+      version: '1.0',
+      pacienteId: patientA,
+      respuestas: null,
+      completado: false,
+      guardadoEn: '2026-10-06T16:00:00Z',
+    };
+    await adapter.writeText(jsonPath, JSON.stringify(invalidJsonPayload));
+
+    // .bak válido con respuestas íntegras
+    const validDraft: MedicalFormDraft = {
+      formularioId: 'form-esas-muestra',
+      version: '1.0',
+      pacienteId: patientA,
+      respuestas: { esas_dolor: 6, esas_fatiga: 7 },
+      completado: false,
+      guardadoEn: '2026-10-06T15:30:00Z',
+    };
+    await adapter.writeText(bakPath, JSON.stringify(validDraft));
+
+    // Comprobar directamente el validador estricto
+    expect(isValidDraftPayload(JSON.stringify(invalidJsonPayload))).toBe(false);
+    expect(isValidDraftPayload(JSON.stringify(validDraft))).toBe(true);
+
+    // recoverOrphanDraftBackups debe rechazar el .json inválido y restaurar el .bak
+    const recoveredCount = await recoverOrphanDraftBackups(patientDir, adapter);
+    expect(recoveredCount).toBe(1);
+
+    // Cargar el borrador debe retornar los datos íntegros restaurados desde el respaldo
+    const loaded = await loadFormDraft(patientA, 'form-esas-muestra', '1.0', adapter, resolver);
+    expect(loaded).not.toBeNull();
+    expect(loaded?.respuestas.esas_dolor).toBe(6);
+    expect(loaded?.respuestas.esas_fatiga).toBe(7);
+  });
+
+  it('la recuperación iniciada antes de un guardado no interfiere ni elimina el respaldo del guardado concurrente', async () => {
+    const baseDir = createTempDir();
+    const resolver = (pId: string) => join(baseDir, pId, 'borradores');
+    const patientDir = resolver(patientA);
+    await adapter.ensureDirectory(patientDir);
+
+    // Crear un borrador existente en disco
+    const initialDraft: MedicalFormDraft = {
+      formularioId: 'form-esas-muestra',
+      version: '1.0',
+      pacienteId: patientA,
+      respuestas: { esas_dolor: 1 },
+      completado: false,
+      guardadoEn: '2026-10-06T10:00:00Z',
+    };
+    await saveFormDraft(initialDraft, adapter, resolver);
+
+    // Crear tanto el .json existente como un .bak para que la recuperación procese el borrador
+    const bakFile = join(patientDir, 'form-esas-muestra_v1.0.bak');
+    await adapter.writeText(bakFile, JSON.stringify(initialDraft));
+
+    let unpauseRecovery: () => void = () => {};
+    const recoveryPausedPromise = new Promise<void>((r) => {
+      unpauseRecovery = r;
+    });
+
+    let recoveryStartedResolve: () => void = () => {};
+    const recoveryStartedPromise = new Promise<void>((r) => {
+      recoveryStartedResolve = r;
+    });
+
+    // Adaptador donde la lectura de .json durante la recuperación se pausa deliberadamente dentro del bloqueo
+    const pausedRecoveryAdapter: FileStorageAdapter = {
+      exists: (p) => adapter.exists(p),
+      readText: async (p) => {
+        const text = await adapter.readText(p);
+        if (p.endsWith('.json') && p.includes('form-esas-muestra')) {
+          recoveryStartedResolve();
+          await recoveryPausedPromise;
+        }
+        return text;
+      },
+      writeText: (p, c) => adapter.writeText(p, c),
+      deleteFile: (p) => adapter.deleteFile(p),
+      moveFile: (src, dst, opts) => adapter.moveFile(src, dst, opts),
+      listDirectory: (p) => adapter.listDirectory(p),
+      ensureDirectory: (p) => adapter.ensureDirectory(p),
+    };
+
+    // Iniciar PRIMERO la recuperación
+    const recoveryPromise = recoverOrphanDraftBackups(patientDir, pausedRecoveryAdapter);
+
+    // Esperar a que la recuperación haya comenzado a leer el .json y adquirido el bloqueo
+    await recoveryStartedPromise;
+
+    // Iniciar DESPUÉS el guardado mientras la recuperación está pausada
+    let saveStarted = false;
+    const newDraft: MedicalFormDraft = {
+      formularioId: 'form-esas-muestra',
+      version: '1.0',
+      pacienteId: patientA,
+      respuestas: { esas_dolor: 9 },
+      completado: true,
+      guardadoEn: '2026-10-06T12:00:00Z',
+    };
+
+    const saveAdapter: FileStorageAdapter = {
+      exists: (p) => adapter.exists(p),
+      readText: (p) => adapter.readText(p),
+      writeText: async (p, c) => {
+        saveStarted = true;
+        return adapter.writeText(p, c);
+      },
+      deleteFile: (p) => adapter.deleteFile(p),
+      moveFile: async (src, dst, opts) => {
+        // Al intentar mover .tmp a target .json, simulamos fallo de E/S
+        if (src.endsWith('.tmp') && dst.endsWith('.json')) {
+          throw new Error('Fallo simulado de E/S al reemplazar temporal por destino');
+        }
+        return adapter.moveFile(src, dst, opts);
+      },
+      listDirectory: (p) => adapter.listDirectory(p),
+      ensureDirectory: (p) => adapter.ensureDirectory(p),
+    };
+
+    const savePromise = saveFormDraft(newDraft, saveAdapter, resolver);
+
+    // Debido a withDraftLock, el guardado debe esperar a que termine la recuperación
+    expect(saveStarted).toBe(false);
+
+    // Reanudar y finalizar la recuperación
+    unpauseRecovery();
+    await recoveryPromise;
+
+    // El guardado falla al reemplazar pero restaura su .bak (que la recuperación no borró)
+    await expect(savePromise).rejects.toThrow(
+      'Fallo simulado de E/S al reemplazar temporal por destino',
+    );
+    expect(saveStarted).toBe(true);
+
+    // El borrador anterior se conservó íntegramente gracias al bloqueo mutuo
+    const finalLoaded = await loadFormDraft(
+      patientA,
+      'form-esas-muestra',
+      '1.0',
+      adapter,
+      resolver,
+    );
+    expect(finalLoaded?.respuestas.esas_dolor).toBe(1);
+    expect(finalLoaded?.completado).toBe(false);
   });
 });

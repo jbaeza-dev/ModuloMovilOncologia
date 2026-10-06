@@ -99,28 +99,50 @@ export function getPatientResourceDirectory(pacienteId: string): Directory {
 }
 
 /**
- * Comprueba si un nombre de archivo corresponde exactamente a un recurso educativo:
- * Acepta exactamente `${contenidoId}.md` o `${contenidoId}.${timestamp}.md` (donde timestamp son dígitos).
- * El separador de punto garantiza identificación inequívoca sin colisionar con IDs como 'guia_123'.
+ * Comprueba si un nombre de archivo corresponde a un recurso educativo:
+ * - Acepta exactamente `${contenidoId}.md`
+ * - Acepta el formato con punto delimitador: `${contenidoId}.${timestamp}.md` (donde timestamp son dígitos).
+ * - Con options.allowLegacy = true, acepta también el formato anterior con guion bajo: `${contenidoId}_${timestamp}.md`
+ *   (para dar soporte a rutas exactas ya registradas en SQLite sin reintroducir barridos ambiguos por prefijo).
  */
-export function isResourceFileForContent(fileName: string, contenidoId: string): boolean {
+export function isResourceFileForContent(
+  fileName: string,
+  contenidoId: string,
+  options?: { allowLegacy?: boolean },
+): boolean {
   assertSafeId(contenidoId, 'contenidoId');
   if (fileName === `${contenidoId}.md`) return true;
+
+  // Formato estándar delimitado por punto
   const prefix = `${contenidoId}.`;
-  if (!fileName.startsWith(prefix) || !fileName.endsWith('.md')) return false;
-  const middle = fileName.slice(prefix.length, -3);
-  return /^\d+$/.test(middle);
+  if (fileName.startsWith(prefix) && fileName.endsWith('.md')) {
+    const middle = fileName.slice(prefix.length, -3);
+    if (/^\d+$/.test(middle)) return true;
+  }
+
+  // Compatibilidad con formato anterior guardado con guion bajo
+  if (options?.allowLegacy) {
+    const legacyPrefix = `${contenidoId}_`;
+    if (fileName.startsWith(legacyPrefix) && fileName.endsWith('.md')) {
+      const middle = fileName.slice(legacyPrefix.length, -3);
+      if (/^\d+$/.test(middle)) return true;
+    }
+  }
+
+  return false;
 }
 
 /**
  * Valida estrictamente que una ruta pertenezca al directorio del paciente activo y no
  * acceda a rutas de otros pacientes o del sistema mediante path traversal.
+ * Permite compatibilidad con formato legado si se especifica options.allowLegacy.
  */
 export function isPathInPatientResourceDirectory(
   ruta: string,
   pacienteId: string,
   contenidoId?: string,
   baseDirResolver?: (pacienteId: string) => string,
+  options?: { allowLegacy?: boolean },
 ): boolean {
   assertSafeId(pacienteId, 'pacienteId');
   if (contenidoId) assertSafeId(contenidoId, 'contenidoId');
@@ -143,7 +165,7 @@ export function isPathInPatientResourceDirectory(
 
   if (contenidoId) {
     const basename = relative.split('/').pop() || '';
-    return isResourceFileForContent(basename, contenidoId);
+    return isResourceFileForContent(basename, contenidoId, options);
   }
 
   return true;
@@ -302,8 +324,13 @@ export async function deleteResourceFile(
   assertSafeId(contenidoId, 'contenidoId');
 
   if (rutaLocal) {
-    // Verificar estrictamente que la ruta pertenezca al paciente y coincida con el contenido
-    if (!isPathInPatientResourceDirectory(rutaLocal, pacienteId, contenidoId, baseDirResolver)) {
+    // Verificar estrictamente que la ruta pertenezca al paciente y coincida con el contenido,
+    // admitiendo copias previas registradas en SQLite
+    if (
+      !isPathInPatientResourceDirectory(rutaLocal, pacienteId, contenidoId, baseDirResolver, {
+        allowLegacy: true,
+      })
+    ) {
       return false;
     }
     return adapter.deleteFile(rutaLocal);
@@ -343,7 +370,11 @@ export function resourceFileExists(
   assertSafeId(contenidoId, 'contenidoId');
 
   if (rutaLocal) {
-    if (isPathInPatientResourceDirectory(rutaLocal, pacienteId, contenidoId, baseDirResolver)) {
+    if (
+      isPathInPatientResourceDirectory(rutaLocal, pacienteId, contenidoId, baseDirResolver, {
+        allowLegacy: true,
+      })
+    ) {
       try {
         const file = new File(rutaLocal);
         if (file.exists) return true;
@@ -386,7 +417,11 @@ export async function readResourceFile(
   assertSafeId(contenidoId, 'contenidoId');
 
   if (rutaLocal) {
-    if (isPathInPatientResourceDirectory(rutaLocal, pacienteId, contenidoId, baseDirResolver)) {
+    if (
+      isPathInPatientResourceDirectory(rutaLocal, pacienteId, contenidoId, baseDirResolver, {
+        allowLegacy: true,
+      })
+    ) {
       try {
         if (await adapter.exists(rutaLocal)) {
           return adapter.readText(rutaLocal);
