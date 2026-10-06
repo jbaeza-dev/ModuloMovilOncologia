@@ -359,6 +359,15 @@ export function createPatientRepository(
       );
     },
 
+    async markDownloadUnavailable(contenidoId: string): Promise<void> {
+      await database.run(
+        `UPDATE descarga
+         SET estado = 'error'
+         WHERE paciente_id = ? AND contenido_id = ?`,
+        [patientId, contenidoId],
+      );
+    },
+
     async removeDownload(contenidoId: string): Promise<void> {
       await database.run('DELETE FROM descarga WHERE paciente_id = ? AND contenido_id = ?', [
         patientId,

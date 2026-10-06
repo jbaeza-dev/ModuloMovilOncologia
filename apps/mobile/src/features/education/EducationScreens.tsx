@@ -20,7 +20,7 @@ import {
   readResourceFile,
   reconcileResourceCopies,
   resourceFileExists,
-  writeResourceFile,
+  saveResourceWithCompensation,
 } from '../../data/local/resource-storage';
 import { useFocusedList, useFocusedValue } from '../../data/local/use-local-query';
 import { useLocalData } from '../../providers/LocalDataProvider';
@@ -84,9 +84,11 @@ export function EducationCategoryScreen() {
       </BodyText>
       {resources.map((resource) => {
         const record = downloadRecordMap.get(resource.id);
-        const isDownloaded =
-          record?.estado === 'descargado' &&
-          (patientId ? resourceFileExists(patientId, resource.id, record.ruta_local) : false);
+        const fileExists = patientId
+          ? resourceFileExists(patientId, resource.id, record?.ruta_local)
+          : false;
+        const isDownloaded = record?.estado === 'descargado' && fileExists;
+        const isFileMissing = Boolean(record && (record.estado === 'error' || !fileExists));
         return (
           <InfoCard key={resource.id}>
             <Pressable
@@ -121,7 +123,9 @@ export function EducationCategoryScreen() {
                       ? 'Estado no disponible'
                       : isDownloaded
                         ? 'Disponible sin conexión'
-                        : resource.state}
+                        : isFileMissing
+                          ? 'Archivo ausente en dispositivo'
+                          : resource.state}
                 </StatusPill>
                 <VisualButton
                   label="Ver detalle"
@@ -181,6 +185,9 @@ export function EducationResourceScreen() {
     ? resourceFileExists(patientId, resource.id, downloadRecord?.ruta_local)
     : false;
   const isDownloaded = downloadRecord?.estado === 'descargado' && fileExists;
+  const isFileMissing = Boolean(
+    downloadRecord && (downloadRecord.estado === 'error' || !fileExists),
+  );
   const busy = actionBusy || saving;
 
   async function handleSave() {
@@ -192,19 +199,20 @@ export function EducationResourceScreen() {
         const previousDownload = await repository.download(resource.id);
         const previousPath = previousDownload?.ruta_local;
 
-        const newFilePath = await writeResourceFile(patientId, resource.id, resource.content);
-        try {
-          await repository.saveDownload({
-            contenido_id: resource.id,
-            ruta_local: newFilePath,
-          });
-          if (previousPath && previousPath !== newFilePath) {
-            await deleteFileByUri(previousPath).catch(() => undefined);
-          }
-        } catch (dbErr) {
-          await deleteFileByUri(newFilePath).catch(() => undefined);
-          throw dbErr;
-        }
+        await saveResourceWithCompensation(
+          patientId,
+          resource.id,
+          resource.content,
+          async (finalUri: string) => {
+            await repository.saveDownload({
+              contenido_id: resource.id,
+              ruta_local: finalUri,
+            });
+            if (previousPath && previousPath !== finalUri) {
+              await deleteFileByUri(previousPath).catch(() => false);
+            }
+          },
+        );
       });
       refreshDownload();
     } catch {
@@ -283,7 +291,9 @@ export function EducationResourceScreen() {
               ? 'Estado no disponible'
               : isDownloaded
                 ? 'Disponible sin conexión'
-                : 'Disponible para guardar'}
+                : isFileMissing
+                  ? 'Archivo ausente en dispositivo'
+                  : 'Disponible para guardar'}
         </StatusPill>
         <BodyText>
           Material de muestra neutro para demostración técnica del almacenamiento local de archivos
@@ -320,6 +330,27 @@ export function EducationResourceScreen() {
             label={busy ? 'Eliminando…' : 'Eliminar copia local'}
             secondary
             disabled={busy}
+            onPress={() => void handleDelete()}
+          />
+        </>
+      ) : isFileMissing ? (
+        <>
+          <InfoCard>
+            <SectionTitle>Archivo no disponible</SectionTitle>
+            <BodyText>
+              La copia física de este recurso no se encuentra en el almacenamiento local. Puedes
+              reintentar la descarga o eliminar el registro del dispositivo.
+            </BodyText>
+          </InfoCard>
+          <VisualButton
+            label={busy ? 'Descargando…' : 'Reintentar descarga'}
+            disabled={busy || !repository}
+            onPress={() => void handleSave()}
+          />
+          <VisualButton
+            label={busy ? 'Eliminando…' : 'Eliminar registro'}
+            secondary
+            disabled={busy || !repository}
             onPress={() => void handleDelete()}
           />
         </>

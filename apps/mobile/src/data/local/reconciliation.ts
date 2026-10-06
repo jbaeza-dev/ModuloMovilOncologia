@@ -1,39 +1,46 @@
 export type ReconciliationResult = {
+  markedUnavailable: number;
   cleanedOrphans: number;
-  cleanedStaleRecords: number;
+  failedDeletions: number;
 };
 
 export type ReconciliationOps = {
-  removeDb: (contenidoId: string) => Promise<void>;
-  deleteDisk: (uri: string) => Promise<void>;
+  markDbUnavailable: (contenidoId: string) => Promise<void>;
+  deleteDisk: (uri: string) => Promise<boolean>;
   checkDiskExists: (uri: string) => boolean | Promise<boolean>;
 };
 
 /**
- * Conciliación bidireccional pura entre registros de descarga en base de datos y archivos físicos en disco.
- * 1) Detecta y elimina filas en base de datos cuyos archivos ya no existen en disco.
- * 2) Detecta y elimina archivos en disco que no están vinculados a ningún registro válido en base de datos.
+ * Conciliación bidireccional entre registros de descarga en base de datos y archivos físicos en disco.
+ * 1) Detecta archivos ausentes en disco y actualiza su estado en base de datos a no disponible.
+ * 2) Detecta y elimina archivos huérfanos en disco, ignorando aquellos con escrituras en curso.
  */
 export async function reconcileCopiesCore(
-  dbRecords: Array<{ contenido_id: string; ruta_local: string | null }>,
+  dbRecords: Array<{ contenido_id: string; ruta_local: string | null; estado?: string }>,
   diskFileUris: string[],
   ops: ReconciliationOps,
+  activeWrites?: Set<string>,
 ): Promise<ReconciliationResult> {
-  let cleanedStaleRecords = 0;
+  let markedUnavailable = 0;
   let cleanedOrphans = 0;
+  let failedDeletions = 0;
   const validDbUris = new Set<string>();
 
-  // 1. Limpieza de base de datos: registros que apuntan a archivos que ya no existen
+  // 1. Detección de archivos ausentes en disco
   for (const record of dbRecords) {
     if (!record.ruta_local) {
-      await ops.removeDb(record.contenido_id);
-      cleanedStaleRecords++;
+      if (record.estado !== 'error') {
+        await ops.markDbUnavailable(record.contenido_id);
+        markedUnavailable++;
+      }
       continue;
     }
     const exists = await ops.checkDiskExists(record.ruta_local);
     if (!exists) {
-      await ops.removeDb(record.contenido_id);
-      cleanedStaleRecords++;
+      if (record.estado !== 'error') {
+        await ops.markDbUnavailable(record.contenido_id);
+        markedUnavailable++;
+      }
     } else {
       validDbUris.add(record.ruta_local);
     }
@@ -41,11 +48,19 @@ export async function reconcileCopiesCore(
 
   // 2. Limpieza de disco: archivos huérfanos sin registro en base de datos
   for (const uri of diskFileUris) {
+    // Si la URI corresponde a una escritura activa en curso, se preserva
+    if (activeWrites && activeWrites.has(uri)) {
+      continue;
+    }
     if (!validDbUris.has(uri)) {
-      await ops.deleteDisk(uri);
-      cleanedOrphans++;
+      const deleted = await ops.deleteDisk(uri);
+      if (deleted) {
+        cleanedOrphans++;
+      } else {
+        failedDeletions++;
+      }
     }
   }
 
-  return { cleanedOrphans, cleanedStaleRecords };
+  return { markedUnavailable, cleanedOrphans, failedDeletions };
 }

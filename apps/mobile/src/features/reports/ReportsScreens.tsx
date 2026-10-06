@@ -1,3 +1,4 @@
+import { File } from 'expo-file-system';
 import { router, useLocalSearchParams } from 'expo-router';
 import { useCallback, useState } from 'react';
 import { StyleSheet, Text, View } from 'react-native';
@@ -14,8 +15,13 @@ import {
   StatusPill,
   VisualButton,
 } from '../../components/Visual';
-import { sinceDays, type VitalsSummary } from '../../data/local/repository';
-import { shareReportPdf } from '../../data/local/report-storage';
+import { formatDate, sinceDays, type VitalsSummary } from '../../data/local/repository';
+import {
+  assertSafeReportFileName,
+  getPatientReportDirectory,
+  parseTimestampFromReportFilename,
+  shareReportPdf,
+} from '../../data/local/report-storage';
 import { useFocusedValue } from '../../data/local/use-local-query';
 import { useLocalData } from '../../providers/LocalDataProvider';
 import { useAppTheme } from '../../providers/ThemeProvider';
@@ -26,7 +32,6 @@ export function ReportsScreen() {
   const { theme: appTheme } = useAppTheme();
   const styles = createStyles(appTheme.colors);
   const [days, setDays] = useState<7 | 30 | 90>(30);
-  const [format, setFormat] = useState('PDF');
   const [generating, setGenerating] = useState(false);
   const [reportFeedback, setReportFeedback] = useState<string | null>(null);
   const [reportError, setReportError] = useState<string | null>(null);
@@ -60,7 +65,7 @@ export function ReportsScreen() {
       const profile = await repository.profile();
       const treatment = await repository.treatment();
       const vitals = await repository.vitalsForReport(sinceDays(days));
-      const persistentUri = await generateAndPersistReportPdf({
+      const { persistentUri, filename } = await generateAndPersistReportPdf({
         pacienteId: patientId,
         periodDays: days,
         profile,
@@ -68,10 +73,19 @@ export function ReportsScreen() {
         summary,
         vitals,
       });
-      setReportFeedback('Reporte guardado en almacenamiento persistente del dispositivo.');
-      await shareReportPdf(persistentUri);
+
+      const shareResult = await shareReportPdf(persistentUri);
+      if (shareResult === 'shared_sheet_opened') {
+        setReportFeedback('PDF guardado en el dispositivo y hoja de compartir abierta.');
+      } else {
+        setReportFeedback(
+          'PDF guardado en el dispositivo (no se pudo abrir la hoja de compartir).',
+        );
+      }
+
+      router.navigate('/vitales/reporte-estado?archivo=' + encodeURIComponent(filename));
     } catch {
-      setReportError('No se pudo generar ni compartir el reporte PDF en este dispositivo.');
+      setReportError('No se pudo generar el reporte PDF en este dispositivo.');
     } finally {
       setGenerating(false);
     }
@@ -82,6 +96,7 @@ export function ReportsScreen() {
       <BodyText>
         Resumen de evolución clínica generado a partir de registros en este dispositivo.
       </BodyText>
+
       <SectionTitle>Período</SectionTitle>
       <View style={styles.chips}>
         {([7, 30, 90] as const).map((item) => (
@@ -97,30 +112,15 @@ export function ReportsScreen() {
           />
         ))}
       </View>
-      <SectionTitle>Formato</SectionTitle>
-      <View style={styles.chips}>
-        {['PDF', 'Excel'].map((item) => (
-          <ChoiceChip
-            key={item}
-            label={item}
-            selected={format === item}
-            onPress={() => {
-              setFormat(item);
-              setReportFeedback(null);
-              setReportError(null);
-            }}
-          />
-        ))}
-      </View>
 
-      {format === 'Excel' ? (
-        <InfoCard>
-          <Text style={styles.noticeText}>
-            Formato no disponible en demostración local. Selecciona PDF para generar y compartir el
-            documento.
-          </Text>
-        </InfoCard>
-      ) : null}
+      <SectionTitle>Formato disponible</SectionTitle>
+      <View style={styles.chips}>
+        <ChoiceChip label="PDF (Documento descargable)" selected onPress={() => {}} />
+      </View>
+      <BodyText>
+        Solo formato PDF soportado localmente en esta versión. Excel no está habilitado en la
+        demostración independiente.
+      </BodyText>
 
       {error ? (
         <>
@@ -136,7 +136,7 @@ export function ReportsScreen() {
           <InfoCard>
             <SectionTitle>Resumen de mediciones</SectionTitle>
             <DetailRow label="Período" value={`${days} días`} />
-            <DetailRow label="Formato" value={format} />
+            <DetailRow label="Formato" value="PDF" />
             <DetailRow
               label="Registros guardados"
               value={
@@ -168,9 +168,7 @@ export function ReportsScreen() {
             </BodyText>
           ) : null}
 
-          {format === 'Excel' ? (
-            <VisualButton label="Formato Excel no disponible" disabled onPress={() => {}} />
-          ) : summary.total === 0 ? (
+          {summary.total === 0 ? (
             <VisualButton
               label="Registrar signos vitales"
               disabled={loading}
@@ -190,38 +188,80 @@ export function ReportsScreen() {
 }
 
 export function ReportStatusScreen() {
-  const { estado } = useLocalSearchParams<{ estado?: string }>();
-  const state =
-    estado === 'preparando' || estado === 'disponible' || estado === 'error'
-      ? estado
-      : 'preparando';
+  const { patientId } = useLocalData();
+  const { archivo } = useLocalSearchParams<{ archivo?: string }>();
+  const [sharingFeedback, setSharingFeedback] = useState<string | null>(null);
+
+  let isValidFormat = false;
+  try {
+    if (archivo) {
+      assertSafeReportFileName(archivo);
+      isValidFormat = true;
+    }
+  } catch {
+    isValidFormat = false;
+  }
+
+  // Reconstrucción estricta dentro del directorio del paciente activo
+  const patientDir = patientId ? getPatientReportDirectory(patientId) : null;
+  const targetFile = patientDir && isValidFormat && archivo ? new File(patientDir, archivo) : null;
+  const fileExists = targetFile ? targetFile.exists : false;
+
+  async function handleReshare() {
+    if (!targetFile || !fileExists) return;
+    setSharingFeedback(null);
+    const result = await shareReportPdf(targetFile.uri);
+    if (result === 'shared_sheet_opened') {
+      setSharingFeedback('Hoja de compartir del sistema abierta.');
+    } else {
+      setSharingFeedback(
+        'No se pudo abrir la hoja de compartir. El PDF permanece guardado en el dispositivo.',
+      );
+    }
+  }
+
+  if (!isValidFormat || !fileExists || !targetFile || !archivo) {
+    return (
+      <Screen title="Estado del reporte" backTo="/vitales/reportes">
+        <DemoBadge />
+        <EmptyState
+          icon="alert-circle"
+          title="Reporte no encontrado"
+          description="El documento solicitado no existe o no pertenece al paciente activo."
+        />
+        <VisualButton
+          label="Volver a Reportes"
+          secondary
+          onPress={() => router.replace('/vitales/reportes')}
+        />
+      </Screen>
+    );
+  }
+
+  const sizeKb = targetFile.size ? (targetFile.size / 1024).toFixed(1) : null;
+  const timestampIso =
+    targetFile.creationTime != null
+      ? new Date(targetFile.creationTime).toISOString()
+      : targetFile.modificationTime != null
+        ? new Date(targetFile.modificationTime).toISOString()
+        : parseTimestampFromReportFilename(archivo);
+  const formattedDate = timestampIso ? formatDate(timestampIso) : 'Reciente';
+
   return (
     <Screen title="Estado del reporte" backTo="/vitales/reportes">
       <DemoBadge />
-      {state === 'preparando' ? (
-        <EmptyState
-          icon="clock"
-          title="Preparando reporte"
-          description="Generación local de reporte en curso."
-        />
-      ) : state === 'disponible' ? (
-        <InfoCard>
-          <SectionTitle>Reporte disponible</SectionTitle>
-          <StatusPill>Persistido en dispositivo</StatusPill>
-          <BodyText>
-            El documento PDF fue guardado de manera persistente en el dispositivo y puede ser
-            compartido.
-          </BodyText>
-        </InfoCard>
-      ) : (
-        <EmptyState
-          icon="alert-circle"
-          title="No se pudo generar"
-          description="Ocurrió un inconveniente al generar o compartir el archivo local."
-        />
-      )}
+      <InfoCard>
+        <SectionTitle>Reporte generado y guardado</SectionTitle>
+        <StatusPill>Persistido en almacenamiento local</StatusPill>
+        <DetailRow label="Archivo" value={archivo} />
+        <DetailRow label="Tamaño" value={sizeKb ? `${sizeKb} KB` : 'No disponible'} />
+        <DetailRow label="Generado el" value={formattedDate} />
+        {sharingFeedback ? <StatusPill>{sharingFeedback}</StatusPill> : null}
+      </InfoCard>
+
+      <VisualButton label="Abrir hoja de compartir" onPress={handleReshare} />
       <VisualButton
-        label="Volver a Reportes"
+        label="Generar otro reporte"
         secondary
         onPress={() => router.replace('/vitales/reportes')}
       />
@@ -232,11 +272,6 @@ export function ReportStatusScreen() {
 function createStyles(colors: ReturnType<typeof useAppTheme>['theme']['colors']) {
   return StyleSheet.create({
     chips: { flexDirection: 'row', flexWrap: 'wrap', gap: theme.spacing.sm },
-    noticeText: {
-      fontSize: 14,
-      color: colors.secondary,
-      lineHeight: 20,
-    },
     errorText: {
       fontSize: 14,
       color: colors.error,

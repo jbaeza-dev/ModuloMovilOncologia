@@ -9,6 +9,7 @@ import {
   BodyText,
   ChoiceChip,
   DemoBadge,
+  DetailRow,
   EmptyState,
   InfoCard,
   SectionTitle,
@@ -26,13 +27,16 @@ import {
   loadFormDraft,
   saveFormDraft,
 } from './form-draft-storage';
+import { medicalFormsService } from './medical-form-service';
+import { validateFormAnswers } from './medical-form-validation';
 import type { FormAnswerValue, MedicalFormDraft, MedicalFormQuestion } from './medical-form-types';
-import { SAMPLE_MEDICAL_FORMS } from './sample-medical-forms';
 
 export function MedicalFormsHubScreen() {
   const { theme: appTheme } = useAppTheme();
   const styles = createStyles(appTheme.colors);
   const { patientId } = useLocalData();
+
+  const assignedForms = medicalFormsService.getAssignedForms(patientId ?? '');
 
   const loadDrafts = useCallback(async () => {
     if (!patientId) return [];
@@ -41,13 +45,14 @@ export function MedicalFormsHubScreen() {
 
   const { value: drafts, loading } = useFocusedValue(loadDrafts, [] as MedicalFormDraft[]);
 
-  const draftMap = new Map(drafts.map((d) => [d.formularioId, d]));
+  // Agrupación estricta por formularioId y version
+  const draftMap = new Map(drafts.map((d) => [`${d.formularioId}:${d.version}`, d]));
 
   return (
     <Screen title="Cuestionarios médicos">
       <DemoBadge />
       <BodyText>
-        Evaluaciones clínicas estructuradas para el seguimiento continuo de tu bienestar.
+        Muestras de evaluaciones estructuradas para el seguimiento continuo de tu bienestar.
       </BodyText>
 
       <NavigationCard
@@ -59,8 +64,9 @@ export function MedicalFormsHubScreen() {
 
       <SectionTitle>Cuestionarios asignados</SectionTitle>
 
-      {SAMPLE_MEDICAL_FORMS.map((form) => {
-        const draft = draftMap.get(form.id);
+      {assignedForms.map((form) => {
+        const draftKey = `${form.id}:${form.version}`;
+        const draft = draftMap.get(draftKey);
         const isCompleted = draft?.completado === true;
         const hasDraft = Boolean(draft && !draft.completado);
 
@@ -125,11 +131,13 @@ export function MedicalFormDetailScreen() {
   const { patientId } = useLocalData();
   const { id } = useLocalSearchParams<{ id?: string }>();
 
-  const form = SAMPLE_MEDICAL_FORMS.find((f) => f.id === id);
+  const form = patientId ? medicalFormsService.getForm(patientId, id ?? '') : null;
 
   const [answers, setAnswers] = useState<Record<string, FormAnswerValue>>({});
   const [completed, setCompleted] = useState(false);
   const [feedback, setFeedback] = useState<string | null>(null);
+  const [validationErrors, setValidationErrors] = useState<Record<string, string>>({});
+  const [isReviewing, setIsReviewing] = useState(false);
   const [busy, setBusy] = useState(false);
 
   useEffect(() => {
@@ -152,7 +160,7 @@ export function MedicalFormDetailScreen() {
         <EmptyState
           icon="alert-circle"
           title="Cuestionario no disponible"
-          description="No se encontró la evaluación solicitada."
+          description="No se encontró la evaluación asignada para este paciente."
         />
       </Screen>
     );
@@ -160,27 +168,55 @@ export function MedicalFormDetailScreen() {
 
   function handleSingleChoice(questionId: string, value: string) {
     setAnswers((prev) => ({ ...prev, [questionId]: value }));
+    setValidationErrors((prev) => {
+      const copy = { ...prev };
+      delete copy[questionId];
+      return copy;
+    });
     setFeedback(null);
   }
 
   function handleMultipleChoice(questionId: string, value: string) {
     setAnswers((prev) => {
       const current = (prev[questionId] as string[]) || [];
-      const updated = current.includes(value)
-        ? current.filter((v) => v !== value)
-        : [...current, value];
+      let updated: string[];
+      if (value === 'ninguna') {
+        // Regla excluyente: si se marca 'ninguna', desmarca todas las demás
+        updated = current.includes('ninguna') ? [] : ['ninguna'];
+      } else {
+        // Si se marca cualquier otra opción, desmarca 'ninguna'
+        const withoutNinguna = current.filter((v) => v !== 'ninguna');
+        updated = withoutNinguna.includes(value)
+          ? withoutNinguna.filter((v) => v !== value)
+          : [...withoutNinguna, value];
+      }
       return { ...prev, [questionId]: updated };
+    });
+    setValidationErrors((prev) => {
+      const copy = { ...prev };
+      delete copy[questionId];
+      return copy;
     });
     setFeedback(null);
   }
 
   function handleScale(questionId: string, value: number) {
     setAnswers((prev) => ({ ...prev, [questionId]: value }));
+    setValidationErrors((prev) => {
+      const copy = { ...prev };
+      delete copy[questionId];
+      return copy;
+    });
     setFeedback(null);
   }
 
   function handleText(questionId: string, value: string) {
     setAnswers((prev) => ({ ...prev, [questionId]: value }));
+    setValidationErrors((prev) => {
+      const copy = { ...prev };
+      delete copy[questionId];
+      return copy;
+    });
     setFeedback(null);
   }
 
@@ -207,7 +243,20 @@ export function MedicalFormDetailScreen() {
     }
   }
 
-  async function handleComplete() {
+  function handleReviewAndValidate() {
+    if (!form) return;
+    setFeedback(null);
+    const validation = validateFormAnswers(form, answers);
+    if (!validation.isValid) {
+      setValidationErrors(validation.errors);
+      setFeedback('Faltan respuestas obligatorias o hay valores no válidos.');
+      return;
+    }
+    setValidationErrors({});
+    setIsReviewing(true);
+  }
+
+  async function handleConfirmComplete() {
     if (!patientId || !form || busy) return;
     setBusy(true);
     setFeedback(null);
@@ -222,7 +271,10 @@ export function MedicalFormDetailScreen() {
       };
       await saveFormDraft(draft);
       setCompleted(true);
-      setFeedback('Cuestionario guardado como completado en este dispositivo.');
+      setIsReviewing(false);
+      setFeedback(
+        'Cuestionario completado y guardado en almacenamiento local del dispositivo (sin envío a servidor).',
+      );
     } catch {
       setFeedback('No se pudo completar el cuestionario.');
     } finally {
@@ -238,12 +290,65 @@ export function MedicalFormDetailScreen() {
       await deleteFormDraft(patientId, form.id, form.version);
       setAnswers({});
       setCompleted(false);
+      setIsReviewing(false);
+      setValidationErrors({});
       setFeedback('Borrador descartado del dispositivo.');
     } catch {
       setFeedback('No se pudo descartar el borrador.');
     } finally {
       setBusy(false);
     }
+  }
+
+  // Vista de Revisión Previa
+  if (isReviewing) {
+    return (
+      <Screen title={`Revisión: ${form.titulo}`} backTo="/formulario">
+        <DemoBadge />
+        <InfoCard>
+          <SectionTitle>Revisión de respuestas</SectionTitle>
+          <BodyText>
+            Verifica tus respuestas antes de confirmar. Quedarán almacenadas localmente en el
+            dispositivo.
+          </BodyText>
+        </InfoCard>
+
+        {form.preguntas.map((q, idx) => {
+          const val = answers[q.id];
+          let displayVal = 'Sin respuesta (opcional)';
+          if (val !== undefined && val !== null && val !== '') {
+            if (Array.isArray(val)) {
+              displayVal = val.length ? val.join(', ') : 'Ninguna seleccionada';
+            } else {
+              displayVal = String(val);
+            }
+          }
+          return (
+            <InfoCard key={q.id}>
+              <Text style={styles.questionNumber}>
+                Pregunta {idx + 1} de {form.preguntas.length}
+              </Text>
+              <Text style={styles.questionTitle}>{q.pregunta}</Text>
+              <DetailRow label="Respuesta" value={displayVal} />
+            </InfoCard>
+          );
+        })}
+
+        <View style={styles.actions}>
+          <VisualButton
+            label="Confirmar y guardar localmente"
+            disabled={busy}
+            onPress={handleConfirmComplete}
+          />
+          <VisualButton
+            label="Modificar respuestas"
+            secondary
+            disabled={busy}
+            onPress={() => setIsReviewing(false)}
+          />
+        </View>
+      </Screen>
+    );
   }
 
   return (
@@ -256,7 +361,7 @@ export function MedicalFormDetailScreen() {
           <StatusPill>Cuestionario completado localmente</StatusPill>
           <BodyText>
             Las respuestas registradas se conservan en el almacenamiento local privado de este
-            dispositivo.
+            dispositivo (sin envío a servidor).
           </BodyText>
         </InfoCard>
       ) : null}
@@ -267,30 +372,36 @@ export function MedicalFormDetailScreen() {
         </InfoCard>
       ) : null}
 
-      {form.preguntas.map((question, index) => (
-        <InfoCard key={question.id}>
-          <Text style={styles.questionNumber}>
-            Pregunta {index + 1} de {form.preguntas.length}
-          </Text>
-          <Text style={styles.questionTitle}>{question.pregunta}</Text>
-          {question.descripcion ? <BodyText>{question.descripcion}</BodyText> : null}
+      {form.preguntas.map((question, index) => {
+        const error = validationErrors[question.id];
+        return (
+          <InfoCard key={question.id}>
+            <Text style={styles.questionNumber}>
+              Pregunta {index + 1} de {form.preguntas.length}{' '}
+              {question.requerida ? '(Obligatoria)' : '(Opcional)'}
+            </Text>
+            <Text style={styles.questionTitle}>{question.pregunta}</Text>
+            {question.descripcion ? <BodyText>{question.descripcion}</BodyText> : null}
 
-          {renderQuestionInput(question, answers, {
-            onSingle: handleSingleChoice,
-            onMultiple: handleMultipleChoice,
-            onScale: handleScale,
-            onText: handleText,
-            styles,
-            colors: appTheme.colors,
-          })}
-        </InfoCard>
-      ))}
+            {renderQuestionInput(question, answers, {
+              onSingle: handleSingleChoice,
+              onMultiple: handleMultipleChoice,
+              onScale: handleScale,
+              onText: handleText,
+              styles,
+              colors: appTheme.colors,
+            })}
+
+            {error ? <Text style={styles.errorText}>{error}</Text> : null}
+          </InfoCard>
+        );
+      })}
 
       <View style={styles.actions}>
         <VisualButton
-          label={completed ? 'Actualizar respuestas' : 'Completar cuestionario'}
+          label={completed ? 'Revisar o actualizar respuestas' : 'Revisar y completar'}
           disabled={busy}
-          onPress={handleComplete}
+          onPress={handleReviewAndValidate}
         />
         {!completed ? (
           <VisualButton
@@ -458,6 +569,12 @@ function createStyles(colors: ReturnType<typeof useAppTheme>['theme']['colors'])
       gap: theme.spacing.sm,
       marginTop: theme.spacing.sm,
       marginBottom: theme.spacing.lg,
+    },
+    errorText: {
+      fontSize: 13,
+      color: colors.error,
+      marginTop: theme.spacing.xs,
+      fontWeight: '500',
     },
   });
 }

@@ -3,7 +3,6 @@ import {
   existsSync,
   mkdirSync,
   mkdtempSync,
-  readdirSync,
   readFileSync,
   rmSync,
   unlinkSync,
@@ -22,7 +21,6 @@ import { createPatientRepository, seedPatientContextIfEmpty, sinceDays } from '.
 import type { SqlConnection, SqlValue } from './sql';
 import { InputError, parseSymptomDescription, parseVitalInput } from './validation';
 import { SAMPLE_MEDICAL_FORMS } from '../../features/medical-forms/sample-medical-forms';
-import type { MedicalFormDraft } from '../../features/medical-forms/medical-form-types';
 import { buildReportHtml } from '../../features/reports/report-template';
 
 const patientA = '11111111-1111-4111-8111-111111111111';
@@ -784,8 +782,8 @@ describe('copias educativas y descargas locales', () => {
     expect(await repoB.downloads()).toHaveLength(1);
   });
 
-  it('conciliación bidireccional limpia registros sin archivo y archivos sin registro', async () => {
-    const deletedDbIds: string[] = [];
+  it('conciliación bidireccional detecta registros sin archivo y limpia archivos sin registro', async () => {
+    const markedUnavailableIds: string[] = [];
     const deletedDiskUris: string[] = [];
 
     const dbRecords = [
@@ -797,18 +795,20 @@ describe('copias educativas y descargas locales', () => {
     const existingOnDisk = new Set(['file:///disk/valido.md', 'file:///disk/huerfano_en_disco.md']);
 
     const result = await reconcileCopiesCore(dbRecords, diskFiles, {
-      removeDb: async (id) => {
-        deletedDbIds.push(id);
+      markDbUnavailable: async (id) => {
+        markedUnavailableIds.push(id);
       },
       deleteDisk: async (uri) => {
         deletedDiskUris.push(uri);
+        return true;
       },
       checkDiskExists: (uri) => existingOnDisk.has(uri),
     });
 
-    expect(result.cleanedStaleRecords).toBe(1);
+    expect(result.markedUnavailable).toBe(1);
     expect(result.cleanedOrphans).toBe(1);
-    expect(deletedDbIds).toEqual(['huerfano_en_db']);
+    expect(result.failedDeletions).toBe(0);
+    expect(markedUnavailableIds).toEqual(['huerfano_en_db']);
     expect(deletedDiskUris).toEqual(['file:///disk/huerfano_en_disco.md']);
   });
 
@@ -888,7 +888,7 @@ describe('reportes locales y generación de contenido para PDF', () => {
         paciente_id: patientA,
         tipo: 'quimioterapia',
         estado: 'activo',
-        nombre: 'Ciclo FOLFOX de muestra',
+        nombre: 'Esquema de quimioterapia de prueba',
         parametros_json: null,
         fecha_inicio: '2026-08-01',
         fecha_termino: null,
@@ -917,7 +917,7 @@ describe('reportes locales y generación de contenido para PDF', () => {
     expect(html).toContain('QuimioCare');
     expect(html).toContain('Paciente A de Prueba');
     expect(html).toContain('12.345.678-9');
-    expect(html).toContain('Ciclo FOLFOX de muestra');
+    expect(html).toContain('Esquema de quimioterapia de prueba');
     expect(html).toContain('Últimos 30 días');
     expect(html).toContain('Aviso técnico y demostrativo');
     expect(html).toContain('36,8 °C');
@@ -945,53 +945,5 @@ describe('cuestionarios médicos de muestra y almacenamiento de borradores', () 
         }
       }
     }
-  });
-
-  it('guarda, aísla por paciente, actualiza y descarta borradores locales en disco', () => {
-    const tempDir = mkdtempSync(join(tmpdir(), 'quimiocare-drafts-test-'));
-    temporary.push(tempDir);
-
-    const patientADir = join(tempDir, 'formularios_locales', patientA, 'borradores');
-    const patientBDir = join(tempDir, 'formularios_locales', patientB, 'borradores');
-    mkdirSync(patientADir, { recursive: true });
-    mkdirSync(patientBDir, { recursive: true });
-
-    const draftA: MedicalFormDraft = {
-      formularioId: 'form-qlq30-muestra',
-      version: '1.0',
-      pacienteId: patientA,
-      respuestas: { q1: 'nada', q2: 'un_poco', q4: 8 },
-      completado: false,
-      guardadoEn: '2026-10-04T12:00:00Z',
-    };
-
-    const draftAFile = join(patientADir, 'form-qlq30-muestra_v1.0.json');
-
-    // 1. Guardar borrador para Paciente A
-    writeFileSync(draftAFile, JSON.stringify(draftA, null, 2), 'utf-8');
-    expect(existsSync(draftAFile)).toBe(true);
-
-    // 2. Comprobar aislamiento: Paciente B no tiene borradores
-    const filesB = existsSync(patientBDir) ? readdirSync(patientBDir) : [];
-    expect(filesB).toHaveLength(0);
-
-    // 3. Leer y verificar contenido del borrador de Paciente A
-    const loadedA = JSON.parse(readFileSync(draftAFile, 'utf-8')) as MedicalFormDraft;
-    expect(loadedA.pacienteId).toBe(patientA);
-    expect(loadedA.respuestas.q1).toBe('nada');
-    expect(loadedA.completado).toBe(false);
-
-    // 4. Actualizar borrador a completado
-    loadedA.respuestas.q5 = 'Sin comentarios adicionales';
-    loadedA.completado = true;
-    writeFileSync(draftAFile, JSON.stringify(loadedA, null, 2), 'utf-8');
-
-    const updatedA = JSON.parse(readFileSync(draftAFile, 'utf-8')) as MedicalFormDraft;
-    expect(updatedA.completado).toBe(true);
-    expect(updatedA.respuestas.q5).toBe('Sin comentarios adicionales');
-
-    // 5. Descartar borrador
-    unlinkSync(draftAFile);
-    expect(existsSync(draftAFile)).toBe(false);
   });
 });

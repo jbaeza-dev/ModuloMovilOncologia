@@ -15,6 +15,15 @@ export type GenerateReportParams = {
   vitals: VitalRecord[];
 };
 
+export function escapeHtml(str: string): string {
+  return str
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;')
+    .replace(/'/g, '&#39;');
+}
+
 export function buildReportHtml({
   periodDays,
   profile,
@@ -23,10 +32,10 @@ export function buildReportHtml({
   vitals,
 }: GenerateReportParams): string {
   const generatedAt = formatDate(new Date().toISOString());
-  const patientName = profile?.nombre ?? 'Paciente de prueba';
-  const patientRut = profile?.rut ?? 'Sin registro';
-  const patientEmail = profile?.email ?? 'Sin registro';
-  const treatmentName = treatment?.nombre ?? 'Tratamiento activo en seguimiento';
+  const patientName = escapeHtml(profile?.nombre ?? 'Paciente de prueba');
+  const patientRut = escapeHtml(profile?.rut ?? 'Sin registro');
+  const patientEmail = escapeHtml(profile?.email ?? 'Sin registro');
+  const treatmentName = escapeHtml(treatment?.nombre ?? 'Tratamiento activo en seguimiento');
 
   const rowsHtml = vitals.length
     ? vitals

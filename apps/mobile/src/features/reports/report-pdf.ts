@@ -7,17 +7,15 @@ export { buildReportHtml, type GenerateReportParams } from './report-template';
 
 /**
  * Genera el documento PDF utilizando expo-print a partir de los datos locales del paciente,
- * lo traslada de la caché al directorio persistente de reportes y retorna la URI persistente.
+ * lo traslada de la caché al directorio persistente de reportes y retorna la URI persistente junto al nombre del archivo.
  */
-export async function generateAndPersistReportPdf(params: GenerateReportParams): Promise<string> {
+export async function generateAndPersistReportPdf(
+  params: GenerateReportParams,
+): Promise<{ persistentUri: string; filename: string }> {
   const html = buildReportHtml(params);
   const printResult = await Print.printToFileAsync({
     html,
   });
-  const persistentUri = await persistReportPdf(
-    params.pacienteId,
-    printResult.uri,
-    params.periodDays,
-  );
-  return persistentUri;
+  const result = await persistReportPdf(params.pacienteId, printResult.uri, params.periodDays);
+  return result;
 }
