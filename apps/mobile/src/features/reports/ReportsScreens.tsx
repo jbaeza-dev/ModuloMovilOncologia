@@ -1,3 +1,4 @@
+import Feather from '@expo/vector-icons/Feather';
 import { File } from 'expo-file-system';
 import { router, useLocalSearchParams } from 'expo-router';
 import { useCallback, useState } from 'react';
@@ -18,9 +19,12 @@ import {
 import { formatDate, sinceDays, type VitalsSummary } from '../../data/local/repository';
 import {
   assertSafeReportFileName,
+  deletePatientReport,
   getPatientReportDirectory,
+  getPatientReportList,
   parseTimestampFromReportFilename,
   shareReportPdf,
+  type PatientReportItem,
 } from '../../data/local/report-storage';
 import { useFocusedValue } from '../../data/local/use-local-query';
 import { useLocalData } from '../../providers/LocalDataProvider';
@@ -56,6 +60,19 @@ export function ReportsScreen() {
     avgPulse: null,
   } as VitalsSummary);
 
+  const loadExistingReports = useCallback(async () => {
+    if (!patientId) return [];
+    return getPatientReportList(patientId);
+  }, [patientId]);
+
+  const {
+    value: savedReports,
+    loading: loadingReports,
+    refresh: refreshReports,
+  } = useFocusedValue(loadExistingReports, [] as PatientReportItem[]);
+
+  const existingForPeriod = savedReports.find((r) => r.periodDays === days);
+
   async function handleSharePdf() {
     if (!repository || !patientId || generating) return;
     setGenerating(true);
@@ -74,6 +91,8 @@ export function ReportsScreen() {
         vitals,
       });
 
+      refreshReports();
+
       const shareResult = await shareReportPdf(persistentUri);
       if (shareResult === 'shared_sheet_opened') {
         setReportFeedback('PDF guardado en el dispositivo y hoja de compartir abierta.');
@@ -88,6 +107,23 @@ export function ReportsScreen() {
       setReportError('No se pudo generar el reporte PDF en este dispositivo.');
     } finally {
       setGenerating(false);
+    }
+  }
+
+  async function handleDeleteReport(filename: string) {
+    if (!patientId) return;
+    setReportFeedback(null);
+    setReportError(null);
+    try {
+      const ok = await deletePatientReport(patientId, filename);
+      if (ok) {
+        setReportFeedback('Reporte eliminado del almacenamiento local.');
+      } else {
+        setReportError('No se pudo encontrar el archivo del reporte para eliminarlo.');
+      }
+      refreshReports();
+    } catch {
+      setReportError('Error al eliminar el reporte del dispositivo.');
     }
   }
 
@@ -158,6 +194,15 @@ export function ReportsScreen() {
               />
             ) : null}
             <StatusPill>Almacenamiento local</StatusPill>
+            {existingForPeriod ? (
+              <BodyText>
+                Ya existe un reporte guardado para los últimos {days} días (
+                {existingForPeriod.generatedAt
+                  ? formatDate(existingForPeriod.generatedAt)
+                  : 'reciente'}
+                ). Al generar uno nuevo se reemplazará para evitar archivos duplicados.
+              </BodyText>
+            ) : null}
             {reportFeedback ? <StatusPill>{reportFeedback}</StatusPill> : null}
             {reportError ? <Text style={styles.errorText}>{reportError}</Text> : null}
           </InfoCard>
@@ -176,12 +221,68 @@ export function ReportsScreen() {
             />
           ) : (
             <VisualButton
-              label={generating ? 'Generando PDF…' : 'Compartir PDF'}
+              label={
+                generating
+                  ? 'Generando PDF…'
+                  : existingForPeriod
+                    ? 'Actualizar y compartir PDF'
+                    : 'Compartir PDF'
+              }
               disabled={loading || generating}
               onPress={handleSharePdf}
             />
           )}
         </>
+      )}
+
+      <SectionTitle>Reportes guardados en el dispositivo</SectionTitle>
+      {loadingReports ? (
+        <BodyText>Cargando reportes guardados…</BodyText>
+      ) : savedReports.length === 0 ? (
+        <InfoCard>
+          <BodyText>No hay reportes PDF generados previamente en este dispositivo.</BodyText>
+        </InfoCard>
+      ) : (
+        savedReports.map((report) => {
+          const sizeKb = report.sizeBytes ? (report.sizeBytes / 1024).toFixed(1) : null;
+          const formattedDate = report.generatedAt ? formatDate(report.generatedAt) : 'Reciente';
+
+          return (
+            <InfoCard key={report.filename}>
+              <View style={styles.cardHeader}>
+                <Feather name="file-text" size={24} color={appTheme.colors.primary} />
+                <View style={styles.cardHeaderCopy}>
+                  <Text style={styles.cardTitle}>
+                    {report.periodDays
+                      ? `Reporte de evolución (${report.periodDays} días)`
+                      : 'Reporte clínico'}
+                  </Text>
+                  <BodyText>Generado el {formattedDate}</BodyText>
+                </View>
+              </View>
+
+              <DetailRow label="Archivo" value={report.filename} />
+              <DetailRow label="Tamaño" value={sizeKb ? `${sizeKb} KB` : 'No disponible'} />
+              <StatusPill>Almacenamiento local</StatusPill>
+
+              <View style={styles.reportActions}>
+                <VisualButton
+                  label="Ver o compartir"
+                  onPress={() =>
+                    router.navigate(
+                      '/vitales/reporte-estado?archivo=' + encodeURIComponent(report.filename),
+                    )
+                  }
+                />
+                <VisualButton
+                  label="Eliminar reporte"
+                  secondary
+                  onPress={() => handleDeleteReport(report.filename)}
+                />
+              </View>
+            </InfoCard>
+          );
+        })
       )}
     </Screen>
   );
@@ -261,7 +362,7 @@ export function ReportStatusScreen() {
 
       <VisualButton label="Abrir hoja de compartir" onPress={handleReshare} />
       <VisualButton
-        label="Generar otro reporte"
+        label="Volver a reportes guardados"
         secondary
         onPress={() => router.replace('/vitales/reportes')}
       />
@@ -277,5 +378,14 @@ function createStyles(colors: ReturnType<typeof useAppTheme>['theme']['colors'])
       color: colors.error,
       marginTop: theme.spacing.xs,
     },
+    cardHeader: {
+      flexDirection: 'row',
+      alignItems: 'center',
+      gap: theme.spacing.md,
+      marginBottom: theme.spacing.xs,
+    },
+    cardHeaderCopy: { flex: 1, gap: 2 },
+    cardTitle: { fontSize: 16, fontWeight: '700', color: colors.text },
+    reportActions: { gap: theme.spacing.sm, marginTop: theme.spacing.sm },
   });
 }

@@ -36,6 +36,10 @@ class File {
     return fs.existsSync(this.uri);
   }
 
+  get name() {
+    return path.basename(this.uri);
+  }
+
   get size() {
     if (!this.exists) return 0;
     return fs.statSync(this.uri).size;

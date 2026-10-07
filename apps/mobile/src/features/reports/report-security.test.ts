@@ -2,9 +2,13 @@ import { describe, expect, it } from 'vitest';
 
 import {
   assertSafeReportFileName,
+  deletePatientReport,
   getPatientReportDirectory,
+  getPatientReportList,
   listPatientReports,
+  parsePeriodFromReportFilename,
   parseTimestampFromReportFilename,
+  persistReportPdf,
 } from '../../data/local/report-storage';
 import { buildReportHtml, escapeHtml } from './report-template';
 
@@ -148,5 +152,77 @@ describe('aislamiento de directorios de reportes por paciente', () => {
 
     expect(Array.isArray(reportsA)).toBe(true);
     expect(Array.isArray(reportsB)).toBe(true);
+  });
+});
+
+describe('gestión de reportes guardados, listado con metadatos y eliminación', () => {
+  it('extrae correctamente el número de días del período desde el nombre del archivo', () => {
+    expect(parsePeriodFromReportFilename('reporte_7d_1728256000000.pdf')).toBe(7);
+    expect(parsePeriodFromReportFilename('reporte_30d_1728256000000.pdf')).toBe(30);
+    expect(parsePeriodFromReportFilename('reporte_90d_1728256000000.pdf')).toBe(90);
+    expect(parsePeriodFromReportFilename('archivo_invalido.pdf')).toBeNull();
+    expect(parsePeriodFromReportFilename('')).toBeNull();
+  });
+
+  it('lista reportes con metadatos, reemplaza duplicados del mismo período y permite eliminación', async () => {
+    const { File, Paths } = await import('expo-file-system');
+
+    // 1. Crear archivo temporal simulado para persistir
+    const tempFile1 = new File(Paths.cache, 'temp_test_1.pdf');
+    await tempFile1.write('Contenido PDF de prueba 1');
+
+    // 2. Persistir primer reporte de 30 días para Paciente A
+    const { filename: filename1 } = await persistReportPdf(patientA, tempFile1.uri, 30);
+    expect(filename1).toContain('reporte_30d_');
+
+    const initialList = getPatientReportList(patientA);
+    expect(initialList.length).toBeGreaterThanOrEqual(1);
+    expect(initialList.some((r) => r.filename === filename1)).toBe(true);
+    const found1 = initialList.find((r) => r.filename === filename1);
+    expect(found1?.periodDays).toBe(30);
+    expect(found1?.generatedAt).not.toBeNull();
+
+    // 3. Crear y persistir segundo reporte para el MISMO período (30 días): debe reemplazar el anterior
+    const tempFile2 = new File(Paths.cache, 'temp_test_2.pdf');
+    await tempFile2.write('Contenido PDF de prueba 2 actualizado');
+    const { filename: filename2 } = await persistReportPdf(patientA, tempFile2.uri, 30);
+
+    const afterDeduplication = getPatientReportList(patientA);
+    const reports30d = afterDeduplication.filter((r) => r.periodDays === 30);
+    // Solo debe quedar 1 reporte de 30 días para evitar acumulación de duplicados
+    expect(reports30d).toHaveLength(1);
+    expect(reports30d[0].filename).toBe(filename2);
+
+    // 4. Persistir un reporte de diferente período (7 días): se conserva independientemente
+    const tempFile3 = new File(Paths.cache, 'temp_test_3.pdf');
+    await tempFile3.write('Contenido PDF de prueba 7 días');
+    const { filename: filename7d } = await persistReportPdf(patientA, tempFile3.uri, 7);
+
+    const withBoth = getPatientReportList(patientA);
+    expect(withBoth.some((r) => r.filename === filename2)).toBe(true);
+    expect(withBoth.some((r) => r.filename === filename7d)).toBe(true);
+
+    // 5. Aislamiento por paciente: Paciente B no ve los reportes de Paciente A
+    const listB = getPatientReportList(patientB);
+    expect(listB.some((r) => r.filename === filename2)).toBe(false);
+    expect(listB.some((r) => r.filename === filename7d)).toBe(false);
+
+    // 6. Eliminar reporte individualmente
+    const deleted = await deletePatientReport(patientA, filename2);
+    expect(deleted).toBe(true);
+
+    const finalList = getPatientReportList(patientA);
+    expect(finalList.some((r) => r.filename === filename2)).toBe(false);
+    expect(finalList.some((r) => r.filename === filename7d)).toBe(true);
+
+    // Limpieza final del reporte de 7d
+    await deletePatientReport(patientA, filename7d);
+  });
+
+  it('falla de forma segura al intentar eliminar un reporte inexistente o inválido', async () => {
+    const deletedFake = await deletePatientReport(patientA, 'reporte_30d_9999999999999.pdf');
+    expect(deletedFake).toBe(false);
+
+    await expect(() => deletePatientReport(patientA, '../inyeccion.pdf')).rejects.toThrow();
   });
 });

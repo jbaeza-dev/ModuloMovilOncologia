@@ -112,15 +112,6 @@ export function MedicalFormsHubScreen() {
           </InfoCard>
         );
       })}
-
-      <InfoCard>
-        <SectionTitle>Aviso sobre datos locales</SectionTitle>
-        <BodyText>
-          Los cuestionarios y sus borradores se guardan provisionalmente en el almacenamiento
-          privado de este dispositivo. No se envían a ningún servidor hasta que se defina el
-          contrato clínico definitivo.
-        </BodyText>
-      </InfoCard>
     </Screen>
   );
 }
@@ -243,8 +234,8 @@ export function MedicalFormDetailScreen() {
     }
   }
 
-  function handleReviewAndValidate() {
-    if (!form) return;
+  async function handleReviewAndComplete() {
+    if (!patientId || !form || busy) return;
     setFeedback(null);
     const validation = validateFormAnswers(form, answers);
     if (!validation.isValid) {
@@ -253,13 +244,7 @@ export function MedicalFormDetailScreen() {
       return;
     }
     setValidationErrors({});
-    setIsReviewing(true);
-  }
-
-  async function handleConfirmComplete() {
-    if (!patientId || !form || busy) return;
     setBusy(true);
-    setFeedback(null);
     try {
       const draft: MedicalFormDraft = {
         formularioId: form.id,
@@ -271,12 +256,10 @@ export function MedicalFormDetailScreen() {
       };
       await saveFormDraft(draft);
       setCompleted(true);
-      setIsReviewing(false);
-      setFeedback(
-        'Cuestionario completado y guardado en almacenamiento local del dispositivo (sin envío a servidor).',
-      );
+      setIsReviewing(true);
+      setFeedback('Cuestionario completado y guardado localmente en este dispositivo.');
     } catch {
-      setFeedback('No se pudo completar el cuestionario.');
+      setFeedback('No se pudo guardar el cuestionario completado en el almacenamiento local.');
     } finally {
       setBusy(false);
     }
@@ -310,10 +293,10 @@ export function MedicalFormDetailScreen() {
       <Screen title={`Revisión: ${form.titulo}`} backTo="/formulario">
         <DemoBadge />
         <InfoCard>
-          <SectionTitle>Revisión de respuestas</SectionTitle>
+          <StatusPill>Completado en dispositivo</StatusPill>
+          <SectionTitle>Respuestas registradas</SectionTitle>
           <BodyText>
-            Verifica tus respuestas antes de confirmar. Quedarán almacenadas localmente en el
-            dispositivo.
+            Tus respuestas han sido verificadas y guardadas localmente en este dispositivo.
           </BodyText>
         </InfoCard>
 
@@ -340,9 +323,9 @@ export function MedicalFormDetailScreen() {
 
         <View style={styles.actions}>
           <VisualButton
-            label="Confirmar y guardar localmente"
+            label="Volver a cuestionarios"
             disabled={busy}
-            onPress={handleConfirmComplete}
+            onPress={() => router.replace('/formulario')}
           />
           <VisualButton
             label="Modificar respuestas"
@@ -403,9 +386,9 @@ export function MedicalFormDetailScreen() {
 
       <View style={styles.actions}>
         <VisualButton
-          label={completed ? 'Revisar o actualizar respuestas' : 'Revisar y completar'}
+          label={completed ? 'Actualizar y guardar respuestas' : 'Revisar y completar'}
           disabled={busy}
-          onPress={handleReviewAndValidate}
+          onPress={handleReviewAndComplete}
         />
         {!completed ? (
           <VisualButton
