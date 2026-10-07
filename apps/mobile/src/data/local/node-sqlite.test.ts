@@ -16,9 +16,12 @@ import { migrateDatabase } from './migrations';
 import { REGISTROS_SQL } from './migrations/001_registros';
 import { CONTEXTO_SQL } from './migrations/002_contexto';
 import { DESCARGAS_SQL } from './migrations/003_descargas';
+import { reconcileCopiesCore } from './reconciliation';
 import { createPatientRepository, seedPatientContextIfEmpty, sinceDays } from './repository';
 import type { SqlConnection, SqlValue } from './sql';
 import { InputError, parseSymptomDescription, parseVitalInput } from './validation';
+import { SAMPLE_MEDICAL_FORMS } from '../../features/medical-forms/sample-medical-forms';
+import { buildReportHtml } from '../../features/reports/report-template';
 
 const patientA = '11111111-1111-4111-8111-111111111111';
 const patientB = '22222222-2222-4222-8222-222222222222';
@@ -712,5 +715,235 @@ describe('descargas y recursos educativos offline', () => {
     );
     expect(countA?.total).toBe(1);
     expect(countB?.total).toBe(1);
+  });
+});
+
+describe('copias educativas y descargas locales', () => {
+  it('guarda, consulta, actualiza y elimina descargas locales aisladas por paciente', async () => {
+    const database = open();
+    await migrateDatabase(database);
+    await seedPatientContextIfEmpty(database, patientA, patientB);
+
+    const repoA = createPatientRepository(database, patientA, ids());
+    const repoB = createPatientRepository(database, patientB, ids());
+
+    // Paciente A guarda una descarga
+    await repoA.saveDownload({
+      contenido_id: 'edu-alimentacion',
+      ruta_local: 'file:///data/user/0/recursos_educativos/A/edu-alimentacion_1.md',
+    });
+
+    // Paciente B guarda una descarga distinta
+    await repoB.saveDownload({
+      contenido_id: 'edu-bienestar',
+      ruta_local: 'file:///data/user/0/recursos_educativos/B/edu-bienestar_1.md',
+    });
+
+    // Verificación de aislamiento A vs B
+    const downloadsA = await repoA.downloads();
+    const downloadsB = await repoB.downloads();
+    expect(downloadsA).toHaveLength(1);
+    expect(downloadsA[0].contenido_id).toBe('edu-alimentacion');
+    expect(downloadsA[0].visualizada).toBe(0);
+    expect(downloadsA[0].visualizada_en).toBeNull();
+
+    expect(downloadsB).toHaveLength(1);
+    expect(downloadsB[0].contenido_id).toBe('edu-bienestar');
+
+    // Consulta individual por ID
+    const singleA = await repoA.download('edu-alimentacion');
+    expect(singleA?.ruta_local).toBe(
+      'file:///data/user/0/recursos_educativos/A/edu-alimentacion_1.md',
+    );
+    expect(await repoA.download('edu-bienestar')).toBeNull();
+
+    // Marcar como visualizada
+    await repoA.markDownloadViewed('edu-alimentacion');
+    const viewedA = await repoA.download('edu-alimentacion');
+    expect(viewedA?.visualizada).toBe(1);
+    expect(viewedA?.visualizada_en).not.toBeNull();
+
+    // Actualización con nueva ruta atómica (ON CONFLICT DO UPDATE)
+    await repoA.saveDownload({
+      contenido_id: 'edu-alimentacion',
+      ruta_local: 'file:///data/user/0/recursos_educativos/A/edu-alimentacion_2.md',
+    });
+    const updatedA = await repoA.download('edu-alimentacion');
+    expect(updatedA?.ruta_local).toBe(
+      'file:///data/user/0/recursos_educativos/A/edu-alimentacion_2.md',
+    );
+    // Debe resetear visualizada a 0 tras la actualización
+    expect(updatedA?.visualizada).toBe(0);
+
+    // Eliminación
+    await repoA.removeDownload('edu-alimentacion');
+    expect(await repoA.downloads()).toHaveLength(0);
+    // Paciente B permanece intacto
+    expect(await repoB.downloads()).toHaveLength(1);
+  });
+
+  it('conciliación bidireccional detecta registros sin archivo y limpia archivos sin registro', async () => {
+    const markedUnavailableIds: string[] = [];
+    const deletedDiskUris: string[] = [];
+
+    const dbRecords = [
+      { contenido_id: 'valido', ruta_local: 'file:///disk/valido.md' },
+      { contenido_id: 'huerfano_en_db', ruta_local: 'file:///disk/inexistente.md' },
+    ];
+    const diskFiles = ['file:///disk/valido.md', 'file:///disk/huerfano_en_disco.md'];
+
+    const existingOnDisk = new Set(['file:///disk/valido.md', 'file:///disk/huerfano_en_disco.md']);
+
+    const result = await reconcileCopiesCore(dbRecords, diskFiles, {
+      markDbUnavailable: async (id) => {
+        markedUnavailableIds.push(id);
+      },
+      deleteDisk: async (uri) => {
+        deletedDiskUris.push(uri);
+        return true;
+      },
+      checkDiskExists: (uri) => existingOnDisk.has(uri),
+    });
+
+    expect(result.markedUnavailable).toBe(1);
+    expect(result.cleanedOrphans).toBe(1);
+    expect(result.failedDeletions).toBe(0);
+    expect(markedUnavailableIds).toEqual(['huerfano_en_db']);
+    expect(deletedDiskUris).toEqual(['file:///disk/huerfano_en_disco.md']);
+  });
+
+  it('no pierde archivo previo si la base de datos falla al guardar nueva versión', async () => {
+    const tempDir = mkdtempSync(join(tmpdir(), 'quimiocare-edu-test-'));
+    temporary.push(tempDir);
+
+    const oldFilePath = join(tempDir, 'edu_old.md');
+    const newFilePath = join(tempDir, 'edu_new.md');
+
+    // 1. Archivo previo existe en disco
+    writeFileSync(oldFilePath, 'Contenido previo', 'utf-8');
+    expect(existsSync(oldFilePath)).toBe(true);
+
+    // 2. Se escribe la nueva versión en archivo único
+    writeFileSync(newFilePath, 'Contenido nuevo', 'utf-8');
+    expect(existsSync(newFilePath)).toBe(true);
+
+    // 3. Simular fallo de base de datos
+    const dbSaveOperation = async () => {
+      throw new Error('Fallo simulado en SQLite');
+    };
+
+    // 4. Manejo de error: se elimina el archivo nuevo y se conserva el viejo
+    try {
+      await dbSaveOperation();
+    } catch {
+      unlinkSync(newFilePath);
+    }
+
+    // Comprobación: el archivo previo no se perdió y el nuevo no quedó huérfano
+    expect(existsSync(oldFilePath)).toBe(true);
+    expect(readFileSync(oldFilePath, 'utf-8')).toBe('Contenido previo');
+    expect(existsSync(newFilePath)).toBe(false);
+  });
+});
+
+describe('reportes locales y generación de contenido para PDF', () => {
+  it('recupera mediciones para reporte cronológicamente y sin límite arbitrario con vitalsForReport', async () => {
+    const database = open();
+    await migrateDatabase(database);
+    await seedPatientContextIfEmpty(database, patientA, patientB);
+
+    const repo = createPatientRepository(
+      database,
+      patientA,
+      ids('v1', 'q1', 'v2', 'q2', 'v3', 'q3'),
+      () => measured,
+    );
+
+    // Insertar registros con fechas conocidas
+    await repo.createVitals({ ...validVitals, temperatura: 36.5 });
+    await repo.createVitals({ ...validVitals, temperatura: 37.1 });
+    await repo.createVitals({ ...validVitals, temperatura: 36.9 });
+
+    const vitals = await repo.vitalsForReport(sinceDays(30, new Date('2026-10-01T00:00:00Z')));
+    expect(vitals).toHaveLength(3);
+    // Orden cronológico ascendente para el reporte
+    expect(vitals[0].temperatura).toBe(36.5);
+    expect(vitals[1].temperatura).toBe(37.1);
+    expect(vitals[2].temperatura).toBe(36.9);
+  });
+
+  it('genera plantilla HTML válida con datos del paciente, resumen y disclaimer sintético', () => {
+    const html = buildReportHtml({
+      pacienteId: patientA,
+      periodDays: 30,
+      profile: {
+        paciente_id: patientA,
+        nombre: 'Paciente A de Prueba',
+        rut: '12.345.678-9',
+        email: 'paciente.a@quimiocare.cl',
+        obtenido_en: '2026-09-28T12:00:00Z',
+      },
+      treatment: {
+        id: 't1',
+        paciente_id: patientA,
+        tipo: 'quimioterapia',
+        estado: 'activo',
+        nombre: 'Esquema de quimioterapia de prueba',
+        parametros_json: null,
+        fecha_inicio: '2026-08-01',
+        fecha_termino: null,
+        obtenido_en: '2026-09-28T12:00:00Z',
+      },
+      summary: {
+        total: 2,
+        avgTemperature: 36.8,
+        avgPulse: 72,
+      },
+      vitals: [
+        {
+          id: 'v1',
+          paciente_id: patientA,
+          fecha_registro: '2026-09-28T08:00:00Z',
+          presion_sistolica: 120,
+          presion_diastolica: 80,
+          pulso: 72,
+          temperatura: 36.8,
+          saturacion_o2: 98,
+          fecha_subida: null,
+        },
+      ],
+    });
+
+    expect(html).toContain('QuimioCare');
+    expect(html).toContain('Paciente A de Prueba');
+    expect(html).toContain('12.345.678-9');
+    expect(html).toContain('Esquema de quimioterapia de prueba');
+    expect(html).toContain('Últimos 30 días');
+    expect(html).toContain('Aviso técnico y demostrativo');
+    expect(html).toContain('36,8 °C');
+    expect(html).toContain('120/80 mmHg');
+    expect(html).toContain('72 lpm');
+    expect(html).toContain('98 %');
+  });
+});
+
+describe('cuestionarios médicos de muestra y almacenamiento de borradores', () => {
+  it('valida la estructura clínica de los cuestionarios de demostración', () => {
+    expect(SAMPLE_MEDICAL_FORMS.length).toBeGreaterThanOrEqual(2);
+
+    for (const form of SAMPLE_MEDICAL_FORMS) {
+      expect(form.id).toBeTruthy();
+      expect(form.titulo).toBeTruthy();
+      expect(form.version).toBeTruthy();
+      expect(form.duracionEstimadaMin).toBeGreaterThan(0);
+      expect(form.preguntas.length).toBeGreaterThanOrEqual(3);
+
+      for (const q of form.preguntas) {
+        expect(['single_choice', 'multiple_choice', 'scale_0_10', 'text']).toContain(q.tipo);
+        if (q.tipo === 'single_choice' || q.tipo === 'multiple_choice') {
+          expect(q.opciones?.length).toBeGreaterThanOrEqual(2);
+        }
+      }
+    }
   });
 });

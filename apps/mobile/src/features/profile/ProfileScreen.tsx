@@ -42,6 +42,7 @@ export function ProfileScreen() {
 
   return (
     <Screen title="Mi perfil" backTo="/">
+      <DemoBadge />
       {loading ? (
         <InfoCard>
           <BodyText>Cargando perfil…</BodyText>
@@ -113,6 +114,7 @@ export function PersonalDataScreen() {
 
   return (
     <Screen title="Datos personales" backTo="/perfil">
+      <DemoBadge />
       {loading ? (
         <InfoCard>
           <BodyText>Cargando información del paciente…</BodyText>
@@ -178,6 +180,7 @@ export function ClinicalProfileScreen() {
 
   return (
     <Screen title="Perfil clínico" backTo="/perfil">
+      <DemoBadge />
       {loading ? (
         <InfoCard>
           <BodyText>Cargando tratamiento…</BodyText>
@@ -266,6 +269,10 @@ export function LinkCodeScreen() {
 
   return (
     <Screen title="Código de vinculación" backTo="/perfil">
+      <DemoBadge />
+      <BodyText>
+        Código de muestra sintético para demostración técnica del almacenamiento local.
+      </BodyText>
       {loading ? (
         <InfoCard>
           <BodyText>Consultando código de vinculación…</BodyText>
@@ -315,6 +322,7 @@ export function PreferencesScreen() {
   const [notices, setNotices] = useState(true);
   return (
     <Screen title="Preferencias" backTo="/perfil">
+      <DemoBadge />
       <InfoCard>
         <SectionTitle>Accesibilidad y apariencia</SectionTitle>
         <BodyText>

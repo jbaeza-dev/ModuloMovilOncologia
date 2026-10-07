@@ -4,9 +4,16 @@ Aplicación Android de acompañamiento para pacientes en tratamiento de **quimio
 
 ## Estado actual
 
-El repositorio contiene la base Expo y la navegación principal de QuimioCare, además de un prototipo visual navegable de las pantallas previstas para el Sprint 1. La interfaz incluye Inicio, Perfil, acceso, vinculación, vitales, síntomas, educación, asistente y reportes, con datos de demostración. En Perfil → Preferencias se puede elegir entre cuatro paletas; el modo claro u oscuro sigue la configuración del dispositivo y la paleta se conserva localmente.
+El repositorio contiene la base Expo y la navegación principal de QuimioCare, consolidada para la demostración independiente de Sprint 1 mediante datos sintéticos. La interfaz se estructura en cuatro pestañas principales (Inicio, Vitales, Formulario y Educación), complementada por Perfil, Asistente y Reportes:
 
-La rama de persistencia añade SQLite para guardar signos vitales, descripciones de síntomas sintéticos, contexto de paciente (perfil, tratamiento, código de vinculación) y copias de recursos educativos sin conexión mediante `expo-file-system` aisladas físicamente por paciente (`recursos_educativos/{paciente_id}/{contenido_id}.md`). Cada registro clínico conserva operaciones pendientes en la cola local. Asistente y Reportes continúan como demostración técnica. No hay autenticación con servidor, envío de datos remotos, triaje, sincronización bidireccional ni servicios desplegados.
+- **Inicio:** resumen del paciente activo, acceso directo al registro diario de síntomas libres (`/formulario/sintomas-libres`), cambio entre pacientes de prueba A/B y distintivo explícito de demostración sintética (`DemoBadge`).
+- **Vitales:** registro atómico de signos vitales en SQLite local con operaciones en cola y generación/exportación persistente de reportes PDF locales (`expo-print` y `expo-sharing`) con resumen temporal calculado desde la base de datos (7, 30 y 90 días) almacenados en `reportes_locales/{paciente_id}/` con sanitización de contenido.
+- **Formulario:** catálogo de cuestionarios médicos asignados de demostración (modelos sintéticos neutros QLQ-C30 y ESAS: 2 para Paciente A, 1 para Paciente B) con validación de respuestas, guardado seguro de borradores locales en almacenamiento persistente por paciente y envío demostrativo, diferenciado de la ruta dedicada de síntomas diarios libres.
+- **Educación:** catálogo de guías educativas con descargas físicas en Markdown aisladas por paciente (`recursos_educativos/{paciente_id}/{contenido_id}_{timestamp}.md`), con nombres únicos inmutables, compensación ante fallos, protección de escrituras concurrentes y reconciliación automática bidireccional entre SQLite y el sistema de archivos.
+- **Perfil:** datos del paciente, esquema de quimioterapia y código de vinculación médica offline persistidos en SQLite, junto con la selección de cuatro paletas accesibles (Turquesa, Azul, Violeta, Ámbar) y soporte claro/oscuro guardado localmente.
+- **Asistente:** prototipo visual demostrativo sin conexión a servidor ni modelos de lenguaje externos.
+
+No hay autenticación con servidor central, envío remoto de registros, triaje clínico automatizado, sincronización bidireccional ni servicios desplegados.
 
 ## Componentes previstos
 
@@ -19,8 +26,6 @@ Las aplicaciones y paquetes se incorporan progresivamente dentro de estas rutas:
 | `apps/central-api-simulator/` | Simulador local de la API clínica del otro módulo, con datos sintéticos.                           |
 | `packages/contracts/`         | Contratos y esquemas compartidos cuando se acuerden con el módulo central.                         |
 | `infra/local/`                | Entorno de pruebas locales mediante `podman-compose`.                                              |
-
-Para la demostración de Sprint 1 se acordó guardar registros clínicos y descargas educativas en SQLite propio y almacenamiento de archivos local, preparando el futuro envío REST mediante una cola local. PowerSync se incorporará por separado para el catálogo educativo cuando se disponga de la infraestructura central. El contrato v0 del simulador continúa en revisión, por lo que la app todavía no transmite registros.
 
 ## Requisitos para el desarrollo local
 
@@ -35,7 +40,7 @@ Instalar las herramientas de desarrollo desde la raíz:
 pnpm install --frozen-lockfile
 ```
 
-Comprobar formato, lint y tipos con un único comando:
+Comprobar formato, lint, tipos y pruebas unitarias con la suite local:
 
 ```bash
 pnpm check
@@ -72,7 +77,7 @@ Generar el bundle JavaScript para Android (valida empaquetado y Metro sin emulad
 pnpm --filter @modulo-movil-oncologia/mobile bundle:android
 ```
 
-La aplicación aún no contiene PowerSync. Los datos de prueba de signos, síntomas y descargas educativas se guardan en SQLite y en el sistema de archivos del dispositivo de manera aislada por paciente. QuimioCare ahora cuenta con su propia **Development Build** nativa (`expo-dev-client`) con paquete `cl.ubiobio.quimiocare`, reemplazando el uso de Expo Go para dar soporte completo a dependencias nativas presentes y futuras. La exportación del bundle Android comprueba el empaquetado de JavaScript y no sustituye la revisión en dispositivo o emulador.
+La aplicación aún no contiene PowerSync. Los datos de prueba de signos, síntomas, contexto y descargas educativas se guardan en SQLite y en el sistema de archivos del dispositivo de manera aislada por paciente. QuimioCare cuenta con su propia **Development Build** nativa (`expo-dev-client`) con paquete `cl.ubiobio.quimiocare`, reemplazando el uso de Expo Go para dar soporte completo a dependencias nativas presentes (`expo-sqlite`, `expo-file-system`, `expo-print`, `expo-sharing`) y futuras. La exportación del bundle Android comprueba el empaquetado de JavaScript y no sustituye la revisión en dispositivo o emulador.
 
 El repositorio mantiene un solo `pnpm-lock.yaml` en la raíz. No deben generarse lockfiles dentro
 de `apps/` ni `packages/`. La configuración de workspaces y `nodeLinker: hoisted` está definida en
@@ -84,4 +89,4 @@ declarar su script `typecheck`.
 
 ## Colaboración
 
-El repositorio ya cuenta con la base Expo (PR5), la navegación principal (PR9), las pantallas visuales previstas para PR10–PR13 y la selección de apariencia accesible. La rama `feat/scrum-19-persistencia-sqlite` incorpora la primera parte funcional del registro offline. Los cambios futuros partirán de `main` y mantendrán la separación entre interfaz, datos locales y servicios.
+El repositorio ya cuenta con la base Expo (PR5), la navegación principal (PR9), las pantallas visuales previstas (PR10–PR13), la selección de apariencia accesible, la persistencia local de signos, síntomas y contexto en SQLite (SCRUM-19/SCRUM-17/SCRUM-20), y la consolidación de la experiencia demostrativa local (reconciliación de copias educativas, reportes PDF nativos locales, aislamiento A/B con disclaimers, y cuestionarios médicos asignados con guardado de borradores). Los cambios futuros partirán de `main` y mantendrán la separación entre interfaz, datos locales y servicios.

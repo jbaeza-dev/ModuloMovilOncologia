@@ -46,6 +46,10 @@ export function HomeScreen() {
           <BodyText>
             Datos sintéticos · {DEMO_PATIENTS.find((patient) => patient.id === patientId)?.label}
           </BodyText>
+          <BodyText>
+            Datos de prueba locales guardados en este dispositivo. No representan una sesión
+            autenticada ni sustituyen una evaluación médica.
+          </BodyText>
           <VisualButton
             label="Cambiar paciente de prueba"
             secondary
@@ -97,7 +101,7 @@ export function HomeScreen() {
           title="Síntomas de hoy"
           description="Guarda una descripción de síntomas."
           icon="clipboard"
-          href="/formulario"
+          href="/formulario/sintomas-libres"
         />
       </View>
       <View style={styles.section}>

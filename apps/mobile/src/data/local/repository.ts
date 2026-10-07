@@ -209,6 +209,15 @@ export function createPatientRepository(
       );
     },
 
+    vitalsForReport(sinceIso: string) {
+      return database.all<VitalRecord>(
+        `SELECT * FROM signos_vitales
+         WHERE paciente_id = ? AND fecha_registro >= ?
+         ORDER BY fecha_registro ASC, id ASC`,
+        [patientId, sinceIso],
+      );
+    },
+
     symptoms(limit = 30, offset = 0) {
       return database.all<SymptomWithSyncRecord>(
         `SELECT s.*, c.estado AS estado_envio
@@ -350,6 +359,15 @@ export function createPatientRepository(
       );
     },
 
+    async markDownloadUnavailable(contenidoId: string): Promise<void> {
+      await database.run(
+        `UPDATE descarga
+         SET estado = 'error'
+         WHERE paciente_id = ? AND contenido_id = ?`,
+        [patientId, contenidoId],
+      );
+    },
+
     async removeDownload(contenidoId: string): Promise<void> {
       await database.run('DELETE FROM descarga WHERE paciente_id = ? AND contenido_id = ?', [
         patientId,
@@ -358,6 +376,8 @@ export function createPatientRepository(
     },
   };
 }
+
+export type PatientRepository = ReturnType<typeof createPatientRepository>;
 
 export async function seedPatientContextIfEmpty(
   database: SqlConnection,
