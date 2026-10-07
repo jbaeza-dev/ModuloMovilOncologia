@@ -19,6 +19,7 @@ const patientB = '22222222-2222-4222-8222-222222222222';
 
 afterEach(() => {
   vi.restoreAllMocks();
+  vi.useRealTimers();
 });
 
 describe('seguridad y sanitización de reportes locales', () => {
@@ -312,5 +313,49 @@ describe('gestión de reportes guardados, listado con metadatos y eliminación',
     await deletePatientReport(patientA, oldFilename);
     await deletePatientReport(patientA, newFilename);
     clearPendingReportCleanups();
+  });
+
+  it('con reloj fijo y destino existente, ante un fallo de copia conserva el PDF original y su contenido', async () => {
+    const { File, Paths } = await import('expo-file-system');
+    const fixedTimestamp = 1728256000000;
+    vi.useFakeTimers();
+    vi.setSystemTime(fixedTimestamp);
+
+    try {
+      // 1. Guardar el reporte inicial con el reloj fijo en fixedTimestamp
+      const tempFile1 = new File(Paths.cache, 'temp_fixed_clock_1.pdf');
+      await tempFile1.write('Contenido original intocable y protegido');
+      const { filename: originalFilename } = await persistReportPdf(patientA, tempFile1.uri, 30);
+      expect(originalFilename).toBe(`reporte_30d_${fixedTimestamp}.pdf`);
+
+      const originalFile = new File(getPatientReportDirectory(patientA), originalFilename);
+      expect(originalFile.exists).toBe(true);
+      expect(await originalFile.text()).toBe('Contenido original intocable y protegido');
+
+      // 2. Con el reloj congelado en el mismo tiempo exacto, intentar guardar otro reporte cuya copia falla
+      const tempFile2 = new File(Paths.cache, 'temp_fixed_clock_2.pdf');
+      await tempFile2.write('Nuevo contenido que fallará y no debe borrar el preexistente');
+
+      const copySpy = vi
+        .spyOn(File.prototype, 'copy')
+        .mockRejectedValueOnce(new Error('Fallo de I/O forzado con reloj fijo'));
+
+      await expect(persistReportPdf(patientA, tempFile2.uri, 30)).rejects.toThrow(
+        'Fallo de I/O forzado con reloj fijo',
+      );
+      copySpy.mockRestore();
+
+      // 3. Comprobar que el PDF original no fue borrado ni alterado, conservando su contenido intacto
+      expect(originalFile.exists).toBe(true);
+      expect(await originalFile.text()).toBe('Contenido original intocable y protegido');
+
+      const reportsList = getPatientReportList(patientA);
+      expect(reportsList.some((r) => r.filename === originalFilename)).toBe(true);
+
+      // Limpieza
+      await deletePatientReport(patientA, originalFilename);
+    } finally {
+      vi.useRealTimers();
+    }
   });
 });

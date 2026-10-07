@@ -109,20 +109,41 @@ export async function persistReportPdf(
     // Si la lectura previa no está disponible, continuar
   }
 
-  const filename = `reporte_${periodDays}d_${Date.now()}.pdf`;
-  const targetFile = new File(dir, filename);
+  // 2. Garantizar un destino exclusivo para cada guardado. Si ya existe, elegir otro nombre o abortar sin tocarlo.
+  let timestamp = Date.now();
+  let filename = `reporte_${periodDays}d_${timestamp}.pdf`;
+  let targetFile = new File(dir, filename);
+
+  let attempts = 0;
+  while (targetFile.exists && attempts < 1000) {
+    timestamp++;
+    filename = `reporte_${periodDays}d_${timestamp}.pdf`;
+    targetFile = new File(dir, filename);
+    attempts++;
+  }
+
+  const targetExistedBefore = targetFile.exists;
+  if (targetExistedBefore) {
+    throw new Error(
+      `No se pudo encontrar un nombre de destino exclusivo para el reporte tras múltiples intentos.`,
+    );
+  }
+
   const sourceFile = new File(tempUri);
 
-  // 2. Guardar y verificar el PDF nuevo PRIMERO; si falla la copia, conservar el anterior intacto
+  // 3. Guardar y verificar el PDF nuevo PRIMERO.
+  // Limpiar ante errores ÚNICAMENTE archivos creados por esta operación (nunca archivos preexistentes).
   try {
     await sourceFile.copy(targetFile);
   } catch (copyError) {
-    try {
-      if (targetFile.exists) {
-        await targetFile.delete();
+    if (!targetExistedBefore) {
+      try {
+        if (targetFile.exists) {
+          await targetFile.delete();
+        }
+      } catch {
+        // Ignorar fallo de borrado del residuo parcial
       }
-    } catch {
-      // Ignorar fallo de borrado del residuo parcial
     }
     throw copyError;
   }
