@@ -1,10 +1,12 @@
-import { describe, expect, it } from 'vitest';
+import { afterEach, describe, expect, it, vi } from 'vitest';
 
 import {
   assertSafeReportFileName,
+  clearPendingReportCleanups,
   deletePatientReport,
   getPatientReportDirectory,
   getPatientReportList,
+  getPendingReportCleanups,
   listPatientReports,
   parsePeriodFromReportFilename,
   parseTimestampFromReportFilename,
@@ -14,6 +16,10 @@ import { buildReportHtml, escapeHtml } from './report-template';
 
 const patientA = '11111111-1111-4111-8111-111111111111';
 const patientB = '22222222-2222-4222-8222-222222222222';
+
+afterEach(() => {
+  vi.restoreAllMocks();
+});
 
 describe('seguridad y sanitización de reportes locales', () => {
   it('escapa caracteres especiales HTML para prevenir inyección de código', () => {
@@ -224,5 +230,87 @@ describe('gestión de reportes guardados, listado con metadatos y eliminación',
     expect(deletedFake).toBe(false);
 
     await expect(() => deletePatientReport(patientA, '../inyeccion.pdf')).rejects.toThrow();
+  });
+
+  it('conserva el reporte PDF anterior intacto si falla la copia del nuevo reporte', async () => {
+    const { File, Paths } = await import('expo-file-system');
+
+    // 1. Guardar reporte inicial de 30 días para Paciente A
+    const tempFile1 = new File(Paths.cache, 'temp_test_preserve_1.pdf');
+    await tempFile1.write('Contenido inicial válido');
+    const { filename: initialFilename } = await persistReportPdf(patientA, tempFile1.uri, 30);
+
+    const initialList = getPatientReportList(patientA);
+    expect(initialList.some((r) => r.filename === initialFilename)).toBe(true);
+
+    // 2. Intentar guardar un segundo reporte cuyo copy falla simulando error de disco/I/O
+    const tempFile2 = new File(Paths.cache, 'temp_test_preserve_2.pdf');
+    await tempFile2.write('Contenido nuevo que fallará al copiarse');
+
+    const copySpy = vi
+      .spyOn(File.prototype, 'copy')
+      .mockRejectedValueOnce(new Error('Simulación de fallo de I/O al copiar PDF'));
+
+    await expect(persistReportPdf(patientA, tempFile2.uri, 30)).rejects.toThrow(
+      'Simulación de fallo de I/O al copiar PDF',
+    );
+    copySpy.mockRestore();
+
+    // 3. Comprobar que el reporte anterior se conservó intacto en el almacenamiento local
+    const afterFailedCopyList = getPatientReportList(patientA);
+    expect(afterFailedCopyList.some((r) => r.filename === initialFilename)).toBe(true);
+
+    const originalFile = new File(getPatientReportDirectory(patientA), initialFilename);
+    expect(originalFile.exists).toBe(true);
+    expect(await originalFile.text()).toBe('Contenido inicial válido');
+
+    // Limpieza
+    await deletePatientReport(patientA, initialFilename);
+  });
+
+  it('conserva ambos archivos y registra la limpieza pendiente si falla la eliminación posterior del anterior', async () => {
+    const { File, Paths } = await import('expo-file-system');
+    clearPendingReportCleanups();
+
+    // 1. Guardar reporte inicial de 90 días para Paciente A
+    const tempFile1 = new File(Paths.cache, 'temp_test_cleanup_fail_1.pdf');
+    await tempFile1.write('Contenido previo 90d');
+    const { filename: oldFilename } = await persistReportPdf(patientA, tempFile1.uri, 90);
+
+    const oldFile = new File(getPatientReportDirectory(patientA), oldFilename);
+    expect(oldFile.exists).toBe(true);
+
+    // 2. Simular fallo de delete solo cuando se intente eliminar el archivo viejo
+    const originalDelete = File.prototype.delete;
+    const deleteSpy = vi.spyOn(File.prototype, 'delete').mockImplementation(async function (this: {
+      uri?: string;
+    }) {
+      if (this.uri === oldFile.uri) {
+        throw new Error('Fallo de permiso o bloqueo simulado al eliminar archivo anterior');
+      }
+      return originalDelete.call(this);
+    });
+
+    const tempFile2 = new File(Paths.cache, 'temp_test_cleanup_fail_2.pdf');
+    await tempFile2.write('Contenido nuevo 90d exitoso');
+
+    // 3. persistReportPdf debe tener éxito guardando el nuevo
+    const { filename: newFilename } = await persistReportPdf(patientA, tempFile2.uri, 90);
+    expect(newFilename).not.toBe(oldFilename);
+    deleteSpy.mockRestore();
+
+    // 4. Ambos archivos deben conservarse en disco
+    const newFile = new File(getPatientReportDirectory(patientA), newFilename);
+    expect(newFile.exists).toBe(true);
+    expect(oldFile.exists).toBe(true);
+
+    // 5. La URI del archivo viejo debe estar registrada en limpiezas pendientes
+    const pending = getPendingReportCleanups();
+    expect(pending).toContain(oldFile.uri);
+
+    // Limpieza
+    await deletePatientReport(patientA, oldFilename);
+    await deletePatientReport(patientA, newFilename);
+    clearPendingReportCleanups();
   });
 });

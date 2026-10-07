@@ -41,9 +41,48 @@ export interface PatientReportItem {
 }
 
 /**
+ * Registro de archivos de reportes antiguos cuya eliminación inmediata falló
+ * tras haberse guardado con éxito el nuevo reporte. Permite conservar ambos archivos
+ * y rastrear limpiezas pendientes sin comprometer la integridad.
+ */
+const pendingReportCleanups = new Set<string>();
+
+export function getPendingReportCleanups(): string[] {
+  return Array.from(pendingReportCleanups);
+}
+
+export function registerPendingReportCleanup(fileUri: string): void {
+  pendingReportCleanups.add(fileUri);
+}
+
+export function clearPendingReportCleanups(): void {
+  pendingReportCleanups.clear();
+}
+
+export async function flushPendingReportCleanups(): Promise<number> {
+  let cleaned = 0;
+  for (const uri of Array.from(pendingReportCleanups)) {
+    try {
+      const file = new File(uri);
+      if (file.exists) {
+        await file.delete();
+      }
+      pendingReportCleanups.delete(uri);
+      cleaned++;
+    } catch {
+      // Permanece pendiente
+    }
+  }
+  return cleaned;
+}
+
+/**
  * Mueve/copia el PDF generado desde el directorio temporal de la caché
- * hacia el almacenamiento persistente privado del paciente en el dispositivo.
- * Reemplaza cualquier reporte previo del mismo período (días) para evitar reportes duplicados acumulados.
+ * hacia el almacenamiento persistente privado del paciente en el dispositivo:
+ * 1. Copia y asegura el nuevo archivo PDF primero antes de borrar cualquier archivo anterior.
+ * 2. Si la copia falla, conserva intacto el reporte anterior.
+ * 3. Solo tras verificar que el nuevo archivo existe, procede a limpiar el reporte anterior del mismo período.
+ * 4. Si la limpieza posterior falla, conserva ambos archivos y registra la URI en limpiezas pendientes.
  */
 export async function persistReportPdf(
   pacienteId: string,
@@ -54,18 +93,15 @@ export async function persistReportPdf(
   const dir = getPatientReportDirectory(pacienteId);
   dir.create({ intermediates: true, idempotent: true });
 
-  // Limpieza de reportes previos para el MISMO período para evitar duplicados en el almacenamiento
+  // 1. Identificar reportes previos para el MISMO período sin borrarlos todavía
+  const previousReportFiles: File[] = [];
   try {
     const existingEntries = dir.list();
     for (const entry of existingEntries) {
       if (entry instanceof File && entry.uri.endsWith('.pdf')) {
         const name = entry.name ?? Paths.basename(entry.uri);
         if (name.startsWith(`reporte_${periodDays}d_`)) {
-          try {
-            await entry.delete();
-          } catch {
-            // Ignorar fallo de borrado previo
-          }
+          previousReportFiles.push(entry);
         }
       }
     }
@@ -77,7 +113,38 @@ export async function persistReportPdf(
   const targetFile = new File(dir, filename);
   const sourceFile = new File(tempUri);
 
-  await sourceFile.copy(targetFile);
+  // 2. Guardar y verificar el PDF nuevo PRIMERO; si falla la copia, conservar el anterior intacto
+  try {
+    await sourceFile.copy(targetFile);
+  } catch (copyError) {
+    try {
+      if (targetFile.exists) {
+        await targetFile.delete();
+      }
+    } catch {
+      // Ignorar fallo de borrado del residuo parcial
+    }
+    throw copyError;
+  }
+
+  if (!targetFile.exists) {
+    throw new Error(
+      `Fallo al persistir reporte PDF: el archivo "${filename}" no existe tras la copia.`,
+    );
+  }
+
+  // 3. Ya asegurado el PDF nuevo, limpiar los reportes anteriores del mismo período
+  for (const prev of previousReportFiles) {
+    if (prev.uri === targetFile.uri) continue;
+    try {
+      if (prev.exists) {
+        await prev.delete();
+      }
+    } catch {
+      // 4. Si falla la limpieza posterior: conservar ambos archivos y registrar la limpieza pendiente
+      registerPendingReportCleanup(prev.uri);
+    }
+  }
 
   // Intentar limpiar el archivo temporal de la caché
   try {
