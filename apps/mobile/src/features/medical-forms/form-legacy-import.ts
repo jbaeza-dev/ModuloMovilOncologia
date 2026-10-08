@@ -330,6 +330,36 @@ export async function importLegacyDrafts(
           result.errors++;
           return;
         }
+      } else {
+        // En borradores incompletos: comprobar que todas las claves del borrador pertenecen a la definición
+        // antes de normalizarlo para conservar archivos incompatibles y evitar pérdida silenciosa de datos.
+        // Las preguntas obligatorias sin responder están permitidas en borradores.
+        const knownQuestionIds = new Set(questions.map((q) => q.pregunta_id));
+        const unknownKeys = Object.keys(parsed.respuestas ?? {}).filter(
+          (key) => !knownQuestionIds.has(key),
+        );
+        if (unknownKeys.length > 0) {
+          const firstUnknown = unknownKeys[0];
+          await database.run(
+            `INSERT INTO importacion_formularios_legacy (
+              paciente_id, archivo_relativo, huella_sha256, huella_bak_sha256,
+              destino_tipo, destino_id, estado, fecha_importacion, ultimo_error
+            ) VALUES (?, ?, ?, ?, 'invalido', NULL, 'revision_requerida', ?, ?)
+            ON CONFLICT (paciente_id, archivo_relativo) DO UPDATE SET
+              estado = 'revision_requerida',
+              ultimo_error = excluded.ultimo_error`,
+            [
+              patientId,
+              relativeFileName,
+              selectedSha256,
+              bakSha256,
+              now(),
+              `Borrador con respuestas ajenas a la definición: la clave '${firstUnknown}' no pertenece al cuestionario`,
+            ],
+          );
+          result.errors++;
+          return;
+        }
       }
 
       // Normalizar respuestas (descartando opcionales vacías para mantener criterio unificado)

@@ -1465,6 +1465,24 @@ describe('migración 004, persistencia clínica y formularios en SQLite', () => 
     ).rejects.toThrow('No existe una asignación activa para este cuestionario.');
   });
 
+  it('saveDraft rechaza guardar borrador con respuestas ajenas a la definición del cuestionario', async () => {
+    const database = open();
+    await migrateDatabase(database);
+    await seedPatientContextIfEmpty(database, patientA, patientB);
+
+    const repoA = createPatientRepository(database, patientA, ids());
+    await expect(
+      repoA.saveDraft(
+        'form-esas-muestra',
+        '1.0',
+        { esas_dolor: 4, clave_fantasma: 'invalido' },
+        'delivery-uuid-x',
+      ),
+    ).rejects.toThrow(
+      "La clave 'clave_fantasma' no pertenece a la definición de este cuestionario.",
+    );
+  });
+
   it('confirmSubmission aplica validación médica: rechaza valores fuera de rango y opciones excluyentes combinadas', async () => {
     const database = open();
     await migrateDatabase(database);

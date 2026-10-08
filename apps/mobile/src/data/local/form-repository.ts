@@ -207,6 +207,15 @@ export function createFormRepository(
         [formId, version],
       );
 
+      if (questions.length > 0) {
+        const validQuestionIds = new Set(questions.map((q) => q.pregunta_id));
+        for (const key of Object.keys(answers)) {
+          if (!validQuestionIds.has(key)) {
+            throw new Error(`La clave '${key}' no pertenece a la definición de este cuestionario.`);
+          }
+        }
+      }
+
       const normalizedAnswers =
         questions.length > 0 ? normalizeFormQuestionsRecords(questions, answers) : answers;
 

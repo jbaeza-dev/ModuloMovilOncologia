@@ -1583,4 +1583,97 @@ describe('importación legacy de borradores y respuestas a SQLite', () => {
     const payload = JSON.parse(queue!.payload_json);
     expect(payload.record.respuestas).toEqual(storedAnswers);
   });
+
+  it('importLegacyDrafts conserva borradores con claves ajenas en revision_requerida y permite borradores parciales válidos', async () => {
+    const dir = createTempDir();
+    const adapter = new NodeFileStorageAdapter();
+    const resolver = () => dir;
+
+    const db = createTestDb();
+    await migrateDatabase(db);
+    await seedPatientContextIfEmpty(db, patientA, patientB);
+
+    // 1. Borrador con clave ajena a la definición (respuesta conocida + clave inexistente)
+    const incompatibleDraft = {
+      formularioId: 'form-esas-muestra',
+      version: '1.0',
+      pacienteId: patientA,
+      respuestas: {
+        esas_dolor: 4,
+        clave_inexistente_en_definicion: 'valor_ajeno',
+      },
+      completado: false,
+      guardadoEn: '2026-10-06T10:00:00Z',
+    };
+    const jsonPathIncompatible = join(dir, 'form-esas-muestra_v1.0.json');
+    writeFileSync(jsonPathIncompatible, JSON.stringify(incompatibleDraft, null, 2));
+
+    const resultIncompatible = await importLegacyDrafts(patientA, db, adapter, resolver);
+    expect(resultIncompatible.errors).toBe(1);
+    expect(resultIncompatible.imported).toBe(0);
+
+    // El archivo físico debe conservarse en disco para evitar pérdida de datos
+    expect(await adapter.exists(jsonPathIncompatible)).toBe(true);
+
+    // No debe haberse insertado borrador incompleto con claves descartadas en borrador_formulario
+    const draftInDb = await db.first(
+      'SELECT * FROM borrador_formulario WHERE paciente_id = ? AND formulario_id = ?',
+      [patientA, 'form-esas-muestra'],
+    );
+    expect(draftInDb).toBeNull();
+
+    // Debe registrarse como revision_requerida con mensaje descriptivo
+    const trackingIncompatible = await db.first<{ estado: string; ultimo_error: string }>(
+      'SELECT estado, ultimo_error FROM importacion_formularios_legacy WHERE paciente_id = ? AND archivo_relativo = ?',
+      [patientA, 'form-esas-muestra_v1.0.json'],
+    );
+    expect(trackingIncompatible?.estado).toBe('revision_requerida');
+    expect(trackingIncompatible?.ultimo_error).toContain('clave_inexistente_en_definicion');
+
+    // Comprobar persistencia ante ejecuciones posteriores: se sigue conservando el archivo
+    const resultRetry = await importLegacyDrafts(patientA, db, adapter, resolver);
+    expect(resultRetry.errors).toBe(1);
+    expect(await adapter.exists(jsonPathIncompatible)).toBe(true);
+
+    // Limpiar para probar el caso de borrador parcial válido
+    rmSync(jsonPathIncompatible, { force: true });
+    await db.run('DELETE FROM importacion_formularios_legacy WHERE paciente_id = ?', [patientA]);
+
+    // 2. Borrador parcial válido: preguntas obligatorias (fatiga, nauseas) sin responder aún
+    const validPartialDraft = {
+      formularioId: 'form-esas-muestra',
+      version: '1.0',
+      pacienteId: patientA,
+      respuestas: {
+        esas_dolor: 3,
+      },
+      completado: false,
+      guardadoEn: '2026-10-06T11:00:00Z',
+    };
+    const jsonPathPartial = join(dir, 'form-esas-muestra_v1.0.json');
+    writeFileSync(jsonPathPartial, JSON.stringify(validPartialDraft, null, 2));
+
+    const resultPartial = await importLegacyDrafts(patientA, db, adapter, resolver);
+    expect(resultPartial.errors).toBe(0);
+    expect(resultPartial.imported).toBe(1);
+
+    // El borrador parcial se guardó correctamente en SQLite
+    const savedDraft = await db.first<{ respuestas_json: string }>(
+      'SELECT respuestas_json FROM borrador_formulario WHERE paciente_id = ? AND formulario_id = ?',
+      [patientA, 'form-esas-muestra'],
+    );
+    expect(savedDraft).not.toBeNull();
+    const parsedSaved = JSON.parse(savedDraft!.respuestas_json);
+    expect(parsedSaved).toEqual({ esas_dolor: 3 });
+
+    // El archivo legacy se eliminó tras la importación exitosa
+    expect(await adapter.exists(jsonPathPartial)).toBe(false);
+
+    // El seguimiento quedó en 'importado'
+    const trackingPartial = await db.first<{ estado: string }>(
+      'SELECT estado FROM importacion_formularios_legacy WHERE paciente_id = ? AND archivo_relativo = ?',
+      [patientA, 'form-esas-muestra_v1.0.json'],
+    );
+    expect(trackingPartial?.estado).toBe('importado');
+  });
 });
