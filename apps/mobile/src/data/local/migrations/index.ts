@@ -2,12 +2,14 @@ import type { SqlConnection } from '../sql';
 import { REGISTROS_SQL, REGISTROS_VERSION } from './001_registros';
 import { CONTEXTO_SQL, CONTEXTO_VERSION } from './002_contexto';
 import { DESCARGAS_SQL, DESCARGAS_VERSION } from './003_descargas';
+import { FORMULARIOS_SQL, FORMULARIOS_VERSION } from './004_formularios';
 
 export type Migration = { version: number; sql: string };
 export const migrations: readonly Migration[] = [
   { version: REGISTROS_VERSION, sql: REGISTROS_SQL },
   { version: CONTEXTO_VERSION, sql: CONTEXTO_SQL },
   { version: DESCARGAS_VERSION, sql: DESCARGAS_SQL },
+  { version: FORMULARIOS_VERSION, sql: FORMULARIOS_SQL },
 ];
 
 export async function migrateDatabase(

@@ -1,5 +1,7 @@
 import type { SqlConnection } from './sql';
 import { type VitalValues } from './validation';
+import { createFormRepository } from './form-repository';
+import { seedMedicalFormsDemo } from './form-seed';
 
 export type VitalRecord = VitalValues & {
   id: string;
@@ -86,7 +88,10 @@ export function createPatientRepository(
 ) {
   if (!patientId) throw new Error('Selecciona un paciente de prueba.');
 
+  const formRepo = createFormRepository(database, patientId, newId, now);
+
   return {
+    ...formRepo,
     async createVitals(values: VitalValues): Promise<string> {
       const id = newId();
       const queueId = newId();
@@ -438,6 +443,14 @@ export async function seedPatientContextIfEmpty(
         timestamp,
       ],
     );
+
+    // Seed de cuestionarios médicos de demostración (si la migración 004 ya está aplicada)
+    const hasForms = await tx.first<{ name: string }>(
+      "SELECT name FROM sqlite_master WHERE type = 'table' AND name = 'formulario_asignacion_cache'",
+    );
+    if (hasForms) {
+      await seedMedicalFormsDemo(tx, patientAId, patientBId, now);
+    }
   });
 }
 

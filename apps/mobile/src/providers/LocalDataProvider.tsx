@@ -14,9 +14,11 @@ import { Text } from 'react-native';
 import { Screen } from '../components/Screen';
 import { BodyText, InfoCard, VisualButton } from '../components/Visual';
 import { createExpoConnection } from '../data/local/expo-connection';
+import { ExpoFileStorageAdapter } from '../data/local/file-storage-adapter';
 import { migrateDatabase } from '../data/local/migrations';
 import { createPatientRepository, seedPatientContextIfEmpty } from '../data/local/repository';
 import type { SqlConnection } from '../data/local/sql';
+import { importLegacyDrafts } from '../features/medical-forms/form-legacy-import';
 import { isDemoMode } from '../utils/environment';
 
 export const DEMO_PATIENTS = [
@@ -24,11 +26,15 @@ export const DEMO_PATIENTS = [
   { id: '22222222-2222-4222-8222-222222222222', label: 'Paciente de prueba B' },
 ] as const;
 
+export type PreparationStatus = 'idle' | 'importing' | 'ready' | 'error';
+
 type Repository = ReturnType<typeof createPatientRepository>;
 type DataContextValue = {
   patientId: string | null;
   repository: Repository | null;
   saving: boolean;
+  formStorageReady: boolean;
+  formImportStatus: PreparationStatus;
   runSave: <T>(work: () => Promise<T>) => Promise<T>;
   changePatient: () => void;
 };
@@ -42,6 +48,7 @@ export function LocalDataProvider({ children }: { children: ReactNode }) {
   const [patientId, setPatientId] = useState<string | null>(null);
   const [saving, setSaving] = useState(false);
   const savingRef = useRef(false);
+  const [formImportStatus, setFormImportStatus] = useState<PreparationStatus>('idle');
 
   useEffect(() => {
     let active = true;
@@ -72,6 +79,29 @@ export function LocalDataProvider({ children }: { children: ReactNode }) {
     };
   }, [attempt]);
 
+  useEffect(() => {
+    if (!database || !patientId) {
+      setFormImportStatus('idle');
+      return;
+    }
+    let active = true;
+    setFormImportStatus('importing');
+    const adapter = new ExpoFileStorageAdapter();
+    importLegacyDrafts(patientId, database, adapter, undefined, Crypto.randomUUID)
+      .then(() => {
+        if (active) setFormImportStatus('ready');
+      })
+      .catch((err) => {
+        console.warn('Fallo en importación legacy:', err);
+        if (active) setFormImportStatus('ready');
+      });
+    return () => {
+      active = false;
+    };
+  }, [database, patientId]);
+
+  const formStorageReady = formImportStatus === 'ready';
+
   const repository = useMemo(
     () =>
       database && patientId
@@ -84,6 +114,8 @@ export function LocalDataProvider({ children }: { children: ReactNode }) {
       patientId,
       repository,
       saving,
+      formStorageReady,
+      formImportStatus,
       async runSave<T>(work: () => Promise<T>) {
         if (!patientId || savingRef.current) throw new Error('Selecciona un paciente de prueba.');
         savingRef.current = true;
@@ -99,7 +131,7 @@ export function LocalDataProvider({ children }: { children: ReactNode }) {
         if (!savingRef.current) setPatientId(null);
       },
     }),
-    [patientId, repository, saving],
+    [patientId, repository, saving, formStorageReady, formImportStatus],
   );
 
   if (error)
