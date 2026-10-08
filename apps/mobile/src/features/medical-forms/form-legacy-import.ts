@@ -2,7 +2,11 @@ import * as Crypto from 'expo-crypto';
 
 import type { FileStorageAdapter } from '../../data/local/file-storage-adapter';
 import type { FormDefinitionRecord, FormQuestionRecord } from '../../data/local/form-types';
-import { areAnswersEqual, validateFormQuestionsRecords } from '../../data/local/form-validation';
+import {
+  areAnswersEqual,
+  normalizeFormQuestionsRecords,
+  validateFormQuestionsRecords,
+} from '../../data/local/form-validation';
 import type { SqlConnection } from '../../data/local/sql';
 import { getPatientDraftDirectory, isValidDraftPayload, withDraftLock } from './form-draft-storage';
 import type { MedicalFormDraft } from './medical-form-types';
@@ -124,8 +128,10 @@ export async function importLegacyDrafts(
         estado: string;
         huella_sha256: string;
         huella_bak_sha256: string | null;
+        destino_tipo: string;
+        destino_id: string | null;
       }>(
-        `SELECT estado, huella_sha256, huella_bak_sha256
+        `SELECT estado, huella_sha256, huella_bak_sha256, destino_tipo, destino_id
          FROM importacion_formularios_legacy
          WHERE paciente_id = ? AND archivo_relativo = ?`,
         [patientId, relativeFileName],
@@ -134,6 +140,23 @@ export async function importLegacyDrafts(
       if (existingImport?.estado === 'importado') {
         // Ya fue completamente importado y limpiado
         return;
+      }
+
+      if (existingImport?.estado === 'revision_requerida') {
+        // Mantiene revision_requerida hasta una resolución explícita;
+        // no re-importa, no crea nuevas entregas, conserva el archivo físico
+        // y sigue contabilizándose en la advertencia sobre elementos pendientes.
+        result.errors++;
+        return;
+      }
+
+      // Si ya tiene un destino de respuesta confirmado en base de datos,
+      // una ejecución automática posterior nunca debe crear otra entrega ni duplicar la cola.
+      if (existingImport?.destino_tipo === 'respuesta' && existingImport?.destino_id) {
+        if (existingImport.estado !== 'limpieza_pendiente') {
+          result.errors++;
+          return;
+        }
       }
 
       if (existingImport?.estado === 'limpieza_pendiente') {
@@ -276,13 +299,14 @@ export async function importLegacyDrafts(
         return;
       }
 
+      // Obtener preguntas para validación y normalización
+      const questions = await database.all<FormQuestionRecord>(
+        'SELECT * FROM pregunta_cache WHERE formulario_id = ? AND version = ?',
+        [parsed.formularioId, parsed.version],
+      );
+
       // Si la entrega legacy estaba marcada como completada, validar sus respuestas
       if (parsed.completado) {
-        const questions = await database.all<FormQuestionRecord>(
-          'SELECT * FROM pregunta_cache WHERE formulario_id = ? AND version = ?',
-          [parsed.formularioId, parsed.version],
-        );
-
         const validation = validateFormQuestionsRecords(questions, parsed.respuestas);
         if (!validation.isValid) {
           const firstError = Object.values(validation.errors)[0];
@@ -308,6 +332,12 @@ export async function importLegacyDrafts(
         }
       }
 
+      // Normalizar respuestas (descartando opcionales vacías para mantener criterio unificado)
+      const normalizedAnswers =
+        questions.length > 0
+          ? normalizeFormQuestionsRecords(questions, parsed.respuestas)
+          : parsed.respuestas;
+
       // Comprobar si ya existe un borrador en SQLite
       const sqliteDraft = await database.first<{
         entrega_id: string;
@@ -326,7 +356,7 @@ export async function importLegacyDrafts(
           sqliteAnswers = null;
         }
 
-        const isIdentical = areAnswersEqual(sqliteAnswers, parsed.respuestas);
+        const isIdentical = areAnswersEqual(sqliteAnswers, normalizedAnswers);
         if (!isIdentical) {
           // Las respuestas difieren: conservar el archivo físico y registrar revisión requerida
           await database.run(
@@ -364,7 +394,7 @@ export async function importLegacyDrafts(
           destinoId = deliveryId;
           const queueId = newId();
 
-          // Inserción en respuesta_formulario
+          // Inserción en respuesta_formulario con respuestas normalizadas
           await tx.run(
             `INSERT INTO respuesta_formulario (
               id, paciente_id, formulario_id, version, respuestas_json, fecha_confirmacion, creado_localmente_en
@@ -374,13 +404,13 @@ export async function importLegacyDrafts(
               patientId,
               parsed.formularioId,
               parsed.version,
-              JSON.stringify(parsed.respuestas),
+              JSON.stringify(normalizedAnswers),
               parsed.guardadoEn,
               timestamp,
             ],
           );
 
-          // Inserción en cola_envio
+          // Inserción en cola_envio con respuestas normalizadas
           await tx.run(
             `INSERT INTO cola_envio (
               id, paciente_id, tipo_entidad, registro_id, payload_json, estado, creado_en, actualizado_en
@@ -397,7 +427,7 @@ export async function importLegacyDrafts(
                   paciente_id: patientId,
                   formulario_id: parsed.formularioId,
                   version: parsed.version,
-                  respuestas: parsed.respuestas,
+                  respuestas: normalizedAnswers,
                   fecha_confirmacion: parsed.guardadoEn,
                 },
               }),
@@ -419,7 +449,7 @@ export async function importLegacyDrafts(
                 parsed.formularioId,
                 parsed.version,
                 deliveryId,
-                JSON.stringify(parsed.respuestas),
+                JSON.stringify(normalizedAnswers),
                 parsed.guardadoEn,
               ],
             );

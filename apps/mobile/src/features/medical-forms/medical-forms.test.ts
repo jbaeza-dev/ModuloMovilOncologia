@@ -1417,4 +1417,170 @@ describe('importación legacy de borradores y respuestas a SQLite', () => {
     expect(record2?.estado).toBe('limpieza_pendiente');
     expect(await failDeleteAdapter.exists(jsonPath)).toBe(true);
   });
+
+  it('mantiene revision_requerida en ejecuciones consecutivas sin duplicar respuestas ni cola tras cambio de contenido', async () => {
+    const dir = createTempDir();
+    const resolver = () => dir;
+
+    const db = createTestDb();
+    await migrateDatabase(db);
+    await seedPatientContextIfEmpty(db, patientA, patientB);
+
+    const jsonPath = join(dir, 'form-esas-muestra_v1.0.json');
+    writeFileSync(
+      jsonPath,
+      JSON.stringify(
+        {
+          formularioId: 'form-esas-muestra',
+          version: '1.0',
+          pacienteId: patientA,
+          respuestas: { esas_dolor: 3, esas_fatiga: 2, esas_nauseas: 1 },
+          completado: true,
+          guardadoEn: '2026-10-06T10:00:00Z',
+        },
+        null,
+        2,
+      ),
+    );
+
+    class FailDeleteAdapter extends NodeFileStorageAdapter {
+      override async deleteFile(): Promise<boolean> {
+        return false; // Fallo al borrar el JSON
+      }
+    }
+    const failDeleteAdapter = new FailDeleteAdapter();
+    const normalAdapter = new NodeFileStorageAdapter();
+
+    // Ejecución 1: Se importa la entrega completada. Falla la eliminación del JSON y queda en limpieza_pendiente.
+    const result1 = await importLegacyDrafts(patientA, db, failDeleteAdapter, resolver);
+    expect(result1.imported).toBe(1);
+    expect(result1.pendingCleanups).toBe(1);
+
+    const subs1 = await db.all<{ id: string }>(
+      'SELECT * FROM respuesta_formulario WHERE paciente_id = ?',
+      [patientA],
+    );
+    expect(subs1).toHaveLength(1);
+
+    const queue1 = await db.all<{ id: string }>('SELECT * FROM cola_envio WHERE paciente_id = ?', [
+      patientA,
+    ]);
+    expect(queue1).toHaveLength(1);
+
+    // Modificar el contenido del archivo en disco tras el commit previo
+    writeFileSync(
+      jsonPath,
+      JSON.stringify(
+        {
+          formularioId: 'form-esas-muestra',
+          version: '1.0',
+          pacienteId: patientA,
+          respuestas: { esas_dolor: 9, esas_fatiga: 8, esas_nauseas: 7 },
+          completado: true,
+          guardadoEn: '2026-10-06T11:00:00Z',
+        },
+        null,
+        2,
+      ),
+    );
+
+    // Ejecución 2: Detecta cambio de huella tras el commit, lo conserva y marca revision_requerida.
+    const result2 = await importLegacyDrafts(patientA, db, normalAdapter, resolver);
+    expect(result2.errors).toBe(1);
+    expect(result2.imported).toBe(0);
+
+    const record2 = await db.first<{ estado: string; ultimo_error: string }>(
+      'SELECT estado, ultimo_error FROM importacion_formularios_legacy WHERE paciente_id = ? AND archivo_relativo = ?',
+      [patientA, 'form-esas-muestra_v1.0.json'],
+    );
+    expect(record2?.estado).toBe('revision_requerida');
+    expect(record2?.ultimo_error).toContain('huella modificada');
+    expect(await normalAdapter.exists(jsonPath)).toBe(true);
+
+    // Ejecución 3: Tercera ejecución consecutiva con adaptador normal donde deleteFile funcionaría.
+    // La marca revision_requerida debe detener el procesamiento, conservando el archivo sin crear otra entrega.
+    const result3 = await importLegacyDrafts(patientA, db, normalAdapter, resolver);
+    expect(result3.errors).toBe(1);
+    expect(result3.imported).toBe(0);
+
+    // Comprobar que sigue existiendo exactamente una sola respuesta y una sola operación en cola
+    const subsFinal = await db.all<{ id: string }>(
+      'SELECT * FROM respuesta_formulario WHERE paciente_id = ?',
+      [patientA],
+    );
+    expect(subsFinal).toHaveLength(1);
+    expect(subsFinal[0].id).toBe(subs1[0].id);
+
+    const queueFinal = await db.all<{ id: string }>(
+      'SELECT * FROM cola_envio WHERE paciente_id = ?',
+      [patientA],
+    );
+    expect(queueFinal).toHaveLength(1);
+    expect(queueFinal[0].id).toBe(queue1[0].id);
+
+    // El estado permanece en revision_requerida y el archivo físico continúa intacto
+    const recordFinal = await db.first<{ estado: string }>(
+      'SELECT estado FROM importacion_formularios_legacy WHERE paciente_id = ? AND archivo_relativo = ?',
+      [patientA, 'form-esas-muestra_v1.0.json'],
+    );
+    expect(recordFinal?.estado).toBe('revision_requerida');
+    expect(await normalAdapter.exists(jsonPath)).toBe(true);
+  });
+
+  it('importLegacyDrafts normaliza respuestas opcionales de entregas completadas antes de persistir y encolar', async () => {
+    const dir = createTempDir();
+    const adapter = new NodeFileStorageAdapter();
+    const resolver = () => dir;
+
+    const db = createTestDb();
+    await migrateDatabase(db);
+    await seedPatientContextIfEmpty(db, patientA, patientB);
+
+    const jsonPath = join(dir, 'form-esas-muestra_v1.0.json');
+    writeFileSync(
+      jsonPath,
+      JSON.stringify(
+        {
+          formularioId: 'form-esas-muestra',
+          version: '1.0',
+          pacienteId: patientA,
+          respuestas: {
+            esas_dolor: 2,
+            esas_fatiga: 1,
+            esas_nauseas: 0,
+            esas_notas: '   ',
+            esas_sintomas_secundarios: [],
+          },
+          completado: true,
+          guardadoEn: '2026-10-06T10:00:00Z',
+        },
+        null,
+        2,
+      ),
+    );
+
+    const result = await importLegacyDrafts(patientA, db, adapter, resolver);
+    expect(result.imported).toBe(1);
+
+    const sub = await db.first<{ respuestas_json: string }>(
+      'SELECT respuestas_json FROM respuesta_formulario WHERE paciente_id = ?',
+      [patientA],
+    );
+    expect(sub).not.toBeNull();
+    const storedAnswers = JSON.parse(sub!.respuestas_json);
+    expect(storedAnswers).toHaveProperty('esas_dolor', 2);
+    expect(storedAnswers).toHaveProperty('esas_fatiga', 1);
+    expect(storedAnswers).toHaveProperty('esas_nauseas', 0);
+    // Respuestas opcionales vacías se normalizan como ausencia
+    expect(storedAnswers).not.toHaveProperty('esas_notas');
+    expect(storedAnswers).not.toHaveProperty('esas_sintomas_secundarios');
+
+    const queue = await db.first<{ payload_json: string }>(
+      'SELECT payload_json FROM cola_envio WHERE paciente_id = ?',
+      [patientA],
+    );
+    expect(queue).not.toBeNull();
+    const payload = JSON.parse(queue!.payload_json);
+    expect(payload.record.respuestas).toEqual(storedAnswers);
+  });
 });
