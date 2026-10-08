@@ -174,6 +174,34 @@ describe('validación de respuestas de cuestionarios médicos', () => {
     const resultMultiple = validateFormAnswers(esasForm, multipleAnswers);
     expect(resultMultiple.isValid).toBe(true);
   });
+
+  it('rechaza identificadores de preguntas ajenos a la definición del cuestionario', () => {
+    const alienAnswers = {
+      esas_dolor: 0,
+      esas_fatiga: 0,
+      esas_nauseas: 0,
+      pregunta_ajena: 42,
+    };
+    const result = validateFormAnswers(esasForm, alienAnswers);
+    expect(result.isValid).toBe(false);
+    expect(result.errors.pregunta_ajena).toBe(
+      "La clave 'pregunta_ajena' no pertenece a la definición de este cuestionario.",
+    );
+  });
+
+  it('rechaza una cadena de texto o espacios para una pregunta opcional de selección múltiple', () => {
+    const whitespaceMultipleChoice = {
+      esas_dolor: 0,
+      esas_fatiga: 0,
+      esas_nauseas: 0,
+      esas_sintomas_secundarios: '   ' as unknown as string[],
+    };
+    const result = validateFormAnswers(esasForm, whitespaceMultipleChoice);
+    expect(result.isValid).toBe(false);
+    expect(result.errors.esas_sintomas_secundarios).toBe(
+      'El valor debe ser una lista de opciones.',
+    );
+  });
 });
 
 describe('servicio de asignaciones de cuestionarios por paciente', () => {
@@ -1280,5 +1308,113 @@ describe('importación legacy de borradores y respuestas a SQLite', () => {
       patientB,
     ]);
     expect(draftB).toBeNull();
+  });
+
+  it('importLegacyDrafts pasa a revision_requerida si la huella cambia durante limpieza_pendiente y conserva el archivo', async () => {
+    const dir = createTempDir();
+    const adapter = new NodeFileStorageAdapter();
+    const resolver = () => dir;
+
+    const db = createTestDb();
+    await migrateDatabase(db);
+    await seedPatientContextIfEmpty(db, patientA, patientB);
+
+    const jsonPath = join(dir, 'form-esas-muestra_v1.0.json');
+    writeFileSync(
+      jsonPath,
+      JSON.stringify(
+        {
+          formularioId: 'form-esas-muestra',
+          version: '1.0',
+          pacienteId: patientA,
+          respuestas: { esas_dolor: 4 },
+          completado: false,
+          guardadoEn: '2026-10-06T10:00:00Z',
+        },
+        null,
+        2,
+      ),
+    );
+
+    // Simular que el commit previo registró el archivo en limpieza_pendiente con una huella previa
+    await db.run(
+      `INSERT INTO importacion_formularios_legacy (
+        paciente_id, archivo_relativo, huella_sha256, huella_bak_sha256,
+        destino_tipo, destino_id, estado, fecha_importacion, ultimo_error
+      ) VALUES (?, ?, ?, NULL, 'borrador', 'form-esas-muestra', 'limpieza_pendiente', '2026-10-06T10:00:00Z', NULL)`,
+      [patientA, 'form-esas-muestra_v1.0.json', 'sha256_antiguo_diferente'],
+    );
+
+    // Reintentar importación
+    const result = await importLegacyDrafts(patientA, db, adapter, resolver);
+    expect(result.errors).toBe(1);
+    expect(result.pendingCleanups).toBe(0);
+
+    // El estado pasó a revision_requerida con motivo registrado
+    const record = await db.first<{ estado: string; ultimo_error: string }>(
+      'SELECT estado, ultimo_error FROM importacion_formularios_legacy WHERE paciente_id = ? AND archivo_relativo = ?',
+      [patientA, 'form-esas-muestra_v1.0.json'],
+    );
+    expect(record?.estado).toBe('revision_requerida');
+    expect(record?.ultimo_error).toContain('huella modificada');
+
+    // El archivo físico se conserva intacto
+    expect(await adapter.exists(jsonPath)).toBe(true);
+  });
+
+  it('importLegacyDrafts retiene limpieza_pendiente si la huella coincide pero la eliminación física falla', async () => {
+    const dir = createTempDir();
+    const resolver = () => dir;
+
+    const db = createTestDb();
+    await migrateDatabase(db);
+    await seedPatientContextIfEmpty(db, patientA, patientB);
+
+    const jsonPath = join(dir, 'form-esas-muestra_v1.0.json');
+    writeFileSync(
+      jsonPath,
+      JSON.stringify(
+        {
+          formularioId: 'form-esas-muestra',
+          version: '1.0',
+          pacienteId: patientA,
+          respuestas: { esas_dolor: 4 },
+          completado: false,
+          guardadoEn: '2026-10-06T10:00:00Z',
+        },
+        null,
+        2,
+      ),
+    );
+
+    class FailDeleteAdapter extends NodeFileStorageAdapter {
+      override async deleteFile(): Promise<boolean> {
+        return false; // Fallo temporal al borrar
+      }
+    }
+    const failDeleteAdapter = new FailDeleteAdapter();
+
+    // Primera ejecución: se inserta en SQLite y queda en limpieza_pendiente al fallar el borrado
+    const result1 = await importLegacyDrafts(patientA, db, failDeleteAdapter, resolver);
+    expect(result1.imported).toBe(1);
+    expect(result1.pendingCleanups).toBe(1);
+
+    const record1 = await db.first<{ estado: string }>(
+      'SELECT estado FROM importacion_formularios_legacy WHERE paciente_id = ? AND archivo_relativo = ?',
+      [patientA, 'form-esas-muestra_v1.0.json'],
+    );
+    expect(record1?.estado).toBe('limpieza_pendiente');
+
+    // Segunda ejecución (reintento con misma huella): permanece en limpieza_pendiente
+    const result2 = await importLegacyDrafts(patientA, db, failDeleteAdapter, resolver);
+    expect(result2.pendingCleanups).toBe(1);
+    expect(result2.errors).toBe(0);
+
+    const record2 = await db.first<{ estado: string }>(
+      'SELECT estado FROM importacion_formularios_legacy WHERE paciente_id = ? AND archivo_relativo = ?',
+      [patientA, 'form-esas-muestra_v1.0.json'],
+    );
+    expect(record2?.estado).toBe('limpieza_pendiente');
+    expect(await failDeleteAdapter.exists(jsonPath)).toBe(true);
   });
 });

@@ -1548,4 +1548,99 @@ describe('migración 004, persistencia clínica y formularios en SQLite', () => 
     const secondPage = await repoA.listSubmissions(undefined, 30, 30);
     expect(secondPage).toHaveLength(5);
   });
+
+  it('confirmSubmission rechaza claves ajenas a la definición y tipos inválidos en opcionales sin encolar ni guardar', async () => {
+    const database = open();
+    await migrateDatabase(database);
+    await seedPatientContextIfEmpty(database, patientA, patientB);
+
+    const repoA = createPatientRepository(database, patientA, ids());
+
+    // 1. Clave ajena a la definición (ej: pregunta_ajena: 42)
+    await expect(
+      repoA.confirmSubmission(
+        'form-esas-muestra',
+        '1.0',
+        {
+          esas_dolor: 2,
+          esas_fatiga: 1,
+          esas_nauseas: 0,
+          pregunta_ajena: 42,
+        },
+        'del-alien-key',
+      ),
+    ).rejects.toThrow(
+      "La clave 'pregunta_ajena' no pertenece a la definición de este cuestionario.",
+    );
+
+    // Verificar que nada se haya guardado ni encolado
+    const alienSubmissions = await database.all('SELECT * FROM respuesta_formulario WHERE id = ?', [
+      'del-alien-key',
+    ]);
+    expect(alienSubmissions).toHaveLength(0);
+
+    const alienQueue = await database.all('SELECT * FROM cola_envio WHERE registro_id = ?', [
+      'del-alien-key',
+    ]);
+    expect(alienQueue).toHaveLength(0);
+
+    // 2. Cadena de espacios en pregunta opcional de selección múltiple (tipo incorrecto)
+    await expect(
+      repoA.confirmSubmission(
+        'form-esas-muestra',
+        '1.0',
+        {
+          esas_dolor: 2,
+          esas_fatiga: 1,
+          esas_nauseas: 0,
+          esas_sintomas_secundarios: '   ' as unknown as string[],
+        },
+        'del-invalid-opt-type',
+      ),
+    ).rejects.toThrow('El valor debe ser una lista de opciones.');
+  });
+
+  it('confirmSubmission normaliza respuestas opcionales vacías como ausencia antes de persistir y encolar', async () => {
+    const database = open();
+    await migrateDatabase(database);
+    await seedPatientContextIfEmpty(database, patientA, patientB);
+
+    const repoA = createPatientRepository(database, patientA, ids());
+
+    const deliveryId = 'del-norm-answers';
+    await repoA.confirmSubmission(
+      'form-esas-muestra',
+      '1.0',
+      {
+        esas_dolor: 3,
+        esas_fatiga: 2,
+        esas_nauseas: 1,
+        esas_notas: '   ',
+        esas_sintomas_secundarios: [],
+      },
+      deliveryId,
+    );
+
+    const sub = await database.first<{ respuestas_json: string }>(
+      'SELECT respuestas_json FROM respuesta_formulario WHERE id = ?',
+      [deliveryId],
+    );
+    expect(sub).not.toBeNull();
+    const storedAnswers = JSON.parse(sub!.respuestas_json);
+    expect(storedAnswers).toHaveProperty('esas_dolor', 3);
+    expect(storedAnswers).toHaveProperty('esas_fatiga', 2);
+    expect(storedAnswers).toHaveProperty('esas_nauseas', 1);
+    // Respuestas opcionales vacías se normalizan como ausencia
+    expect(storedAnswers).not.toHaveProperty('esas_notas');
+    expect(storedAnswers).not.toHaveProperty('esas_sintomas_secundarios');
+
+    // Cola de envío también tiene las respuestas normalizadas
+    const queue = await database.first<{ payload_json: string }>(
+      'SELECT payload_json FROM cola_envio WHERE registro_id = ?',
+      [deliveryId],
+    );
+    expect(queue).not.toBeNull();
+    const payload = JSON.parse(queue!.payload_json);
+    expect(payload.record.respuestas).toEqual(storedAnswers);
+  });
 });

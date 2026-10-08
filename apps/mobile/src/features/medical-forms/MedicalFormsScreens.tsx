@@ -63,6 +63,7 @@ export function MedicalFormsHubScreen() {
     formStorageReady,
     formImportStatus,
     formImportError,
+    formImportWarning,
     retryFormImport,
   } = useLocalData();
 
@@ -98,6 +99,22 @@ export function MedicalFormsHubScreen() {
       />
 
       <SectionTitle>Cuestionarios asignados</SectionTitle>
+
+      {formImportWarning ? (
+        <InfoCard>
+          <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8, marginBottom: 4 }}>
+            <Feather name="alert-triangle" size={20} color={appTheme.colors.warning ?? '#D97706'} />
+            <Text style={{ fontWeight: '600', color: appTheme.colors.text }}>
+              Atención sobre datos previos
+            </Text>
+          </View>
+          <BodyText>
+            {formImportWarning.errors > 0
+              ? `Se detectaron ${formImportWarning.errors} archivo(s) anteriores que requieren revisión manual.`
+              : `Hay ${formImportWarning.pendingCleanups} archivo(s) pendientes de limpieza en el almacenamiento.`}
+          </BodyText>
+        </InfoCard>
+      ) : null}
 
       {formImportStatus === 'importing' ? (
         <InfoCard>
@@ -227,24 +244,46 @@ export function MedicalFormDetailScreen() {
   const [isReviewing, setIsReviewing] = useState(false);
   const [isConfirmed, setIsConfirmed] = useState(false);
   const [busy, setBusy] = useState(false);
+  const [loadingDetail, setLoadingDetail] = useState(true);
+  const [detailError, setDetailError] = useState<string | null>(null);
+  const [loadAttempt, setLoadAttempt] = useState(0);
 
-  // Carga de definición y borrador desde SQLite sólo cuando el almacenamiento esté listo
+  // Carga atómica de definición y borrador desde SQLite sólo cuando el almacenamiento esté listo
   useEffect(() => {
     if (!repository || !patientId || !id || !formStorageReady) return;
     let mounted = true;
+    setLoadingDetail(true);
+    setDetailError(null);
 
     async function load() {
-      const def = await repository!.getFormDefinition(id!, version);
-      if (!mounted) return;
-      setFormDef(def);
+      try {
+        const def = await repository!.getFormDefinition(id!, version);
+        if (!mounted) return;
+        if (!def) {
+          setFormDef(null);
+          setLoadingDetail(false);
+          return;
+        }
 
-      if (def) {
         const draft = await repository!.getDraft(def.formulario_id, def.version);
         if (!mounted) return;
+
+        // Publicar ambos juntos de manera atómica
+        setFormDef(def);
         if (draft) {
           setAnswers(draft.respuestas);
           setStableDeliveryId(draft.entregaId);
+        } else {
+          setAnswers({});
+          setStableDeliveryId(Crypto.randomUUID());
         }
+        setLoadingDetail(false);
+      } catch (err) {
+        if (!mounted) return;
+        setDetailError(
+          err instanceof Error ? err.message : 'Error al cargar la información del cuestionario.',
+        );
+        setLoadingDetail(false);
       }
     }
 
@@ -252,7 +291,7 @@ export function MedicalFormDetailScreen() {
     return () => {
       mounted = false;
     };
-  }, [repository, patientId, id, version, formStorageReady]);
+  }, [repository, patientId, id, version, formStorageReady, loadAttempt]);
 
   if (!formStorageReady) {
     if (formImportStatus === 'error') {
@@ -278,6 +317,36 @@ export function MedicalFormDetailScreen() {
         <InfoCard>
           <StatusPill>Preparando evaluación…</StatusPill>
           <BodyText>Recuperando datos locales y verificando borrador previo…</BodyText>
+        </InfoCard>
+      </Screen>
+    );
+  }
+
+  if (loadingDetail) {
+    return (
+      <Screen title="Cargando cuestionario…" backTo="/formulario">
+        <DemoBadge />
+        <InfoCard>
+          <StatusPill>Recuperando cuestionario…</StatusPill>
+          <BodyText>Cargando definición y borrador previo en este dispositivo…</BodyText>
+        </InfoCard>
+      </Screen>
+    );
+  }
+
+  if (detailError) {
+    return (
+      <Screen title="Error de carga" backTo="/formulario">
+        <DemoBadge />
+        <InfoCard>
+          <EmptyState
+            icon="alert-circle"
+            title="Error al cargar cuestionario"
+            description={detailError}
+          />
+          <View style={{ marginTop: theme.spacing.md }}>
+            <VisualButton label="Reintentar carga" onPress={() => setLoadAttempt((a) => a + 1)} />
+          </View>
         </InfoCard>
       </Screen>
     );
@@ -309,16 +378,25 @@ export function MedicalFormDetailScreen() {
   }
 
   function handleMultipleChoice(questionId: string, value: string) {
+    const question = formDef?.preguntas.find((p) => p.pregunta_id === questionId);
+    const options = question?.configuracion?.opciones ?? [];
+    const isOptionExclusive =
+      options.find((o) => o.valor === value)?.esExcluyente ?? value === 'ninguna';
+    const exclusiveValues = options.filter((o) => o.esExcluyente).map((o) => o.valor);
+    if (!exclusiveValues.includes('ninguna') && options.some((o) => o.valor === 'ninguna')) {
+      exclusiveValues.push('ninguna');
+    }
+
     setAnswers((prev) => {
       const current = (prev[questionId] as string[]) || [];
       let updated: string[];
-      if (value === 'ninguna') {
-        updated = current.includes('ninguna') ? [] : ['ninguna'];
+      if (isOptionExclusive) {
+        updated = current.includes(value) ? [] : [value];
       } else {
-        const withoutNinguna = current.filter((v) => v !== 'ninguna');
-        updated = withoutNinguna.includes(value)
-          ? withoutNinguna.filter((v) => v !== value)
-          : [...withoutNinguna, value];
+        const withoutExclusive = current.filter((v) => !exclusiveValues.includes(v));
+        updated = withoutExclusive.includes(value)
+          ? withoutExclusive.filter((v) => v !== value)
+          : [...withoutExclusive, value];
       }
       return { ...prev, [questionId]: updated };
     });
@@ -351,7 +429,7 @@ export function MedicalFormDetailScreen() {
   }
 
   async function handleSaveDraft() {
-    if (!repository || !patientId || !formDef || busy || !formStorageReady) return;
+    if (!repository || !patientId || !formDef || busy || !formStorageReady || loadingDetail) return;
     setBusy(true);
     setFeedback(null);
     try {
@@ -383,7 +461,7 @@ export function MedicalFormDetailScreen() {
   }
 
   async function handleConfirmSubmission() {
-    if (!repository || !patientId || !formDef || busy || !formStorageReady) return;
+    if (!repository || !patientId || !formDef || busy || !formStorageReady || loadingDetail) return;
     setBusy(true);
     setFeedback(null);
     try {
@@ -409,7 +487,7 @@ export function MedicalFormDetailScreen() {
   }
 
   async function handleDiscard() {
-    if (!repository || !patientId || !formDef || busy || !formStorageReady) return;
+    if (!repository || !patientId || !formDef || busy || !formStorageReady || loadingDetail) return;
     setBusy(true);
     setFeedback(null);
     try {
@@ -447,6 +525,18 @@ export function MedicalFormDetailScreen() {
               : 'Verifica tus respuestas antes de confirmar la entrega en este dispositivo.'}
           </BodyText>
         </InfoCard>
+
+        {feedback && !isConfirmed ? (
+          <InfoCard>
+            <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8, marginBottom: 4 }}>
+              <Feather name="alert-circle" size={20} color={appTheme.colors.error ?? '#EF4444'} />
+              <Text style={{ fontWeight: '600', color: appTheme.colors.text }}>
+                Error al confirmar la entrega
+              </Text>
+            </View>
+            <BodyText>{feedback}</BodyText>
+          </InfoCard>
+        ) : null}
 
         {medicalForm.preguntas.map((q, idx) => {
           const val = answers[q.id];
@@ -582,6 +672,8 @@ export function MedicalFormSubmissionsScreen() {
   const [hasMore, setHasMore] = useState(false);
   const [loadingInitial, setLoadingInitial] = useState(true);
   const [loadingMore, setLoadingMore] = useState(false);
+  const [historyError, setHistoryError] = useState<string | null>(null);
+  const [historyAttempt, setHistoryAttempt] = useState(0);
 
   const fetchBatch = useCallback(
     async (offset: number) => {
@@ -594,11 +686,18 @@ export function MedicalFormSubmissionsScreen() {
   useEffect(() => {
     let mounted = true;
     setLoadingInitial(true);
+    setHistoryError(null);
     fetchBatch(0)
       .then((items) => {
         if (!mounted) return;
         setSubmissions(items);
         setHasMore(items.length === 30);
+      })
+      .catch((err) => {
+        if (!mounted) return;
+        setHistoryError(
+          err instanceof Error ? err.message : 'Error al consultar el historial de evaluaciones.',
+        );
       })
       .finally(() => {
         if (mounted) setLoadingInitial(false);
@@ -606,7 +705,7 @@ export function MedicalFormSubmissionsScreen() {
     return () => {
       mounted = false;
     };
-  }, [fetchBatch]);
+  }, [fetchBatch, historyAttempt]);
 
   async function handleLoadMore() {
     if (!repository || !patientId || loadingMore || !hasMore) return;
@@ -615,6 +714,10 @@ export function MedicalFormSubmissionsScreen() {
       const nextBatch = await fetchBatch(submissions.length);
       setSubmissions((prev) => [...prev, ...nextBatch]);
       setHasMore(nextBatch.length === 30);
+    } catch (err) {
+      setHistoryError(
+        err instanceof Error ? err.message : 'Error al cargar más evaluaciones del historial.',
+      );
     } finally {
       setLoadingMore(false);
     }
@@ -627,7 +730,30 @@ export function MedicalFormSubmissionsScreen() {
         Registro de evaluaciones médicas confirmadas localmente en este dispositivo.
       </BodyText>
 
-      {!loadingInitial && submissions.length === 0 ? (
+      {historyError ? (
+        <InfoCard>
+          <EmptyState
+            icon="alert-circle"
+            title="Error al consultar historial"
+            description={historyError}
+          />
+          <View style={{ marginTop: theme.spacing.sm }}>
+            <VisualButton
+              label="Reintentar consulta"
+              onPress={() => setHistoryAttempt((a) => a + 1)}
+            />
+          </View>
+        </InfoCard>
+      ) : null}
+
+      {loadingInitial ? (
+        <InfoCard>
+          <StatusPill>Consultando historial…</StatusPill>
+          <BodyText>Cargando evaluaciones previas registradas en este dispositivo…</BodyText>
+        </InfoCard>
+      ) : null}
+
+      {!loadingInitial && !historyError && submissions.length === 0 ? (
         <InfoCard>
           <EmptyState
             icon="clipboard"

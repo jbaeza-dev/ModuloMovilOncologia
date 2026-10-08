@@ -137,6 +137,33 @@ export async function importLegacyDrafts(
       }
 
       if (existingImport?.estado === 'limpieza_pendiente') {
+        const jsonHashMismatch =
+          jsonExists &&
+          Boolean(jsonSha256) &&
+          Boolean(existingImport.huella_sha256) &&
+          jsonSha256 !== existingImport.huella_sha256;
+
+        const bakHashMismatch =
+          bakExists &&
+          Boolean(bakSha256) &&
+          Boolean(existingImport.huella_bak_sha256) &&
+          bakSha256 !== existingImport.huella_bak_sha256;
+
+        if (jsonHashMismatch || bakHashMismatch) {
+          const motivo = jsonHashMismatch
+            ? 'El contenido del archivo JSON cambió tras el commit: huella modificada'
+            : 'El contenido del archivo .bak cambió tras el commit: huella modificada';
+
+          await database.run(
+            `UPDATE importacion_formularios_legacy
+             SET estado = 'revision_requerida', ultimo_error = ?
+             WHERE paciente_id = ? AND archivo_relativo = ?`,
+            [motivo, patientId, relativeFileName],
+          );
+          result.errors++;
+          return;
+        }
+
         // Reintento exclusivo de limpieza física (sin reinsertar entregas ni cola)
         let cleanedJson = true;
         let cleanedBak = true;

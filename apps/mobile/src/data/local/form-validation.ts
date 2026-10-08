@@ -100,39 +100,64 @@ export function validateQuestionValue(
 
 /**
  * Valida funcionalmente un conjunto de respuestas frente a un formulario clínico.
+ * - Rechaza cualquier clave ajena a la definición.
+ * - Valida tipos y coherencia de cada respuesta presente (incluso en preguntas opcionales).
+ * - Exige respuestas obligatorias.
  */
 export function validateFormAnswers(
   form: ValidatableForm,
   answers: Record<string, FormAnswerValue>,
 ): AnswerValidationResult {
   const errors: Record<string, string> = {};
+  const validQuestionMap = new Map<string, ValidatableQuestion>();
+  for (const q of form.preguntas) {
+    validQuestionMap.set(q.id, q);
+  }
 
+  // 1. Rechazar claves ajenas a la definición del formulario
+  for (const key of Object.keys(answers)) {
+    if (!validQuestionMap.has(key)) {
+      errors[key] = `La clave '${key}' no pertenece a la definición de este cuestionario.`;
+    }
+  }
+
+  // 2. Validar cada pregunta de la definición
   for (const question of form.preguntas) {
     const value = answers[question.id];
     const isPresent = value !== undefined && value !== null;
 
-    // 1. Validación de obligatoriedad
+    // Determinar si representa ausencia para su tipo específico
+    const isBlankText = typeof value === 'string' && value.trim().length === 0;
+    const isEmptyArray = Array.isArray(value) && value.length === 0;
+
     if (question.requerida) {
       if (!isPresent) {
         errors[question.id] = 'Esta pregunta es obligatoria.';
         continue;
       }
-      if (typeof value === 'string' && value.trim().length === 0) {
+      if (isBlankText && question.tipo === 'text') {
         errors[question.id] = 'Esta pregunta es obligatoria.';
         continue;
       }
-      if (Array.isArray(value) && value.length === 0) {
+      if (isEmptyArray && question.tipo === 'multiple_choice') {
         errors[question.id] = 'Debes seleccionar al menos una opción.';
+        continue;
+      }
+    } else {
+      // Si es opcional y no está presente
+      if (!isPresent) {
+        continue;
+      }
+      // Si es opcional y es texto en blanco o array vacío
+      if (question.tipo === 'text' && isBlankText) {
+        continue;
+      }
+      if (question.tipo === 'multiple_choice' && isEmptyArray) {
         continue;
       }
     }
 
-    // Si es opcional y no está presente (o es string vacío), es válida
-    if (!isPresent || (typeof value === 'string' && value.trim().length === 0)) {
-      continue;
-    }
-
-    // 2. Validación de coherencia y tipos para cualquier respuesta presente
+    // 3. Validación de coherencia y tipos para cualquier respuesta presente
     const typeError = validateQuestionValue(question, value);
     if (typeError) {
       errors[question.id] = typeError;
@@ -146,13 +171,44 @@ export function validateFormAnswers(
 }
 
 /**
+ * Normaliza las respuestas antes de persistirlas, descartando respuestas opcionales vacías.
+ */
+export function normalizeFormAnswers(
+  form: ValidatableForm,
+  answers: Record<string, FormAnswerValue>,
+): Record<string, FormAnswerValue> {
+  const result: Record<string, FormAnswerValue> = {};
+  const questionMap = new Map<string, ValidatableQuestion>();
+  for (const q of form.preguntas) {
+    questionMap.set(q.id, q);
+  }
+
+  for (const [key, value] of Object.entries(answers)) {
+    const q = questionMap.get(key);
+    if (!q) continue;
+
+    if (value === undefined || value === null) continue;
+
+    if (typeof value === 'string') {
+      const trimmed = value.trim();
+      if (trimmed.length === 0 && !q.requerida) continue;
+      result[key] = q.tipo === 'text' ? trimmed : value;
+    } else if (Array.isArray(value)) {
+      if (value.length === 0 && !q.requerida) continue;
+      result[key] = value;
+    } else {
+      result[key] = value;
+    }
+  }
+
+  return result;
+}
+
+/**
  * Convierte registros de `pregunta_cache` al formato validable y valida las respuestas.
  */
-export function validateFormQuestionsRecords(
-  questions: FormQuestionRecord[],
-  answers: Record<string, FormAnswerValue>,
-): AnswerValidationResult {
-  const validatableQuestions: ValidatableQuestion[] = questions.map((q) => {
+export function toValidatableQuestions(questions: FormQuestionRecord[]): ValidatableQuestion[] {
+  return questions.map((q) => {
     let configuracion: {
       opciones?: Array<{ valor: string; etiqueta: string; esExcluyente?: boolean }>;
       min?: number;
@@ -181,11 +237,35 @@ export function validateFormQuestionsRecords(
       maxEtiqueta: configuracion?.maxEtiqueta,
     };
   });
+}
 
+/**
+ * Convierte registros de `pregunta_cache` al formato validable y valida las respuestas.
+ */
+export function validateFormQuestionsRecords(
+  questions: FormQuestionRecord[],
+  answers: Record<string, FormAnswerValue>,
+): AnswerValidationResult {
   return validateFormAnswers(
     {
       id: questions[0]?.formulario_id ?? '',
-      preguntas: validatableQuestions,
+      preguntas: toValidatableQuestions(questions),
+    },
+    answers,
+  );
+}
+
+/**
+ * Normaliza respuestas a partir de registros de `pregunta_cache`.
+ */
+export function normalizeFormQuestionsRecords(
+  questions: FormQuestionRecord[],
+  answers: Record<string, FormAnswerValue>,
+): Record<string, FormAnswerValue> {
+  return normalizeFormAnswers(
+    {
+      id: questions[0]?.formulario_id ?? '',
+      preguntas: toValidatableQuestions(questions),
     },
     answers,
   );

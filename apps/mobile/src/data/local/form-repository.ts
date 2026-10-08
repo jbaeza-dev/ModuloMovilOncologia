@@ -7,7 +7,11 @@ import {
   type FormSubmissionRecord,
   ConflictoEntregaError,
 } from './form-types';
-import { validateFormQuestionsRecords } from './form-validation';
+import {
+  areAnswersEqual,
+  normalizeFormQuestionsRecords,
+  validateFormQuestionsRecords,
+} from './form-validation';
 
 export type IdFactory = () => string;
 export type Clock = () => string;
@@ -197,8 +201,17 @@ export function createFormRepository(
         throw new Error('No existe una asignación activa para este cuestionario.');
       }
 
+      const questions = await database.all<FormQuestionRecord>(
+        `SELECT * FROM pregunta_cache
+         WHERE formulario_id = ? AND version = ?`,
+        [formId, version],
+      );
+
+      const normalizedAnswers =
+        questions.length > 0 ? normalizeFormQuestionsRecords(questions, answers) : answers;
+
       const timestamp = now();
-      const payload = JSON.stringify(answers);
+      const payload = JSON.stringify(normalizedAnswers);
 
       await database.run(
         `INSERT INTO borrador_formulario (
@@ -269,7 +282,23 @@ export function createFormRepository(
           throw new Error('No existe una asignación activa para este cuestionario.');
         }
 
-        // 2. Comprobar si ya existe una entrega con este deliveryId
+        // 2. Obtener preguntas para validación y normalización
+        const questions = await tx.all<FormQuestionRecord>(
+          `SELECT * FROM pregunta_cache
+           WHERE formulario_id = ? AND version = ?`,
+          [formId, version],
+        );
+
+        // 3. Validar preguntas y respuestas frente a la definición
+        const validation = validateFormQuestionsRecords(questions, answers);
+        if (!validation.isValid) {
+          const firstError = Object.values(validation.errors)[0];
+          throw new Error(`Validación fallida: ${firstError}`);
+        }
+
+        const normalizedAnswers = normalizeFormQuestionsRecords(questions, answers);
+
+        // 4. Comprobar si ya existe una entrega con este deliveryId
         const existingSubmission = await tx.first<FormSubmissionRecord>(
           'SELECT * FROM respuesta_formulario WHERE id = ?',
           [deliveryId],
@@ -283,9 +312,7 @@ export function createFormRepository(
           let sameAnswers = false;
           try {
             const parsedExisting = JSON.parse(existingSubmission.respuestas_json);
-            sameAnswers =
-              JSON.stringify(normalizeAnswers(answers)) ===
-              JSON.stringify(normalizeAnswers(parsedExisting));
+            sameAnswers = areAnswersEqual(normalizedAnswers, parsedExisting);
           } catch {
             // Respuestas inválidas en el registro existente
           }
@@ -300,21 +327,8 @@ export function createFormRepository(
           );
         }
 
-        // 3. Validar preguntas y respuestas frente a la definición
-        const questions = await tx.all<FormQuestionRecord>(
-          `SELECT * FROM pregunta_cache
-           WHERE formulario_id = ? AND version = ?`,
-          [formId, version],
-        );
-
-        const validation = validateFormQuestionsRecords(questions, answers);
-        if (!validation.isValid) {
-          const firstError = Object.values(validation.errors)[0];
-          throw new Error(`Validación fallida: ${firstError}`);
-        }
-
-        // 4. Inserción en respuesta_formulario
-        const answersJson = JSON.stringify(answers);
+        // 5. Inserción en respuesta_formulario
+        const answersJson = JSON.stringify(normalizedAnswers);
         await tx.run(
           `INSERT INTO respuesta_formulario (
             id, paciente_id, formulario_id, version, respuestas_json, fecha_confirmacion, creado_localmente_en
@@ -322,7 +336,7 @@ export function createFormRepository(
           [deliveryId, patientId, formId, version, answersJson, timestamp, timestamp],
         );
 
-        // 5. Inserción en cola_envio
+        // 6. Inserción en cola_envio
         const queuePayload = JSON.stringify({
           schemaVersion: 1,
           entity: 'respuesta_formulario',
@@ -331,7 +345,7 @@ export function createFormRepository(
             paciente_id: patientId,
             formulario_id: formId,
             version,
-            respuestas: answers,
+            respuestas: normalizedAnswers,
             fecha_confirmacion: timestamp,
           },
         });
@@ -343,7 +357,7 @@ export function createFormRepository(
           [queueId, patientId, deliveryId, queuePayload, timestamp, timestamp],
         );
 
-        // 6. Consumo condicional del borrador (solo si su entrega_id coincide con el deliveryId confirmado)
+        // 7. Consumo condicional del borrador (solo si su entrega_id coincide con el deliveryId confirmado)
         await tx.run(
           `DELETE FROM borrador_formulario
            WHERE paciente_id = ? AND formulario_id = ? AND version = ? AND entrega_id = ?`,
