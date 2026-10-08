@@ -1452,4 +1452,100 @@ describe('migración 004, persistencia clínica y formularios en SQLite', () => 
     const formsReactivated = await repoA.listAssignedForms();
     expect(formsReactivated.map((f) => f.formulario_id)).toContain('form-qlq30-muestra');
   });
+
+  it('saveDraft rechaza guardar borrador de un cuestionario no asignado activamente al paciente', async () => {
+    const database = open();
+    await migrateDatabase(database);
+    await seedPatientContextIfEmpty(database, patientA, patientB);
+
+    const repoB = createPatientRepository(database, patientB, ids());
+    // Paciente B solo tiene asignado form-esas-muestra, no form-qlq30-muestra
+    await expect(
+      repoB.saveDraft('form-qlq30-muestra', '1.0', { q1: 'nada' }, 'delivery-uuid-x'),
+    ).rejects.toThrow('No existe una asignación activa para este cuestionario.');
+  });
+
+  it('confirmSubmission aplica validación médica: rechaza valores fuera de rango y opciones excluyentes combinadas', async () => {
+    const database = open();
+    await migrateDatabase(database);
+    await seedPatientContextIfEmpty(database, patientA, patientB);
+
+    const repoA = createPatientRepository(database, patientA, ids());
+
+    // 1. Rechaza escala fuera de rango (ej. 99 en escala 0 a 10)
+    await expect(
+      repoA.confirmSubmission(
+        'form-esas-muestra',
+        '1.0',
+        { esas_dolor: 99, esas_fatiga: 2, esas_nauseas: 0 },
+        'del-invalid-scale',
+      ),
+    ).rejects.toThrow('El valor debe encontrarse entre 0 y 10.');
+
+    // 2. Rechaza combinación de opciones excluyentes ('ninguna' con otra)
+    await expect(
+      repoA.confirmSubmission(
+        'form-esas-muestra',
+        '1.0',
+        {
+          esas_dolor: 2,
+          esas_fatiga: 2,
+          esas_nauseas: 0,
+          esas_sintomas_secundarios: ['ninguna', 'mareos'],
+        },
+        'del-invalid-excl',
+      ),
+    ).rejects.toThrow('no puede combinarse con otras opciones');
+  });
+
+  it('listAssignedForms desempata determinísticamente sin duplicar tarjetas cuando dos entregas comparten la misma fecha', async () => {
+    const database = open();
+    await migrateDatabase(database);
+    await seedPatientContextIfEmpty(database, patientA, patientB);
+
+    const sameTimestamp = '2026-10-08T12:00:00.000Z';
+    // Insertar dos entregas con el mismo timestamp para el mismo cuestionario
+    await database.run(
+      `INSERT INTO respuesta_formulario (
+        id, paciente_id, formulario_id, version, respuestas_json, fecha_confirmacion, creado_localmente_en
+      ) VALUES
+        ('sub-tie-1', ?, 'form-esas-muestra', '1.0', '{}', ?, ?),
+        ('sub-tie-2', ?, 'form-esas-muestra', '1.0', '{}', ?, ?)`,
+      [patientA, sameTimestamp, sameTimestamp, patientA, sameTimestamp, sameTimestamp],
+    );
+
+    const repoA = createPatientRepository(database, patientA, ids());
+    const assigned = await repoA.listAssignedForms();
+
+    // No debe haber duplicación de la tarjeta del formulario
+    const esasCards = assigned.filter((f) => f.formulario_id === 'form-esas-muestra');
+    expect(esasCards).toHaveLength(1);
+    // El desempate por id DESC seleccionó deterministicamente sub-tie-2
+    expect(esasCards[0].ultima_entrega_id).toBe('sub-tie-2');
+  });
+
+  it('listSubmissions soporta paginación con limit y offset', async () => {
+    const database = open();
+    await migrateDatabase(database);
+    await seedPatientContextIfEmpty(database, patientA, patientB);
+
+    // Insertar 35 entregas para el paciente A
+    for (let i = 1; i <= 35; i++) {
+      const pad = String(i).padStart(3, '0');
+      const timestamp = `2026-10-01T10:00:${String(i % 60).padStart(2, '0')}.000Z`;
+      await database.run(
+        `INSERT INTO respuesta_formulario (
+          id, paciente_id, formulario_id, version, respuestas_json, fecha_confirmacion, creado_localmente_en
+        ) VALUES (?, ?, 'form-esas-muestra', '1.0', '{}', ?, ?)`,
+        [`sub-page-${pad}`, patientA, timestamp, timestamp],
+      );
+    }
+
+    const repoA = createPatientRepository(database, patientA, ids());
+    const firstPage = await repoA.listSubmissions(undefined, 30, 0);
+    expect(firstPage).toHaveLength(30);
+
+    const secondPage = await repoA.listSubmissions(undefined, 30, 30);
+    expect(secondPage).toHaveLength(5);
+  });
 });

@@ -33,6 +33,9 @@ class File {
   }
 
   get exists() {
+    if (fs.existsSync(this.uri) && fs.statSync(this.uri).isDirectory()) {
+      throw new Error(`Path ${this.uri} is a directory, not a file`);
+    }
     return fs.existsSync(this.uri);
   }
 
@@ -104,7 +107,7 @@ class Directory {
   }
 
   get exists() {
-    return fs.existsSync(this.uri);
+    return fs.existsSync(this.uri) && fs.statSync(this.uri).isDirectory();
   }
 
   create({ intermediates = true } = {}) {

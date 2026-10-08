@@ -3,6 +3,7 @@ import * as SQLite from 'expo-sqlite';
 import {
   createContext,
   type ReactNode,
+  useCallback,
   useContext,
   useEffect,
   useMemo,
@@ -35,6 +36,8 @@ type DataContextValue = {
   saving: boolean;
   formStorageReady: boolean;
   formImportStatus: PreparationStatus;
+  formImportError: string | null;
+  retryFormImport: () => Promise<void>;
   runSave: <T>(work: () => Promise<T>) => Promise<T>;
   changePatient: () => void;
 };
@@ -49,6 +52,12 @@ export function LocalDataProvider({ children }: { children: ReactNode }) {
   const [saving, setSaving] = useState(false);
   const savingRef = useRef(false);
   const [formImportStatus, setFormImportStatus] = useState<PreparationStatus>('idle');
+  const [formImportError, setFormImportError] = useState<string | null>(null);
+  const [importAttempt, setImportAttempt] = useState(0);
+
+  const retryFormImport = useCallback(async () => {
+    setImportAttempt((a) => a + 1);
+  }, []);
 
   useEffect(() => {
     let active = true;
@@ -82,23 +91,33 @@ export function LocalDataProvider({ children }: { children: ReactNode }) {
   useEffect(() => {
     if (!database || !patientId) {
       setFormImportStatus('idle');
+      setFormImportError(null);
       return;
     }
     let active = true;
     setFormImportStatus('importing');
+    setFormImportError(null);
     const adapter = new ExpoFileStorageAdapter();
     importLegacyDrafts(patientId, database, adapter, undefined, Crypto.randomUUID)
       .then(() => {
-        if (active) setFormImportStatus('ready');
+        if (active) {
+          setFormImportStatus('ready');
+          setFormImportError(null);
+        }
       })
       .catch((err) => {
         console.warn('Fallo en importación legacy:', err);
-        if (active) setFormImportStatus('ready');
+        if (active) {
+          setFormImportStatus('error');
+          setFormImportError(
+            err instanceof Error ? err.message : 'Error al procesar almacenamiento de formularios',
+          );
+        }
       });
     return () => {
       active = false;
     };
-  }, [database, patientId]);
+  }, [database, patientId, importAttempt]);
 
   const formStorageReady = formImportStatus === 'ready';
 
@@ -116,6 +135,8 @@ export function LocalDataProvider({ children }: { children: ReactNode }) {
       saving,
       formStorageReady,
       formImportStatus,
+      formImportError,
+      retryFormImport,
       async runSave<T>(work: () => Promise<T>) {
         if (!patientId || savingRef.current) throw new Error('Selecciona un paciente de prueba.');
         savingRef.current = true;
@@ -131,7 +152,15 @@ export function LocalDataProvider({ children }: { children: ReactNode }) {
         if (!savingRef.current) setPatientId(null);
       },
     }),
-    [patientId, repository, saving, formStorageReady, formImportStatus],
+    [
+      patientId,
+      repository,
+      saving,
+      formStorageReady,
+      formImportStatus,
+      formImportError,
+      retryFormImport,
+    ],
   );
 
   if (error)

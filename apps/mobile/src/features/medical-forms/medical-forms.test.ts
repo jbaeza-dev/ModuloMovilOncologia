@@ -17,7 +17,7 @@ import {
   recoverOrphanDraftBackups,
   saveFormDraft,
 } from './form-draft-storage';
-import { importLegacyDrafts } from './form-legacy-import';
+import { computeSha256, importLegacyDrafts } from './form-legacy-import';
 import { medicalFormsService } from './medical-form-service';
 import type { MedicalFormDraft } from './medical-form-types';
 import { validateFormAnswers } from './medical-form-validation';
@@ -1057,7 +1057,7 @@ describe('importación legacy de borradores y respuestas a SQLite', () => {
     const jsonPath = join(dir, 'form-esas-muestra_v1.0.json');
     writeFileSync(jsonPath, JSON.stringify(legacyContent, null, 2));
 
-    await importLegacyDrafts(patientA, db, adapter, resolver);
+    const result = await importLegacyDrafts(patientA, db, adapter, resolver);
 
     // SQLite conserva { esas_dolor: 9 } sin ser sobrescrito por el legacy
     const draftInSql = await db.first<{ respuestas_json: string }>(
@@ -1065,6 +1065,189 @@ describe('importación legacy de borradores y respuestas a SQLite', () => {
       [patientA, 'form-esas-muestra'],
     );
     expect(JSON.parse(draftInSql!.respuestas_json)).toEqual({ esas_dolor: 9 });
+
+    // Corrección crítica: Como las respuestas difieren, el archivo físico se conserva y se registra en revision_requerida
+    expect(await adapter.exists(jsonPath)).toBe(true);
+    const tracking = await db.first<{ estado: string; ultimo_error: string }>(
+      'SELECT estado, ultimo_error FROM importacion_formularios_legacy WHERE paciente_id = ? AND archivo_relativo = ?',
+      [patientA, 'form-esas-muestra_v1.0.json'],
+    );
+    expect(tracking?.estado).toBe('revision_requerida');
+    expect(tracking?.ultimo_error).toContain(
+      'Conflicto: borrador existente en SQLite con respuestas diferentes',
+    );
+    expect(result.errors).toBe(1);
+  });
+
+  it('limpia archivo legacy si el borrador en SQLite tiene exactamente las mismas respuestas', async () => {
+    const dir = createTempDir();
+    const adapter = new NodeFileStorageAdapter();
+    const resolver = () => dir;
+
+    const db = createTestDb();
+    await migrateDatabase(db);
+    await seedPatientContextIfEmpty(db, patientA, patientB);
+
+    // Insertar borrador en SQLite
+    await db.run(
+      `INSERT INTO borrador_formulario (
+        paciente_id, formulario_id, version, entrega_id, respuestas_json, guardado_en, version_payload
+      ) VALUES (?, ?, ?, ?, ?, ?, 1)`,
+      [
+        patientA,
+        'form-esas-muestra',
+        '1.0',
+        'uuid-mismo-contenido',
+        JSON.stringify({ esas_dolor: 5, esas_fatiga: 2 }),
+        '2026-10-06T14:00:00Z',
+      ],
+    );
+
+    // Archivo legacy con las mismas respuestas
+    const legacyContent: MedicalFormDraft = {
+      formularioId: 'form-esas-muestra',
+      version: '1.0',
+      pacienteId: patientA,
+      respuestas: { esas_fatiga: 2, esas_dolor: 5 },
+      completado: false,
+      guardadoEn: '2026-10-06T10:00:00Z',
+    };
+    const jsonPath = join(dir, 'form-esas-muestra_v1.0.json');
+    writeFileSync(jsonPath, JSON.stringify(legacyContent, null, 2));
+
+    const result = await importLegacyDrafts(patientA, db, adapter, resolver);
+    expect(result.imported).toBe(1);
+    expect(result.cleaned).toBe(1);
+
+    // Archivo físico eliminado con éxito
+    expect(await adapter.exists(jsonPath)).toBe(false);
+    const tracking = await db.first<{ estado: string }>(
+      'SELECT estado FROM importacion_formularios_legacy WHERE paciente_id = ? AND archivo_relativo = ?',
+      [patientA, 'form-esas-muestra_v1.0.json'],
+    );
+    expect(tracking?.estado).toBe('importado');
+  });
+
+  it('computeSha256 calcula huellas criptográficas reales sin colisiones en cadenas distintas como Aa y BB', async () => {
+    const hashAa = await computeSha256('Aa');
+    const hashBb = await computeSha256('BB');
+
+    expect(hashAa).toHaveLength(64);
+    expect(hashBb).toHaveLength(64);
+    // Un hash de 32 bits de tipo sdbm/djb2 colisionaba en Aa y BB; SHA-256 jamás colisiona
+    expect(hashAa).not.toBe(hashBb);
+  });
+
+  it('en limpieza_pendiente no marca como importado si la lectura falla o el archivo sigue existiendo', async () => {
+    const dir = createTempDir();
+    const resolver = () => dir;
+    const db = createTestDb();
+    await migrateDatabase(db);
+    await seedPatientContextIfEmpty(db, patientA, patientB);
+
+    const jsonPath = join(dir, 'form-esas-muestra_v1.0.json');
+    const content = JSON.stringify({
+      formularioId: 'form-esas-muestra',
+      version: '1.0',
+      pacienteId: patientA,
+      respuestas: { esas_dolor: 3 },
+      completado: false,
+      guardadoEn: '2026-10-06T10:00:00Z',
+    });
+    writeFileSync(jsonPath, content);
+    const fileHash = await computeSha256(content);
+
+    // Registrar previamente en limpieza_pendiente
+    await db.run(
+      `INSERT INTO importacion_formularios_legacy (
+        paciente_id, archivo_relativo, huella_sha256, huella_bak_sha256,
+        destino_tipo, destino_id, estado, fecha_importacion, ultimo_error
+      ) VALUES (?, ?, ?, NULL, 'borrador', 'del-123', 'limpieza_pendiente', '2026-10-06T10:00:00Z', NULL)`,
+      [patientA, 'form-esas-muestra_v1.0.json', fileHash],
+    );
+
+    // Adaptador cuya eliminación falla
+    const baseAdapter = new NodeFileStorageAdapter();
+    class FailingDeleteAdapter extends NodeFileStorageAdapter {
+      override async deleteFile(): Promise<boolean> {
+        return false; // Falla deliberadamente
+      }
+    }
+    const failingAdapter = new FailingDeleteAdapter();
+
+    const result = await importLegacyDrafts(patientA, db, failingAdapter, resolver);
+    expect(result.cleaned).toBe(0);
+    expect(result.pendingCleanups).toBe(1);
+
+    // Debe permanecer en limpieza_pendiente y NO pasar a importado
+    const tracking = await db.first<{ estado: string }>(
+      'SELECT estado FROM importacion_formularios_legacy WHERE paciente_id = ? AND archivo_relativo = ?',
+      [patientA, 'form-esas-muestra_v1.0.json'],
+    );
+    expect(tracking?.estado).toBe('limpieza_pendiente');
+    expect(await baseAdapter.exists(jsonPath)).toBe(true);
+  });
+
+  it('rechaza entrega completada si las respuestas violan la validación médica y conserva el archivo en revision_requerida', async () => {
+    const dir = createTempDir();
+    const adapter = new NodeFileStorageAdapter();
+    const resolver = () => dir;
+
+    const db = createTestDb();
+    await migrateDatabase(db);
+    await seedPatientContextIfEmpty(db, patientA, patientB);
+
+    // Cuestionario con completado: true pero respuestas vacías (falta pregunta requerida esas_dolor)
+    const invalidCompleted: MedicalFormDraft = {
+      formularioId: 'form-esas-muestra',
+      version: '1.0',
+      pacienteId: patientA,
+      respuestas: {},
+      completado: true,
+      guardadoEn: '2026-10-06T10:00:00Z',
+    };
+    const jsonPath = join(dir, 'form-esas-muestra_v1.0.json');
+    writeFileSync(jsonPath, JSON.stringify(invalidCompleted, null, 2));
+
+    const result = await importLegacyDrafts(patientA, db, adapter, resolver);
+    expect(result.errors).toBe(1);
+    expect(result.imported).toBe(0);
+
+    // NO se insertó en respuesta_formulario
+    const submissions = await db.all('SELECT * FROM respuesta_formulario WHERE paciente_id = ?', [
+      patientA,
+    ]);
+    expect(submissions).toHaveLength(0);
+
+    // Archivo físico conservado
+    expect(await adapter.exists(jsonPath)).toBe(true);
+
+    const tracking = await db.first<{ estado: string; ultimo_error: string }>(
+      'SELECT estado, ultimo_error FROM importacion_formularios_legacy WHERE paciente_id = ? AND archivo_relativo = ?',
+      [patientA, 'form-esas-muestra_v1.0.json'],
+    );
+    expect(tracking?.estado).toBe('revision_requerida');
+    expect(tracking?.ultimo_error).toContain('Entrega completada con respuestas inválidas');
+  });
+
+  it('adapter.directoryExists se invoca cuando está disponible para comprobar el directorio base', async () => {
+    const dir = createTempDir();
+    const resolver = () => dir;
+    const db = createTestDb();
+    await migrateDatabase(db);
+    await seedPatientContextIfEmpty(db, patientA, patientB);
+
+    let directoryExistsCalled = false;
+    class CustomAdapter extends NodeFileStorageAdapter {
+      override directoryExists(p: string): boolean {
+        directoryExistsCalled = true;
+        return super.directoryExists(p);
+      }
+    }
+    const custom = new CustomAdapter();
+
+    await importLegacyDrafts(patientA, db, custom, resolver);
+    expect(directoryExistsCalled).toBe(true);
   });
 
   it('garantiza aislamiento A/B en la importación legacy', async () => {

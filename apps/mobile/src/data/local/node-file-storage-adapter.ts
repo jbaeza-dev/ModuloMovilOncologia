@@ -13,6 +13,14 @@ export class NodeFileStorageAdapter implements FileStorageAdapter {
     return fs.existsSync(targetPath);
   }
 
+  directoryExists(dirPath: string): boolean {
+    try {
+      return fs.existsSync(dirPath) && fs.statSync(dirPath).isDirectory();
+    } catch {
+      return false;
+    }
+  }
+
   async readText(targetPath: string): Promise<string> {
     return fs.readFileSync(targetPath, 'utf-8');
   }

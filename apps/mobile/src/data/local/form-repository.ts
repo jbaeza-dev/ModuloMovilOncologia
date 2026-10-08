@@ -7,6 +7,7 @@ import {
   type FormSubmissionRecord,
   ConflictoEntregaError,
 } from './form-types';
+import { validateFormQuestionsRecords } from './form-validation';
 
 export type IdFactory = () => string;
 export type Clock = () => string;
@@ -103,12 +104,16 @@ export function createFormRepository(
            ON b.paciente_id = a.paciente_id AND b.formulario_id = a.formulario_id AND b.version = a.version
          LEFT JOIN (
            SELECT id, paciente_id, formulario_id, version, fecha_confirmacion
-           FROM respuesta_formulario
-           WHERE (paciente_id, formulario_id, version, fecha_confirmacion) IN (
-             SELECT paciente_id, formulario_id, version, MAX(fecha_confirmacion)
+           FROM (
+             SELECT
+               id, paciente_id, formulario_id, version, fecha_confirmacion,
+               ROW_NUMBER() OVER (
+                 PARTITION BY paciente_id, formulario_id, version
+                 ORDER BY fecha_confirmacion DESC, id DESC
+               ) as rn
              FROM respuesta_formulario
-             GROUP BY paciente_id, formulario_id, version
            )
+           WHERE rn = 1
          ) r ON r.paciente_id = a.paciente_id AND r.formulario_id = a.formulario_id AND r.version = a.version
          WHERE a.paciente_id = ? AND a.estado_conocido = 'activa'
          ORDER BY f.titulo ASC`,
@@ -182,6 +187,16 @@ export function createFormRepository(
       deliveryId: string,
     ): Promise<void> {
       if (!deliveryId) throw new Error('El deliveryId es requerido para guardar un borrador.');
+
+      const assignment = await database.first<{ estado_conocido: string }>(
+        `SELECT estado_conocido FROM formulario_asignacion_cache
+         WHERE paciente_id = ? AND formulario_id = ? AND version = ?`,
+        [patientId, formId, version],
+      );
+      if (!assignment || assignment.estado_conocido !== 'activa') {
+        throw new Error('No existe una asignación activa para este cuestionario.');
+      }
+
       const timestamp = now();
       const payload = JSON.stringify(answers);
 
@@ -285,20 +300,17 @@ export function createFormRepository(
           );
         }
 
-        // 3. Validar preguntas obligatorias de la definición
+        // 3. Validar preguntas y respuestas frente a la definición
         const questions = await tx.all<FormQuestionRecord>(
           `SELECT * FROM pregunta_cache
            WHERE formulario_id = ? AND version = ?`,
           [formId, version],
         );
 
-        for (const q of questions) {
-          if (q.requerida === 1) {
-            const val = answers[q.pregunta_id];
-            if (val === undefined || val === null || val === '') {
-              throw new Error(`La pregunta obligatoria '${q.texto}' no ha sido respondida.`);
-            }
-          }
+        const validation = validateFormQuestionsRecords(questions, answers);
+        if (!validation.isValid) {
+          const firstError = Object.values(validation.errors)[0];
+          throw new Error(`Validación fallida: ${firstError}`);
         }
 
         // 4. Inserción en respuesta_formulario

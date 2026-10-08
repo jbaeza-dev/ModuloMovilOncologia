@@ -1,27 +1,29 @@
+import * as Crypto from 'expo-crypto';
+
 import type { FileStorageAdapter } from '../../data/local/file-storage-adapter';
-import type { FormDefinitionRecord } from '../../data/local/form-types';
+import type { FormDefinitionRecord, FormQuestionRecord } from '../../data/local/form-types';
+import { areAnswersEqual, validateFormQuestionsRecords } from '../../data/local/form-validation';
 import type { SqlConnection } from '../../data/local/sql';
 import { getPatientDraftDirectory, isValidDraftPayload, withDraftLock } from './form-draft-storage';
 import type { MedicalFormDraft } from './medical-form-types';
 
 export async function computeSha256(content: string): Promise<string> {
-  if (typeof globalThis.crypto?.subtle?.digest === 'function') {
-    const encoder = new TextEncoder();
-    const data = encoder.encode(content);
-    const hashBuffer = await globalThis.crypto.subtle.digest('SHA-256', data);
-    const hashArray = Array.from(new Uint8Array(hashBuffer));
-    return hashArray.map((b) => b.toString(16).padStart(2, '0')).join('');
-  }
   try {
-    const nodeCrypto = await import('node:crypto');
-    return nodeCrypto.createHash('sha256').update(content, 'utf8').digest('hex');
+    return await Crypto.digestStringAsync(Crypto.CryptoDigestAlgorithm.SHA256, content);
   } catch {
-    let hash = 0;
-    for (let i = 0; i < content.length; i++) {
-      hash = (hash << 5) - hash + content.charCodeAt(i);
-      hash |= 0;
+    if (typeof globalThis.crypto?.subtle?.digest === 'function') {
+      const encoder = new TextEncoder();
+      const data = encoder.encode(content);
+      const hashBuffer = await globalThis.crypto.subtle.digest('SHA-256', data);
+      const hashArray = Array.from(new Uint8Array(hashBuffer));
+      return hashArray.map((b) => b.toString(16).padStart(2, '0')).join('');
     }
-    return Math.abs(hash).toString(16);
+    try {
+      const nodeCrypto = await import('node:crypto');
+      return nodeCrypto.createHash('sha256').update(content, 'utf8').digest('hex');
+    } catch {
+      throw new Error('No se pudo calcular la huella criptográfica SHA-256.');
+    }
   }
 }
 
@@ -56,7 +58,11 @@ export async function importLegacyDrafts(
     ? baseDirResolver(patientId)
     : getPatientDraftDirectory(patientId).uri;
 
-  if (!(await adapter.exists(baseDir))) {
+  const dirExists = adapter.directoryExists
+    ? await adapter.directoryExists(baseDir)
+    : await adapter.exists(baseDir);
+
+  if (!dirExists) {
     return result;
   }
 
@@ -135,17 +141,39 @@ export async function importLegacyDrafts(
         let cleanedJson = true;
         let cleanedBak = true;
 
-        if (jsonExists && jsonRaw && jsonSha256) {
-          if (jsonSha256 === existingImport.huella_sha256) {
-            cleanedJson = await adapter.deleteFile(jsonPath);
+        if (jsonExists) {
+          if (
+            jsonRaw &&
+            jsonSha256 &&
+            existingImport.huella_sha256 &&
+            jsonSha256 === existingImport.huella_sha256
+          ) {
+            try {
+              const deleted = await adapter.deleteFile(jsonPath);
+              const stillExists = await adapter.exists(jsonPath);
+              cleanedJson = deleted && !stillExists;
+            } catch {
+              cleanedJson = false;
+            }
           } else {
             cleanedJson = false;
           }
         }
 
-        if (bakExists && bakRaw && bakSha256) {
-          if (existingImport.huella_bak_sha256 && bakSha256 === existingImport.huella_bak_sha256) {
-            cleanedBak = await adapter.deleteFile(bakPath);
+        if (bakExists) {
+          if (
+            bakRaw &&
+            bakSha256 &&
+            existingImport.huella_bak_sha256 &&
+            bakSha256 === existingImport.huella_bak_sha256
+          ) {
+            try {
+              const deleted = await adapter.deleteFile(bakPath);
+              const stillExists = await adapter.exists(bakPath);
+              cleanedBak = deleted && !stillExists;
+            } catch {
+              cleanedBak = false;
+            }
           } else {
             cleanedBak = false;
           }
@@ -221,11 +249,81 @@ export async function importLegacyDrafts(
         return;
       }
 
+      // Si la entrega legacy estaba marcada como completada, validar sus respuestas
+      if (parsed.completado) {
+        const questions = await database.all<FormQuestionRecord>(
+          'SELECT * FROM pregunta_cache WHERE formulario_id = ? AND version = ?',
+          [parsed.formularioId, parsed.version],
+        );
+
+        const validation = validateFormQuestionsRecords(questions, parsed.respuestas);
+        if (!validation.isValid) {
+          const firstError = Object.values(validation.errors)[0];
+          await database.run(
+            `INSERT INTO importacion_formularios_legacy (
+              paciente_id, archivo_relativo, huella_sha256, huella_bak_sha256,
+              destino_tipo, destino_id, estado, fecha_importacion, ultimo_error
+            ) VALUES (?, ?, ?, ?, 'invalido', NULL, 'revision_requerida', ?, ?)
+            ON CONFLICT (paciente_id, archivo_relativo) DO UPDATE SET
+              estado = 'revision_requerida',
+              ultimo_error = excluded.ultimo_error`,
+            [
+              patientId,
+              relativeFileName,
+              selectedSha256,
+              bakSha256,
+              now(),
+              `Entrega completada con respuestas inválidas: ${firstError}`,
+            ],
+          );
+          result.errors++;
+          return;
+        }
+      }
+
       // Comprobar si ya existe un borrador en SQLite
-      const sqliteDraft = await database.first<{ entrega_id: string }>(
-        'SELECT entrega_id FROM borrador_formulario WHERE paciente_id = ? AND formulario_id = ? AND version = ?',
+      const sqliteDraft = await database.first<{
+        entrega_id: string;
+        respuestas_json: string;
+      }>(
+        'SELECT entrega_id, respuestas_json FROM borrador_formulario WHERE paciente_id = ? AND formulario_id = ? AND version = ?',
         [patientId, parsed.formularioId, parsed.version],
       );
+
+      // Si es un borrador y SQLite ya posee uno, comparar contenidos antes de omitir o limpiar
+      if (!parsed.completado && sqliteDraft) {
+        let sqliteAnswers: Record<string, unknown> | null;
+        try {
+          sqliteAnswers = JSON.parse(sqliteDraft.respuestas_json);
+        } catch {
+          sqliteAnswers = null;
+        }
+
+        const isIdentical = areAnswersEqual(sqliteAnswers, parsed.respuestas);
+        if (!isIdentical) {
+          // Las respuestas difieren: conservar el archivo físico y registrar revisión requerida
+          await database.run(
+            `INSERT INTO importacion_formularios_legacy (
+              paciente_id, archivo_relativo, huella_sha256, huella_bak_sha256,
+              destino_tipo, destino_id, estado, fecha_importacion, ultimo_error
+            ) VALUES (?, ?, ?, ?, 'borrador', ?, 'revision_requerida', ?, ?)
+            ON CONFLICT (paciente_id, archivo_relativo) DO UPDATE SET
+              estado = 'revision_requerida',
+              ultimo_error = excluded.ultimo_error`,
+            [
+              patientId,
+              relativeFileName,
+              selectedSha256,
+              bakSha256,
+              sqliteDraft.entrega_id,
+              now(),
+              'Conflicto: borrador existente en SQLite con respuestas diferentes',
+            ],
+          );
+          result.errors++;
+          return;
+        }
+      }
 
       const timestamp = now();
       let destinoTipo: 'borrador' | 'respuesta' = 'borrador';
@@ -282,7 +380,6 @@ export async function importLegacyDrafts(
           );
         } else {
           destinoTipo = 'borrador';
-          // Si SQLite ya tiene un borrador, se preserva el de SQLite sin sobrescribirlo
           if (!sqliteDraft) {
             const deliveryId = newId();
             destinoId = deliveryId;
@@ -341,7 +438,9 @@ export async function importLegacyDrafts(
           const currentRaw = await adapter.readText(jsonPath);
           const currentSha = await computeSha256(currentRaw);
           if (currentSha === jsonSha256) {
-            cleanJsonOk = await adapter.deleteFile(jsonPath);
+            const deleted = await adapter.deleteFile(jsonPath);
+            const stillExists = await adapter.exists(jsonPath);
+            cleanJsonOk = deleted && !stillExists;
           } else {
             cleanJsonOk = false;
           }
@@ -355,7 +454,9 @@ export async function importLegacyDrafts(
           const currentBakRaw = await adapter.readText(bakPath);
           const currentBakSha = await computeSha256(currentBakRaw);
           if (currentBakSha === bakSha256) {
-            cleanBakOk = await adapter.deleteFile(bakPath);
+            const deleted = await adapter.deleteFile(bakPath);
+            const stillExists = await adapter.exists(bakPath);
+            cleanBakOk = deleted && !stillExists;
           } else {
             cleanBakOk = false;
           }

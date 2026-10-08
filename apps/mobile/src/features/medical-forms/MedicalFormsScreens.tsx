@@ -57,12 +57,19 @@ export function toMedicalFormDefinition(fullDef: FullFormDefinition): MedicalFor
 export function MedicalFormsHubScreen() {
   const { theme: appTheme } = useAppTheme();
   const styles = createStyles(appTheme.colors);
-  const { repository, patientId, formStorageReady } = useLocalData();
+  const {
+    repository,
+    patientId,
+    formStorageReady,
+    formImportStatus,
+    formImportError,
+    retryFormImport,
+  } = useLocalData();
 
   const loadAssigned = useCallback(async () => {
-    if (!repository || !patientId) return [];
+    if (!repository || !patientId || !formStorageReady) return [];
     return repository.listAssignedForms();
-  }, [repository, patientId]);
+  }, [repository, patientId, formStorageReady]);
 
   const { value: assignedForms, loading } = useFocusedValue(
     loadAssigned,
@@ -92,10 +99,27 @@ export function MedicalFormsHubScreen() {
 
       <SectionTitle>Cuestionarios asignados</SectionTitle>
 
-      {!formStorageReady ? (
+      {formImportStatus === 'importing' ? (
         <InfoCard>
           <StatusPill>Preparando cuestionarios…</StatusPill>
-          <BodyText>Sincronizando el almacenamiento local de formularios del paciente.</BodyText>
+          <BodyText>
+            Recuperando y sincronizando borradores del paciente en este dispositivo.
+          </BodyText>
+        </InfoCard>
+      ) : null}
+
+      {formImportStatus === 'error' ? (
+        <InfoCard>
+          <EmptyState
+            icon="alert-circle"
+            title="Error al preparar almacenamiento"
+            description={
+              formImportError ?? 'No se pudo sincronizar el almacenamiento local de formularios.'
+            }
+          />
+          <View style={{ marginTop: theme.spacing.sm }}>
+            <VisualButton label="Reintentar preparación" onPress={retryFormImport} />
+          </View>
         </InfoCard>
       ) : null}
 
@@ -184,7 +208,15 @@ export function MedicalFormsHubScreen() {
 export function MedicalFormDetailScreen() {
   const { theme: appTheme } = useAppTheme();
   const styles = createStyles(appTheme.colors);
-  const { repository, patientId, formStorageReady, runSave } = useLocalData();
+  const {
+    repository,
+    patientId,
+    formStorageReady,
+    formImportStatus,
+    formImportError,
+    retryFormImport,
+    runSave,
+  } = useLocalData();
   const { id, version } = useLocalSearchParams<{ id?: string; version?: string }>();
 
   const [formDef, setFormDef] = useState<FullFormDefinition | null>(null);
@@ -196,9 +228,9 @@ export function MedicalFormDetailScreen() {
   const [isConfirmed, setIsConfirmed] = useState(false);
   const [busy, setBusy] = useState(false);
 
-  // Carga de definición y borrador desde SQLite
+  // Carga de definición y borrador desde SQLite sólo cuando el almacenamiento esté listo
   useEffect(() => {
-    if (!repository || !patientId || !id) return;
+    if (!repository || !patientId || !id || !formStorageReady) return;
     let mounted = true;
 
     async function load() {
@@ -220,7 +252,36 @@ export function MedicalFormDetailScreen() {
     return () => {
       mounted = false;
     };
-  }, [repository, patientId, id, version]);
+  }, [repository, patientId, id, version, formStorageReady]);
+
+  if (!formStorageReady) {
+    if (formImportStatus === 'error') {
+      return (
+        <Screen title="Error de almacenamiento" backTo="/formulario">
+          <DemoBadge />
+          <InfoCard>
+            <EmptyState
+              icon="alert-circle"
+              title="No se pudo preparar el cuestionario"
+              description={formImportError ?? 'Error al procesar el almacenamiento local.'}
+            />
+            <View style={{ marginTop: theme.spacing.md }}>
+              <VisualButton label="Reintentar preparación" onPress={retryFormImport} />
+            </View>
+          </InfoCard>
+        </Screen>
+      );
+    }
+    return (
+      <Screen title="Cargando cuestionario…" backTo="/formulario">
+        <DemoBadge />
+        <InfoCard>
+          <StatusPill>Preparando evaluación…</StatusPill>
+          <BodyText>Recuperando datos locales y verificando borrador previo…</BodyText>
+        </InfoCard>
+      </Screen>
+    );
+  }
 
   if (!formDef) {
     return (
@@ -336,8 +397,12 @@ export function MedicalFormDetailScreen() {
       });
       setIsConfirmed(true);
       setFeedback('Guardado en este dispositivo · Pendiente de envío');
-    } catch {
-      setFeedback('No se pudo confirmar la entrega en el almacenamiento local.');
+    } catch (err) {
+      setFeedback(
+        err instanceof Error
+          ? err.message
+          : 'No se pudo confirmar la entrega en el almacenamiento local.',
+      );
     } finally {
       setBusy(false);
     }
@@ -503,12 +568,57 @@ export function MedicalFormSubmissionsScreen() {
   const styles = createStyles(appTheme.colors);
   const { repository, patientId } = useLocalData();
 
-  const loadSubmissions = useCallback(async () => {
-    if (!repository || !patientId) return [];
-    return repository.listSubmissions();
-  }, [repository, patientId]);
+  const [submissions, setSubmissions] = useState<
+    Array<{
+      id: string;
+      formulario_id: string;
+      version: string;
+      titulo: string;
+      duracion_estimada_min: number;
+      fecha_confirmacion: string;
+      estado_envio: string | null;
+    }>
+  >([]);
+  const [hasMore, setHasMore] = useState(false);
+  const [loadingInitial, setLoadingInitial] = useState(true);
+  const [loadingMore, setLoadingMore] = useState(false);
 
-  const { value: submissions } = useFocusedValue(loadSubmissions, []);
+  const fetchBatch = useCallback(
+    async (offset: number) => {
+      if (!repository || !patientId) return [];
+      return repository.listSubmissions(undefined, 30, offset);
+    },
+    [repository, patientId],
+  );
+
+  useEffect(() => {
+    let mounted = true;
+    setLoadingInitial(true);
+    fetchBatch(0)
+      .then((items) => {
+        if (!mounted) return;
+        setSubmissions(items);
+        setHasMore(items.length === 30);
+      })
+      .finally(() => {
+        if (mounted) setLoadingInitial(false);
+      });
+    return () => {
+      mounted = false;
+    };
+  }, [fetchBatch]);
+
+  async function handleLoadMore() {
+    if (!repository || !patientId || loadingMore || !hasMore) return;
+    setLoadingMore(true);
+    try {
+      const nextBatch = await fetchBatch(submissions.length);
+      setSubmissions((prev) => [...prev, ...nextBatch]);
+      setHasMore(nextBatch.length === 30);
+    } finally {
+      setLoadingMore(false);
+    }
+  }
 
   return (
     <Screen title="Historial de evaluaciones" backTo="/formulario">
@@ -517,7 +627,7 @@ export function MedicalFormSubmissionsScreen() {
         Registro de evaluaciones médicas confirmadas localmente en este dispositivo.
       </BodyText>
 
-      {submissions.length === 0 ? (
+      {!loadingInitial && submissions.length === 0 ? (
         <InfoCard>
           <EmptyState
             icon="clipboard"
@@ -550,6 +660,17 @@ export function MedicalFormSubmissionsScreen() {
           />
         </InfoCard>
       ))}
+
+      {hasMore ? (
+        <View style={styles.actions}>
+          <VisualButton
+            label={loadingMore ? 'Cargando evaluaciones…' : 'Cargar evaluaciones anteriores'}
+            secondary
+            disabled={loadingMore}
+            onPress={handleLoadMore}
+          />
+        </View>
+      ) : null}
     </Screen>
   );
 }
