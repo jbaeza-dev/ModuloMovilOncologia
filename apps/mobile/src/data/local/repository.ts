@@ -2,6 +2,11 @@ import type { SqlConnection } from './sql';
 import { type VitalValues } from './validation';
 import { createFormRepository } from './form-repository';
 import { seedMedicalFormsDemo } from './form-seed';
+import { createClinicalContextRepository } from './clinical-context-repository';
+import { createConsentRepository } from './consent-repository';
+import { seedClinicalContextDemoInTransaction } from './clinical-context-seed';
+export * from './clinical-context-types';
+export * from './consent-types';
 
 export type VitalRecord = VitalValues & {
   id: string;
@@ -379,6 +384,10 @@ export function createPatientRepository(
         contenidoId,
       ]);
     },
+
+    ...createFormRepository(database, patientId, newId, now),
+    ...createClinicalContextRepository(database, patientId),
+    ...createConsentRepository(database, patientId, newId, now),
   };
 }
 
@@ -450,6 +459,14 @@ export async function seedPatientContextIfEmpty(
     );
     if (hasForms) {
       await seedMedicalFormsDemo(tx, patientAId, patientBId, now);
+    }
+
+    // Seed de contexto clínico y consentimientos (si la migración 005 ya está aplicada)
+    const hasClinicalContext = await tx.first<{ name: string }>(
+      "SELECT name FROM sqlite_master WHERE type = 'table' AND name = 'ficha_clinica_cache'",
+    );
+    if (hasClinicalContext) {
+      await seedClinicalContextDemoInTransaction(tx, patientAId, patientBId, now);
     }
   });
 }

@@ -17,6 +17,7 @@ import {
 import {
   formatDate,
   formatLinkCode,
+  type ClinicalFileRecord,
   type LinkCodeRecord,
   type PatientProfileRecord,
   type TreatmentRecord,
@@ -73,9 +74,21 @@ export function ProfileScreen() {
       />
       <NavigationCard
         title="Perfil clínico"
-        description="Información de quimioterapia."
+        description="Información de quimioterapia y ficha."
         icon="file-text"
         href="/perfil/clinico"
+      />
+      <NavigationCard
+        title="Medicación activa"
+        description="Fármacos y dosis en curso."
+        icon="activity"
+        href="/perfil/medicacion"
+      />
+      <NavigationCard
+        title="Equipo tratante"
+        description="Profesionales de salud vinculados."
+        icon="users"
+        href="/perfil/equipo"
       />
       <NavigationCard
         title="Código de vinculación"
@@ -85,7 +98,7 @@ export function ProfileScreen() {
       />
       <NavigationCard
         title="Consentimientos"
-        description="Vista de los textos de ejemplo."
+        description="Gestión y trazabilidad de términos."
         icon="check-square"
         href="/perfil/consentimientos"
       />
@@ -148,16 +161,27 @@ export function ClinicalProfileScreen() {
   const styles = useStyles();
   const { theme: appTheme } = useAppTheme();
   const { repository } = useLocalData();
-  const load = useCallback(
-    () => (repository ? repository.treatment() : Promise.resolve(null)),
-    [repository],
-  );
+  const loadData = useCallback(async () => {
+    if (!repository) return { treatment: null, clinicalFile: null };
+    const [treatment, clinicalFile] = await Promise.all([
+      repository.treatment(),
+      repository.clinicalFile(),
+    ]);
+    return { treatment, clinicalFile };
+  }, [repository]);
+
   const {
-    value: treatment,
+    value: clinicalData,
     loading,
     error,
     refresh,
-  } = useFocusedValue(load, null as TreatmentRecord | null);
+  } = useFocusedValue(loadData, {
+    treatment: null as TreatmentRecord | null,
+    clinicalFile: null as ClinicalFileRecord | null,
+  });
+
+  const treatment = clinicalData.treatment;
+  const clinicalFile = clinicalData.clinicalFile;
   const [open, setOpen] = useState<string | null>('Parámetros de tratamiento');
 
   let params: {
@@ -183,14 +207,14 @@ export function ClinicalProfileScreen() {
       <DemoBadge />
       {loading ? (
         <InfoCard>
-          <BodyText>Cargando tratamiento…</BodyText>
+          <BodyText>Cargando información clínica…</BodyText>
         </InfoCard>
       ) : error ? (
         <InfoCard>
           <BodyText>No se pudo consultar el tratamiento local.</BodyText>
           <VisualButton label="Reintentar" onPress={refresh} />
         </InfoCard>
-      ) : !treatment ? (
+      ) : !treatment && !clinicalFile ? (
         <EmptyState
           icon="file-text"
           title="Sin tratamiento registrado"
@@ -198,22 +222,34 @@ export function ClinicalProfileScreen() {
         />
       ) : (
         <>
-          <InfoCard>
-            <SectionTitle>Tratamiento de quimioterapia</SectionTitle>
-            <DetailRow
-              label="Tratamiento"
-              value={treatment.nombre ?? 'Tratamiento de quimioterapia'}
-            />
-            {params?.ciclo_actual != null && params?.total_ciclos != null ? (
+          {clinicalFile ? (
+            <InfoCard>
+              <SectionTitle>Ficha clínica</SectionTitle>
+              <DetailRow label="Identificador" value={clinicalFile.ficha_id} />
+              <StatusPill>
+                Ficha identificada · Información en caché ({formatDate(clinicalFile.obtenido_en)})
+              </StatusPill>
+            </InfoCard>
+          ) : null}
+
+          {treatment ? (
+            <InfoCard>
+              <SectionTitle>Tratamiento de quimioterapia</SectionTitle>
               <DetailRow
-                label="Ciclo actual"
-                value={`Ciclo ${params.ciclo_actual} de ${params.total_ciclos}`}
+                label="Tratamiento"
+                value={treatment.nombre ?? 'Tratamiento de quimioterapia'}
               />
-            ) : null}
-            <DetailRow label="Inicio" value={treatment.fecha_inicio ?? 'Sin fecha'} />
-            <DetailRow label="Término estimado" value={treatment.fecha_termino ?? 'En curso'} />
-            <DetailRow label="Estado" value={treatment.estado} />
-          </InfoCard>
+              {params?.ciclo_actual != null && params?.total_ciclos != null ? (
+                <DetailRow
+                  label="Ciclo actual"
+                  value={`Ciclo ${params.ciclo_actual} de ${params.total_ciclos}`}
+                />
+              ) : null}
+              <DetailRow label="Inicio" value={treatment.fecha_inicio ?? 'Sin fecha'} />
+              <DetailRow label="Término estimado" value={treatment.fecha_termino ?? 'En curso'} />
+              <DetailRow label="Estado" value={treatment.estado} />
+            </InfoCard>
+          ) : null}
 
           {params?.observaciones ? (
             <InfoCard>
@@ -385,21 +421,9 @@ export function PreferencesScreen() {
   );
 }
 
-export function ConsentReviewScreen() {
-  return (
-    <Screen title="Consentimientos" backTo="/perfil">
-      <DemoBadge />
-      <InfoCard>
-        <SectionTitle>Consentimiento de ejemplo</SectionTitle>
-        <BodyText>
-          Este texto ilustra la presentación de consentimientos. El contenido legal y clínico debe
-          aprobarse antes de su uso.
-        </BodyText>
-      </InfoCard>
-      <BodyText>No se registra aceptación en esta vista.</BodyText>
-    </Screen>
-  );
-}
+export { MedicationScreen } from './MedicationScreen';
+export { MedicalTeamScreen } from './MedicalTeamScreen';
+export { ConsentReviewScreen } from './ConsentReviewScreen';
 
 function useStyles() {
   const { theme: appTheme } = useAppTheme();
