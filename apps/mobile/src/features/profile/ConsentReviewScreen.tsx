@@ -41,7 +41,7 @@ export function ConsentReviewScreen() {
     const result: TermWithStatus[] = [];
     for (const term of terms) {
       const status = await repository.getConsentStatus(term.termino_id, term.version);
-      const history = await repository.listConsentHistory(term.termino_id);
+      const history = await repository.listConsentHistory(term.termino_id, term.version);
       result.push({ term, status, history });
     }
     return result;
@@ -179,7 +179,8 @@ export function ConsentReviewScreen() {
                 {history.map((ev) => (
                   <View key={ev.id} style={styles.historyRow}>
                     <Text style={styles.historyText}>
-                      #{ev.secuencia} · {ev.accion === 'otorgado' ? 'Otorgado' : 'Revocado'} ·{' '}
+                      #{ev.secuencia} · v{ev.version} ·{' '}
+                      {ev.accion === 'otorgado' ? 'Otorgado' : 'Revocado'} ·{' '}
                       {formatDate(ev.fecha_evento)}
                     </Text>
                   </View>

@@ -80,3 +80,10 @@ export type ClinicalContextBundle = {
     obtenidoEn?: string;
   }>;
 };
+
+export class ConflictoIdentidadError extends Error {
+  constructor(message: string) {
+    super(message);
+    this.name = 'ConflictoIdentidadError';
+  }
+}

@@ -44,14 +44,7 @@ export function createConsentRepository(
     },
 
     async getConsentStatus(terminoId: string, version: string): Promise<ConsentStatusInfo> {
-      const lastConsent = await database.first<UserConsentRecord>(
-        `SELECT * FROM consentimiento_usuario
-         WHERE paciente_id = ? AND termino_id = ? AND version = ?
-         ORDER BY creado_en DESC, id DESC
-         LIMIT 1`,
-        [patientId, terminoId, version],
-      );
-
+      // 1. Obtener el evento de mayor secuencia causal para este término y versión del paciente activo
       const lastEvent = await database.first<ConsentEventRecord>(
         `SELECT * FROM evento_consentimiento
          WHERE paciente_id = ? AND termino_id = ? AND version = ?
@@ -60,7 +53,7 @@ export function createConsentRepository(
         [patientId, terminoId, version],
       );
 
-      if (!lastConsent) {
+      if (!lastEvent) {
         return {
           terminoId,
           version,
@@ -71,14 +64,21 @@ export function createConsentRepository(
         };
       }
 
-      if (lastConsent.estado === 'otorgado') {
+      // 2. Obtener el consentimiento asociado a ese evento de mayor secuencia
+      const lastConsent = await database.first<UserConsentRecord>(
+        `SELECT * FROM consentimiento_usuario
+         WHERE id = ? AND paciente_id = ?`,
+        [lastEvent.consentimiento_id, patientId],
+      );
+
+      if (lastEvent.accion === 'otorgado') {
         return {
           terminoId,
           version,
           estado: 'otorgado',
-          activeConsent: lastConsent,
-          lastConsent,
-          lastEvent: lastEvent ?? null,
+          activeConsent: lastConsent ?? null,
+          lastConsent: lastConsent ?? null,
+          lastEvent,
         };
       }
 
@@ -87,8 +87,8 @@ export function createConsentRepository(
         version,
         estado: 'revocado',
         activeConsent: null,
-        lastConsent,
-        lastEvent: lastEvent ?? null,
+        lastConsent: lastConsent ?? null,
+        lastEvent,
       };
     },
 
@@ -99,6 +99,7 @@ export function createConsentRepository(
       let result: { consentId: string; eventId: string } | undefined;
       await database.transaction(async (tx) => {
         const currentTime = now();
+        const currentTimeMs = Date.parse(currentTime);
 
         // 1. Validar existencia y vigencia de términos dentro de la transacción
         const term = await tx.first<TermDefinitionRecord>(
@@ -109,9 +110,13 @@ export function createConsentRepository(
           throw new Error(`No existe la definición de términos '${terminoId}' v${version}.`);
         }
 
+        const desdeMs = Date.parse(term.vigente_desde);
+        const hastaMs = term.vigente_hasta ? Date.parse(term.vigente_hasta) : null;
+
         if (
-          term.vigente_desde > currentTime ||
-          (term.vigente_hasta && term.vigente_hasta < currentTime)
+          isNaN(desdeMs) ||
+          currentTimeMs < desdeMs ||
+          (hastaMs !== null && (!isNaN(hastaMs) ? currentTimeMs > hastaMs : true))
         ) {
           throw new Error(
             `La versión '${version}' de '${terminoId}' no se encuentra vigente para su aceptación.`,
@@ -276,7 +281,10 @@ export function createConsentRepository(
       return result!;
     },
 
-    async listConsentHistory(terminoId?: string): Promise<
+    async listConsentHistory(
+      terminoId?: string,
+      version?: string,
+    ): Promise<
       Array<
         ConsentEventRecord & {
           termino_titulo: string;
@@ -289,9 +297,12 @@ export function createConsentRepository(
         JOIN definicion_terminos_cache t ON e.termino_id = t.termino_id AND e.version = t.version
         WHERE e.paciente_id = ?
         ${terminoId ? 'AND e.termino_id = ?' : ''}
+        ${version ? 'AND e.version = ?' : ''}
         ORDER BY e.secuencia DESC
       `;
-      const params = terminoId ? [patientId, terminoId] : [patientId];
+      const params: string[] = [patientId];
+      if (terminoId) params.push(terminoId);
+      if (version) params.push(version);
       return database.all<ConsentEventRecord & { termino_titulo: string }>(sql, params);
     },
   };

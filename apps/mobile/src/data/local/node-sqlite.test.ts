@@ -19,6 +19,8 @@ import { DESCARGAS_SQL } from './migrations/003_descargas';
 import { FORMULARIOS_SQL, FORMULARIOS_VERSION } from './migrations/004_formularios';
 import { CONTEXTO_CLINICO_SQL } from './migrations/005_contexto_clinico';
 import { ingestMedicalFormBundle } from './form-ingestion';
+import { ingestClinicalContextBundle } from './clinical-context-ingestion';
+import { ConflictoIdentidadError } from './clinical-context-types';
 import { ingestTermDefinitions } from './consent-ingestion';
 import { seedMedicalFormsDemo } from './form-seed';
 import {
@@ -2008,7 +2010,7 @@ describe('migraciones 005 y 006, contexto clínico y consentimientos en SQLite',
 
     const { consentId: c1 } = await repoFixed.grantConsent('term-piloto-quimiocare', '1.0');
     await repoFixed.revokeConsent(c1);
-    await repoFixed.grantConsent('term-piloto-quimiocare', '1.0');
+    const { consentId: c1Re } = await repoFixed.grantConsent('term-piloto-quimiocare', '1.0');
 
     // Comprobar eventos y secuencias en la base
     const eventsFixed = await database.all<{
@@ -2026,12 +2028,20 @@ describe('migraciones 005 y 006, contexto clínico y consentimientos en SQLite',
     expect(eventsFixed.every((e) => e.fecha_evento === fixedTime)).toBe(true);
 
     // listConsentHistory ordena por secuencia DESC: devuelve nuevo otorgado -> revocado -> otorgado
-    const historyFixed = await repoFixed.listConsentHistory('term-piloto-quimiocare');
+    const historyFixed = await repoFixed.listConsentHistory('term-piloto-quimiocare', '1.0');
     expect(historyFixed.map((e) => e.secuencia)).toEqual([3, 2, 1]);
+
+    // getConsentStatus resuelve vía secuencia máxima: estado 'otorgado', activeConsent válido y último evento #3
+    const statusFixed = await repoFixed.getConsentStatus('term-piloto-quimiocare', '1.0');
+    expect(statusFixed.estado).toBe('otorgado');
+    expect(statusFixed.activeConsent).not.toBeNull();
+    expect(statusFixed.activeConsent?.id).toBe(c1Re);
+    expect(statusFixed.lastEvent?.secuencia).toBe(3);
 
     // 2. Reloj retrocediendo:
     // Evento 4 (otro término): T2 (12:00)
     // Evento 5 (revocación de ese término): T1 (11:00, reloj retrocedió 1 hora)
+    // Evento 6 (nuevo otorgamiento): T0 (10:00, reloj retrocedió 2 horas)
     let currentClock = '2026-10-08T12:00:00.000Z';
     const clockMock = () => currentClock;
     const repoSkew = createPatientRepository(database, patientA, sharedIds, clockMock);
@@ -2040,6 +2050,9 @@ describe('migraciones 005 y 006, contexto clínico y consentimientos en SQLite',
     // Retroceder reloj
     currentClock = '2026-10-08T11:00:00.000Z';
     await repoSkew.revokeConsent(c2);
+    // Retroceder reloj nuevamente
+    currentClock = '2026-10-08T10:00:00.000Z';
+    const { consentId: c2Re } = await repoSkew.grantConsent('term-seguimiento-sintomatico', '1.0');
 
     const eventsSkew = await database.all<{
       secuencia: number;
@@ -2049,19 +2062,24 @@ describe('migraciones 005 y 006, contexto clínico y consentimientos en SQLite',
       "SELECT secuencia, accion, fecha_evento FROM evento_consentimiento WHERE paciente_id = ? AND termino_id = 'term-seguimiento-sintomatico' ORDER BY secuencia ASC",
       [patientA],
     );
-    expect(eventsSkew).toHaveLength(2);
-    expect(eventsSkew[0].secuencia).toBe(4);
-    expect(eventsSkew[0].accion).toBe('otorgado');
+    expect(eventsSkew).toHaveLength(3);
+    expect(eventsSkew.map((e) => e.secuencia)).toEqual([4, 5, 6]);
+    expect(eventsSkew.map((e) => e.accion)).toEqual(['otorgado', 'revocado', 'otorgado']);
     expect(eventsSkew[0].fecha_evento).toBe('2026-10-08T12:00:00.000Z');
-
-    expect(eventsSkew[1].secuencia).toBe(5);
-    expect(eventsSkew[1].accion).toBe('revocado');
     expect(eventsSkew[1].fecha_evento).toBe('2026-10-08T11:00:00.000Z');
+    expect(eventsSkew[2].fecha_evento).toBe('2026-10-08T10:00:00.000Z');
 
-    // La secuencia causal (4 luego 5) garantiza el orden verdadero a pesar de que el timestamp retrocedió
-    const historySkew = await repoSkew.listConsentHistory('term-seguimiento-sintomatico');
-    expect(historySkew.map((e) => e.secuencia)).toEqual([5, 4]);
-    expect(historySkew.map((e) => e.accion)).toEqual(['revocado', 'otorgado']);
+    // La secuencia causal (4 luego 5 luego 6) garantiza el orden verdadero a pesar de que el timestamp retrocedió
+    const historySkew = await repoSkew.listConsentHistory('term-seguimiento-sintomatico', '1.0');
+    expect(historySkew.map((e) => e.secuencia)).toEqual([6, 5, 4]);
+    expect(historySkew.map((e) => e.accion)).toEqual(['otorgado', 'revocado', 'otorgado']);
+
+    // getConsentStatus no se confunde con creado_en DESC: resuelve la secuencia 6 y devuelve 'otorgado'
+    const statusSkew = await repoSkew.getConsentStatus('term-seguimiento-sintomatico', '1.0');
+    expect(statusSkew.estado).toBe('otorgado');
+    expect(statusSkew.activeConsent).not.toBeNull();
+    expect(statusSkew.activeConsent?.id).toBe(c2Re);
+    expect(statusSkew.lastEvent?.secuencia).toBe(6);
   });
 
   it('versión 2 de términos requiere aceptación propia explícita, no hereda aceptación de v1 y conserva su historial', async () => {
@@ -2215,5 +2233,201 @@ describe('migraciones 005 y 006, contexto clínico y consentimientos en SQLite',
       ['prof-v5'],
     );
     expect(prof).not.toBeNull();
+  });
+
+  it('ingestClinicalContextBundle rechaza modificar la identidad de registros existentes (paciente o profesional) y revierte el lote completo', async () => {
+    const database = open();
+    await migrateDatabase(database);
+    await seedPatientContextIfEmpty(database, patientA, patientB);
+
+    // Caso 1: Intentar reasignar un medicamento existente de Paciente A (med-a-1) al Paciente B
+    await expect(
+      ingestClinicalContextBundle(database, {
+        medicamentos: [
+          {
+            id: 'med-a-1',
+            pacienteId: patientB,
+            fichaId: 'FICHA-B-202',
+            nombre: 'Ondansetrón 8 mg Reasignado',
+            dosis: '8 mg',
+            frecuencia: 'Cada 8 horas',
+          },
+          {
+            id: 'med-b-nuevo',
+            pacienteId: patientB,
+            fichaId: 'FICHA-B-202',
+            nombre: 'Nuevo Medicamento B',
+            dosis: '10 mg',
+            frecuencia: 'Diario',
+          },
+        ],
+      }),
+    ).rejects.toThrow(ConflictoIdentidadError);
+
+    // Verificar atomicidad y conservación: med-a-1 sigue perteneciendo a Paciente A y med-b-nuevo no se insertó
+    const medA = await database.first<{ paciente_id: string; nombre: string }>(
+      'SELECT paciente_id, nombre FROM medicamento_activo_cache WHERE id = ?',
+      ['med-a-1'],
+    );
+    expect(medA?.paciente_id).toBe(patientA);
+    expect(medA?.nombre).toBe('Ondansetrón 8 mg');
+
+    const medBNuevo = await database.first('SELECT id FROM medicamento_activo_cache WHERE id = ?', [
+      'med-b-nuevo',
+    ]);
+    expect(medBNuevo).toBeNull();
+
+    // Caso 2: Intentar modificar el vínculo vinc-a-1 de Paciente A asociándolo a Paciente B
+    await expect(
+      ingestClinicalContextBundle(database, {
+        vinculos: [
+          {
+            id: 'vinc-a-1',
+            pacienteId: patientB,
+            profesionalId: 'prof-1',
+            estadoConocido: 'activo',
+            fechaVinculacion: '2026-10-01',
+          },
+        ],
+      }),
+    ).rejects.toThrow(ConflictoIdentidadError);
+
+    // Verificar que vinc-a-1 sigue perteneciendo al paciente A
+    const vincA = await database.first<{ paciente_id: string }>(
+      'SELECT paciente_id FROM paciente_clinico_cache WHERE id = ?',
+      ['vinc-a-1'],
+    );
+    expect(vincA?.paciente_id).toBe(patientA);
+  });
+
+  it('ingestClinicalContextBundle conserva estado inactivo al actualizar si se omite estadoActivo, y usa 1 solo para registros nuevos', async () => {
+    const database = open();
+    await migrateDatabase(database);
+    await seedPatientContextIfEmpty(database, patientA, patientB);
+
+    // 1. Marcar medicamento med-a-1 como inactivo
+    await database.run('UPDATE medicamento_activo_cache SET estado_activo = 0 WHERE id = ?', [
+      'med-a-1',
+    ]);
+
+    // 2. Actualizar su dosis omitiendo estadoActivo
+    await ingestClinicalContextBundle(database, {
+      medicamentos: [
+        {
+          id: 'med-a-1',
+          pacienteId: patientA,
+          fichaId: 'FICHA-A-101',
+          nombre: 'Ondansetrón 8 mg',
+          dosis: '16 mg (Ajustada)',
+          frecuencia: 'Cada 12 horas',
+          // estadoActivo se omite
+        },
+        {
+          id: 'med-a-nuevo-omite',
+          pacienteId: patientA,
+          fichaId: 'FICHA-A-101',
+          nombre: 'Fármaco Nuevo',
+          dosis: '5 mg',
+          frecuencia: 'Cada 24 horas',
+          // estadoActivo se omite en registro nuevo
+        },
+      ],
+    });
+
+    // Verificar que med-a-1 actualizó dosis pero conservó estado_activo = 0
+    const medUpdated = await database.first<{ dosis: string; estado_activo: number }>(
+      'SELECT dosis, estado_activo FROM medicamento_activo_cache WHERE id = ?',
+      ['med-a-1'],
+    );
+    expect(medUpdated?.dosis).toBe('16 mg (Ajustada)');
+    expect(medUpdated?.estado_activo).toBe(0);
+
+    // Verificar que el nuevo medicamento recibió 1 como valor predeterminado
+    const medNuevo = await database.first<{ estado_activo: number }>(
+      'SELECT estado_activo FROM medicamento_activo_cache WHERE id = ?',
+      ['med-a-nuevo-omite'],
+    );
+    expect(medNuevo?.estado_activo).toBe(1);
+  });
+
+  it('ingestTermDefinitions valida fechas, normaliza a ISO UTC y grantConsent evalúa vigencia correctamente con husos horarios y offsets', async () => {
+    const database = open();
+    await migrateDatabase(database);
+    await seedPatientContextIfEmpty(database, patientA, patientB);
+
+    // 1. Fecha inválida es rechazada
+    await expect(
+      ingestTermDefinitions(database, {
+        terminos: [
+          {
+            terminoId: 'term-invalido',
+            version: '1.0',
+            titulo: 'Término Inválido',
+            contenidoMarkdown: 'Texto',
+            vigenteDesde: 'fecha-no-valida-32-13',
+          },
+        ],
+      }),
+    ).rejects.toThrow('Fecha inválida');
+
+    // 2. vigenteHasta menor que vigenteDesde es rechazado
+    await expect(
+      ingestTermDefinitions(database, {
+        terminos: [
+          {
+            terminoId: 'term-rango-invalido',
+            version: '1.0',
+            titulo: 'Rango Inválido',
+            contenidoMarkdown: 'Texto',
+            vigenteDesde: '2026-10-10T12:00:00Z',
+            vigenteHasta: '2026-10-09T12:00:00Z',
+          },
+        ],
+      }),
+    ).rejects.toThrow('Vigencia inválida');
+
+    // 3. Normalización con timezone offsets:
+    // vigenteHasta con offset -04:00 (2026-10-08T20:00:00-04:00 equivale exactamente a 2026-10-09T00:00:00.000Z)
+    await ingestTermDefinitions(database, {
+      terminos: [
+        {
+          terminoId: 'term-con-offset',
+          version: '1.0',
+          titulo: 'Términos con Offset Horario',
+          contenidoMarkdown: 'Contenido legal con huso horario',
+          vigenteDesde: '2026-10-01T00:00:00-03:00',
+          vigenteHasta: '2026-10-08T20:00:00-04:00',
+        },
+      ],
+    });
+
+    const termRow = await database.first<{ vigente_desde: string; vigente_hasta: string }>(
+      'SELECT vigente_desde, vigente_hasta FROM definicion_terminos_cache WHERE termino_id = ?',
+      ['term-con-offset'],
+    );
+    expect(termRow?.vigente_desde).toBe('2026-10-01T03:00:00.000Z');
+    expect(termRow?.vigente_hasta).toBe('2026-10-09T00:00:00.000Z');
+
+    // 4. Probar aceptación con reloj:
+    // En T = 2026-10-08T23:55:00.000Z (antes del vencimiento 00:00:00Z): es vigente y se acepta
+    const repoValido = createPatientRepository(
+      database,
+      patientA,
+      ids(),
+      () => '2026-10-08T23:55:00.000Z',
+    );
+    const { consentId } = await repoValido.grantConsent('term-con-offset', '1.0');
+    expect(consentId).toBeDefined();
+
+    // En T = 2026-10-09T00:05:00.000Z (después del vencimiento): ya venció y se rechaza
+    const repoExpirado = createPatientRepository(
+      database,
+      patientB,
+      ids(),
+      () => '2026-10-09T00:05:00.000Z',
+    );
+    await expect(repoExpirado.grantConsent('term-con-offset', '1.0')).rejects.toThrow(
+      'no se encuentra vigente',
+    );
   });
 });

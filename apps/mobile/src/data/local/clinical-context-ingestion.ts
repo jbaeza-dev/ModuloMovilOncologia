@@ -1,4 +1,4 @@
-import type { ClinicalContextBundle } from './clinical-context-types';
+import { ConflictoIdentidadError, type ClinicalContextBundle } from './clinical-context-types';
 import type { SqlConnection } from './sql';
 
 export async function ingestClinicalContextInTransaction(
@@ -11,11 +11,20 @@ export async function ingestClinicalContextInTransaction(
   // 1. Fichas clínicas
   if (bundle.fichas) {
     for (const f of bundle.fichas) {
+      const existing = await tx.first<{ paciente_id: string }>(
+        'SELECT paciente_id FROM ficha_clinica_cache WHERE ficha_id = ?',
+        [f.fichaId],
+      );
+      if (existing && existing.paciente_id !== f.pacienteId) {
+        throw new ConflictoIdentidadError(
+          `Conflicto de identidad: la ficha clínica '${f.fichaId}' ya pertenece a otro paciente.`,
+        );
+      }
+
       await tx.run(
         `INSERT INTO ficha_clinica_cache (ficha_id, paciente_id, obtenido_en)
          VALUES (?, ?, ?)
          ON CONFLICT (ficha_id) DO UPDATE SET
-           paciente_id = excluded.paciente_id,
            obtenido_en = excluded.obtenido_en`,
         [f.fichaId, f.pacienteId, f.obtenidoEn ?? timestamp],
       );
@@ -41,6 +50,30 @@ export async function ingestClinicalContextInTransaction(
   // 3. Vínculos paciente-profesional
   if (bundle.vinculos) {
     for (const v of bundle.vinculos) {
+      const existing = await tx.first<{
+        paciente_id: string;
+        profesional_id: string;
+        estado_conocido: 'activo' | 'inactivo' | 'revocado';
+      }>(
+        'SELECT paciente_id, profesional_id, estado_conocido FROM paciente_clinico_cache WHERE id = ?',
+        [v.id],
+      );
+
+      if (existing) {
+        if (existing.paciente_id !== v.pacienteId || existing.profesional_id !== v.profesionalId) {
+          throw new ConflictoIdentidadError(
+            `Conflicto de identidad: el vínculo '${v.id}' ya existe con paciente o profesional diferente.`,
+          );
+        }
+      }
+
+      const finalEstado =
+        v.estadoConocido !== undefined
+          ? v.estadoConocido
+          : existing
+            ? existing.estado_conocido
+            : 'activo';
+
       await tx.run(
         `INSERT INTO paciente_clinico_cache (
            id, paciente_id, profesional_id, estado_conocido, fecha_vinculacion, codigo_origen, obtenido_en
@@ -54,7 +87,7 @@ export async function ingestClinicalContextInTransaction(
           v.id,
           v.pacienteId,
           v.profesionalId,
-          v.estadoConocido,
+          finalEstado,
           v.fechaVinculacion,
           v.codigoOrigen ?? null,
           v.obtenidoEn ?? timestamp,
@@ -66,15 +99,42 @@ export async function ingestClinicalContextInTransaction(
   // 4. Medicamentos
   if (bundle.medicamentos) {
     for (const m of bundle.medicamentos) {
-      const activeInt =
-        typeof m.estadoActivo === 'boolean' ? (m.estadoActivo ? 1 : 0) : (m.estadoActivo ?? 1);
+      const existing = await tx.first<{
+        paciente_id: string;
+        ficha_id: string | null;
+        estado_activo: number;
+      }>('SELECT paciente_id, ficha_id, estado_activo FROM medicamento_activo_cache WHERE id = ?', [
+        m.id,
+      ]);
+
+      if (existing) {
+        const targetFicha = m.fichaId ?? null;
+        if (
+          existing.paciente_id !== m.pacienteId ||
+          (targetFicha !== null && existing.ficha_id !== targetFicha)
+        ) {
+          throw new ConflictoIdentidadError(
+            `Conflicto de identidad: el medicamento '${m.id}' ya pertenece a otro paciente o ficha.`,
+          );
+        }
+      }
+
+      let activeInt: number;
+      if (m.estadoActivo !== undefined) {
+        activeInt = typeof m.estadoActivo === 'boolean' ? (m.estadoActivo ? 1 : 0) : m.estadoActivo;
+      } else if (existing) {
+        // Conservar estado anterior cuando se omite en una actualización
+        activeInt = existing.estado_activo;
+      } else {
+        // Valor predeterminado únicamente para registros nuevos
+        activeInt = 1;
+      }
+
       await tx.run(
         `INSERT INTO medicamento_activo_cache (
            id, paciente_id, ficha_id, nombre, dosis, frecuencia, fecha_inicio, fecha_fin, estado_activo, obtenido_en
          ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
          ON CONFLICT (id) DO UPDATE SET
-           paciente_id = excluded.paciente_id,
-           ficha_id = excluded.ficha_id,
            nombre = excluded.nombre,
            dosis = excluded.dosis,
            frecuencia = excluded.frecuencia,

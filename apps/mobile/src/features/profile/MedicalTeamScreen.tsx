@@ -59,7 +59,9 @@ export function MedicalTeamScreen() {
             <DetailRow label="Especialidad" value={prof.especialidad} />
             {prof.email ? <DetailRow label="Correo" value={prof.email} /> : null}
             <DetailRow label="Vinculado desde" value={formatDate(prof.fecha_vinculacion)} />
-            <StatusPill>Equipo tratante activo · Información en caché</StatusPill>
+            <StatusPill>
+              Equipo tratante activo · Obtenido el {formatDate(prof.obtenido_en)}
+            </StatusPill>
           </InfoCard>
         ))
       )}
