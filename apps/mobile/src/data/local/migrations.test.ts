@@ -1,0 +1,336 @@
+import { join } from 'node:path';
+import { afterEach, describe, expect, it } from 'vitest';
+
+import { migrateDatabase } from './migrations';
+import { REGISTROS_SQL } from './migrations/001_registros';
+import { CONTEXTO_SQL } from './migrations/002_contexto';
+import { DESCARGAS_SQL } from './migrations/003_descargas';
+import { FORMULARIOS_SQL, FORMULARIOS_VERSION } from './migrations/004_formularios';
+import { CONTEXTO_CLINICO_SQL } from './migrations/005_contexto_clinico';
+import { createPatientRepository, seedPatientContextIfEmpty } from './repository';
+import {
+  createSqliteTestHarness,
+  ids,
+  measured,
+  patientA,
+  patientB,
+  validVitals,
+} from './testing/sqlite-test-harness';
+
+const harness = createSqliteTestHarness();
+const { open } = harness;
+
+afterEach(() => {
+  harness.cleanup();
+});
+
+describe('migraciones SQLite', () => {
+  it('crea la versión actual y conserva filas tras reabrir y repetir la migración', async () => {
+    const directory = harness.createTempDir('quimiocare-sqlite-');
+    const file = join(directory, 'local.db');
+    const first = open(file);
+    await migrateDatabase(first);
+    const repository = createPatientRepository(first, patientA, ids('v1', 'q1'), () => measured);
+    await repository.createVitals(validVitals);
+    harness.closeLastOpened();
+
+    const second = open(file);
+    await migrateDatabase(second);
+    expect(
+      (await second.first<{ user_version: number }>('PRAGMA user_version'))?.user_version,
+    ).toBe(6);
+    expect(
+      (await createPatientRepository(second, patientA, ids()).vitals('2026-01-01', 30, 0)).map(
+        (row) => row.id,
+      ),
+    ).toEqual(['v1']);
+  });
+
+  it('aplica migración incremental 1 -> 2 -> 3 preservando registros previos', async () => {
+    const database = open();
+    // Paso 1: Inicializar en versión 1 e insertar datos clínicos
+    await migrateDatabase(database, [{ version: 1, sql: REGISTROS_SQL }]);
+    expect(
+      (await database.first<{ user_version: number }>('PRAGMA user_version'))?.user_version,
+    ).toBe(1);
+    const repo1 = createPatientRepository(
+      database,
+      patientA,
+      ids('v1', 'q1', 's1', 'q2'),
+      () => measured,
+    );
+    await repo1.createVitals(validVitals);
+    await repo1.createSymptom('Molestia previa');
+
+    // Paso 2: Migrar a versión 2 (contexto de paciente)
+    await migrateDatabase(database, [
+      { version: 1, sql: REGISTROS_SQL },
+      { version: 2, sql: CONTEXTO_SQL },
+    ]);
+    expect(
+      (await database.first<{ user_version: number }>('PRAGMA user_version'))?.user_version,
+    ).toBe(2);
+
+    await seedPatientContextIfEmpty(database, patientA, patientB);
+    const profileA = await repo1.profile();
+    expect(profileA?.nombre).toBe('Paciente A de Prueba');
+
+    // Paso 3: Migrar a versión 3 (descargas y recursos educativos)
+    await migrateDatabase(database, [
+      { version: 1, sql: REGISTROS_SQL },
+      { version: 2, sql: CONTEXTO_SQL },
+      { version: 3, sql: DESCARGAS_SQL },
+    ]);
+    expect(
+      (await database.first<{ user_version: number }>('PRAGMA user_version'))?.user_version,
+    ).toBe(3);
+
+    // Comprobar que registros previos de v1 y v2 se conservan íntegros
+    const repo3 = createPatientRepository(database, patientA, ids());
+    const vitalsList = await repo3.vitals('2026-01-01');
+    expect(vitalsList).toHaveLength(1);
+    expect(vitalsList[0].id).toBe('v1');
+    expect(vitalsList[0].estado_envio).toBe('pendiente');
+
+    const symptomsList = await repo3.symptoms();
+    expect(symptomsList).toHaveLength(1);
+    expect(symptomsList[0].descripcion).toBe('Molestia previa');
+    expect(symptomsList[0].estado_envio).toBe('pendiente');
+
+    expect((await repo3.profile())?.nombre).toBe('Paciente A de Prueba');
+
+    expect(
+      await database.first("SELECT name FROM sqlite_master WHERE name = 'paciente_cache'"),
+    ).not.toBeNull();
+    expect(
+      await database.first("SELECT name FROM sqlite_master WHERE name = 'tratamiento_cache'"),
+    ).not.toBeNull();
+    expect(
+      await database.first(
+        "SELECT name FROM sqlite_master WHERE name = 'codigo_vinculacion_cache'",
+      ),
+    ).not.toBeNull();
+    expect(
+      await database.first("SELECT name FROM sqlite_master WHERE name = 'descarga'"),
+    ).not.toBeNull();
+  });
+
+  it('revierte una migración fallida sin perder la versión anterior', async () => {
+    const database = open();
+    await migrateDatabase(database, [
+      { version: 1, sql: REGISTROS_SQL },
+      { version: 2, sql: CONTEXTO_SQL },
+    ]);
+    await createPatientRepository(database, patientA, ids('v1', 'q1'), () => measured).createVitals(
+      validVitals,
+    );
+    await expect(
+      migrateDatabase(database, [
+        { version: 1, sql: REGISTROS_SQL },
+        { version: 2, sql: CONTEXTO_SQL },
+        {
+          version: 3,
+          sql: 'CREATE TABLE temporal (id TEXT); INSERT INTO inexistente VALUES (1);',
+        },
+      ]),
+    ).rejects.toThrow();
+    expect(
+      (await database.first<{ user_version: number }>('PRAGMA user_version'))?.user_version,
+    ).toBe(2);
+    expect(
+      await database.first("SELECT name FROM sqlite_master WHERE name = 'temporal'"),
+    ).toBeNull();
+    expect((await createPatientRepository(database, patientA, ids()).latestVital())?.id).toBe('v1');
+  });
+
+  it('rechaza una versión de base posterior sin modificarla', async () => {
+    const database = open();
+    await database.exec('PRAGMA user_version = 9');
+    await expect(migrateDatabase(database)).rejects.toThrow('versión más reciente');
+    expect(
+      (await database.first<{ user_version: number }>('PRAGMA user_version'))?.user_version,
+    ).toBe(9);
+  });
+
+  it('migra de versión 3 a 4 preservando registros previos de cola_envio y ampliando CHECK para nuevos tipos', async () => {
+    const database = open();
+    // Migrar hasta versión 3
+    await migrateDatabase(database, [
+      { version: 1, sql: REGISTROS_SQL },
+      { version: 2, sql: CONTEXTO_SQL },
+      { version: 3, sql: DESCARGAS_SQL },
+    ]);
+    expect(
+      (await database.first<{ user_version: number }>('PRAGMA user_version'))?.user_version,
+    ).toBe(3);
+
+    // Insertar registros en cola_envio previa
+    const prevQueuePayload = JSON.stringify({ schemaVersion: 1, entity: 'signos_vitales' });
+    await database.run(
+      `INSERT INTO cola_envio (
+        id, paciente_id, tipo_entidad, registro_id, payload_json, estado, intentos, creado_en, actualizado_en
+      ) VALUES (?, ?, 'signos_vitales', ?, ?, 'pendiente', 2, ?, ?)`,
+      ['q-prev-1', patientA, 'vital-prev-1', prevQueuePayload, measured, measured],
+    );
+
+    // Aplicar migración 004
+    await migrateDatabase(database, [
+      { version: 1, sql: REGISTROS_SQL },
+      { version: 2, sql: CONTEXTO_SQL },
+      { version: 3, sql: DESCARGAS_SQL },
+      { version: FORMULARIOS_VERSION, sql: FORMULARIOS_SQL },
+    ]);
+    expect(
+      (await database.first<{ user_version: number }>('PRAGMA user_version'))?.user_version,
+    ).toBe(4);
+
+    // Verificar que el registro previo se conservó íntegramente
+    const prev = await database.first<{
+      id: string;
+      tipo_entidad: string;
+      intentos: number;
+    }>('SELECT * FROM cola_envio WHERE id = ?', ['q-prev-1']);
+    expect(prev).toBeTruthy();
+    expect(prev?.tipo_entidad).toBe('signos_vitales');
+    expect(prev?.intentos).toBe(2);
+
+    // Verificar que ahora se admiten los nuevos tipos de entidad
+    await database.run(
+      `INSERT INTO cola_envio (
+        id, paciente_id, tipo_entidad, registro_id, payload_json, estado, creado_en, actualizado_en
+      ) VALUES (?, ?, 'respuesta_formulario', ?, ?, 'pendiente', ?, ?)`,
+      ['q-form-1', patientA, 'sub-1', '{}', measured, measured],
+    );
+
+    await database.run(
+      `INSERT INTO cola_envio (
+        id, paciente_id, tipo_entidad, registro_id, payload_json, estado, creado_en, actualizado_en
+      ) VALUES (?, ?, 'evento_consentimiento', ?, ?, 'pendiente', ?, ?)`,
+      ['q-cons-1', patientA, 'evt-1', '{}', measured, measured],
+    );
+
+    // Verificar que un tipo desconocido sigue siendo rechazado por el CHECK
+    await expect(
+      database.run(
+        `INSERT INTO cola_envio (
+          id, paciente_id, tipo_entidad, registro_id, payload_json, estado, creado_en, actualizado_en
+        ) VALUES (?, ?, 'tipo_invalido', ?, ?, 'pendiente', ?, ?)`,
+        ['q-inv-1', patientA, 'inv-1', '{}', measured, measured],
+      ),
+    ).rejects.toThrow();
+  });
+
+  it('hace rollback completo de la migración si ocurre un fallo a mitad de camino', async () => {
+    const database = open();
+    await migrateDatabase(database, [
+      { version: 1, sql: REGISTROS_SQL },
+      { version: 2, sql: CONTEXTO_SQL },
+      { version: 3, sql: DESCARGAS_SQL },
+    ]);
+    expect(
+      (await database.first<{ user_version: number }>('PRAGMA user_version'))?.user_version,
+    ).toBe(3);
+
+    const failingMigration = {
+      version: 4,
+      sql: 'CREATE TABLE dummy (id INT); SELECT * FROM tabla_inexistente_que_falla;',
+    };
+
+    await expect(
+      migrateDatabase(database, [
+        { version: 1, sql: REGISTROS_SQL },
+        { version: 2, sql: CONTEXTO_SQL },
+        { version: 3, sql: DESCARGAS_SQL },
+        failingMigration,
+      ]),
+    ).rejects.toThrow();
+
+    // Comprobar que user_version sigue siendo 3 y que la tabla dummy no quedó creada
+    expect(
+      (await database.first<{ user_version: number }>('PRAGMA user_version'))?.user_version,
+    ).toBe(3);
+    const dummy = await database.first("SELECT name FROM sqlite_master WHERE name = 'dummy'");
+    expect(dummy).toBeNull();
+  });
+
+  it('migraciones 005 y 006 se aplican sobre una base v4 existente conservando datos previos y alcanzando user_version = 6', async () => {
+    const database = open();
+    // 1. Migrar hasta v4
+    await migrateDatabase(database, [
+      { version: 1, sql: REGISTROS_SQL },
+      { version: 2, sql: CONTEXTO_SQL },
+      { version: 3, sql: DESCARGAS_SQL },
+      { version: 4, sql: FORMULARIOS_SQL },
+    ]);
+    const v4 = await database.first<{ user_version: number }>('PRAGMA user_version');
+    expect(v4?.user_version).toBe(4);
+
+    // Insertar registros en v4: signos vitales y cola_envio
+    await database.run(
+      `INSERT INTO signos_vitales (id, paciente_id, fecha_registro, temperatura, presion_sistolica, presion_diastolica, pulso, saturacion_o2, creado_localmente_en)
+       VALUES ('v-prev-1', ?, '2026-10-01T10:00:00Z', 36.5, 120, 80, 70, 98, '2026-10-01T10:00:00Z')`,
+      [patientA],
+    );
+    await database.run(
+      `INSERT INTO cola_envio (id, paciente_id, tipo_entidad, registro_id, payload_json, estado, creado_en, actualizado_en)
+       VALUES ('q-prev-1', ?, 'signos_vitales', 'v-prev-1', '{"test":true}', 'pendiente', '2026-10-01T10:00:00Z', '2026-10-01T10:00:00Z')`,
+      [patientA],
+    );
+
+    // 2. Aplicar todas las migraciones (hasta v6)
+    await migrateDatabase(database);
+    const v6 = await database.first<{ user_version: number }>('PRAGMA user_version');
+    expect(v6?.user_version).toBe(6);
+
+    // Verificar que los datos previos se conservaron intactos
+    const vital = await database.first<{ id: string }>(
+      'SELECT * FROM signos_vitales WHERE id = ?',
+      ['v-prev-1'],
+    );
+    expect(vital).not.toBeNull();
+    const queue = await database.first<{ id: string }>('SELECT * FROM cola_envio WHERE id = ?', [
+      'q-prev-1',
+    ]);
+    expect(queue).not.toBeNull();
+  });
+
+  it('rollback de migración 006 conserva versión 5 y sus datos de contexto intactos', async () => {
+    const database = open();
+    // Migrar hasta v5
+    await migrateDatabase(database, [
+      { version: 1, sql: REGISTROS_SQL },
+      { version: 2, sql: CONTEXTO_SQL },
+      { version: 3, sql: DESCARGAS_SQL },
+      { version: 4, sql: FORMULARIOS_SQL },
+      { version: 5, sql: CONTEXTO_CLINICO_SQL },
+    ]);
+
+    // Insertar un dato en v5
+    await database.run(
+      "INSERT INTO profesional_medico_cache (id, nombre, especialidad, email, obtenido_en) VALUES ('prof-v5', 'Dra. Prueba V5', 'Oncología', NULL, '2026-10-01T00:00:00Z')",
+    );
+
+    // Intentar migrar con una v6 fallida
+    const failingV6Sql = 'CREATE TABLE definicion_terminos_cache (id TEXT); SYNTAX ERROR HERE;';
+    await expect(
+      migrateDatabase(database, [
+        { version: 1, sql: REGISTROS_SQL },
+        { version: 2, sql: CONTEXTO_SQL },
+        { version: 3, sql: DESCARGAS_SQL },
+        { version: 4, sql: FORMULARIOS_SQL },
+        { version: 5, sql: CONTEXTO_CLINICO_SQL },
+        { version: 6, sql: failingV6Sql },
+      ]),
+    ).rejects.toThrow();
+
+    // Comprobar que user_version sigue siendo 5 y el dato de v5 sigue existiendo
+    const ver = await database.first<{ user_version: number }>('PRAGMA user_version');
+    expect(ver?.user_version).toBe(5);
+
+    const prof = await database.first<{ id: string }>(
+      'SELECT * FROM profesional_medico_cache WHERE id = ?',
+      ['prof-v5'],
+    );
+    expect(prof).not.toBeNull();
+  });
+});
