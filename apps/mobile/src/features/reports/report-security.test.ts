@@ -4,13 +4,20 @@ import {
   assertSafeReportFileName,
   clearPendingReportCleanups,
   deletePatientReport,
+  flushPendingReportCleanups,
   getPatientReportDirectory,
   getPatientReportList,
   getPendingReportCleanups,
   listPatientReports,
+  parseFormatFromReportFilename,
   parsePeriodFromReportFilename,
   parseTimestampFromReportFilename,
+  persistReportFile,
   persistReportPdf,
+  persistReportXlsx,
+  registerPendingReportCleanup,
+  withPatientReportLock,
+  type BinaryReportStorageAdapter,
 } from '../../data/local/files/report-storage';
 import { buildReportHtml, escapeHtml } from './report-template';
 
@@ -86,23 +93,28 @@ describe('seguridad y sanitización de reportes locales', () => {
   });
 });
 
-describe('validación de nombres de archivo de reporte', () => {
-  it('acepta nombres válidos según el patrón exacto reporte_{dias}d_{timestamp}.pdf', () => {
+describe('validación de nombres de archivo y formatos de reporte', () => {
+  it('acepta nombres válidos para PDF y XLSX según el patrón exacto reporte_{dias}d_{timestamp}.(pdf|xlsx)', () => {
     expect(() => assertSafeReportFileName('reporte_30d_1791157123508.pdf')).not.toThrow();
+    expect(() => assertSafeReportFileName('reporte_30d_1791157123508.xlsx')).not.toThrow();
     expect(() => assertSafeReportFileName('reporte_7d_1000000000.pdf')).not.toThrow();
+    expect(() => assertSafeReportFileName('reporte_7d_1000000000.xlsx')).not.toThrow();
     expect(() => assertSafeReportFileName('reporte_90d_1.pdf')).not.toThrow();
+    expect(() => assertSafeReportFileName('reporte_90d_1.xlsx')).not.toThrow();
   });
 
   it('rechaza nombres inválidos, extensiones incorrectas y tentativas de path traversal', () => {
     const invalidNames = [
       '../reporte_30d_123.pdf',
-      '..\\reporte_30d_123.pdf',
+      '..\\reporte_30d_123.xlsx',
       'reporte_30d_123.pdf.exe',
       'reporte_30_123.pdf',
-      'reporte_d_123.pdf',
+      'reporte_d_123.xlsx',
       'reporte_30d_abc.pdf',
+      'reporte_30d_abc.xlsx',
       'otro_archivo.pdf',
       'reporte_30d_123.html',
+      'reporte_30d_123.csv',
       '',
     ];
 
@@ -110,25 +122,33 @@ describe('validación de nombres de archivo de reporte', () => {
       expect(() => assertSafeReportFileName(name)).toThrow();
     }
   });
-});
 
-describe('extracción de fecha de generación a partir del nombre del archivo', () => {
-  it('obtiene la fecha ISO correcta para nombres con timestamp válido', () => {
+  it('extrae correctamente el formato de archivo desde el nombre', () => {
+    expect(parseFormatFromReportFilename('reporte_7d_1728256000000.pdf')).toBe('pdf');
+    expect(parseFormatFromReportFilename('reporte_30d_1728256000000.xlsx')).toBe('xlsx');
+    expect(parseFormatFromReportFilename('archivo_invalido.pdf')).toBeNull();
+  });
+
+  it('extrae correctamente el número de días del período desde el nombre del archivo', () => {
+    expect(parsePeriodFromReportFilename('reporte_7d_1728256000000.pdf')).toBe(7);
+    expect(parsePeriodFromReportFilename('reporte_30d_1728256000000.xlsx')).toBe(30);
+    expect(parsePeriodFromReportFilename('reporte_90d_1728256000000.pdf')).toBe(90);
+    expect(parsePeriodFromReportFilename('archivo_invalido.xlsx')).toBeNull();
+    expect(parsePeriodFromReportFilename('')).toBeNull();
+  });
+
+  it('obtiene la fecha ISO correcta para nombres con timestamp válido en ambos formatos', () => {
     const timestampMs = 1791157123508;
     const expectedDate = new Date(timestampMs).toISOString();
 
-    const parsed = parseTimestampFromReportFilename(`reporte_30d_${timestampMs}.pdf`);
-    expect(parsed).toBe(expectedDate);
-  });
-
-  it('retorna null para formatos o valores numéricos no conformes', () => {
+    expect(parseTimestampFromReportFilename(`reporte_30d_${timestampMs}.pdf`)).toBe(expectedDate);
+    expect(parseTimestampFromReportFilename(`reporte_30d_${timestampMs}.xlsx`)).toBe(expectedDate);
     expect(parseTimestampFromReportFilename('archivo_invalido.pdf')).toBeNull();
-    expect(parseTimestampFromReportFilename('reporte_30d_invalido.pdf')).toBeNull();
-    expect(parseTimestampFromReportFilename('')).toBeNull();
+    expect(parseTimestampFromReportFilename('reporte_30d_invalido.xlsx')).toBeNull();
   });
 });
 
-describe('aislamiento de directorios de reportes por paciente', () => {
+describe('aislamiento de directorios y listado de reportes por paciente', () => {
   it('construye rutas estrictamente particionadas por ID de paciente', () => {
     const dirA = getPatientReportDirectory(patientA);
     const dirB = getPatientReportDirectory(patientB);
@@ -152,78 +172,221 @@ describe('aislamiento de directorios de reportes por paciente', () => {
     }
   });
 
-  it('aísla el listado de reportes locales entre pacientes', () => {
-    // Para pacientes sin archivos, el listado retorna arreglo vacío de forma segura
-    const reportsA = listPatientReports(patientA);
-    const reportsB = listPatientReports(patientB);
+  it('aísla el listado de reportes locales entre pacientes', async () => {
+    const reportsA = await listPatientReports(patientA);
+    const reportsB = await listPatientReports(patientB);
 
     expect(Array.isArray(reportsA)).toBe(true);
     expect(Array.isArray(reportsB)).toBe(true);
   });
 });
 
-describe('gestión de reportes guardados, listado con metadatos y eliminación', () => {
-  it('extrae correctamente el número de días del período desde el nombre del archivo', () => {
-    expect(parsePeriodFromReportFilename('reporte_7d_1728256000000.pdf')).toBe(7);
-    expect(parsePeriodFromReportFilename('reporte_30d_1728256000000.pdf')).toBe(30);
-    expect(parsePeriodFromReportFilename('reporte_90d_1728256000000.pdf')).toBe(90);
-    expect(parsePeriodFromReportFilename('archivo_invalido.pdf')).toBeNull();
-    expect(parsePeriodFromReportFilename('')).toBeNull();
+describe('exclusión mutua, concurrencia y coordinación de almacenamiento', () => {
+  it('exclusión mutua real: dos guardados concurrentes se ejecutan secuencialmente con escritura pausada', async () => {
+    let operation1InProgress = false;
+    let operation2StartedWhile1Running = false;
+    let releaseOp1: () => void = () => {};
+    const op1PausedPromise = new Promise<void>((resolve) => {
+      releaseOp1 = resolve;
+    });
+
+    const executionOrder: string[] = [];
+
+    let isFirstWrite = true;
+
+    const customAdapter: BinaryReportStorageAdapter = {
+      async writeBytes(fileUri: string, bytes: Uint8Array): Promise<void> {
+        if (isFirstWrite) {
+          isFirstWrite = false;
+          operation1InProgress = true;
+          executionOrder.push('op1_write_started');
+          await op1PausedPromise;
+          executionOrder.push('op1_write_finished');
+          operation1InProgress = false;
+        } else {
+          if (operation1InProgress) {
+            operation2StartedWhile1Running = true;
+          }
+          executionOrder.push('op2_write');
+        }
+        const { File } = await import('expo-file-system');
+        const file = new File(fileUri);
+        await file.write(bytes);
+      },
+      async copyFile(sourceUri: string, targetUri: string): Promise<void> {
+        const { File } = await import('expo-file-system');
+        const s = new File(sourceUri);
+        const t = new File(targetUri);
+        await s.copy(t);
+      },
+      async moveFile(sourceUri: string, targetUri: string): Promise<void> {
+        const { File } = await import('expo-file-system');
+        const s = new File(sourceUri);
+        const t = new File(targetUri);
+        await s.move(t);
+      },
+      async deleteFile(fileUri: string): Promise<void> {
+        const { File } = await import('expo-file-system');
+        const f = new File(fileUri);
+        if (f.exists) await f.delete();
+      },
+      async fileExists(fileUri: string): Promise<boolean> {
+        const { File } = await import('expo-file-system');
+        return new File(fileUri).exists;
+      },
+      async directoryExists(dirUri: string): Promise<boolean> {
+        const { Directory } = await import('expo-file-system');
+        return new Directory(dirUri).exists;
+      },
+      async getFileSize(fileUri: string): Promise<number | null> {
+        const { File } = await import('expo-file-system');
+        const f = new File(fileUri);
+        return f.exists ? f.size : null;
+      },
+      async ensureDirectory(dirUri: string): Promise<void> {
+        const { Directory } = await import('expo-file-system');
+        new Directory(dirUri).create({ intermediates: true, idempotent: true });
+      },
+      async listDirectory(dirUri: string) {
+        const { Directory, File, Paths } = await import('expo-file-system');
+        const dir = new Directory(dirUri);
+        if (!dir.exists) return [];
+        return dir.list().map((e) => ({
+          uri: e.uri,
+          name: e.name ?? Paths.basename(e.uri),
+          isFile: e instanceof File,
+          size: e instanceof File ? e.size : null,
+        }));
+      },
+    };
+
+    // Iniciar OP1
+    const op1Promise = persistReportFile(
+      patientA,
+      { type: 'bytes', bytes: new Uint8Array([1, 2, 3]) },
+      7,
+      'xlsx',
+      customAdapter,
+    );
+
+    // Pequeño retardo de microtareas para asegurar que op1 adquirió el lock primero
+    await new Promise((r) => setTimeout(r, 15));
+
+    // Iniciar OP2 simultáneamente sobre el MISMO paciente
+    const op2Promise = persistReportFile(
+      patientA,
+      { type: 'bytes', bytes: new Uint8Array([4, 5, 6, 7]) },
+      30,
+      'xlsx',
+      customAdapter,
+    );
+
+    // Esperar un intervalo mientras op1 continúa pausado
+    await new Promise((r) => setTimeout(r, 30));
+    expect(operation1InProgress).toBe(true);
+    expect(operation2StartedWhile1Running).toBe(false);
+
+    // Liberar op1
+    releaseOp1();
+
+    const [res1, res2] = await Promise.all([op1Promise, op2Promise]);
+
+    expect(operation2StartedWhile1Running).toBe(false);
+    expect(executionOrder).toEqual(['op1_write_started', 'op1_write_finished', 'op2_write']);
+    expect(res1.filename).toContain('reporte_7d_');
+    expect(res2.filename).toContain('reporte_30d_');
+
+    await deletePatientReport(patientA, res1.filename);
+    await deletePatientReport(patientA, res2.filename);
   });
 
-  it('lista reportes con metadatos, reemplaza duplicados del mismo período y permite eliminación', async () => {
+  it('con reloj fijo, dos guardados sucesivos generan nombres exclusivos sin colisión', async () => {
+    const fixedTime = 1728256000000;
+    vi.useFakeTimers();
+    vi.setSystemTime(fixedTime);
+    try {
+      const bytes1 = new Uint8Array([10, 20]);
+      const bytes2 = new Uint8Array([30, 40]);
+
+      const res1 = await persistReportXlsx(patientA, bytes1, 7);
+      const res2 = await persistReportXlsx(patientA, bytes2, 7);
+
+      expect(res1.filename).toBe(`reporte_7d_${fixedTime}.xlsx`);
+      expect(res2.filename).toBe(`reporte_7d_${fixedTime + 1}.xlsx`);
+      expect(res1.filename).not.toBe(res2.filename);
+
+      const list = await getPatientReportList(patientA);
+      // El segundo reemplazó al primero por coincidir en paciente, período y formato
+      expect(list.filter((r) => r.periodDays === 7 && r.format === 'xlsx')).toHaveLength(1);
+      expect(list.some((r) => r.filename === res2.filename)).toBe(true);
+
+      await deletePatientReport(patientA, res2.filename);
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it('coordinación de limpiezas: flushPendingReportCleanups respeta el bloqueo y no causa deadlock reentrante', async () => {
+    clearPendingReportCleanups();
+    const fakeUri = `${getPatientReportDirectory(patientA).uri}/reporte_30d_9999.pdf`;
+    registerPendingReportCleanup(fakeUri, patientA);
+
+    expect(getPendingReportCleanups()).toContain(fakeUri);
+
+    // Ejecutar flush dentro de withPatientReportLock para el mismo paciente sin deadlock
+    const cleanedInside = await withPatientReportLock(patientA, async () => {
+      return await flushPendingReportCleanups(undefined, patientA);
+    });
+    expect(typeof cleanedInside).toBe('number');
+
+    // Ejecutar flush standalone: respeta bloqueo de paciente sin deadlock
+    const cleanedStandalone = await flushPendingReportCleanups();
+    expect(typeof cleanedStandalone).toBe('number');
+    clearPendingReportCleanups();
+  });
+});
+
+describe('gestión de reportes guardados, verificación y tolerancia a fallos', () => {
+  it('el reemplazo de reportes está acotado por paciente, período Y formato (PDF y XLSX coexisten)', async () => {
     const { File, Paths } = await import('expo-file-system');
 
-    // 1. Crear archivo temporal simulado para persistir
-    const tempFile1 = new File(Paths.cache, 'temp_test_1.pdf');
-    await tempFile1.write('Contenido PDF de prueba 1');
+    // 1. Guardar PDF de 30d para Paciente A
+    const tempPdf1 = new File(Paths.cache, 'temp_scope_1.pdf');
+    await tempPdf1.write('PDF 30d versión 1');
+    const { filename: pdf30_v1 } = await persistReportPdf(patientA, tempPdf1.uri, 30);
 
-    // 2. Persistir primer reporte de 30 días para Paciente A
-    const { filename: filename1 } = await persistReportPdf(patientA, tempFile1.uri, 30);
-    expect(filename1).toContain('reporte_30d_');
+    // 2. Guardar XLSX de 30d para Paciente A
+    const xlsxBytes1 = new Uint8Array([1, 2, 3]);
+    const { filename: xlsx30_v1 } = await persistReportXlsx(patientA, xlsxBytes1, 30);
 
-    const initialList = getPatientReportList(patientA);
-    expect(initialList.length).toBeGreaterThanOrEqual(1);
-    expect(initialList.some((r) => r.filename === filename1)).toBe(true);
-    const found1 = initialList.find((r) => r.filename === filename1);
-    expect(found1?.periodDays).toBe(30);
-    expect(found1?.generatedAt).not.toBeNull();
+    // Ambos deben coexistir en la lista de Paciente A
+    let list = await getPatientReportList(patientA);
+    expect(list.some((r) => r.filename === pdf30_v1 && r.format === 'pdf')).toBe(true);
+    expect(list.some((r) => r.filename === xlsx30_v1 && r.format === 'xlsx')).toBe(true);
 
-    // 3. Crear y persistir segundo reporte para el MISMO período (30 días): debe reemplazar el anterior
-    const tempFile2 = new File(Paths.cache, 'temp_test_2.pdf');
-    await tempFile2.write('Contenido PDF de prueba 2 actualizado');
-    const { filename: filename2 } = await persistReportPdf(patientA, tempFile2.uri, 30);
+    // 3. Guardar XLSX de 30d NUEVO para Paciente A: debe reemplazar solo el XLSX de 30d, NO el PDF
+    const xlsxBytes2 = new Uint8Array([4, 5, 6, 7]);
+    const { filename: xlsx30_v2 } = await persistReportXlsx(patientA, xlsxBytes2, 30);
 
-    const afterDeduplication = getPatientReportList(patientA);
-    const reports30d = afterDeduplication.filter((r) => r.periodDays === 30);
-    // Solo debe quedar 1 reporte de 30 días para evitar acumulación de duplicados
-    expect(reports30d).toHaveLength(1);
-    expect(reports30d[0].filename).toBe(filename2);
+    list = await getPatientReportList(patientA);
+    expect(list.some((r) => r.filename === pdf30_v1)).toBe(true); // PDF preservado
+    expect(list.some((r) => r.filename === xlsx30_v1)).toBe(false); // XLSX v1 eliminado
+    expect(list.some((r) => r.filename === xlsx30_v2)).toBe(true); // XLSX v2 activo
 
-    // 4. Persistir un reporte de diferente período (7 días): se conserva independientemente
-    const tempFile3 = new File(Paths.cache, 'temp_test_3.pdf');
-    await tempFile3.write('Contenido PDF de prueba 7 días');
-    const { filename: filename7d } = await persistReportPdf(patientA, tempFile3.uri, 7);
+    // 4. Aislamiento por paciente: Paciente B no ve los reportes de Paciente A
+    const listB = await getPatientReportList(patientB);
+    expect(listB.some((r) => r.filename === pdf30_v1)).toBe(false);
+    expect(listB.some((r) => r.filename === xlsx30_v2)).toBe(false);
 
-    const withBoth = getPatientReportList(patientA);
-    expect(withBoth.some((r) => r.filename === filename2)).toBe(true);
-    expect(withBoth.some((r) => r.filename === filename7d)).toBe(true);
-
-    // 5. Aislamiento por paciente: Paciente B no ve los reportes de Paciente A
-    const listB = getPatientReportList(patientB);
-    expect(listB.some((r) => r.filename === filename2)).toBe(false);
-    expect(listB.some((r) => r.filename === filename7d)).toBe(false);
-
-    // 6. Eliminar reporte individualmente
-    const deleted = await deletePatientReport(patientA, filename2);
+    // 5. Eliminar reporte individualmente
+    const deleted = await deletePatientReport(patientA, pdf30_v1);
     expect(deleted).toBe(true);
 
-    const finalList = getPatientReportList(patientA);
-    expect(finalList.some((r) => r.filename === filename2)).toBe(false);
-    expect(finalList.some((r) => r.filename === filename7d)).toBe(true);
+    const finalList = await getPatientReportList(patientA);
+    expect(finalList.some((r) => r.filename === pdf30_v1)).toBe(false);
+    expect(finalList.some((r) => r.filename === xlsx30_v2)).toBe(true);
 
-    // Limpieza final del reporte de 7d
-    await deletePatientReport(patientA, filename7d);
+    await deletePatientReport(patientA, xlsx30_v2);
   });
 
   it('falla de forma segura al intentar eliminar un reporte inexistente o inválido', async () => {
@@ -233,129 +396,149 @@ describe('gestión de reportes guardados, listado con metadatos y eliminación',
     await expect(() => deletePatientReport(patientA, '../inyeccion.pdf')).rejects.toThrow();
   });
 
-  it('conserva el reporte PDF anterior intacto si falla la copia del nuevo reporte', async () => {
-    const { File, Paths } = await import('expo-file-system');
+  it('falla y limpia el temporal si el tamaño del archivo temporal no coincide con los bytes generados', async () => {
+    const { Directory, File, Paths } = await import('expo-file-system');
 
-    // 1. Guardar reporte inicial de 30 días para Paciente A
-    const tempFile1 = new File(Paths.cache, 'temp_test_preserve_1.pdf');
-    await tempFile1.write('Contenido inicial válido');
-    const { filename: initialFilename } = await persistReportPdf(patientA, tempFile1.uri, 30);
+    const corruptAdapter: BinaryReportStorageAdapter = {
+      async writeBytes(uri, b) {
+        await new File(uri).write(b);
+      },
+      async copyFile(s, t) {
+        await new File(s).copy(new File(t));
+      },
+      async moveFile(s, t) {
+        await new File(s).move(new File(t));
+      },
+      async deleteFile(uri) {
+        const f = new File(uri);
+        if (f.exists) await f.delete();
+      },
+      async fileExists(uri) {
+        return new File(uri).exists;
+      },
+      async directoryExists(dir) {
+        return new Directory(dir).exists;
+      },
+      async getFileSize() {
+        return 999999; // Tamaño corrupto deliberado
+      },
+      async ensureDirectory(dir) {
+        new Directory(dir).create({ intermediates: true, idempotent: true });
+      },
+      async listDirectory(dir) {
+        const d = new Directory(dir);
+        if (!d.exists) return [];
+        return d.list().map((e) => ({
+          uri: e.uri,
+          name: e.name ?? Paths.basename(e.uri),
+          isFile: e instanceof File,
+          size: e instanceof File ? e.size : null,
+        }));
+      },
+    };
 
-    const initialList = getPatientReportList(patientA);
-    expect(initialList.some((r) => r.filename === initialFilename)).toBe(true);
-
-    // 2. Intentar guardar un segundo reporte cuyo copy falla simulando error de disco/I/O
-    const tempFile2 = new File(Paths.cache, 'temp_test_preserve_2.pdf');
-    await tempFile2.write('Contenido nuevo que fallará al copiarse');
-
-    const copySpy = vi
-      .spyOn(File.prototype, 'copy')
-      .mockRejectedValueOnce(new Error('Simulación de fallo de I/O al copiar PDF'));
-
-    await expect(persistReportPdf(patientA, tempFile2.uri, 30)).rejects.toThrow(
-      'Simulación de fallo de I/O al copiar PDF',
+    const bytes = new Uint8Array([1, 2, 3]);
+    await expect(persistReportXlsx(patientA, bytes, 7, corruptAdapter)).rejects.toThrow(
+      /Fallo de verificación: tamaño de archivo temporal/,
     );
-    copySpy.mockRestore();
-
-    // 3. Comprobar que el reporte anterior se conservó intacto en el almacenamiento local
-    const afterFailedCopyList = getPatientReportList(patientA);
-    expect(afterFailedCopyList.some((r) => r.filename === initialFilename)).toBe(true);
-
-    const originalFile = new File(getPatientReportDirectory(patientA), initialFilename);
-    expect(originalFile.exists).toBe(true);
-    expect(await originalFile.text()).toBe('Contenido inicial válido');
-
-    // Limpieza
-    await deletePatientReport(patientA, initialFilename);
   });
 
-  it('conserva ambos archivos y registra la limpieza pendiente si falla la eliminación posterior del anterior', async () => {
-    const { File, Paths } = await import('expo-file-system');
-    clearPendingReportCleanups();
+  it('si falla la verificación post-publicación, elimina el destino publicado y conserva el anterior', async () => {
+    const { Directory, File, Paths } = await import('expo-file-system');
 
-    // 1. Guardar reporte inicial de 90 días para Paciente A
-    const tempFile1 = new File(Paths.cache, 'temp_test_cleanup_fail_1.pdf');
-    await tempFile1.write('Contenido previo 90d');
-    const { filename: oldFilename } = await persistReportPdf(patientA, tempFile1.uri, 90);
+    // 1. Crear y persistir reporte previo válido
+    const prevBytes = new Uint8Array([1, 2, 3, 4]);
+    const { filename: prevFilename } = await persistReportXlsx(patientA, prevBytes, 30);
 
-    const oldFile = new File(getPatientReportDirectory(patientA), oldFilename);
-    expect(oldFile.exists).toBe(true);
+    const prevFile = new File(getPatientReportDirectory(patientA), prevFilename);
+    expect(prevFile.exists).toBe(true);
 
-    // 2. Simular fallo de delete solo cuando se intente eliminar el archivo viejo
-    const originalDelete = File.prototype.delete;
-    const deleteSpy = vi.spyOn(File.prototype, 'delete').mockImplementation(async function (this: {
-      uri?: string;
-    }) {
-      if (this.uri === oldFile.uri) {
-        throw new Error('Fallo de permiso o bloqueo simulado al eliminar archivo anterior');
-      }
-      return originalDelete.call(this);
-    });
+    // 2. Simular adaptador donde getFileSize post-publicación reporta 0
+    let moveCount = 0;
+    const flakeAdapter: BinaryReportStorageAdapter = {
+      async writeBytes(uri, b) {
+        await new File(uri).write(b);
+      },
+      async copyFile(s, t) {
+        await new File(s).copy(new File(t));
+      },
+      async moveFile(s, t) {
+        moveCount++;
+        await new File(s).move(new File(t));
+      },
+      async deleteFile(uri) {
+        const f = new File(uri);
+        if (f.exists) await f.delete();
+      },
+      async fileExists(uri) {
+        return new File(uri).exists;
+      },
+      async directoryExists(dir) {
+        return new Directory(dir).exists;
+      },
+      async getFileSize(uri) {
+        if (moveCount > 0 && !uri.includes('.tmp')) {
+          return 0; // Post-publicación inválida
+        }
+        return new File(uri).size;
+      },
+      async ensureDirectory(dir) {
+        new Directory(dir).create({ intermediates: true, idempotent: true });
+      },
+      async listDirectory(dir) {
+        const d = new Directory(dir);
+        if (!d.exists) return [];
+        return d.list().map((e) => ({
+          uri: e.uri,
+          name: e.name ?? Paths.basename(e.uri),
+          isFile: e instanceof File,
+          size: e instanceof File ? e.size : null,
+        }));
+      },
+    };
 
-    const tempFile2 = new File(Paths.cache, 'temp_test_cleanup_fail_2.pdf');
-    await tempFile2.write('Contenido nuevo 90d exitoso');
+    const newBytes = new Uint8Array([9, 8, 7]);
+    await expect(persistReportXlsx(patientA, newBytes, 30, flakeAdapter)).rejects.toThrow(
+      /Fallo de verificación post-publicación/,
+    );
 
-    // 3. persistReportPdf debe tener éxito guardando el nuevo
-    const { filename: newFilename } = await persistReportPdf(patientA, tempFile2.uri, 90);
-    expect(newFilename).not.toBe(oldFilename);
-    deleteSpy.mockRestore();
+    // El reporte previo sigue existiendo intacto
+    expect(prevFile.exists).toBe(true);
 
-    // 4. Ambos archivos deben conservarse en disco
-    const newFile = new File(getPatientReportDirectory(patientA), newFilename);
-    expect(newFile.exists).toBe(true);
-    expect(oldFile.exists).toBe(true);
+    // La lista conserva el archivo original
+    const list = await getPatientReportList(patientA);
+    expect(list.some((r) => r.filename === prevFilename)).toBe(true);
 
-    // 5. La URI del archivo viejo debe estar registrada en limpiezas pendientes
-    const pending = getPendingReportCleanups();
-    expect(pending).toContain(oldFile.uri);
-
-    // Limpieza
-    await deletePatientReport(patientA, oldFilename);
-    await deletePatientReport(patientA, newFilename);
-    clearPendingReportCleanups();
+    await deletePatientReport(patientA, prevFilename);
   });
 
-  it('con reloj fijo y destino existente, ante un fallo de copia conserva el PDF original y su contenido', async () => {
-    const { File, Paths } = await import('expo-file-system');
-    const fixedTimestamp = 1728256000000;
-    vi.useFakeTimers();
-    vi.setSystemTime(fixedTimestamp);
+  it('omite toleradamente archivos ajenos, corruptos o con períodos inválidos al listar', async () => {
+    const { File } = await import('expo-file-system');
+    const dir = getPatientReportDirectory(patientA);
+    dir.create({ intermediates: true });
 
-    try {
-      // 1. Guardar el reporte inicial con el reloj fijo en fixedTimestamp
-      const tempFile1 = new File(Paths.cache, 'temp_fixed_clock_1.pdf');
-      await tempFile1.write('Contenido original intocable y protegido');
-      const { filename: originalFilename } = await persistReportPdf(patientA, tempFile1.uri, 30);
-      expect(originalFilename).toBe(`reporte_30d_${fixedTimestamp}.pdf`);
+    // Crear archivos no conformes en el directorio
+    const foreignFile = new File(dir, 'foto_paciente.png');
+    await foreignFile.write('datos');
+    const invalidPeriod = new File(dir, 'reporte_15d_1728256000000.pdf');
+    await invalidPeriod.write('datos');
+    const invalidTimestamp = new File(dir, 'reporte_30d_noesnumero.pdf');
+    await invalidTimestamp.write('datos');
 
-      const originalFile = new File(getPatientReportDirectory(patientA), originalFilename);
-      expect(originalFile.exists).toBe(true);
-      expect(await originalFile.text()).toBe('Contenido original intocable y protegido');
+    // Crear un reporte legítimo
+    const bytes = new Uint8Array([1, 2, 3]);
+    const { filename: validFilename } = await persistReportXlsx(patientA, bytes, 7);
 
-      // 2. Con el reloj congelado en el mismo tiempo exacto, intentar guardar otro reporte cuya copia falla
-      const tempFile2 = new File(Paths.cache, 'temp_fixed_clock_2.pdf');
-      await tempFile2.write('Nuevo contenido que fallará y no debe borrar el preexistente');
+    const list = await getPatientReportList(patientA);
+    expect(list.some((r) => r.filename === validFilename)).toBe(true);
+    expect(list.some((r) => r.filename === 'foto_paciente.png')).toBe(false);
+    expect(list.some((r) => r.filename === 'reporte_15d_1728256000000.pdf')).toBe(false);
+    expect(list.some((r) => r.filename === 'reporte_30d_noesnumero.pdf')).toBe(false);
 
-      const copySpy = vi
-        .spyOn(File.prototype, 'copy')
-        .mockRejectedValueOnce(new Error('Fallo de I/O forzado con reloj fijo'));
-
-      await expect(persistReportPdf(patientA, tempFile2.uri, 30)).rejects.toThrow(
-        'Fallo de I/O forzado con reloj fijo',
-      );
-      copySpy.mockRestore();
-
-      // 3. Comprobar que el PDF original no fue borrado ni alterado, conservando su contenido intacto
-      expect(originalFile.exists).toBe(true);
-      expect(await originalFile.text()).toBe('Contenido original intocable y protegido');
-
-      const reportsList = getPatientReportList(patientA);
-      expect(reportsList.some((r) => r.filename === originalFilename)).toBe(true);
-
-      // Limpieza
-      await deletePatientReport(patientA, originalFilename);
-    } finally {
-      vi.useRealTimers();
-    }
+    // Limpieza
+    await foreignFile.delete();
+    await invalidPeriod.delete();
+    await invalidTimestamp.delete();
+    await deletePatientReport(patientA, validFilename);
   });
 });

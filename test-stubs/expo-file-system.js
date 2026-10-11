@@ -67,7 +67,11 @@ class File {
     if (!fs.existsSync(parent)) {
       fs.mkdirSync(parent, { recursive: true });
     }
-    fs.writeFileSync(this.uri, content, 'utf-8');
+    if (typeof content === 'string') {
+      fs.writeFileSync(this.uri, content, 'utf-8');
+    } else {
+      fs.writeFileSync(this.uri, content);
+    }
   }
 
   async delete() {
