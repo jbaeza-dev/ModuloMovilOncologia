@@ -401,4 +401,47 @@ describe('reportes locales y generación de contenido para PDF', () => {
       reportData.symptoms[0].descripcion = 'Cambio no permitido';
     }).toThrow();
   });
+
+  it('acredita RNF-06: generación de instantánea con 500 signos vitales y 500 síntomas en menos de 3 segundos', async () => {
+    const database = open();
+    await migrateDatabase(database);
+    await seedPatientContextIfEmpty(database, patientA, patientB);
+
+    const baseMs = new Date('2026-07-01T00:00:00.000Z').getTime();
+
+    // Inserción rápida en lote dentro de una única transacción
+    await database.transaction(async (tx) => {
+      for (let i = 0; i < 500; i++) {
+        const timeIso = new Date(baseMs + i * 3600 * 1000).toISOString();
+        await tx.run(
+          `INSERT INTO signos_vitales (
+            id, paciente_id, fecha_registro, presion_sistolica, presion_diastolica,
+            pulso, temperatura, saturacion_o2, creado_localmente_en
+          ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+          [`bench-v-${i}`, patientA, timeIso, 120, 80, 72, 36.5, 98, timeIso],
+        );
+        await tx.run(
+          `INSERT INTO sintomas (
+            id, paciente_id, fecha_registro, descripcion, creado_localmente_en
+          ) VALUES (?, ?, ?, ?, ?)`,
+          [`bench-s-${i}`, patientA, timeIso, `Síntoma de prueba #${i}`, timeIso],
+        );
+      }
+    });
+
+    const repoA = createPatientRepository(database, patientA, ids());
+
+    const tStart = performance.now();
+    const reportData = await repoA.getReportData(90, '2026-09-28T12:00:00.000Z');
+    const tEnd = performance.now();
+    const durationMs = tEnd - tStart;
+
+    expect(reportData.vitals.length).toBe(500);
+    expect(reportData.symptoms.length).toBe(500);
+    expect(reportData.summary.vitalsCount).toBe(500);
+    expect(reportData.summary.symptomsCount).toBe(500);
+
+    // RNF-06: tiempo estricto inferior a 3.000 ms (3 segundos)
+    expect(durationMs).toBeLessThan(3000);
+  });
 });
