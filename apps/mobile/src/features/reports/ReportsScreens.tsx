@@ -16,49 +16,47 @@ import {
   StatusPill,
   VisualButton,
 } from '../../components/Visual';
-import { formatDate, sinceDays, type VitalsSummary } from '../../data/local/repository';
 import {
   assertSafeReportFileName,
   deletePatientReport,
   getPatientReportDirectory,
   getPatientReportList,
+  parseFormatFromReportFilename,
   parseTimestampFromReportFilename,
-  shareReportPdf,
+  shareReportFile,
   type PatientReportItem,
+  type ReportFileFormat,
 } from '../../data/local/files/report-storage';
+import type { ReportData } from '../../data/local/reports/report-types';
+import { formatDate } from '../../data/local/repository';
 import { useFocusedValue } from '../../hooks/use-local-query';
 import { useLocalData } from '../../providers/LocalDataProvider';
 import { useAppTheme } from '../../providers/ThemeProvider';
 import { theme } from '../../theme';
 import { generateAndPersistReportPdf } from './report-pdf';
+import { generateAndPersistReportXlsx } from './report-xlsx';
 
 export function ReportsScreen() {
   const { theme: appTheme } = useAppTheme();
   const styles = createStyles(appTheme.colors);
   const [days, setDays] = useState<7 | 30 | 90>(30);
-  const [generating, setGenerating] = useState(false);
+  const [selectedFormat, setSelectedFormat] = useState<ReportFileFormat>('pdf');
   const [reportFeedback, setReportFeedback] = useState<string | null>(null);
   const [reportError, setReportError] = useState<string | null>(null);
 
-  const { repository, patientId } = useLocalData();
+  const { repository, patientId, runSave, saving } = useLocalData();
 
-  const load = useCallback(
-    () =>
-      repository
-        ? repository.vitalsSummary(sinceDays(days))
-        : Promise.resolve({ total: 0, avgTemperature: null, avgPulse: null }),
-    [repository, days],
-  );
+  const loadData = useCallback(async () => {
+    if (!repository) return null;
+    return repository.reports.getReportData(days);
+  }, [repository, days]);
+
   const {
-    value: summary,
-    loading,
+    value: reportData,
+    loading: loadingData,
     error,
-    refresh,
-  } = useFocusedValue(load, {
-    total: 0,
-    avgTemperature: null,
-    avgPulse: null,
-  } as VitalsSummary);
+    refresh: refreshData,
+  } = useFocusedValue(loadData, null as ReportData | null);
 
   const loadExistingReports = useCallback(async () => {
     if (!patientId) return [];
@@ -71,47 +69,59 @@ export function ReportsScreen() {
     refresh: refreshReports,
   } = useFocusedValue(loadExistingReports, [] as PatientReportItem[]);
 
-  const existingForPeriod = savedReports.find((r) => r.periodDays === days);
+  const existingForPeriodAndFormat = savedReports.find(
+    (r) => r.periodDays === days && r.format === selectedFormat,
+  );
 
-  async function handleSharePdf() {
-    if (!repository || !patientId || generating) return;
-    setGenerating(true);
+  const hasClinicalData =
+    reportData && (reportData.summary.vitalsCount > 0 || reportData.summary.symptomsCount > 0);
+
+  async function handleGenerateAndShare() {
+    if (!repository || !patientId || saving || !reportData || !hasClinicalData) return;
     setReportFeedback(null);
     setReportError(null);
-    try {
-      const profile = await repository.profile();
-      const treatment = await repository.treatment();
-      const vitals = await repository.vitalsForReport(sinceDays(days));
-      const { persistentUri, filename } = await generateAndPersistReportPdf({
-        pacienteId: patientId,
-        periodDays: days,
-        profile,
-        treatment,
-        summary,
-        vitals,
-      });
 
-      refreshReports();
+    await runSave(async () => {
+      try {
+        let persistentUri = '';
+        let filename = '';
 
-      const shareResult = await shareReportPdf(persistentUri);
-      if (shareResult === 'shared_sheet_opened') {
-        setReportFeedback('PDF guardado en el dispositivo y hoja de compartir abierta.');
-      } else {
-        setReportFeedback(
-          'PDF guardado en el dispositivo (no se pudo abrir la hoja de compartir).',
+        if (selectedFormat === 'pdf') {
+          const res = await generateAndPersistReportPdf(reportData);
+          persistentUri = res.persistentUri;
+          filename = res.filename;
+        } else {
+          const res = await generateAndPersistReportXlsx(reportData);
+          persistentUri = res.persistentUri;
+          filename = res.filename;
+        }
+
+        refreshReports();
+
+        const shareResult = await shareReportFile(persistentUri, selectedFormat);
+        const formatLabel = selectedFormat === 'pdf' ? 'PDF' : 'Excel (.xlsx)';
+        if (shareResult === 'shared_sheet_opened') {
+          setReportFeedback(
+            `Reporte ${formatLabel} guardado localmente y hoja de compartir abierta.`,
+          );
+        } else {
+          setReportFeedback(
+            `Reporte ${formatLabel} guardado localmente (hoja de compartir no disponible).`,
+          );
+        }
+
+        router.navigate('/vitales/reporte-estado?archivo=' + encodeURIComponent(filename));
+      } catch {
+        const formatLabel = selectedFormat === 'pdf' ? 'PDF' : 'Excel';
+        setReportError(
+          `No se pudo generar el reporte en formato ${formatLabel} en este dispositivo.`,
         );
       }
-
-      router.navigate('/vitales/reporte-estado?archivo=' + encodeURIComponent(filename));
-    } catch {
-      setReportError('No se pudo generar el reporte PDF en este dispositivo.');
-    } finally {
-      setGenerating(false);
-    }
+    });
   }
 
   async function handleDeleteReport(filename: string) {
-    if (!patientId) return;
+    if (!patientId || saving) return;
     setReportFeedback(null);
     setReportError(null);
     try {
@@ -130,7 +140,8 @@ export function ReportsScreen() {
   return (
     <Screen title="Reportes" backTo="/vitales">
       <BodyText>
-        Resumen de evolución clínica generado a partir de registros en este dispositivo.
+        Resumen de evolución clínica generado localmente a partir de signos vitales y síntomas en
+        este dispositivo.
       </BodyText>
 
       <SectionTitle>Período</SectionTitle>
@@ -149,13 +160,31 @@ export function ReportsScreen() {
         ))}
       </View>
 
-      <SectionTitle>Formato disponible</SectionTitle>
+      <SectionTitle>Formato de exportación</SectionTitle>
       <View style={styles.chips}>
-        <ChoiceChip label="PDF (Documento descargable)" selected onPress={() => {}} />
+        <ChoiceChip
+          label="PDF (Documento)"
+          selected={selectedFormat === 'pdf'}
+          onPress={() => {
+            setSelectedFormat('pdf');
+            setReportFeedback(null);
+            setReportError(null);
+          }}
+        />
+        <ChoiceChip
+          label="Excel (.xlsx)"
+          selected={selectedFormat === 'xlsx'}
+          onPress={() => {
+            setSelectedFormat('xlsx');
+            setReportFeedback(null);
+            setReportError(null);
+          }}
+        />
       </View>
       <BodyText>
-        Solo formato PDF soportado localmente en esta versión. Excel no está habilitado en la
-        demostración independiente.
+        {selectedFormat === 'pdf'
+          ? 'Documento estructurado con resumen, signos vitales y detalle de síntomas con formato legible.'
+          : 'Planilla Excel (.xlsx) con tres hojas independientes: Resumen, Signos vitales y Síntomas.'}
       </BodyText>
 
       {error ? (
@@ -165,71 +194,89 @@ export function ReportsScreen() {
             title="Error al consultar mediciones"
             description="No se pudieron cargar los datos de evolución clínica en este dispositivo."
           />
-          <VisualButton label="Reintentar" secondary onPress={refresh} />
+          <VisualButton label="Reintentar" secondary onPress={refreshData} />
         </>
       ) : (
         <>
           <InfoCard>
-            <SectionTitle>Resumen de mediciones</SectionTitle>
-            <DetailRow label="Período" value={`${days} días`} />
-            <DetailRow label="Formato" value="PDF" />
+            <SectionTitle>Resumen de datos clínicos en el período</SectionTitle>
+            <DetailRow label="Período evaluado" value={`${days} días`} />
             <DetailRow
-              label="Registros guardados"
+              label="Formato seleccionado"
+              value={selectedFormat === 'pdf' ? 'PDF (Documento)' : 'Excel (.xlsx)'}
+            />
+            <DetailRow
+              label="Signos vitales registrados"
               value={
-                loading
+                loadingData
                   ? 'Calculando…'
-                  : `${summary.total} ${summary.total === 1 ? 'registro' : 'registros'}`
+                  : `${reportData?.summary.vitalsCount ?? 0} ${
+                      (reportData?.summary.vitalsCount ?? 0) === 1 ? 'registro' : 'registros'
+                    }`
               }
             />
-            {summary.avgTemperature !== null ? (
+            <DetailRow
+              label="Síntomas reportados"
+              value={
+                loadingData
+                  ? 'Calculando…'
+                  : `${reportData?.summary.symptomsCount ?? 0} ${
+                      (reportData?.summary.symptomsCount ?? 0) === 1 ? 'reporte' : 'reportes'
+                    }`
+              }
+            />
+            {reportData?.summary.avgTemperature !== null &&
+            reportData?.summary.avgTemperature !== undefined ? (
               <DetailRow
                 label="Temperatura prom."
-                value={`${summary.avgTemperature.toLocaleString('es-CL')} °C`}
+                value={`${reportData.summary.avgTemperature.toLocaleString('es-CL')} °C`}
               />
             ) : null}
-            {summary.avgPulse !== null ? (
+            {reportData?.summary.avgPulse !== null && reportData?.summary.avgPulse !== undefined ? (
               <DetailRow
                 label="Pulso prom."
-                value={`${summary.avgPulse.toLocaleString('es-CL')} lpm`}
+                value={`${reportData.summary.avgPulse.toLocaleString('es-CL')} lpm`}
               />
             ) : null}
-            <StatusPill>Almacenamiento local</StatusPill>
-            {existingForPeriod ? (
+            <StatusPill>Almacenamiento local aislado</StatusPill>
+
+            {existingForPeriodAndFormat ? (
               <BodyText>
-                Ya existe un reporte guardado para los últimos {days} días (
-                {existingForPeriod.generatedAt
-                  ? formatDate(existingForPeriod.generatedAt)
+                Ya existe un reporte {selectedFormat.toUpperCase()} guardado para los últimos {days}{' '}
+                días (
+                {existingForPeriodAndFormat.generatedAt
+                  ? formatDate(existingForPeriodAndFormat.generatedAt)
                   : 'reciente'}
-                ). Al generar uno nuevo se reemplazará para evitar archivos duplicados.
+                ). Al generar uno nuevo se actualizará de forma segura.
               </BodyText>
             ) : null}
             {reportFeedback ? <StatusPill>{reportFeedback}</StatusPill> : null}
             {reportError ? <Text style={styles.errorText}>{reportError}</Text> : null}
           </InfoCard>
 
-          {!loading && summary.total === 0 ? (
-            <BodyText>
-              No hay mediciones registradas para este paciente en los últimos {days} días.
-            </BodyText>
-          ) : null}
-
-          {summary.total === 0 ? (
-            <VisualButton
-              label="Registrar signos vitales"
-              disabled={loading}
-              onPress={() => router.navigate('/vitales/registrar')}
-            />
+          {!loadingData && !hasClinicalData ? (
+            <InfoCard>
+              <BodyText>
+                No hay signos vitales ni síntomas registrados para este paciente en los últimos{' '}
+                {days} días. Para generar un reporte se requiere al menos un registro de signo vital
+                o síntoma.
+              </BodyText>
+              <VisualButton
+                label="Registrar signos vitales"
+                onPress={() => router.navigate('/vitales/registrar')}
+              />
+            </InfoCard>
           ) : (
             <VisualButton
               label={
-                generating
-                  ? 'Generando PDF…'
-                  : existingForPeriod
-                    ? 'Actualizar y compartir PDF'
-                    : 'Compartir PDF'
+                saving
+                  ? `Generando ${selectedFormat.toUpperCase()}…`
+                  : existingForPeriodAndFormat
+                    ? `Actualizar y compartir ${selectedFormat.toUpperCase()}`
+                    : `Generar y compartir ${selectedFormat.toUpperCase()}`
               }
-              disabled={loading || generating}
-              onPress={handleSharePdf}
+              disabled={loadingData || saving || !hasClinicalData}
+              onPress={handleGenerateAndShare}
             />
           )}
         </>
@@ -240,30 +287,37 @@ export function ReportsScreen() {
         <BodyText>Cargando reportes guardados…</BodyText>
       ) : savedReports.length === 0 ? (
         <InfoCard>
-          <BodyText>No hay reportes PDF generados previamente en este dispositivo.</BodyText>
+          <BodyText>No hay reportes generados previamente en este dispositivo.</BodyText>
         </InfoCard>
       ) : (
         savedReports.map((report) => {
           const sizeKb = report.sizeBytes ? (report.sizeBytes / 1024).toFixed(1) : null;
           const formattedDate = report.generatedAt ? formatDate(report.generatedAt) : 'Reciente';
+          const isPdf = report.format === 'pdf';
 
           return (
             <InfoCard key={report.filename}>
               <View style={styles.cardHeader}>
-                <Feather name="file-text" size={24} color={appTheme.colors.primary} />
+                <Feather
+                  name={isPdf ? 'file-text' : 'grid'}
+                  size={24}
+                  color={appTheme.colors.primary}
+                />
                 <View style={styles.cardHeaderCopy}>
                   <Text style={styles.cardTitle}>
-                    {report.periodDays
-                      ? `Reporte de evolución (${report.periodDays} días)`
-                      : 'Reporte clínico'}
+                    {report.periodDays ? `Reporte (${report.periodDays} días)` : 'Reporte clínico'}
                   </Text>
                   <BodyText>Generado el {formattedDate}</BodyText>
                 </View>
+                <StatusPill>{isPdf ? 'PDF' : 'Excel'}</StatusPill>
               </View>
 
               <DetailRow label="Archivo" value={report.filename} />
               <DetailRow label="Tamaño" value={sizeKb ? `${sizeKb} KB` : 'No disponible'} />
-              <StatusPill>Almacenamiento local</StatusPill>
+              <DetailRow
+                label="Formato"
+                value={isPdf ? 'Documento PDF' : 'Planilla Excel (.xlsx)'}
+              />
 
               <View style={styles.reportActions}>
                 <VisualButton
@@ -277,6 +331,7 @@ export function ReportsScreen() {
                 <VisualButton
                   label="Eliminar reporte"
                   secondary
+                  disabled={saving}
                   onPress={() => handleDeleteReport(report.filename)}
                 />
               </View>
@@ -308,15 +363,17 @@ export function ReportStatusScreen() {
   const targetFile = patientDir && isValidFormat && archivo ? new File(patientDir, archivo) : null;
   const fileExists = targetFile ? targetFile.exists : false;
 
+  const fileFormat = archivo ? (parseFormatFromReportFilename(archivo) ?? 'pdf') : 'pdf';
+
   async function handleReshare() {
     if (!targetFile || !fileExists) return;
     setSharingFeedback(null);
-    const result = await shareReportPdf(targetFile.uri);
+    const result = await shareReportFile(targetFile.uri, fileFormat);
     if (result === 'shared_sheet_opened') {
       setSharingFeedback('Hoja de compartir del sistema abierta.');
     } else {
       setSharingFeedback(
-        'No se pudo abrir la hoja de compartir. El PDF permanece guardado en el dispositivo.',
+        'No se pudo abrir la hoja de compartir. El archivo permanece guardado en el dispositivo.',
       );
     }
   }
@@ -355,6 +412,10 @@ export function ReportStatusScreen() {
         <SectionTitle>Reporte generado y guardado</SectionTitle>
         <StatusPill>Persistido en almacenamiento local</StatusPill>
         <DetailRow label="Archivo" value={archivo} />
+        <DetailRow
+          label="Formato"
+          value={fileFormat === 'pdf' ? 'Documento PDF' : 'Planilla Excel (.xlsx)'}
+        />
         <DetailRow label="Tamaño" value={sizeKb ? `${sizeKb} KB` : 'No disponible'} />
         <DetailRow label="Generado el" value={formattedDate} />
         {sharingFeedback ? <StatusPill>{sharingFeedback}</StatusPill> : null}

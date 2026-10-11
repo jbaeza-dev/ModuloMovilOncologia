@@ -394,6 +394,7 @@ export function createPatientRepository(
     ...createFormRepository(database, patientId, newId, now),
     ...createClinicalContextRepository(database, patientId),
     ...createConsentRepository(database, patientId, newId, now),
+    reports: reportRepo,
   };
 }
 
