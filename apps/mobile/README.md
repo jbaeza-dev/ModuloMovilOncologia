@@ -64,7 +64,7 @@ pnpm --filter @modulo-movil-oncologia/mobile run doctor
 pnpm --filter @modulo-movil-oncologia/mobile bundle:android
 ```
 
-Las 69 pruebas unitarias con Vitest (`pnpm run test:local`) distribuidas en 4 suites (`node-sqlite.test.ts`, `resource-storage.test.ts`, `medical-forms.test.ts`, `report-security.test.ts`) comprueban las migraciones de SQLite, aislamiento A/B, repositorios clínicos, compensación ante fallos de base de datos, validación de respuestas en cuestionarios, reemplazo seguro de borradores, sanitización de reportes locales y lógica de reconciliación bidireccional en Node. La exportación `bundle:android` comprueba el empaquetado JavaScript de Expo Router sin requerir emulador; la ejecución nativa con la Development Build (`android` / `run:android:demo`) valida el runtime nativo en Android (SQLite, `expo-file-system`, `expo-print`, `expo-sharing` y aislamiento por paciente). QuimioCare utiliza su propia Development Build en lugar de Expo Go para dar soporte completo a módulos nativos presentes y futuros (como PowerSync).
+Las 126 pruebas unitarias con Vitest (`pnpm run test:local`) distribuidas en 11 suites modulares (8 suites de persistencia SQLite: `migrations.test.ts`, `records-outbox.test.ts`, `patient-context.test.ts`, `downloads.test.ts`, `forms.test.ts`, `clinical-context.test.ts`, `consents.test.ts`, `report-data.test.ts`; junto a `resource-storage.test.ts`, `medical-forms.test.ts` y `report-security.test.ts`) comprueban las migraciones de SQLite, aislamiento A/B, repositorios clínicos, compensación ante fallos de base de datos, validación de respuestas en cuestionarios, reemplazo seguro de borradores, sanitización de reportes locales, contexto clínico, consentimientos y lógica de reconciliación bidireccional en Node con harnesses independientes sin estado compartido. La exportación `bundle:android` comprueba el empaquetado JavaScript de Expo Router sin requerir emulador; la ejecución nativa con la Development Build (`android` / `run:android:demo`) valida el runtime nativo en Android (SQLite, `expo-file-system`, `expo-print`, `expo-sharing` y aislamiento por paciente). QuimioCare utiliza su propia Development Build en lugar de Expo Go para dar soporte completo a módulos nativos presentes y futuros (como PowerSync).
 
 ## Organización
 
@@ -79,7 +79,17 @@ Las 69 pruebas unitarias con Vitest (`pnpm run test:local`) distribuidas en 4 su
   - `education/`: catálogo educativo, lector de copias locales en Markdown, compensación ante errores y reconciliación bidireccional (`EducationScreens.tsx`).
   - `profile/`: perfil clínico, esquema de quimioterapia, código de vinculación y preferencias de apariencia.
   - `assistant/`: prototipo visual del asistente oncológico.
-- `src/data/local/`: migraciones versionadas de SQLite, repositorios, almacenamiento de recursos y módulo de reconciliación de archivos (`reconciliation.ts`).
+- `src/data/local/`: persistencia local modularizada por dominio:
+  - `core/`: base de datos SQLite (`database.ts`, adaptadores Expo/Node), sembrador de datos sintéticos (`seeder.ts`) y tipos base (`types.ts`, `sql.ts`).
+  - `migrations/`: migraciones versionadas de esquema SQL (001 a 006, `migrator.ts`).
+  - `forms/`: persistencia, ingestión y validación de formularios médicos y borradores.
+  - `clinical-context/`: repositorio e ingestión de contexto clínico (diagnósticos, esquema de quimioterapia, medicamentos, citas).
+  - `consents/`: registro inmutable de consentimientos, verificación de términos y firmas criptográficas.
+  - `files/`: gestión y reconciliación de archivos locales descargados (`reconciliation.ts`, `resource-storage.ts`).
+  - `testing/`: harness aislado de pruebas (`sqlite-test-harness.ts`) para suites unitarias en Node.
+  - `repository.ts`: fachada unificada de persistencia para el consumo de pantallas y providers.
+- `src/hooks/`: hooks reactivos reutilizables (`use-local-query.ts`).
+- `src/utils/`: utilidades compartidas, incluyendo cálculo criptográfico SHA-256 (`crypto.ts`).
 - `src/theme.ts`: paletas de colores accesibles, tokens semánticos, espaciados y radios compartidos.
 - `src/providers/ThemeProvider.tsx`: selección de paleta, modo claro/oscuro del dispositivo y persistencia en AsyncStorage.
 - `src/providers/LocalDataProvider.tsx`: apertura transaccional de SQLite, siembra sintética y gestión del paciente activo.

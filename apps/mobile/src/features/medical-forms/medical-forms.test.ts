@@ -17,7 +17,8 @@ import {
   recoverOrphanDraftBackups,
   saveFormDraft,
 } from './form-draft-storage';
-import { computeSha256, importLegacyDrafts } from './form-legacy-import';
+import { importLegacyDrafts } from './form-legacy-import';
+import { computeSha256 } from '../../utils/crypto';
 import { medicalFormsService } from './medical-form-service';
 import type { MedicalFormDraft } from './medical-form-types';
 import { validateFormAnswers } from './medical-form-validation';
