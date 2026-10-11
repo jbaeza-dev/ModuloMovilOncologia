@@ -5,8 +5,10 @@ import { seedMedicalFormsDemo } from './forms/form-seed';
 import { createClinicalContextRepository } from './clinical-context/clinical-context-repository';
 import { createConsentRepository } from './consents/consent-repository';
 import { seedClinicalContextDemoInTransaction } from './clinical-context/clinical-context-seed';
+import { createReportRepository } from './reports/report-repository';
 export * from './clinical-context/clinical-context-types';
 export * from './consents/consent-types';
+export * from './reports/report-types';
 
 export type VitalRecord = VitalValues & {
   id: string;
@@ -94,6 +96,7 @@ export function createPatientRepository(
   if (!patientId) throw new Error('Selecciona un paciente de prueba.');
 
   const formRepo = createFormRepository(database, patientId, newId, now);
+  const reportRepo = createReportRepository(database, patientId, now);
 
   return {
     ...formRepo,
@@ -219,13 +222,16 @@ export function createPatientRepository(
       );
     },
 
-    vitalsForReport(sinceIso: string) {
-      return database.all<VitalRecord>(
-        `SELECT * FROM signos_vitales
-         WHERE paciente_id = ? AND fecha_registro >= ?
-         ORDER BY fecha_registro ASC, id ASC`,
-        [patientId, sinceIso],
-      );
+    vitalsForReport(sinceIso: string, untilIso?: string) {
+      return reportRepo.vitalsForReport(sinceIso, untilIso);
+    },
+
+    symptomsForReport(sinceIso: string, untilIso?: string) {
+      return reportRepo.symptomsForReport(sinceIso, untilIso);
+    },
+
+    getReportData(periodDays: 7 | 30 | 90, customNow?: string) {
+      return reportRepo.getReportData(periodDays, customNow);
     },
 
     symptoms(limit = 30, offset = 0) {

@@ -178,4 +178,227 @@ describe('reportes locales y generación de contenido para PDF', () => {
     expect(html).toContain('72 lpm');
     expect(html).toContain('98 %');
   });
+
+  it('genera instantánea ReportData con normalización UTC y excluye registros futuros', async () => {
+    const database = open();
+    await migrateDatabase(database);
+    await seedPatientContextIfEmpty(database, patientA, patientB);
+
+    const nowIso = '2026-09-28T12:00:00.000Z';
+    const repoA = createPatientRepository(database, patientA, ids(), () => nowIso);
+
+    // Registro pasado (válido dentro de 30 días)
+    await repoA.createVitals({ ...validVitals, temperatura: 36.6 });
+    await repoA.createSymptom('Náuseas leves por la mañana');
+
+    // Registro futuro (posterior a nowIso)
+    const futureRepo = createPatientRepository(
+      database,
+      patientA,
+      ids('fut-v', 'fut-q1', 'fut-s', 'fut-q2'),
+      () => '2026-09-29T12:00:00.000Z',
+    );
+    await futureRepo.createVitals({ ...validVitals, temperatura: 39.5 });
+    await futureRepo.createSymptom('Fiebre futura no computable');
+
+    const reportData = await repoA.getReportData(30, nowIso);
+
+    expect(reportData.pacienteId).toBe(patientA);
+    expect(reportData.periodDays).toBe(30);
+    expect(reportData.generatedAt).toBe(nowIso);
+    expect(reportData.periodEnd).toBe(nowIso);
+    expect(reportData.vitals).toHaveLength(1);
+    expect(reportData.vitals[0].temperatura).toBe(36.6);
+    expect(reportData.symptoms).toHaveLength(1);
+    expect(reportData.symptoms[0].descripcion).toBe('Náuseas leves por la mañana');
+    expect(reportData.summary.vitalsCount).toBe(1);
+    expect(reportData.summary.symptomsCount).toBe(1);
+  });
+
+  it('rechaza instantes now inválidos con error descriptivo', async () => {
+    const database = open();
+    await migrateDatabase(database);
+
+    const repoA = createPatientRepository(database, patientA, ids());
+    await expect(repoA.getReportData(30, 'fecha-invalida')).rejects.toThrow(
+      'Instante de generación inválido.',
+    );
+  });
+
+  it('incluye todos los registros del período sin truncar a 30 filas e impone orden cronológico ascendente', async () => {
+    const database = open();
+    await migrateDatabase(database);
+    await seedPatientContextIfEmpty(database, patientA, patientB);
+
+    const baseTime = new Date('2026-09-10T00:00:00.000Z').getTime();
+    let currentId = 0;
+    const repoA = createPatientRepository(
+      database,
+      patientA,
+      () => `id-${++currentId}`,
+      () => new Date(baseTime + currentId * 3600 * 1000).toISOString(),
+    );
+
+    // Insertar 35 signos y 35 síntomas
+    for (let i = 0; i < 35; i++) {
+      await repoA.createVitals({ ...validVitals, temperatura: 36.0 + (i % 10) * 0.1 });
+      await repoA.createSymptom(`Síntoma evento #${i + 1}`);
+    }
+
+    const reportData = await repoA.getReportData(30, '2026-09-28T12:00:00.000Z');
+
+    expect(reportData.vitals.length).toBe(35);
+    expect(reportData.symptoms.length).toBe(35);
+    expect(reportData.summary.vitalsCount).toBe(35);
+    expect(reportData.summary.symptomsCount).toBe(35);
+
+    // Comprobar orden cronológico ascendente estricto
+    for (let i = 1; i < reportData.vitals.length; i++) {
+      expect(new Date(reportData.vitals[i].fecha_registro).getTime()).toBeGreaterThanOrEqual(
+        new Date(reportData.vitals[i - 1].fecha_registro).getTime(),
+      );
+    }
+    for (let i = 1; i < reportData.symptoms.length; i++) {
+      expect(new Date(reportData.symptoms[i].fecha_registro).getTime()).toBeGreaterThanOrEqual(
+        new Date(reportData.symptoms[i - 1].fecha_registro).getTime(),
+      );
+    }
+  });
+
+  it('calcula promedios aritméticos reales excluyendo valores nulos sin convertir null en cero', async () => {
+    const database = open();
+    await migrateDatabase(database);
+
+    const repoA = createPatientRepository(
+      database,
+      patientA,
+      ids('v1', 'q1', 'v2', 'q2', 'v3', 'q3'),
+      () => '2026-09-25T12:00:00.000Z',
+    );
+
+    // Registro 1: temp 36.0, pulso 70, presiones null, sat 98
+    await repoA.createVitals({
+      temperatura: 36.0,
+      pulso: 70,
+      presion_sistolica: null,
+      presion_diastolica: null,
+      saturacion_o2: 98,
+    });
+
+    // Registro 2: temp null, pulso 90, presiones 120/80, sat null
+    await repoA.createVitals({
+      temperatura: null,
+      pulso: 90,
+      presion_sistolica: 120,
+      presion_diastolica: 80,
+      saturacion_o2: null,
+    });
+
+    // Registro 3: temp 38.0, pulso null, presiones 130/84, sat 96
+    await repoA.createVitals({
+      temperatura: 38.0,
+      pulso: null,
+      presion_sistolica: 130,
+      presion_diastolica: 84,
+      saturacion_o2: 96,
+    });
+
+    const reportData = await repoA.getReportData(30, '2026-09-28T12:00:00.000Z');
+
+    // Temperatura: (36.0 + 38.0) / 2 = 37.0
+    expect(reportData.summary.avgTemperature).toBe(37);
+    expect(reportData.summary.minTemperature).toBe(36);
+    expect(reportData.summary.maxTemperature).toBe(38);
+
+    // Pulso: (70 + 90) / 2 = 80
+    expect(reportData.summary.avgPulse).toBe(80);
+    expect(reportData.summary.minPulse).toBe(70);
+    expect(reportData.summary.maxPulse).toBe(90);
+
+    // Presiones: sistólica (120 + 130) / 2 = 125, diastólica (80 + 84) / 2 = 82
+    expect(reportData.summary.avgSystolic).toBe(125);
+    expect(reportData.summary.avgDiastolic).toBe(82);
+
+    // Saturación: (98 + 96) / 2 = 97
+    expect(reportData.summary.avgOxygenSaturation).toBe(97);
+  });
+
+  it('resuelve el código de vinculación clínica con desempate determinista y maneja expiración inválida', async () => {
+    const database = open();
+    await migrateDatabase(database);
+    await seedPatientContextIfEmpty(database, patientA, patientB);
+
+    const repoA = createPatientRepository(database, patientA, ids());
+
+    // 1. Caso con 2 vínculos activos: debe seleccionar el más reciente por fecha_vinculacion DESC, id DESC
+    await database.run(
+      `INSERT OR REPLACE INTO profesional_medico_cache (id, nombre, especialidad, email, obtenido_en)
+       VALUES ('prof-custom-1', 'Dr. Uno', 'Oncología', null, '2026-09-01T00:00:00Z'),
+              ('prof-custom-2', 'Dr. Dos', 'Hematología', null, '2026-09-01T00:00:00Z')`,
+    );
+    await database.run(
+      `INSERT OR REPLACE INTO paciente_clinico_cache (id, paciente_id, profesional_id, estado_conocido, fecha_vinculacion, codigo_origen, obtenido_en)
+       VALUES ('vinc-old', ?, 'prof-custom-1', 'activo', '2026-08-01T00:00:00Z', 'COD-VIEJO', '2026-08-01T00:00:00Z'),
+              ('vinc-new', ?, 'prof-custom-2', 'activo', '2026-09-15T00:00:00Z', 'COD-NUEVO', '2026-09-15T00:00:00Z')`,
+      [patientA, patientA],
+    );
+
+    const reportActive = await repoA.getReportData(30, '2026-09-28T12:00:00.000Z');
+    expect(reportActive.linkingCode.status).toBe('active_link');
+    expect(reportActive.linkingCode.code).toBe('COD-NUEVO');
+    expect(reportActive.linkingCode.displayText).toContain(
+      'Vínculo activo según información en caché: COD-NUEVO',
+    );
+
+    // 2. Caso código temporal en paciente B con expira_en inválida: inactivar vínculos previos para evaluar fallback a codigo_vinculacion_cache
+    await database.run(
+      `UPDATE paciente_clinico_cache SET estado_conocido = 'inactivo' WHERE paciente_id = ?`,
+      [patientB],
+    );
+    await database.run(
+      `INSERT OR REPLACE INTO codigo_vinculacion_cache (paciente_id, codigo, expira_en, estado_conocido, obtenido_en)
+       VALUES (?, 'TMP-999', 'fecha-invalida', 'pendiente', '2026-09-01T00:00:00Z')`,
+      [patientB],
+    );
+    const repoB = createPatientRepository(database, patientB, ids());
+    const reportB = await repoB.getReportData(30, '2026-09-28T12:00:00.000Z');
+    expect(reportB.linkingCode.status).toBe('unavailable');
+    expect(reportB.linkingCode.displayText).toContain('fecha de expiración inválida en caché');
+    expect(reportB.vitals).toHaveLength(0);
+  });
+
+  it('garantiza inmutabilidad profunda de ReportData y congela sus elementos', async () => {
+    const database = open();
+    await migrateDatabase(database);
+    await seedPatientContextIfEmpty(database, patientA, patientB);
+
+    const repoA = createPatientRepository(
+      database,
+      patientA,
+      ids('v1', 'q1', 's1', 'q2'),
+      () => '2026-09-25T12:00:00.000Z',
+    );
+    await repoA.createVitals({ ...validVitals, temperatura: 36.8 });
+    await repoA.createSymptom('Fatiga moderada');
+
+    const reportData = await repoA.getReportData(30, '2026-09-28T12:00:00.000Z');
+
+    expect(Object.isFrozen(reportData)).toBe(true);
+    expect(Object.isFrozen(reportData.vitals)).toBe(true);
+    expect(Object.isFrozen(reportData.symptoms)).toBe(true);
+    expect(Object.isFrozen(reportData.vitals[0])).toBe(true);
+    expect(Object.isFrozen(reportData.symptoms[0])).toBe(true);
+    expect(Object.isFrozen(reportData.summary)).toBe(true);
+    expect(Object.isFrozen(reportData.linkingCode)).toBe(true);
+
+    expect(() => {
+      // @ts-expect-error mutación intencional de prueba
+      reportData.vitals[0].temperatura = 39.9;
+    }).toThrow();
+
+    expect(() => {
+      // @ts-expect-error mutación intencional de prueba
+      reportData.symptoms[0].descripcion = 'Cambio no permitido';
+    }).toThrow();
+  });
 });
