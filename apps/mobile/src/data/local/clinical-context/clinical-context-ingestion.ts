@@ -1,5 +1,5 @@
 import { ConflictoIdentidadError, type ClinicalContextBundle } from './clinical-context-types';
-import type { SqlConnection } from './sql';
+import type { SqlConnection } from '../core/sql';
 
 export async function ingestClinicalContextInTransaction(
   tx: SqlConnection,

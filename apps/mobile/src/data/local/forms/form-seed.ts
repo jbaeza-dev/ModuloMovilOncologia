@@ -1,4 +1,4 @@
-import type { SqlConnection } from './sql';
+import type { SqlConnection } from '../core/sql';
 import { type MedicalFormBundle } from './form-types';
 import { ingestMedicalFormBundle, type Clock } from './form-ingestion';
 

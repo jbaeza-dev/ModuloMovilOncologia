@@ -1,5 +1,4 @@
-import type { FormQuestionRecord, MedicalFormQuestionType } from './form-types';
-import type { FormAnswerValue } from '../../features/medical-forms/medical-form-types';
+import type { FormAnswerValue, FormQuestionRecord, MedicalFormQuestionType } from './form-types';
 
 export type ValidatableQuestion = {
   id: string;

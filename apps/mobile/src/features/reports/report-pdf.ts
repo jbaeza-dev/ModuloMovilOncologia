@@ -1,6 +1,6 @@
 import * as Print from 'expo-print';
 
-import { persistReportPdf } from '../../data/local/report-storage';
+import { persistReportPdf } from '../../data/local/files/report-storage';
 import { buildReportHtml, type GenerateReportParams } from './report-template';
 
 export { buildReportHtml, type GenerateReportParams } from './report-template';

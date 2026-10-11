@@ -4,11 +4,11 @@ import { join } from 'node:path';
 import { afterEach, describe, expect, it } from 'vitest';
 
 import { DatabaseSync } from 'node:sqlite';
-import type { FileStorageAdapter } from '../../data/local/file-storage-adapter';
-import { NodeFileStorageAdapter } from '../../data/local/node-file-storage-adapter';
+import type { FileStorageAdapter } from '../../data/local/files/file-storage-adapter';
+import { NodeFileStorageAdapter } from '../../data/local/files/node-file-storage-adapter';
 import { migrateDatabase } from '../../data/local/migrations';
 import { seedPatientContextIfEmpty } from '../../data/local/repository';
-import type { SqlConnection, SqlValue } from '../../data/local/sql';
+import type { SqlConnection, SqlValue } from '../../data/local/core/sql';
 import {
   deleteFormDraft,
   isValidDraftPayload,

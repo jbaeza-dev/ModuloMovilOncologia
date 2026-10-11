@@ -11,9 +11,9 @@ import {
   StatusPill,
   VisualButton,
 } from '../../components/Visual';
-import type { ActiveMedicationRecord } from '../../data/local/clinical-context-types';
+import type { ActiveMedicationRecord } from '../../data/local/clinical-context/clinical-context-types';
 import { formatDate } from '../../data/local/repository';
-import { useFocusedValue } from '../../data/local/use-local-query';
+import { useFocusedValue } from '../../hooks/use-local-query';
 import { useLocalData } from '../../providers/LocalDataProvider';
 
 export function MedicationScreen() {

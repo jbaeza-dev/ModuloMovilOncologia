@@ -16,9 +16,9 @@ import type {
   ConsentEventRecord,
   ConsentStatusInfo,
   TermDefinitionRecord,
-} from '../../data/local/consent-types';
+} from '../../data/local/consents/consent-types';
 import { formatDate } from '../../data/local/repository';
-import { useFocusedValue } from '../../data/local/use-local-query';
+import { useFocusedValue } from '../../hooks/use-local-query';
 import { useLocalData } from '../../providers/LocalDataProvider';
 import { useAppTheme } from '../../providers/ThemeProvider';
 import { theme } from '../../theme';

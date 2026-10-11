@@ -3,7 +3,7 @@ import { join } from 'node:path';
 import { afterEach, describe, expect, it } from 'vitest';
 
 import { migrateDatabase } from './migrations';
-import { reconcileCopiesCore } from './reconciliation';
+import { reconcileCopiesCore } from './files/reconciliation';
 import { createPatientRepository, seedPatientContextIfEmpty } from './repository';
 import { createSqliteTestHarness, ids, patientA, patientB } from './testing/sqlite-test-harness';
 

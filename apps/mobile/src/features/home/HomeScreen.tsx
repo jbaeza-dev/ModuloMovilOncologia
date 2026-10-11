@@ -12,7 +12,7 @@ import {
   VisualButton,
 } from '../../components/Visual';
 import { formatDate, formatVital, type VitalRecord } from '../../data/local/repository';
-import { useFocusedValue } from '../../data/local/use-local-query';
+import { useFocusedValue } from '../../hooks/use-local-query';
 import { DEMO_PATIENTS, useLocalData } from '../../providers/LocalDataProvider';
 import { useAppTheme } from '../../providers/ThemeProvider';
 import { theme } from '../../theme';

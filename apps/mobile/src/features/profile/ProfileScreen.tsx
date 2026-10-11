@@ -22,7 +22,7 @@ import {
   type PatientProfileRecord,
   type TreatmentRecord,
 } from '../../data/local/repository';
-import { useFocusedValue } from '../../data/local/use-local-query';
+import { useFocusedValue } from '../../hooks/use-local-query';
 import { useLocalData } from '../../providers/LocalDataProvider';
 import { useAppTheme } from '../../providers/ThemeProvider';
 import { PALETTE_OPTIONS, theme } from '../../theme';

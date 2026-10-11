@@ -25,8 +25,8 @@ import {
   parseTimestampFromReportFilename,
   shareReportPdf,
   type PatientReportItem,
-} from '../../data/local/report-storage';
-import { useFocusedValue } from '../../data/local/use-local-query';
+} from '../../data/local/files/report-storage';
+import { useFocusedValue } from '../../hooks/use-local-query';
 import { useLocalData } from '../../providers/LocalDataProvider';
 import { useAppTheme } from '../../providers/ThemeProvider';
 import { theme } from '../../theme';

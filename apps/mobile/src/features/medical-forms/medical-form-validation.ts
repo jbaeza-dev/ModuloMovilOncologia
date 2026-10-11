@@ -3,7 +3,7 @@ import {
   validateFormAnswers as baseValidateFormAnswers,
   validateQuestionValue as baseValidateQuestionValue,
   type ValidatableQuestion,
-} from '../../data/local/form-validation';
+} from '../../data/local/forms/form-validation';
 import type {
   FormAnswerValue,
   MedicalFormDefinition,

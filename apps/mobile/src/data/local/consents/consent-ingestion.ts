@@ -1,6 +1,6 @@
-import { computeSha256 } from '../../features/medical-forms/form-legacy-import';
+import { computeSha256 } from '../../../utils/crypto';
 import type { TermDefinitionBundle, TermDefinitionRecord } from './consent-types';
-import type { SqlConnection } from './sql';
+import type { SqlConnection } from '../core/sql';
 
 export function parseAndNormalizeIsoDate(iso: string, fieldName: string): string {
   const timestamp = Date.parse(iso);

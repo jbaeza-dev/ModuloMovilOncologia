@@ -14,11 +14,11 @@ import { Text } from 'react-native';
 
 import { Screen } from '../components/Screen';
 import { BodyText, InfoCard, VisualButton } from '../components/Visual';
-import { createExpoConnection } from '../data/local/expo-connection';
-import { ExpoFileStorageAdapter } from '../data/local/file-storage-adapter';
+import { createExpoConnection } from '../data/local/core/expo-connection';
+import { ExpoFileStorageAdapter } from '../data/local/files/file-storage-adapter';
 import { migrateDatabase } from '../data/local/migrations';
 import { createPatientRepository, seedPatientContextIfEmpty } from '../data/local/repository';
-import type { SqlConnection } from '../data/local/sql';
+import type { SqlConnection } from '../data/local/core/sql';
 import { importLegacyDrafts } from '../features/medical-forms/form-legacy-import';
 import { isDemoMode } from '../utils/environment';
 

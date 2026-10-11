@@ -1,13 +1,13 @@
 import { afterEach, describe, expect, it } from 'vitest';
 
 import { migrateDatabase } from './migrations';
-import { ingestMedicalFormBundle } from './form-ingestion';
-import { seedMedicalFormsDemo } from './form-seed';
+import { ingestMedicalFormBundle } from './forms/form-ingestion';
+import { seedMedicalFormsDemo } from './forms/form-seed';
 import {
   ConflictoEntregaError,
   TipoPreguntaNoSoportadoError,
   VersionInmutableError,
-} from './form-types';
+} from './forms/form-types';
 import { createPatientRepository, seedPatientContextIfEmpty } from './repository';
 import { SAMPLE_MEDICAL_FORMS } from '../../features/medical-forms/sample-medical-forms';
 import { createSqliteTestHarness, ids, patientA, patientB } from './testing/sqlite-test-harness';

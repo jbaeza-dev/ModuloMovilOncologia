@@ -1,12 +1,12 @@
-import type { SqlConnection } from './sql';
+import type { SqlConnection } from './core/sql';
 import { type VitalValues } from './validation';
-import { createFormRepository } from './form-repository';
-import { seedMedicalFormsDemo } from './form-seed';
-import { createClinicalContextRepository } from './clinical-context-repository';
-import { createConsentRepository } from './consent-repository';
-import { seedClinicalContextDemoInTransaction } from './clinical-context-seed';
-export * from './clinical-context-types';
-export * from './consent-types';
+import { createFormRepository } from './forms/form-repository';
+import { seedMedicalFormsDemo } from './forms/form-seed';
+import { createClinicalContextRepository } from './clinical-context/clinical-context-repository';
+import { createConsentRepository } from './consents/consent-repository';
+import { seedClinicalContextDemoInTransaction } from './clinical-context/clinical-context-seed';
+export * from './clinical-context/clinical-context-types';
+export * from './consents/consent-types';
 
 export type VitalRecord = VitalValues & {
   id: string;

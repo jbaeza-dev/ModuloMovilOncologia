@@ -1,6 +1,6 @@
-import { ingestTermDefinitionsInTransaction } from './consent-ingestion';
-import type { TermDefinitionBundle } from './consent-types';
-import type { SqlConnection } from './sql';
+import { ingestTermDefinitionsInTransaction } from '../consents/consent-ingestion';
+import type { TermDefinitionBundle } from '../consents/consent-types';
+import type { SqlConnection } from '../core/sql';
 
 export const DEMO_TERMS_BUNDLE: TermDefinitionBundle = {
   terminos: [

@@ -3,7 +3,7 @@ import type {
   AssignedProfessional,
   ClinicalFileRecord,
 } from './clinical-context-types';
-import type { SqlConnection } from './sql';
+import type { SqlConnection } from '../core/sql';
 
 export function createClinicalContextRepository(database: SqlConnection, patientId: string) {
   return {

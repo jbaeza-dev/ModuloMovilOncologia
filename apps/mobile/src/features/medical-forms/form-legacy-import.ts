@@ -1,35 +1,15 @@
-import * as Crypto from 'expo-crypto';
-
-import type { FileStorageAdapter } from '../../data/local/file-storage-adapter';
-import type { FormDefinitionRecord, FormQuestionRecord } from '../../data/local/form-types';
+import type { FileStorageAdapter } from '../../data/local/files/file-storage-adapter';
+import type { FormDefinitionRecord, FormQuestionRecord } from '../../data/local/forms/form-types';
 import {
   areAnswersEqual,
   normalizeFormQuestionsRecords,
   validateFormQuestionsRecords,
-} from '../../data/local/form-validation';
-import type { SqlConnection } from '../../data/local/sql';
+} from '../../data/local/forms/form-validation';
+import type { SqlConnection } from '../../data/local/core/sql';
 import { getPatientDraftDirectory, isValidDraftPayload, withDraftLock } from './form-draft-storage';
 import type { MedicalFormDraft } from './medical-form-types';
-
-export async function computeSha256(content: string): Promise<string> {
-  try {
-    return await Crypto.digestStringAsync(Crypto.CryptoDigestAlgorithm.SHA256, content);
-  } catch {
-    if (typeof globalThis.crypto?.subtle?.digest === 'function') {
-      const encoder = new TextEncoder();
-      const data = encoder.encode(content);
-      const hashBuffer = await globalThis.crypto.subtle.digest('SHA-256', data);
-      const hashArray = Array.from(new Uint8Array(hashBuffer));
-      return hashArray.map((b) => b.toString(16).padStart(2, '0')).join('');
-    }
-    try {
-      const nodeCrypto = await import('node:crypto');
-      return nodeCrypto.createHash('sha256').update(content, 'utf8').digest('hex');
-    } catch {
-      throw new Error('No se pudo calcular la huella criptográfica SHA-256.');
-    }
-  }
-}
+import { computeSha256 } from '../../utils/crypto';
+export { computeSha256 };
 
 export type ImportLegacyResult = {
   imported: number;

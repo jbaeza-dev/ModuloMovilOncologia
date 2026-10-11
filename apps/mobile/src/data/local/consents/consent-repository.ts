@@ -4,7 +4,7 @@ import type {
   TermDefinitionRecord,
   UserConsentRecord,
 } from './consent-types';
-import type { SqlConnection } from './sql';
+import type { SqlConnection } from '../core/sql';
 
 export function createConsentRepository(
   database: SqlConnection,

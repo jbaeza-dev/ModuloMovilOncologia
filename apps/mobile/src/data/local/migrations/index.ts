@@ -1,4 +1,4 @@
-import type { SqlConnection } from '../sql';
+import type { SqlConnection } from '../core/sql';
 import { REGISTROS_SQL, REGISTROS_VERSION } from './001_registros';
 import { CONTEXTO_SQL, CONTEXTO_VERSION } from './002_contexto';
 import { DESCARGAS_SQL, DESCARGAS_VERSION } from './003_descargas';

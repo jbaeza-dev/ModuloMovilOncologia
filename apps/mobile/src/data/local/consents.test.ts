@@ -1,7 +1,7 @@
 import { afterEach, describe, expect, it } from 'vitest';
 
 import { migrateDatabase } from './migrations';
-import { ingestTermDefinitions } from './consent-ingestion';
+import { ingestTermDefinitions } from './consents/consent-ingestion';
 import { createPatientRepository, seedPatientContextIfEmpty } from './repository';
 import { createSqliteTestHarness, ids, patientA, patientB } from './testing/sqlite-test-harness';
 

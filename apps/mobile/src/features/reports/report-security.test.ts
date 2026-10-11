@@ -11,7 +11,7 @@ import {
   parsePeriodFromReportFilename,
   parseTimestampFromReportFilename,
   persistReportPdf,
-} from '../../data/local/report-storage';
+} from '../../data/local/files/report-storage';
 import { buildReportHtml, escapeHtml } from './report-template';
 
 const patientA = '11111111-1111-4111-8111-111111111111';

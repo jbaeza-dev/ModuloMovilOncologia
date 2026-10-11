@@ -21,9 +21,9 @@ import {
   type AssignedFormSummary,
   type FullFormDefinition,
   type FormSubmissionDetail,
-} from '../../data/local/form-repository';
+} from '../../data/local/forms/form-repository';
 import { formatDate } from '../../data/local/repository';
-import { useFocusedValue } from '../../data/local/use-local-query';
+import { useFocusedValue } from '../../hooks/use-local-query';
 import { useLocalData } from '../../providers/LocalDataProvider';
 import { useAppTheme } from '../../providers/ThemeProvider';
 import { theme } from '../../theme';

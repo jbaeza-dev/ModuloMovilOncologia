@@ -20,8 +20,8 @@ import {
   reconcileResourceCopies,
   resourceFileExists,
   saveResourceWithCompensation,
-} from '../../data/local/resource-storage';
-import { useFocusedList, useFocusedValue } from '../../data/local/use-local-query';
+} from '../../data/local/files/resource-storage';
+import { useFocusedList, useFocusedValue } from '../../hooks/use-local-query';
 import { useLocalData } from '../../providers/LocalDataProvider';
 import { useAppTheme } from '../../providers/ThemeProvider';
 import { theme } from '../../theme';

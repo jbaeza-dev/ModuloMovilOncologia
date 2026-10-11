@@ -1,8 +1,8 @@
 import { afterEach, describe, expect, it } from 'vitest';
 
 import { migrateDatabase } from './migrations';
-import { ingestClinicalContextBundle } from './clinical-context-ingestion';
-import { ConflictoIdentidadError } from './clinical-context-types';
+import { ingestClinicalContextBundle } from './clinical-context/clinical-context-ingestion';
+import { ConflictoIdentidadError } from './clinical-context/clinical-context-types';
 import { createPatientRepository, seedPatientContextIfEmpty } from './repository';
 import { createSqliteTestHarness, ids, patientA, patientB } from './testing/sqlite-test-harness';
 
