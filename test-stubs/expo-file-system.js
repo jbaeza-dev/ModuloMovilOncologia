@@ -2,8 +2,9 @@ const fs = require('node:fs');
 const path = require('node:path');
 const os = require('node:os');
 
-const documentDir = path.join(os.tmpdir(), 'quimiocare-test-docs');
-const cacheDir = path.join(os.tmpdir(), 'quimiocare-test-cache');
+const processId = `${process.pid}_${Math.random().toString(36).slice(2, 8)}`;
+const documentDir = path.join(os.tmpdir(), `quimiocare-test-docs-${processId}`);
+const cacheDir = path.join(os.tmpdir(), `quimiocare-test-cache-${processId}`);
 
 if (!fs.existsSync(documentDir)) {
   fs.mkdirSync(documentDir, { recursive: true });
@@ -11,6 +12,15 @@ if (!fs.existsSync(documentDir)) {
 if (!fs.existsSync(cacheDir)) {
   fs.mkdirSync(cacheDir, { recursive: true });
 }
+
+process.on('exit', () => {
+  try {
+    if (fs.existsSync(documentDir)) fs.rmSync(documentDir, { recursive: true, force: true });
+    if (fs.existsSync(cacheDir)) fs.rmSync(cacheDir, { recursive: true, force: true });
+  } catch {
+    // Ignorar fallo al salir
+  }
+});
 
 class Paths {
   static document = documentDir;

@@ -119,17 +119,13 @@ export class ExpoBinaryReportStorageAdapter implements BinaryReportStorageAdapte
   ): Promise<Array<{ uri: string; name: string; isFile: boolean; size: number | null }>> {
     const dir = new Directory(dirUri);
     if (!dir.exists) return [];
-    try {
-      const entries = dir.list();
-      return entries.map((entry) => ({
-        uri: entry.uri,
-        name: entry.name ?? Paths.basename(entry.uri),
-        isFile: entry instanceof File,
-        size: entry instanceof File ? (entry.size ?? null) : null,
-      }));
-    } catch {
-      return [];
-    }
+    const entries = dir.list();
+    return entries.map((entry) => ({
+      uri: entry.uri,
+      name: entry.name ?? Paths.basename(entry.uri),
+      isFile: entry instanceof File,
+      size: entry instanceof File ? (entry.size ?? null) : null,
+    }));
   }
 }
 
@@ -192,18 +188,22 @@ export function clearPendingReportCleanups(): void {
 }
 
 /**
- * Ejecuta la eliminación de reportes pendientes respetando el bloqueo de almacenamiento
- * de cada paciente. Si el invocador ya tiene el bloqueo de un paciente (`heldLockPatientId`),
- * no intenta readquirirlo para evitar bloqueos mutuos (deadlock).
+ * Ejecuta la eliminación de reportes pendientes.
+ * Si se especifica `heldLockPatientId`, procesa EXCLUSIVAMENTE los pendientes de ese paciente,
+ * sin intentar adquirir bloqueos de otros pacientes para prevenir deadlocks cruzados (A/B).
+ * Si no se especifica (invocación global), agrupa los pendientes por paciente
+ * y procesa un paciente a la vez bajo su bloqueo correspondiente de forma estrictamente serializada.
  */
 export async function flushPendingReportCleanups(
   adapter: BinaryReportStorageAdapter = defaultAdapter,
   heldLockPatientId?: string,
 ): Promise<number> {
   let cleaned = 0;
-  const entries = Array.from(pendingReportCleanups.values());
-  for (const entry of entries) {
-    const doDelete = async () => {
+  if (heldLockPatientId) {
+    const patientEntries = Array.from(pendingReportCleanups.values()).filter(
+      (e) => e.pacienteId === heldLockPatientId,
+    );
+    for (const entry of patientEntries) {
       try {
         if (await adapter.fileExists(entry.uri)) {
           await adapter.deleteFile(entry.uri);
@@ -213,13 +213,84 @@ export async function flushPendingReportCleanups(
       } catch {
         // Permanece pendiente para el próximo reintento
       }
-    };
-
-    if (entry.pacienteId && entry.pacienteId !== heldLockPatientId) {
-      await withPatientReportLock(entry.pacienteId, doDelete);
-    } else {
-      await doDelete();
     }
+    return cleaned;
+  }
+
+  // Invocación global: agrupar por paciente y procesar un paciente a la vez
+  const entries = Array.from(pendingReportCleanups.values());
+  const byPatient = new Map<string, PendingCleanupItem[]>();
+  const unassigned: PendingCleanupItem[] = [];
+
+  for (const entry of entries) {
+    if (entry.pacienteId) {
+      const list = byPatient.get(entry.pacienteId) ?? [];
+      list.push(entry);
+      byPatient.set(entry.pacienteId, list);
+    } else {
+      unassigned.push(entry);
+    }
+  }
+
+  const sortedPatientIds = Array.from(byPatient.keys()).sort();
+  for (const pid of sortedPatientIds) {
+    const pEntries = byPatient.get(pid)!;
+    await withPatientReportLock(pid, async () => {
+      for (const entry of pEntries) {
+        try {
+          if (await adapter.fileExists(entry.uri)) {
+            await adapter.deleteFile(entry.uri);
+          }
+          pendingReportCleanups.delete(entry.uri);
+          cleaned++;
+        } catch {
+          // Permanece pendiente
+        }
+      }
+    });
+  }
+
+  for (const entry of unassigned) {
+    try {
+      if (await adapter.fileExists(entry.uri)) {
+        await adapter.deleteFile(entry.uri);
+      }
+      pendingReportCleanups.delete(entry.uri);
+      cleaned++;
+    } catch {
+      // Permanece pendiente
+    }
+  }
+
+  return cleaned;
+}
+
+/**
+ * Limpia archivos temporales (.tmp_reporte_*) que hayan quedado huérfanos
+ * tras un fallo catastrófico o cierre abrupto de la aplicación, ejecutado bajo el bloqueo del paciente.
+ */
+export async function cleanOrphanedTempReports(
+  pacienteId: string,
+  adapter: BinaryReportStorageAdapter = defaultAdapter,
+): Promise<number> {
+  assertSafeId(pacienteId, 'pacienteId');
+  const dir = getPatientReportDirectory(pacienteId);
+  if (!(await adapter.directoryExists(dir.uri))) return 0;
+  let cleaned = 0;
+  try {
+    const entries = await adapter.listDirectory(dir.uri);
+    for (const entry of entries) {
+      if (entry.isFile && entry.name && entry.name.startsWith('.tmp_reporte_')) {
+        try {
+          await adapter.deleteFile(entry.uri);
+          cleaned++;
+        } catch {
+          // Ignorar fallo puntual
+        }
+      }
+    }
+  } catch {
+    // Si falla el listado, retornar los limpiados hasta el momento
   }
   return cleaned;
 }
@@ -252,7 +323,8 @@ export async function persistReportFile(
   }
 
   return withPatientReportLock(pacienteId, async () => {
-    // Reintento oportuno de limpiezas previas sin deadlock
+    // Reintento oportuno de limpiezas previas y temporales huérfanos sin cruce entre pacientes
+    await cleanOrphanedTempReports(pacienteId, adapter);
     await flushPendingReportCleanups(adapter, pacienteId);
 
     const dir = getPatientReportDirectory(pacienteId);
@@ -276,7 +348,7 @@ export async function persistReportFile(
     const tempFilename = `.tmp_reporte_${periodDays}d_${Date.now()}_${randSuffix}.${format}`;
     const tempFileUri = `${dir.uri}/${tempFilename}`;
 
-    let tempWritten = false;
+    let tempMovedToTarget = false;
     let publishedTargetUri: string | null = null;
 
     try {
@@ -285,7 +357,6 @@ export async function persistReportFile(
       } else {
         await adapter.copyFile(source.tempUri, tempFileUri);
       }
-      tempWritten = true;
 
       // Verificación del archivo temporal
       const tempExists = await adapter.fileExists(tempFileUri);
@@ -330,7 +401,7 @@ export async function persistReportFile(
 
       // Publicación atómica
       await adapter.moveFile(tempFileUri, targetFileUri);
-      tempWritten = false; // El temporal ya fue trasladado
+      tempMovedToTarget = true;
       publishedTargetUri = targetFileUri;
 
       // Verificación post-publicación
@@ -389,8 +460,8 @@ export async function persistReportFile(
 
       return { persistentUri: targetFileUri, filename };
     } catch (error) {
-      // Limpiar archivo temporal si quedó creado
-      if (tempWritten) {
+      // Limpiar archivo temporal si no fue trasladado y existe (incluso tras escritura parcial)
+      if (!tempMovedToTarget) {
         try {
           if (await adapter.fileExists(tempFileUri)) {
             await adapter.deleteFile(tempFileUri);
@@ -470,6 +541,7 @@ export async function shareReportPdf(pdfUri: string): Promise<ShareReportResult>
 
 /**
  * Lista las URIs de los reportes persistidos localmente para el paciente (PDF y XLSX).
+ * Propaga errores de acceso y omite directorios no creados devolviendo [].
  */
 export async function listPatientReports(
   pacienteId: string,
@@ -479,20 +551,17 @@ export async function listPatientReports(
   return withPatientReportLock(pacienteId, async () => {
     const dir = getPatientReportDirectory(pacienteId);
     if (!(await adapter.directoryExists(dir.uri))) return [];
-    try {
-      const entries = await adapter.listDirectory(dir.uri);
-      return entries
-        .filter((entry) => entry.isFile && /^reporte_\d+d_\d+\.(pdf|xlsx)$/.test(entry.name))
-        .map((entry) => entry.uri);
-    } catch {
-      return [];
-    }
+    const entries = await adapter.listDirectory(dir.uri);
+    return entries
+      .filter((entry) => entry.isFile && /^reporte_\d+d_\d+\.(pdf|xlsx)$/.test(entry.name))
+      .map((entry) => entry.uri);
   });
 }
 
 /**
  * Lista los metadatos completos de los reportes persistidos para el paciente,
  * ordenados de más reciente a más antiguo, omitiendo de forma tolerante archivos ajenos.
+ * Propaga errores reales de acceso y lectura del directorio.
  */
 export async function getPatientReportList(
   pacienteId: string,
@@ -500,45 +569,42 @@ export async function getPatientReportList(
 ): Promise<PatientReportItem[]> {
   assertSafeId(pacienteId, 'pacienteId');
   return withPatientReportLock(pacienteId, async () => {
+    await cleanOrphanedTempReports(pacienteId, adapter);
     await flushPendingReportCleanups(adapter, pacienteId);
     const dir = getPatientReportDirectory(pacienteId);
     if (!(await adapter.directoryExists(dir.uri))) return [];
-    try {
-      const entries = await adapter.listDirectory(dir.uri);
-      const reports: PatientReportItem[] = [];
-      for (const entry of entries) {
-        if (entry.isFile && entry.name) {
-          const filename = entry.name;
-          const match = filename.match(/^reporte_(\d+)d_(\d+)\.(pdf|xlsx)$/);
-          if (!match) continue; // Omitir individualmente archivos con nombres no coincidentes
-          const periodDays = Number(match[1]);
-          if (periodDays !== 7 && periodDays !== 30 && periodDays !== 90) continue; // Omitir períodos inválidos
+    const entries = await adapter.listDirectory(dir.uri);
+    const reports: PatientReportItem[] = [];
+    for (const entry of entries) {
+      if (entry.isFile && entry.name) {
+        const filename = entry.name;
+        const match = filename.match(/^reporte_(\d+)d_(\d+)\.(pdf|xlsx)$/);
+        if (!match) continue; // Omitir individualmente archivos con nombres no coincidentes
+        const periodDays = Number(match[1]);
+        if (periodDays !== 7 && periodDays !== 30 && periodDays !== 90) continue; // Omitir períodos inválidos
 
-          const timestampMs = Number(match[2]);
-          if (!Number.isFinite(timestampMs)) continue;
-          const date = new Date(timestampMs);
-          if (Number.isNaN(date.getTime())) continue; // Omitir timestamps no convertibles a fecha
+        const timestampMs = Number(match[2]);
+        if (!Number.isFinite(timestampMs)) continue;
+        const date = new Date(timestampMs);
+        if (Number.isNaN(date.getTime())) continue; // Omitir timestamps no convertibles a fecha
 
-          const format = match[3] as ReportFileFormat;
-          reports.push({
-            uri: entry.uri,
-            filename,
-            format,
-            periodDays,
-            generatedAt: date.toISOString(),
-            sizeBytes: entry.size,
-          });
-        }
+        const format = match[3] as ReportFileFormat;
+        reports.push({
+          uri: entry.uri,
+          filename,
+          format,
+          periodDays,
+          generatedAt: date.toISOString(),
+          sizeBytes: entry.size,
+        });
       }
-      reports.sort((a, b) => {
-        const timeA = a.generatedAt ? Date.parse(a.generatedAt) : 0;
-        const timeB = b.generatedAt ? Date.parse(b.generatedAt) : 0;
-        return timeB - timeA;
-      });
-      return reports;
-    } catch {
-      return [];
     }
+    reports.sort((a, b) => {
+      const timeA = a.generatedAt ? Date.parse(a.generatedAt) : 0;
+      const timeB = b.generatedAt ? Date.parse(b.generatedAt) : 0;
+      return timeB - timeA;
+    });
+    return reports;
   });
 }
 

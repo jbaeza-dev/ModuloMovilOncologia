@@ -2,6 +2,7 @@ import { afterEach, describe, expect, it, vi } from 'vitest';
 
 import {
   assertSafeReportFileName,
+  cleanOrphanedTempReports,
   clearPendingReportCleanups,
   deletePatientReport,
   flushPendingReportCleanups,
@@ -344,6 +345,44 @@ describe('exclusión mutua, concurrencia y coordinación de almacenamiento', () 
     expect(typeof cleanedStandalone).toBe('number');
     clearPendingReportCleanups();
   });
+
+  it('previene deadlock cruzado (A/B) cuando dos operaciones concurrentes procesan limpiezas bajo bloqueos opuestos', async () => {
+    clearPendingReportCleanups();
+    const uriA = `${getPatientReportDirectory(patientA).uri}/reporte_30d_1111.pdf`;
+    const uriB = `${getPatientReportDirectory(patientB).uri}/reporte_30d_2222.pdf`;
+
+    // Ambas URIs registradas como pendientes
+    registerPendingReportCleanup(uriA, patientA);
+    registerPendingReportCleanup(uriB, patientB);
+
+    let opAStarted = false;
+    let opBStarted = false;
+    let releaseBarrier: () => void = () => {};
+    const barrierPromise = new Promise<void>((resolve) => {
+      releaseBarrier = resolve;
+    });
+
+    // Operación A mantiene bloqueo de A, y ejecuta flush pasando heldLockPatientId = patientA
+    const opA = withPatientReportLock(patientA, async () => {
+      opAStarted = true;
+      if (opBStarted) releaseBarrier();
+      await barrierPromise;
+      return await flushPendingReportCleanups(undefined, patientA);
+    });
+
+    // Operación B mantiene bloqueo de B, y ejecuta flush pasando heldLockPatientId = patientB
+    const opB = withPatientReportLock(patientB, async () => {
+      opBStarted = true;
+      if (opAStarted) releaseBarrier();
+      await barrierPromise;
+      return await flushPendingReportCleanups(undefined, patientB);
+    });
+
+    // Ambas operaciones deben terminar exitosamente sin bloquearse mutuamente
+    await Promise.all([opA, opB]);
+
+    clearPendingReportCleanups();
+  });
 });
 
 describe('gestión de reportes guardados, verificación y tolerancia a fallos', () => {
@@ -540,5 +579,135 @@ describe('gestión de reportes guardados, verificación y tolerancia a fallos', 
     await invalidPeriod.delete();
     await invalidTimestamp.delete();
     await deletePatientReport(patientA, validFilename);
+  });
+
+  it('si una escritura parcial crea bytes y falla, la compensación elimina el temporal y conserva el reporte previo intacto', async () => {
+    const { Directory, File, Paths } = await import('expo-file-system');
+
+    // 1. Crear un reporte previo legítimo
+    const prevBytes = new Uint8Array([1, 2, 3, 4]);
+    const { filename: prevFilename } = await persistReportXlsx(patientA, prevBytes, 30);
+    const prevFile = new File(getPatientReportDirectory(patientA), prevFilename);
+    expect(prevFile.exists).toBe(true);
+    const prevSize = prevFile.size;
+
+    // 2. Adaptador que escribe 2 bytes y arroja un error deliberado a mitad de camino
+    let partialTempCreatedUri: string | null = null;
+    const partialFailAdapter: BinaryReportStorageAdapter = {
+      async writeBytes(uri, bytes) {
+        partialTempCreatedUri = uri;
+        const f = new File(uri);
+        // Escribe deliberadamente solo 2 bytes parciales antes de fallar
+        await f.write(bytes.slice(0, 2));
+        throw new Error('Fallo simulado a mitad de escritura en disco');
+      },
+      async copyFile(s, t) {
+        await new File(s).copy(new File(t));
+      },
+      async moveFile(s, t) {
+        await new File(s).move(new File(t));
+      },
+      async deleteFile(uri) {
+        const f = new File(uri);
+        if (f.exists) await f.delete();
+      },
+      async fileExists(uri) {
+        return new File(uri).exists;
+      },
+      async directoryExists(dir) {
+        return new Directory(dir).exists;
+      },
+      async getFileSize(uri) {
+        const f = new File(uri);
+        return f.exists ? f.size : null;
+      },
+      async ensureDirectory(dir) {
+        new Directory(dir).create({ intermediates: true, idempotent: true });
+      },
+      async listDirectory(dir) {
+        const d = new Directory(dir);
+        if (!d.exists) return [];
+        return d.list().map((e) => ({
+          uri: e.uri,
+          name: e.name ?? Paths.basename(e.uri),
+          isFile: e instanceof File,
+          size: e instanceof File ? e.size : null,
+        }));
+      },
+    };
+
+    const newBytes = new Uint8Array([10, 20, 30, 40, 50]);
+    await expect(
+      persistReportFile(
+        patientA,
+        { type: 'bytes', bytes: newBytes },
+        30,
+        'xlsx',
+        partialFailAdapter,
+      ),
+    ).rejects.toThrow('Fallo simulado a mitad de escritura en disco');
+
+    // Comprobar que el archivo temporal parcial creado NO quedó en el sistema de archivos
+    expect(partialTempCreatedUri).not.toBeNull();
+    const tempFile = new File(partialTempCreatedUri!);
+    expect(tempFile.exists).toBe(false);
+
+    // Comprobar que el reporte previo sigue existiendo intacto y con el mismo tamaño
+    expect(prevFile.exists).toBe(true);
+    expect(prevFile.size).toBe(prevSize);
+
+    await deletePatientReport(patientA, prevFilename);
+  });
+
+  it('recupera y elimina temporales huérfanos (.tmp_reporte_*) bajo el bloqueo del paciente', async () => {
+    const { File } = await import('expo-file-system');
+    const dir = getPatientReportDirectory(patientA);
+    dir.create({ intermediates: true });
+
+    const orphanFile = new File(dir, `.tmp_reporte_30d_${Date.now()}_abc123.xlsx`);
+    await orphanFile.write('dos bytes residuales');
+    expect(orphanFile.exists).toBe(true);
+
+    // cleanOrphanedTempReports debe eliminarlo
+    const cleaned = await cleanOrphanedTempReports(patientA);
+    expect(cleaned).toBeGreaterThanOrEqual(1);
+    expect(orphanFile.exists).toBe(false);
+
+    // También getPatientReportList debe limpiar huérfanos automáticamente
+    const orphanFile2 = new File(dir, `.tmp_reporte_7d_${Date.now()}_def456.pdf`);
+    await orphanFile2.write('otro temporal');
+    expect(orphanFile2.exists).toBe(true);
+
+    await getPatientReportList(patientA);
+    expect(orphanFile2.exists).toBe(false);
+  });
+
+  it('propaga errores de acceso y lectura del directorio en getPatientReportList y listPatientReports', async () => {
+    const errorAdapter: BinaryReportStorageAdapter = {
+      async writeBytes() {},
+      async copyFile() {},
+      async moveFile() {},
+      async deleteFile() {},
+      async fileExists() {
+        return true;
+      },
+      async directoryExists() {
+        return true; // El directorio sí existe
+      },
+      async getFileSize() {
+        return 100;
+      },
+      async ensureDirectory() {},
+      async listDirectory() {
+        throw new Error('EACCES: permiso denegado al leer directorio');
+      },
+    };
+
+    await expect(getPatientReportList(patientA, errorAdapter)).rejects.toThrow(
+      'EACCES: permiso denegado al leer directorio',
+    );
+    await expect(listPatientReports(patientA, errorAdapter)).rejects.toThrow(
+      'EACCES: permiso denegado al leer directorio',
+    );
   });
 });
