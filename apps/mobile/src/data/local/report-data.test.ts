@@ -402,7 +402,7 @@ describe('reportes locales y generación de contenido para PDF', () => {
     }).toThrow();
   });
 
-  it('acredita RNF-06: generación de instantánea con 500 signos vitales y 500 síntomas en menos de 3 segundos', async () => {
+  it('benchmark de extracción y volumen: extracción SQLite y construcción de ReportData con 500 signos vitales y 500 síntomas en menos de 3 segundos', async () => {
     const database = open();
     await migrateDatabase(database);
     await seedPatientContextIfEmpty(database, patientA, patientB);
@@ -441,7 +441,9 @@ describe('reportes locales y generación de contenido para PDF', () => {
     expect(reportData.summary.vitalsCount).toBe(500);
     expect(reportData.summary.symptomsCount).toBe(500);
 
-    // RNF-06: tiempo estricto inferior a 3.000 ms (3 segundos)
+    // Benchmark de extracción en base de datos: tiempo inferior a 3.000 ms (3 segundos).
+    // Nota: La acreditación formal de RNF-06 requiere mediciones en Android release con dispositivo identificado
+    // y generación/persistencia binaria completa de PDF y XLSX.
     expect(durationMs).toBeLessThan(3000);
   });
 });
