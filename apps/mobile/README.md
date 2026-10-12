@@ -60,11 +60,12 @@ Desde la raíz:
 ```bash
 pnpm check
 pnpm run test:local
+pnpm run test:ui
 pnpm --filter @modulo-movil-oncologia/mobile run doctor
-pnpm --filter @modulo-movil-oncologia/mobile bundle:android
+pnpm --filter @modulo-movil-oncologia/mobile run bundle:android
 ```
 
-Las 150 pruebas unitarias con Vitest (`pnpm run test:local`) distribuidas en 12 suites modulares (8 suites de persistencia SQLite: `migrations.test.ts`, `records-outbox.test.ts`, `patient-context.test.ts`, `downloads.test.ts`, `forms.test.ts`, `clinical-context.test.ts`, `consents.test.ts`, `report-data.test.ts`; junto a `resource-storage.test.ts`, `medical-forms.test.ts`, `report-security.test.ts` y `report-xlsx.test.ts`) comprueban las migraciones de SQLite, aislamiento A/B, repositorios clínicos, compensación ante fallos de base de datos, validación de respuestas en cuestionarios, reemplazo seguro de borradores, sanitización de reportes locales, exportación multi-formato (PDF y XLSX), preservación de texto literal libre de inyecciones, contexto clínico, consentimientos, benchmark de extracción y volumen de datos en Node (< 3s para 500 signos y 500 síntomas), prevención de deadlocks cruzados (A/B) y lógica de reconciliación bidireccional en harnesses independientes con directorios temporales aislados por proceso. La exportación `bundle:android` comprueba el empaquetado JavaScript de Expo Router sin requerir emulador; la ejecución nativa con la Development Build (`android` / `run:android:demo`) valida el runtime nativo en Android (SQLite, `expo-file-system`, `expo-print`, `expo-sharing` y aislamiento por paciente). QuimioCare utiliza su propia Development Build en lugar de Expo Go para dar soporte completo a módulos nativos presentes y futuros (como PowerSync).
+Las 164 pruebas unitarias con Vitest (`pnpm run test:local`) distribuidas en 13 suites modulares (9 suites de persistencia SQLite: `migrations.test.ts`, `records-outbox.test.ts`, `patient-context.test.ts`, `downloads.test.ts`, `education.test.ts`, `forms.test.ts`, `clinical-context.test.ts`, `consents.test.ts`, `report-data.test.ts`; junto a `resource-storage.test.ts`, `medical-forms.test.ts`, `report-security.test.ts` y `report-xlsx.test.ts`), más la suite de pruebas de interfaz con Jest y React Native Testing Library (`pnpm run test:ui`, 6 pruebas de UI en `education.ui.test.tsx`), comprueban las migraciones de SQLite, aislamiento A/B, repositorios clínicos, almacenamiento multimedia educativo con compensación atómica y no sobrescritura de archivos, validación binaria de SHA-256, contratos de YouTube online sin descargas, validación de respuestas en cuestionarios, reemplazo seguro de borradores, sanitización de reportes locales, exportación multi-formato (PDF y XLSX), preservación de texto literal libre de inyecciones, contexto clínico, consentimientos, benchmark de extracción y volumen de datos en Node (< 3s para 500 signos y 500 síntomas), prevención de deadlocks cruzados (A/B), reconciliación bidireccional y comportamiento observable de la interfaz ante recursos online, copias guardadas y copias con error. La exportación `bundle:android` comprueba el empaquetado JavaScript de Expo Router sin requerir emulador; la ejecución nativa con la Development Build (`android` / `run:android:demo`) valida el runtime nativo en Android (SQLite, `expo-file-system`, `expo-network`, `expo-print`, `expo-sharing` y aislamiento por paciente). QuimioCare utiliza su propia Development Build en lugar de Expo Go para dar soporte completo a módulos nativos presentes y futuros (como PowerSync).
 
 ### Acreditación de RNF-06 y verificación en Android
 
@@ -87,7 +88,7 @@ El benchmark automatizado en Node (`report-data.test.ts`) evalúa exclusivamente
 #### Estado de acreditación
 
 - **Medición RNF-06 en hardware físico:** Pendiente de acreditación formal sobre dispositivo físico de referencia conectado por USB / modo autónomo. El protocolo metodológico queda fijado y listo para registrar las 5 mediciones individuales (1 fría y 4 calientes) cuando se disponga de dicho hardware.
-- **Validación funcional en Android:** Definida según los escenarios del protocolo y lista para su ejecución y captura de evidencias reales en AVD / dispositivo físico. Las pruebas automáticas unitarias (150 pruebas en 12 suites) y la compilación/empaquetado en CI se mantienen 100% verificadas.
+- **Validación funcional en Android:** Definida según los escenarios del protocolo y lista para su ejecución y captura de evidencias reales en AVD / dispositivo físico. Las pruebas automáticas unitarias (164 pruebas en 13 suites) y de interfaz (6 pruebas en Jest/RNTL), junto con la compilación/empaquetado en CI se mantienen 100% verificadas.
 
 ## Organización
 

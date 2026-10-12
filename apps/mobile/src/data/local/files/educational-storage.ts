@@ -1,5 +1,9 @@
 import { computeSha256 } from '../../../utils/crypto';
-import type { EducationalCopyFormat } from '../education/education-types';
+import type {
+  EducationalContentType,
+  EducationalCopyFormat,
+  EducationalLocalCopyMetadata,
+} from '../education/education-types';
 import { ExpoFileStorageAdapter, type FileStorageAdapter } from './file-storage-adapter';
 import {
   assertSafeId,
@@ -10,6 +14,17 @@ import {
 
 const defaultExpoAdapter = new ExpoFileStorageAdapter();
 
+function generateSafeUuid(): string {
+  if (typeof globalThis.crypto?.randomUUID === 'function') {
+    return globalThis.crypto.randomUUID();
+  }
+  return 'xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx'.replace(/[xy]/g, (c) => {
+    const r = (Math.random() * 16) | 0;
+    const v = c === 'x' ? r : (r & 0x3) | 0x8;
+    return v.toString(16);
+  });
+}
+
 export interface SaveMediaParams {
   pacienteId: string;
   contenidoId: string;
@@ -17,15 +32,15 @@ export interface SaveMediaParams {
   content: string | Uint8Array;
   versionOrigen?: string;
   mimeType?: string;
+  titulo?: string;
+  tipo?: EducationalContentType;
+  descripcion?: string;
+  tokenGenerator?: () => string;
   persistCopyInTx: (params: {
     rutaLocal: string;
     formato: EducationalCopyFormat;
     tamanoBytes: number;
-    metadataLocal: {
-      sha256: string;
-      versionOrigen?: string;
-      mimeType?: string;
-    };
+    metadataLocal: EducationalLocalCopyMetadata;
   }) => Promise<void>;
   adapter?: FileStorageAdapter;
   baseDirResolver?: (pacienteId: string) => string;
@@ -54,7 +69,7 @@ export function isMediaFileForContent(
     const prefix = `${contenidoId}.`;
     if (fileName.startsWith(prefix) && fileName.endsWith(`.${ext}`)) {
       const middle = fileName.slice(prefix.length, -(ext.length + 1));
-      if (/^\d+$/.test(middle)) return true;
+      if (/^[0-9a-zA-Z.-]+$/.test(middle) && !middle.includes('..')) return true;
     }
 
     if (options?.allowLegacy) {
@@ -111,11 +126,12 @@ export function isPathInPatientMediaDirectory(
  * Coordinador de guardado multimedia seguro con compensación y exclusión mutua por paciente:
  * 1. Coordina con withPatientResourceLock para evitar carreras concurrentes.
  * 2. Registra tanto .tmp como el destino final en activeWrites.
- * 3. Calcula el SHA-256 sobre los bytes reales del contenido y determina el tamaño en bytes exacto.
- * 4. Escribe el temporal y lo mueve a destino.
+ * 3. Asigna nombre único con UUID y calcula el SHA-256 sobre los bytes reales.
+ * 4. Escribe el temporal y lo mueve a destino con overwrite: false para prevenir colisiones.
  * 5. Ejecuta persistencia en base de datos.
  * 6. dbCommitted cambia ESTRICTAMENTE DESPUÉS del COMMIT real.
- * 7. En caso de fallo antes del commit, la compensación elimina EXCLUSIVAMENTE los archivos creados por este intento.
+ * 7. En caso de fallo antes del commit, la compensación elimina EXCLUSIVAMENTE los archivos creados por este intento
+ *    y limpia temporales parciales si existen en disco.
  */
 export async function saveEducationalMediaWithCompensation(
   params: SaveMediaParams,
@@ -135,8 +151,9 @@ export async function saveEducationalMediaWithCompensation(
 
     const baseDirClean = baseDir.replace(/\\/g, '/').replace(/\/+$/, '');
     const extension = formato === 'markdown' ? 'md' : formato === 'png' ? 'png' : 'jpg';
-    const timestamp = Date.now();
-    const token = `${contenidoId}.${timestamp}`;
+    const token = params.tokenGenerator
+      ? params.tokenGenerator()
+      : `${contenidoId}.${Date.now()}.${generateSafeUuid()}`;
     const tmpUri = `${baseDirClean}/${token}.tmp`;
     const finalUri = `${baseDirClean}/${token}.${extension}`;
 
@@ -148,7 +165,6 @@ export async function saveEducationalMediaWithCompensation(
     // Proteger temporal y destino en activeWrites
     const unregister = registerActiveWrite([tmpUri, finalUri]);
 
-    let tmpFileCreated = false;
     let finalFileCreated = false;
     let dbCommitted = false;
 
@@ -161,10 +177,9 @@ export async function saveEducationalMediaWithCompensation(
       } else {
         await adapter.writeText(tmpUri, Buffer.from(content).toString('base64'));
       }
-      tmpFileCreated = true;
 
-      // 2. Mover temporal a destino final
-      await adapter.moveFile(tmpUri, finalUri, { overwrite: true });
+      // 2. Mover temporal a destino final sin sobrescritura (rechaza colisión)
+      await adapter.moveFile(tmpUri, finalUri, { overwrite: false });
       finalFileCreated = true;
 
       // 3. Confirmar persistencia en SQLite
@@ -176,6 +191,9 @@ export async function saveEducationalMediaWithCompensation(
           sha256,
           versionOrigen: params.versionOrigen,
           mimeType: params.mimeType,
+          titulo: params.titulo,
+          tipo: params.tipo,
+          descripcion: params.descripcion,
         },
       });
 
@@ -198,12 +216,14 @@ export async function saveEducationalMediaWithCompensation(
             // Ignorar fallo en borrado de compensación
           }
         }
-        if (tmpFileCreated) {
-          try {
+        // Limpieza de temporal: si la escritura falló a mitad o antes de mover,
+        // eliminar el temporal si existe en disco (cubre escrituras parciales)
+        try {
+          if (await adapter.exists(tmpUri)) {
             await adapter.deleteFile(tmpUri);
-          } catch {
-            // Ignorar fallo en borrado del temporal
           }
+        } catch {
+          // Ignorar fallo en borrado del temporal
         }
       }
       throw error;

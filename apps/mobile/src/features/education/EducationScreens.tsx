@@ -1,6 +1,7 @@
 import Feather from '@expo/vector-icons/Feather';
 import { Asset } from 'expo-asset';
 import { File } from 'expo-file-system';
+import * as Network from 'expo-network';
 import { router, useLocalSearchParams } from 'expo-router';
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { ActivityIndicator, Image, Pressable, StyleSheet, Text, View } from 'react-native';
@@ -36,9 +37,9 @@ import { useAppTheme } from '../../providers/ThemeProvider';
 import { theme } from '../../theme';
 import { DiagnosticsDemoModal } from './DiagnosticsDemoModal';
 import {
-  SAMPLE_EDUCATIONAL_CATALOG,
-  SAMPLE_EDUCATIONAL_CATEGORIES,
-} from './sample-education-catalog';
+  getEducationalCatalogReader,
+  type EducationalCategory,
+} from './educational-catalog-service';
 
 const BUNDLED_ASSETS: Record<string, number> = {
   // eslint-disable-next-line @typescript-eslint/no-require-imports
@@ -58,6 +59,12 @@ export function EducationScreen() {
   }, [repository, patientId]);
 
   const { items: copies } = useFocusedList(loadCopies);
+
+  const loadCategories = useCallback(async (): Promise<EducationalCategory[]> => {
+    return getEducationalCatalogReader().getCategories();
+  }, []);
+
+  const { items: categories } = useFocusedList(loadCategories);
 
   return (
     <Screen title="Contenido educativo">
@@ -86,8 +93,8 @@ export function EducationScreen() {
         <Feather name="chevron-right" size={22} color={appTheme.colors.text} />
       </Pressable>
 
-      {/* Categorías educativas */}
-      {SAMPLE_EDUCATIONAL_CATEGORIES.map((category) => (
+      {/* Categorías educativas dinámicas */}
+      {categories.map((category) => (
         <Pressable
           key={category.id}
           accessibilityRole="button"
@@ -98,7 +105,7 @@ export function EducationScreen() {
           <Feather name={category.icon} size={28} color={appTheme.colors.primary} />
           <View style={styles.copy}>
             <Text style={styles.heading}>{category.title}</Text>
-            <BodyText>{category.count}</BodyText>
+            <BodyText>{category.countLabel}</BodyText>
           </View>
           <Feather name="chevron-right" size={22} color={appTheme.colors.text} />
         </Pressable>
@@ -134,27 +141,31 @@ export function EducationCategoryScreen() {
   const [expanded, setExpanded] = useState<string | null>(null);
   const { categoria } = useLocalSearchParams<{ categoria?: string }>();
   const categoryIndex = categoria === '1' || categoria === '2' ? Number(categoria) : 0;
-  const currentCategory = SAMPLE_EDUCATIONAL_CATEGORIES[categoryIndex];
-
-  const resources = SAMPLE_EDUCATIONAL_CATALOG.filter(
-    (resource) => resource.category === categoryIndex,
-  );
 
   const loadData = useCallback(async () => {
-    if (!repository || !patientId) return { copies: [], interactions: [] };
-    await reconcileResourceCopies(patientId, repository).catch(() => undefined);
-    const [copies, interactions] = await Promise.all([
-      repository.education.listLocalCopies(),
-      repository.education.listInteractions(),
+    const reader = getEducationalCatalogReader();
+    const [categories, resources, copies, interactions] = await Promise.all([
+      reader.getCategories(),
+      reader.getResourcesByCategory(categoryIndex),
+      repository && patientId ? repository.education.listLocalCopies() : Promise.resolve([]),
+      repository && patientId ? repository.education.listInteractions() : Promise.resolve([]),
     ]);
-    return { copies, interactions };
-  }, [repository, patientId]);
+
+    if (repository && patientId) {
+      await reconcileResourceCopies(patientId, repository).catch(() => undefined);
+    }
+
+    const currentCategory = categories.find((c) => c.id === categoryIndex) ?? categories[0];
+    return { currentCategory, resources, copies, interactions };
+  }, [categoryIndex, repository, patientId]);
 
   const {
     value,
     loading: loadingData,
     error: dataError,
   } = useFocusedValue(loadData, {
+    currentCategory: undefined as EducationalCategory | undefined,
+    resources: [] as EducationalResource[],
     copies: [] as EducationalLocalCopy[],
     interactions: [] as EducationalInteraction[],
   });
@@ -163,92 +174,105 @@ export function EducationCategoryScreen() {
   const interactionMap = new Map((value?.interactions ?? []).map((i) => [i.contentId, i]));
 
   return (
-    <Screen title={currentCategory?.title ?? 'Categoría'} backTo="/educacion">
+    <Screen title={value?.currentCategory?.title ?? 'Categoría'} backTo="/educacion">
       <DemoBadge />
       <BodyText>
         Material de muestra neutro para demostración técnica del acompañamiento educativo
         multimedia.
       </BodyText>
 
-      {resources.map((resource) => {
-        const copy = copyMap.get(resource.id);
-        const interaction = interactionMap.get(resource.id);
+      {loadingData ? (
+        <BodyText>Cargando materiales de la categoría…</BodyText>
+      ) : dataError ? (
+        <InfoCard>
+          <Text style={styles.errorText}>No se pudo cargar la información de la categoría.</Text>
+        </InfoCard>
+      ) : (
+        value?.resources.map((resource) => {
+          const copy = copyMap.get(resource.id);
+          const interaction = interactionMap.get(resource.id);
 
-        const fileExists =
-          patientId && copy?.rutaRelativa
-            ? resourceFileExists(patientId, resource.id, copy.rutaRelativa)
-            : false;
-        const isDownloaded = Boolean(copy && fileExists);
-        const isFileMissing = Boolean(copy && !fileExists);
+          const fileExists =
+            patientId && copy?.rutaRelativa
+              ? resourceFileExists(patientId, resource.id, copy.rutaRelativa)
+              : false;
+          const isDownloaded = Boolean(copy && fileExists);
+          const isFileMissing = Boolean(copy && !fileExists);
+          const isExpanded = expanded === resource.id;
 
-        const iconName: 'play-circle' | 'image' | 'file-text' =
-          resource.type === 'video'
-            ? 'play-circle'
-            : resource.type === 'infografia'
-              ? 'image'
-              : 'file-text';
+          const typeIcon =
+            resource.type === 'video'
+              ? 'video'
+              : resource.type === 'infografia'
+                ? 'image'
+                : 'file-text';
 
-        let statusText = 'Disponible para guardar';
-        if (resource.type === 'video') {
-          if (interaction?.revisionDeclaradaEn) {
-            statusText = 'Video revisado (declarado)';
-          } else if (interaction) {
-            statusText = 'Abierto externamente · Pendiente';
-          } else {
-            statusText = 'Apertura en YouTube (online)';
-          }
-        } else if (isDownloaded) {
-          statusText = copy?.revisionDeclarada
-            ? 'Copia revisada (local)'
-            : 'Disponible sin conexión';
-        } else if (isFileMissing) {
-          statusText = 'Archivo ausente en dispositivo';
-        }
+          return (
+            <InfoCard key={resource.id}>
+              <Pressable
+                accessibilityRole="button"
+                accessibilityLabel={`${resource.title}, ${resource.type}`}
+                onPress={() => setExpanded(isExpanded ? null : resource.id)}
+              >
+                <View style={styles.row}>
+                  <Feather name={typeIcon} size={24} color={appTheme.colors.primary} />
+                  <View style={styles.copy}>
+                    <Text style={styles.heading}>{resource.title}</Text>
+                    <BodyText>
+                      {resource.type === 'video'
+                        ? 'Video online (YouTube)'
+                        : resource.type === 'infografia'
+                          ? 'Infografía descargable'
+                          : 'Guía de lectura'}
+                      {resource.estimatedReadTimeMinutes
+                        ? ` · ~${resource.estimatedReadTimeMinutes} min`
+                        : ''}
+                    </BodyText>
+                  </View>
+                  <Feather
+                    name={isExpanded ? 'chevron-up' : 'chevron-down'}
+                    size={22}
+                    color={appTheme.colors.text}
+                  />
+                </View>
+              </Pressable>
 
-        return (
-          <InfoCard key={resource.id}>
-            <Pressable
-              accessibilityRole="button"
-              accessibilityLabel={'Ver detalle de ' + resource.title}
-              accessibilityState={{ expanded: expanded === resource.id }}
-              onPress={() => setExpanded(expanded === resource.id ? null : resource.id)}
-              style={styles.row}
-            >
-              <Feather name={iconName} size={26} color={appTheme.colors.primary} />
-              <View style={styles.copy}>
-                <Text style={styles.heading}>{resource.title}</Text>
-                <BodyText>
-                  {resource.type.toUpperCase()} ·{' '}
-                  {resource.estimatedReadTimeMinutes
-                    ? `${resource.estimatedReadTimeMinutes} min`
-                    : 'Muestra'}
-                </BodyText>
-              </View>
-              <Feather
-                name={expanded === resource.id ? 'chevron-up' : 'chevron-down'}
-                size={22}
-                color={appTheme.colors.text}
-              />
-            </Pressable>
-
-            {expanded === resource.id ? (
-              <View style={styles.stack}>
-                <BodyText>{resource.description}</BodyText>
+              <View style={styles.noticeBox}>
                 <StatusPill>
-                  {loadingData ? 'Comprobando…' : dataError ? 'Estado no disponible' : statusText}
+                  {resource.type === 'video'
+                    ? interaction?.revisionDeclaradaEn
+                      ? `Revisado el ${formatDate(interaction.revisionDeclaradaEn)}`
+                      : interaction
+                        ? 'Video abierto (pendiente de confirmar)'
+                        : 'Disponible online'
+                    : isDownloaded
+                      ? copy?.revisionDeclarada
+                        ? `Revisado el ${copy.revisionDeclaradaEn ? formatDate(copy.revisionDeclaradaEn) : 'sí'}`
+                        : 'Guardado en disco'
+                      : isFileMissing
+                        ? 'Archivo no disponible'
+                        : 'Disponible para descarga'}
                 </StatusPill>
-                <VisualButton
-                  label="Ver detalle completo"
-                  secondary
-                  onPress={() =>
-                    router.navigate('/educacion/recurso?recurso=' + encodeURIComponent(resource.id))
-                  }
-                />
               </View>
-            ) : null}
-          </InfoCard>
-        );
-      })}
+
+              {isExpanded ? (
+                <View style={styles.stack}>
+                  <BodyText>{resource.description}</BodyText>
+                  <VisualButton
+                    label="Ver detalle completo"
+                    secondary
+                    onPress={() =>
+                      router.navigate(
+                        '/educacion/recurso?recurso=' + encodeURIComponent(resource.id),
+                      )
+                    }
+                  />
+                </View>
+              ) : null}
+            </InfoCard>
+          );
+        })
+      )}
     </Screen>
   );
 }
@@ -267,12 +291,15 @@ export function EducationResourceScreen() {
     };
   }, []);
 
-  const resource: EducationalResource | undefined = SAMPLE_EDUCATIONAL_CATALOG.find(
-    (r) => r.id === recurso,
-  );
+  const loadResourceData = useCallback(async () => {
+    if (!recurso) return null;
+    return getEducationalCatalogReader().getResourceById(recurso);
+  }, [recurso]);
+
+  const { value: resource, loading: loadingResource } = useFocusedValue(loadResourceData, null);
 
   const loadStatus = useCallback(async () => {
-    if (!repository || !patientId || !resource) {
+    if (!repository || !patientId || !recurso) {
       return {
         copy: null as EducationalLocalCopy | null,
         interaction: null as EducationalInteraction | null,
@@ -280,20 +307,13 @@ export function EducationResourceScreen() {
     }
     await reconcileResourceCopies(patientId, repository).catch(() => undefined);
     const [copy, interaction] = await Promise.all([
-      repository.education.getLocalCopy(resource.id),
-      resource.type === 'video'
-        ? repository.education.getInteraction(resource.id)
-        : Promise.resolve(null),
+      repository.education.getLocalCopy(recurso),
+      repository.education.getInteraction(recurso),
     ]);
     return { copy, interaction };
-  }, [repository, patientId, resource]);
+  }, [repository, patientId, recurso]);
 
-  const {
-    value: statusData,
-    loading: loadingStatus,
-    error: statusError,
-    refresh: refreshStatus,
-  } = useFocusedValue(loadStatus, {
+  const { value: statusData, refresh: refreshStatus } = useFocusedValue(loadStatus, {
     copy: null as EducationalLocalCopy | null,
     interaction: null as EducationalInteraction | null,
   });
@@ -302,6 +322,16 @@ export function EducationResourceScreen() {
   const [opError, setOpError] = useState<string | null>(null);
   const [actionBusy, setActionBusy] = useState(false);
   const [imageLoaded, setImageLoaded] = useState(false);
+  const [imageLoadError, setImageLoadError] = useState(false);
+
+  if (loadingResource) {
+    return (
+      <Screen title="Cargando recurso" backTo="/educacion">
+        <DemoBadge />
+        <BodyText>Obteniendo información del recurso educativo…</BodyText>
+      </Screen>
+    );
+  }
 
   if (!resource) {
     return (
@@ -310,7 +340,7 @@ export function EducationResourceScreen() {
         <EmptyState
           icon="alert-circle"
           title="Recurso no disponible"
-          description="No se encontró el material educativo solicitado."
+          description="No se encontró el material educativo solicitado en el catálogo."
         />
       </Screen>
     );
@@ -323,17 +353,25 @@ export function EducationResourceScreen() {
     patientId && localCopy?.rutaRelativa
       ? resourceFileExists(patientId, resource.id, localCopy.rutaRelativa)
       : false;
-  const isDownloaded = Boolean(localCopy && fileExists);
-  const isFileMissing = Boolean(localCopy && !fileExists);
+  const isDownloaded = Boolean(localCopy && fileExists && localCopy.estado !== 'error');
+  const isFileMissing = Boolean(localCopy && (!fileExists || localCopy.estado === 'error'));
   const busy = actionBusy || saving;
 
-  // Lógica de apertura externa para videos de YouTube
+  // Lógica de apertura externa para videos de YouTube con comprobación de red
   async function handleOpenYouTube() {
     if (!repository || !patientId || !resource?.youtubeVideoId || busy) return;
     setActionBusy(true);
     setOpError(null);
 
     try {
+      const netState = await Network.getNetworkStateAsync();
+      if (!netState.isConnected || netState.isInternetReachable === false) {
+        setOpError(
+          'No hay conexión a internet disponible. Los videos de YouTube requieren conexión activa para su reproducción.',
+        );
+        return;
+      }
+
       // Registrar interacción de apertura en SQLite
       await repository.education.recordYouTubeInteraction({
         contentId: resource.id,
@@ -343,9 +381,7 @@ export function EducationResourceScreen() {
 
       const launchResult = await launchYouTubeVideo(resource.youtubeVideoId);
       if (!launchResult.success) {
-        setOpError(
-          'No se pudo abrir YouTube en este dispositivo. Comprueba tu conexión a internet.',
-        );
+        setOpError(launchResult.error || 'No se pudo abrir YouTube en este dispositivo.');
       }
       refreshStatus();
     } catch {
@@ -380,7 +416,7 @@ export function EducationResourceScreen() {
     }
   }
 
-  // Guardar copia local offline (Guía o Infografía)
+  // Guardar copia local offline (Guía o Infografía) sin fallbacks corruptos
   async function handleSaveOfflineCopy() {
     if (!repository || !patientId || !resource || busy || !database) return;
     setActionBusy(true);
@@ -397,19 +433,22 @@ export function EducationResourceScreen() {
           const assetKey = resource.asset?.type === 'bundled' ? resource.asset.assetKey : '';
           const assetModule = BUNDLED_ASSETS[assetKey];
 
-          if (assetModule) {
-            const [loadedAsset] = await Asset.loadAsync(assetModule);
-            const sourceUri = loadedAsset?.localUri;
-            if (sourceUri) {
-              const fileObj = new File(sourceUri);
-              contentToSave = await fileObj.bytes();
-            } else {
-              // Fallback sintético neutro en entorno sin localUri
-              contentToSave = new Uint8Array([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a]);
-            }
-          } else {
-            contentToSave = new Uint8Array([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a]);
+          if (!assetModule) {
+            throw new Error(
+              'El archivo de la infografía no se encuentra empaquetado en este dispositivo.',
+            );
           }
+
+          const [loadedAsset] = await Asset.loadAsync(assetModule);
+          const sourceUri = loadedAsset?.localUri;
+          if (!sourceUri) {
+            throw new Error(
+              'No se pudo resolver la ruta local de la infografía empaquetada. Se cancela la operación para conservar la integridad del almacenamiento.',
+            );
+          }
+
+          const fileObj = new File(sourceUri);
+          contentToSave = await fileObj.bytes();
         } else {
           contentToSave =
             resource.contentMarkdown ?? `# ${resource.title}\n\nContenido de muestra.`;
@@ -423,6 +462,9 @@ export function EducationResourceScreen() {
           content: contentToSave,
           versionOrigen: resource.version,
           mimeType,
+          titulo: resource.title,
+          tipo: resource.type,
+          descripcion: resource.description,
           persistCopyInTx: async (params) => {
             // Guardar dentro de transacción de SQLite
             await database.transaction(async (tx: SqlConnection) => {
@@ -439,8 +481,12 @@ export function EducationResourceScreen() {
         });
       });
       refreshStatus();
-    } catch {
-      setOpError('No se pudo guardar la copia sin conexión en el dispositivo.');
+    } catch (err) {
+      setOpError(
+        err instanceof Error
+          ? err.message
+          : 'No se pudo guardar la copia sin conexión en el dispositivo.',
+      );
     } finally {
       if (isMountedRef.current) setActionBusy(false);
     }
@@ -464,7 +510,7 @@ export function EducationResourceScreen() {
     }
   }
 
-  // Eliminar copia local
+  // Eliminar copia local con verificación física previa
   async function handleDeleteCopy() {
     if (!repository || !patientId || !resource || busy) return;
     setActionBusy(true);
@@ -473,15 +519,29 @@ export function EducationResourceScreen() {
     try {
       await runSave(async () => {
         if (localCopy?.rutaRelativa) {
-          await deleteResourceFile(patientId, resource.id, localCopy.rutaRelativa);
+          const physicallyDeleted = await deleteResourceFile(
+            patientId,
+            resource.id,
+            localCopy.rutaRelativa,
+          );
+          if (!physicallyDeleted) {
+            throw new Error(
+              'No se pudo confirmar la eliminación física del archivo del almacenamiento local.',
+            );
+          }
         }
         await repository.education.removeLocalCopy(resource.id);
       });
       setReadingContent(null);
       setImageLoaded(false);
+      setImageLoadError(false);
       refreshStatus();
-    } catch {
-      setOpError('No se pudo eliminar el archivo local en el dispositivo.');
+    } catch (err) {
+      setOpError(
+        err instanceof Error
+          ? err.message
+          : 'No se pudo eliminar el archivo local en el dispositivo.',
+      );
     } finally {
       if (isMountedRef.current) setActionBusy(false);
     }
@@ -489,22 +549,21 @@ export function EducationResourceScreen() {
 
   // Leer guía de texto
   async function handleReadGuide() {
-    if (!patientId || !resource) return;
+    if (!patientId || !resource || busy) return;
+    setActionBusy(true);
     setOpError(null);
 
     try {
-      const content = await readResourceFile(patientId, resource.id, localCopy?.rutaRelativa);
-      if (content !== null) {
-        setReadingContent(content);
-        if (repository) {
-          await repository.education.markCopyViewed(resource.id).catch(() => undefined);
-          refreshStatus();
-        }
+      const text = await readResourceFile(patientId, resource.id, localCopy?.rutaRelativa);
+      if (text) {
+        setReadingContent(text);
       } else {
-        setOpError('El archivo físico no se encuentra en el dispositivo.');
+        setOpError('No se pudo leer el archivo de la guía en el disco.');
       }
     } catch {
-      setOpError('No se pudo leer el archivo local del dispositivo.');
+      setOpError('Error al leer el archivo desde el almacenamiento local.');
+    } finally {
+      if (isMountedRef.current) setActionBusy(false);
     }
   }
 
@@ -512,73 +571,45 @@ export function EducationResourceScreen() {
     <Screen title={resource.title} backTo="/educacion">
       <DemoBadge />
 
-      {statusError ? (
-        <InfoCard>
-          <Text accessibilityRole="alert" style={styles.errorText}>
-            No se pudo consultar el estado del material educativo.
-          </Text>
-          <VisualButton label="Reintentar consulta" secondary onPress={refreshStatus} />
-        </InfoCard>
-      ) : null}
+      <InfoCard>
+        <SectionTitle>{resource.title}</SectionTitle>
+        <BodyText>{resource.description}</BodyText>
+        <BodyText>Categoría: {resource.categoryName}</BodyText>
+        {resource.estimatedReadTimeMinutes ? (
+          <BodyText>Tiempo estimado: ~{resource.estimatedReadTimeMinutes} minutos</BodyText>
+        ) : null}
+      </InfoCard>
 
       <InfoCard>
-        <View style={styles.placeholder}>
-          <Feather
-            name={
-              resource.type === 'video'
-                ? 'play-circle'
-                : resource.type === 'infografia'
-                  ? 'image'
-                  : 'file-text'
-            }
-            size={60}
-            color={appTheme.colors.primary}
-          />
-        </View>
-
-        <SectionTitle>
-          {resource.type.toUpperCase()} ·{' '}
-          {resource.estimatedReadTimeMinutes
-            ? `${resource.estimatedReadTimeMinutes} min`
-            : 'Muestra'}
-        </SectionTitle>
-
-        <BodyText>{resource.description}</BodyText>
-
-        {resource.type === 'video' ? (
-          <StatusPill>
-            {interaction?.revisionDeclaradaEn
+        <SectionTitle>Estado en este dispositivo</SectionTitle>
+        <StatusPill>
+          {resource.type === 'video'
+            ? interaction?.revisionDeclaradaEn
               ? `Video revisado el ${formatDate(interaction.revisionDeclaradaEn)}`
               : interaction
-                ? 'Abierto externamente · Pendiente'
-                : 'Apertura externa (requiere internet)'}
-          </StatusPill>
-        ) : (
-          <StatusPill>
-            {loadingStatus
-              ? 'Comprobando disponibilidad…'
-              : isDownloaded
-                ? localCopy?.revisionDeclarada
-                  ? `Revisada el ${localCopy.revisionDeclaradaEn ? formatDate(localCopy.revisionDeclaradaEn) : 'sí'}`
-                  : 'Disponible sin conexión'
-                : isFileMissing
-                  ? 'Archivo ausente en dispositivo'
-                  : 'Disponible para guardar'}
-          </StatusPill>
-        )}
+                ? 'Video abierto (pendiente de confirmar)'
+                : 'Disponible online'
+            : isDownloaded
+              ? localCopy?.revisionDeclarada
+                ? `Material revisado el ${localCopy.revisionDeclaradaEn ? formatDate(localCopy.revisionDeclaradaEn) : 'sí'}`
+                : 'Copia guardada en disco (pendiente de revisión)'
+              : isFileMissing
+                ? 'Archivo no disponible'
+                : 'Disponible para descarga'}
+        </StatusPill>
 
         {resource.type === 'video' ? (
           <View style={styles.noticeBox}>
             <Feather name="info" size={18} color={appTheme.colors.primary} />
             <Text style={styles.noticeText}>
-              Apertura en la aplicación de YouTube o navegador. Requiere conexión a internet activa.
-              No se descargan videos al almacenamiento local.
+              Los videos educativos se abren externamente en YouTube y requieren conexión activa. No
+              se descargan videos al almacenamiento local.
             </Text>
           </View>
         ) : null}
       </InfoCard>
 
-      {/* Visor de infografía (PNG) */}
+      {/* Visor de infografía (PNG) con control onLoad/onError */}
       {resource.type === 'infografia' && isDownloaded && localCopy?.rutaRelativa ? (
         <InfoCard>
           <SectionTitle>Infografía guardada en disco</SectionTitle>
@@ -586,10 +617,24 @@ export function EducationResourceScreen() {
             source={{ uri: localCopy.rutaRelativa }}
             style={styles.infographicImage}
             resizeMode="contain"
-            onLoad={() => setImageLoaded(true)}
-            onError={() => setImageLoaded(false)}
+            onLoad={() => {
+              setImageLoaded(true);
+              setImageLoadError(false);
+            }}
+            onError={() => {
+              setImageLoaded(false);
+              setImageLoadError(true);
+            }}
           />
-          {!imageLoaded ? (
+          {imageLoadError ? (
+            <View style={styles.imageLoadingBox}>
+              <Feather name="alert-triangle" size={18} color={appTheme.colors.error} />
+              <BodyText style={{ color: appTheme.colors.error }}>
+                No se pudo renderizar la infografía desde el almacenamiento local. El archivo podría
+                estar dañado o no ser compatible.
+              </BodyText>
+            </View>
+          ) : !imageLoaded ? (
             <View style={styles.imageLoadingBox}>
               <ActivityIndicator color={appTheme.colors.primary} />
               <BodyText>Cargando visualización de imagen…</BodyText>
@@ -645,11 +690,13 @@ export function EducationResourceScreen() {
             />
           ) : null}
 
-          {/* Para infografías: botón deshabilitado hasta que la imagen haya terminado de cargar */}
+          {/* Para infografías: botón deshabilitado hasta que la imagen haya terminado de cargar sin errores */}
           {!localCopy?.revisionDeclarada ? (
             <VisualButton
               label={busy ? 'Confirmando…' : 'Declarar material revisado'}
-              disabled={busy || (resource.type === 'infografia' && !imageLoaded)}
+              disabled={
+                busy || (resource.type === 'infografia' && (!imageLoaded || imageLoadError))
+              }
               onPress={() => void handleDeclareCopyReviewed()}
             />
           ) : null}
@@ -666,8 +713,8 @@ export function EducationResourceScreen() {
           <InfoCard>
             <SectionTitle>Archivo no disponible</SectionTitle>
             <BodyText>
-              La copia física no se encuentra en el almacenamiento local. Puedes reintentar la
-              descarga para restaurarla.
+              La copia física no se encuentra en el almacenamiento local o presentó errores al
+              guardar. Puedes reintentar la descarga para restaurarla.
             </BodyText>
           </InfoCard>
           <VisualButton

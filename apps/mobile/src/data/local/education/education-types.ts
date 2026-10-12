@@ -46,6 +46,10 @@ export interface EducationalLocalCopyMetadata {
   mimeType?: string;
   anchoPx?: number;
   altoPx?: number;
+  titulo?: string;
+  tipo?: EducationalContentType;
+  descripcion?: string;
+  [key: string]: unknown;
 }
 
 export interface EducationalLocalCopy {
@@ -55,6 +59,10 @@ export interface EducationalLocalCopy {
   rutaAbsoluta?: string;
   formato: EducationalCopyFormat;
   tamanoBytes: number;
+  estado?: 'pendiente' | 'descargado' | 'error';
+  titulo?: string;
+  tipo?: EducationalContentType;
+  descripcion?: string;
   descargadoEn: string;
   visualizadoEn?: string | null;
   revisionDeclarada: boolean;

@@ -1,6 +1,15 @@
 import Feather from '@expo/vector-icons/Feather';
 import type { ReactNode } from 'react';
-import { type DimensionValue, Pressable, StyleSheet, Text, TextInput, View } from 'react-native';
+import {
+  type DimensionValue,
+  Pressable,
+  type StyleProp,
+  StyleSheet,
+  Text,
+  TextInput,
+  type TextStyle,
+  View,
+} from 'react-native';
 
 import { useAppTheme } from '../providers/ThemeProvider';
 import { theme } from '../theme';
@@ -25,14 +34,26 @@ export function InfoCard({ children }: { children: ReactNode }) {
   return <View style={styles.card}>{children}</View>;
 }
 
-export function BodyText({ children }: { children: ReactNode }) {
+export function BodyText({
+  children,
+  style,
+}: {
+  children: ReactNode;
+  style?: StyleProp<TextStyle>;
+}) {
   const styles = useStyles();
-  return <Text style={styles.body}>{children}</Text>;
+  return <Text style={[styles.body, style]}>{children}</Text>;
 }
 
-export function StatusPill({ children }: { children: ReactNode }) {
+export function StatusPill({
+  children,
+  variant,
+}: {
+  children: ReactNode;
+  variant?: 'default' | 'danger';
+}) {
   const styles = useStyles();
-  return <Text style={styles.pill}>{children}</Text>;
+  return <Text style={[styles.pill, variant === 'danger' && styles.dangerPill]}>{children}</Text>;
 }
 
 type ButtonProps = {
@@ -189,6 +210,10 @@ function useStyles() {
       color: colors.onPrimaryContainer,
       fontSize: 13,
       fontWeight: '600',
+    },
+    dangerPill: {
+      backgroundColor: colors.error,
+      color: '#FFFFFF',
     },
     button: {
       minHeight: 52,

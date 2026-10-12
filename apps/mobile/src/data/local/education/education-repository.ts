@@ -41,6 +41,10 @@ export function mapRowToLocalCopy(row: {
     rutaAbsoluta: row.ruta_local ?? '',
     formato: (row.formato as EducationalCopyFormat) || 'markdown',
     tamanoBytes: row.tamano_bytes ?? 0,
+    estado: (row.estado as 'pendiente' | 'descargado' | 'error') || 'descargado',
+    titulo: metadata?.titulo,
+    tipo: metadata?.tipo,
+    descripcion: metadata?.descripcion,
     descargadoEn: row.fecha_descarga ?? '',
     visualizadoEn: isViewed ? row.visualizada_en : null,
     revisionDeclarada: isReviewed,
@@ -167,10 +171,10 @@ export function createEducationRepository(
         formato?: string;
         tamano_bytes?: number;
         metadata_local_json?: string | null;
-      }>(
-        `SELECT * FROM descarga WHERE paciente_id = ? AND contenido_id = ? AND estado = 'descargado'`,
-        [patientId, contentId],
-      );
+      }>(`SELECT * FROM descarga WHERE paciente_id = ? AND contenido_id = ?`, [
+        patientId,
+        contentId,
+      ]);
       return row ? mapRowToLocalCopy(row) : null;
     },
 
@@ -189,7 +193,7 @@ export function createEducationRepository(
         tamano_bytes?: number;
         metadata_local_json?: string | null;
       }>(
-        `SELECT * FROM descarga WHERE paciente_id = ? AND estado = 'descargado' ORDER BY fecha_descarga DESC`,
+        `SELECT * FROM descarga WHERE paciente_id = ? ORDER BY COALESCE(fecha_descarga, '1970-01-01') DESC`,
         [patientId],
       );
       return rows.map(mapRowToLocalCopy);
@@ -331,13 +335,13 @@ export function createEducationRepository(
           const prevMeta: EducationalLocalCopyMetadata = existing.metadata_local_json
             ? JSON.parse(existing.metadata_local_json)
             : {};
-          const sameVersion =
-            Boolean(prevMeta.versionOrigen) &&
-            prevMeta.versionOrigen === params.metadataLocal?.versionOrigen;
+          const prevVer = prevMeta.versionOrigen ?? null;
+          const nextVer = params.metadataLocal?.versionOrigen ?? null;
+          const sameVersion = prevVer === nextVer;
           const sameSha =
             Boolean(prevMeta.sha256) && prevMeta.sha256 === params.metadataLocal?.sha256;
 
-          // Se exige identidad de versión Y de sha256 para conservarla
+          // Se exige identidad de versión (incluyendo ambas nulas) Y de sha256 para conservarla
           if (sameVersion && sameSha) {
             keepReview = true;
             prevReviewDate = existing.revision_declarada_en;
@@ -388,6 +392,10 @@ export function createEducationRepository(
         rutaAbsoluta: params.rutaLocal,
         formato: params.formato,
         tamanoBytes: params.tamanoBytes,
+        estado: 'descargado',
+        titulo: params.metadataLocal?.titulo,
+        tipo: params.metadataLocal?.tipo,
+        descripcion: params.metadataLocal?.descripcion,
         descargadoEn: params.nowIso,
         visualizadoEn: null,
         revisionDeclarada: finalRevision === 1,

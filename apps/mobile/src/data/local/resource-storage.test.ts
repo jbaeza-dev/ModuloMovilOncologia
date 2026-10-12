@@ -512,7 +512,7 @@ describe('almacenamiento multimedia educativo y compensación de colisiones', ()
     const persistedMetaHolder: {
       current?: {
         tamanoBytes: number;
-        metadataLocal: { sha256: string };
+        metadataLocal: { sha256?: string };
         formato: string;
       };
     } = {};
@@ -571,7 +571,7 @@ describe('almacenamiento multimedia educativo y compensación de colisiones', ()
     expect(adapter.exists(createdUri)).toBe(false);
   });
 
-  it('colisión: si moveFile falla porque el destino ya existía, la compensación NO borra el destino preexistente', async () => {
+  it('colisión con adaptador real: si moveFile falla porque el destino ya existe, la compensación conserva el destino preexistente', async () => {
     const tempDir = createTempDir();
     const resolver = (p: string) => join(tempDir, 'recursos_educativos', p);
     const patientDir = resolver(patientA);
@@ -579,41 +579,130 @@ describe('almacenamiento multimedia educativo y compensación de colisiones', ()
 
     const { saveEducationalMediaWithCompensation } = await import('./files/educational-storage');
 
-    // Creamos un adaptador espía que simula colisión en moveFile
-    let attemptedTmpUri = '';
-    const collidingAdapter: FileStorageAdapter = Object.assign(Object.create(adapter), {
-      async moveFile(sourcePath: string, destinationPath: string) {
-        attemptedTmpUri = sourcePath;
-        // Simular que destinationPath ya existía y el sistema de archivos rechaza la sobrescritura
-        throw new Error(`EEXIST: Destination file collision at ${destinationPath}`);
-      },
+    // Token determinista para forzar misma ruta destino
+    const fixedToken = 'edu-infografia-colision.fixed-token';
+    const initialBytes = new Uint8Array([7, 8, 9]);
+    const collidingBytes = new Uint8Array([1, 2, 3]);
+
+    // 1. Guardar primer archivo legítimo en el destino
+    const firstResult = await saveEducationalMediaWithCompensation({
+      pacienteId: patientA,
+      contenidoId: 'edu-infografia-colision',
+      formato: 'png',
+      content: initialBytes,
+      tokenGenerator: () => fixedToken,
+      persistCopyInTx: async () => {},
+      adapter,
+      baseDirResolver: resolver,
     });
 
-    // Pre-creamos un archivo legítimo en el directorio del paciente
-    const preExistingTarget = join(patientDir, 'pre_existente.png');
-    await adapter.writeBinary!(preExistingTarget, new Uint8Array([99, 99, 99]));
-    expect(adapter.exists(preExistingTarget)).toBe(true);
+    expect(adapter.exists(firstResult.uri)).toBe(true);
+    const readInitial = await adapter.readBinary!(firstResult.uri);
+    expect(Array.from(readInitial)).toEqual([7, 8, 9]);
 
+    // 2. Segundo intento sobre el mismo destino usando el adaptador real NodeFileStorageAdapter
+    // Dado que overwrite es false, moveFile rechazará con error al detectar el destino
     await expect(
       saveEducationalMediaWithCompensation({
         pacienteId: patientA,
         contenidoId: 'edu-infografia-colision',
         formato: 'png',
-        content: new Uint8Array([1, 2, 3]),
+        content: collidingBytes,
+        tokenGenerator: () => fixedToken,
         persistCopyInTx: async () => {},
-        adapter: collidingAdapter,
+        adapter,
         baseDirResolver: resolver,
       }),
-    ).rejects.toThrow('Destination file collision');
+    ).rejects.toThrow(/ya existe/i);
 
-    // Comprobación de propiedad estricta:
-    // 1. El temporal creado para ese intento SÍ fue eliminado por compensación
-    expect(attemptedTmpUri).toBeTruthy();
-    expect(adapter.exists(attemptedTmpUri)).toBe(false);
+    // 3. Comprobación de propiedad y preservación:
+    // - El temporal del segundo intento fue limpiado por compensación
+    const tmpUri = join(patientDir, `${fixedToken}.tmp`);
+    expect(adapter.exists(tmpUri)).toBe(false);
 
-    // 2. El archivo preexistente NO fue borrado
-    expect(adapter.exists(preExistingTarget)).toBe(true);
-    const preservedBytes = await adapter.readBinary!(preExistingTarget);
-    expect(Array.from(preservedBytes)).toEqual([99, 99, 99]);
+    // - El destino original del primer intento se conservó intacto con sus bytes originales
+    expect(adapter.exists(firstResult.uri)).toBe(true);
+    const preservedBytes = await adapter.readBinary!(firstResult.uri);
+    expect(Array.from(preservedBytes)).toEqual([7, 8, 9]);
+  });
+
+  it('compensación parcial: limpia el archivo temporal si la escritura falla antes de completarse', async () => {
+    const tempDir = createTempDir();
+    const resolver = (p: string) => join(tempDir, 'recursos_educativos', p);
+    const patientDir = resolver(patientA);
+    await adapter.ensureDirectory(patientDir);
+
+    const { saveEducationalMediaWithCompensation } = await import('./files/educational-storage');
+
+    const fixedToken = 'edu-parcial.fixed-token';
+    const tmpUri = join(patientDir, `${fixedToken}.tmp`);
+
+    // Adaptador espía que escribe temporal pero luego lanza error simulando fallo de I/O parcial
+    const partialFailureAdapter: FileStorageAdapter = Object.assign(Object.create(adapter), {
+      async writeBinary(targetPath: string, content: Uint8Array) {
+        // Escribe físicamente bytes parciales en disco antes de fallar
+        await adapter.writeBinary!(targetPath, content.slice(0, 2));
+        throw new Error('FALLO_IO_PARCIAL: Espacio insuficiente en disco');
+      },
+    });
+
+    await expect(
+      saveEducationalMediaWithCompensation({
+        pacienteId: patientA,
+        contenidoId: 'edu-parcial',
+        formato: 'png',
+        content: new Uint8Array([1, 2, 3, 4]),
+        tokenGenerator: () => fixedToken,
+        persistCopyInTx: async () => {},
+        adapter: partialFailureAdapter,
+        baseDirResolver: resolver,
+      }),
+    ).rejects.toThrow('FALLO_IO_PARCIAL');
+
+    // La compensación debe haber limpiado el temporal parcial dejado en disco
+    expect(adapter.exists(tmpUri)).toBe(false);
+  });
+
+  it('deleteResourceFile verifica eliminación física y distingue ausencia confirmada de fallo', async () => {
+    const tempDir = createTempDir();
+    const resolver = (p: string) => join(tempDir, 'recursos_educativos', p);
+    const patientDir = resolver(patientA);
+    await adapter.ensureDirectory(patientDir);
+
+    const targetFile = join(patientDir, 'edu-prueba.png');
+    await adapter.writeBinary!(targetFile, new Uint8Array([1, 2, 3]));
+    expect(adapter.exists(targetFile)).toBe(true);
+
+    // 1. Eliminación física confirmada cuando el archivo existe
+    const deleted = await deleteResourceFile(patientA, 'edu-prueba', targetFile, adapter, resolver);
+    expect(deleted).toBe(true);
+    expect(adapter.exists(targetFile)).toBe(false);
+
+    // 2. Ausencia confirmada cuando el archivo ya no existe físicamente en disco -> retorna true
+    const alreadyAbsent = await deleteResourceFile(
+      patientA,
+      'edu-prueba',
+      targetFile,
+      adapter,
+      resolver,
+    );
+    expect(alreadyAbsent).toBe(true);
+
+    // 3. Fallo cuando el sistema de archivos no puede eliminar el archivo
+    await adapter.writeBinary!(targetFile, new Uint8Array([1, 2, 3]));
+    const lockedAdapter: FileStorageAdapter = Object.assign(Object.create(adapter), {
+      async deleteFile() {
+        return false; // Falla la eliminación
+      },
+    });
+    const failedDelete = await deleteResourceFile(
+      patientA,
+      'edu-prueba',
+      targetFile,
+      lockedAdapter,
+      resolver,
+    );
+    expect(failedDelete).toBe(false);
+    expect(adapter.exists(targetFile)).toBe(true);
   });
 });

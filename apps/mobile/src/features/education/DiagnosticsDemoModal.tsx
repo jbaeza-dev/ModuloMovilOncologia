@@ -10,9 +10,12 @@ import {
   StatusPill,
   VisualButton,
 } from '../../components/Visual';
+import { saveEducationalMediaWithCompensation } from '../../data/local/files/educational-storage';
+import { resourceFileExists } from '../../data/local/files/resource-storage';
 import { useLocalData } from '../../providers/LocalDataProvider';
 import { useAppTheme } from '../../providers/ThemeProvider';
 import { theme } from '../../theme';
+import { isDemoMode } from '../../utils/environment';
 
 interface DiagnosticsDemoModalProps {
   visible: boolean;
@@ -33,14 +36,14 @@ export function DiagnosticsDemoModal({ visible, onClose }: DiagnosticsDemoModalP
     type: string | null;
   }>({ isConnected: null, isInternetReachable: null, type: null });
 
+  const [testing, setTesting] = useState(false);
   const [testResult, setTestResult] = useState<string | null>(null);
 
   const loadDiagnostics = useCallback(async () => {
     if (!database || !repository) return;
-
     try {
       const v = await database.first<{ user_version: number }>('PRAGMA user_version');
-      setDbVersion(v?.user_version ?? null);
+      setDbVersion(v?.user_version ?? 0);
 
       const copies = await repository.education.listLocalCopies();
       setTotalCopies(copies.length);
@@ -64,26 +67,69 @@ export function DiagnosticsDemoModal({ visible, onClose }: DiagnosticsDemoModalP
   }, [database, repository]);
 
   useEffect(() => {
-    if (visible) {
+    if (visible && isDemoMode()) {
       void loadDiagnostics();
       setTestResult(null);
     }
   }, [visible, loadDiagnostics]);
 
+  if (!visible || !isDemoMode()) return null;
+
   async function handleTestPreCommitFailure() {
-    setTestResult(null);
+    if (!database || !patientId || testing) return;
+    setTesting(true);
+    setTestResult('Ejecutando simulación de fallo transaccional E-05…');
+    const testContentId = 'diag-test-precommit-e05';
+
     try {
-      // Inducción controlada de fallo para escenario E-05
-      await database?.transaction(async () => {
-        throw new Error(
-          'FALLO_INDUCIDO_TEST_E05: Simulación de error de base de datos antes del commit',
-        );
-      });
-    } catch {
-      setTestResult(
-        'Fallo inducido con éxito (E-05): La transacción de SQLite revirtió correctamente. El sistema de compensación protege los archivos existentes.',
+      // 1. Estado inicial
+      const fileBefore = resourceFileExists(patientId, testContentId);
+      const rowBefore = await database.first<{ c: number }>(
+        'SELECT count(*) as c FROM descarga WHERE paciente_id = ? AND contenido_id = ?',
+        [patientId, testContentId],
       );
+
+      // 2. Ejecutar coordinador real con excepción controlada dentro de la transacción SQLite
+      let errorThrown = false;
+      try {
+        await saveEducationalMediaWithCompensation({
+          pacienteId: patientId,
+          contenidoId: testContentId,
+          formato: 'markdown',
+          content: '# Test E-05 Contenido Temporal',
+          persistCopyInTx: async () => {
+            await database.transaction(async () => {
+              throw new Error('FALLO_INDUCIDO_TEST_E05: Simulación SQLite antes del commit');
+            });
+          },
+        });
+      } catch {
+        errorThrown = true;
+      }
+
+      // 3. Estado posterior comprobando reversión física y de base de datos
+      const fileAfter = resourceFileExists(patientId, testContentId);
+      const rowAfter = await database.first<{ c: number }>(
+        'SELECT count(*) as c FROM descarga WHERE paciente_id = ? AND contenido_id = ?',
+        [patientId, testContentId],
+      );
+
+      if (errorThrown && !fileAfter && (rowAfter?.c ?? 0) === 0) {
+        setTestResult(
+          `Prueba E-05 comprobada con éxito: El coordinador lanzó el error transaccional previsto, la transacción SQLite revirtió (filas: ${rowBefore?.c ?? 0} -> ${rowAfter?.c ?? 0}) y la compensación eliminó el archivo temporal de disco (archivo: ${fileBefore ? 'existía' : 'no existía'} -> ${fileAfter ? 'permanece (error)' : 'ausente (correcto)'}).`,
+        );
+      } else {
+        setTestResult(
+          `Prueba E-05 falló la validación: errorLanzado=${errorThrown}, archivoEnDisco=${fileAfter}, filasSQLite=${rowAfter?.c ?? 0}.`,
+        );
+      }
       void loadDiagnostics();
+    } catch (err) {
+      setTestResult(
+        `Error inesperado en diagnóstico E-05: ${err instanceof Error ? err.message : String(err)}`,
+      );
+    } finally {
+      setTesting(false);
     }
   }
 
@@ -120,47 +166,42 @@ export function DiagnosticsDemoModal({ visible, onClose }: DiagnosticsDemoModalP
                 </Text>
               </View>
               <View style={styles.metricRow}>
-                <BodyText>Copias locales persistidas:</BodyText>
+                <BodyText>Copias locales registradas:</BodyText>
                 <Text style={styles.metricValue}>{totalCopies}</Text>
               </View>
               <View style={styles.metricRow}>
-                <BodyText>Interacciones de YouTube:</BodyText>
+                <BodyText>Interacciones YouTube registradas:</BodyText>
                 <Text style={styles.metricValue}>{totalInteractions}</Text>
               </View>
             </InfoCard>
 
             <InfoCard>
-              <SectionTitle>Diagnóstico de red (E-03)</SectionTitle>
+              <SectionTitle>Estado de red del dispositivo</SectionTitle>
               <View style={styles.metricRow}>
                 <BodyText>Conectado a red:</BodyText>
-                <StatusPill>{networkInfo.isConnected ? 'Conectado' : 'Sin conexión'}</StatusPill>
+                <StatusPill>{networkInfo.isConnected ? 'Sí' : 'No'}</StatusPill>
               </View>
               <View style={styles.metricRow}>
                 <BodyText>Internet accesible:</BodyText>
-                <StatusPill>
-                  {networkInfo.isInternetReachable ? 'Disponible' : 'No disponible'}
-                </StatusPill>
+                <StatusPill>{networkInfo.isInternetReachable ? 'Sí' : 'No'}</StatusPill>
               </View>
               <View style={styles.metricRow}>
-                <BodyText>Tipo de interfaz:</BodyText>
-                <Text style={styles.metricValue}>{networkInfo.type}</Text>
+                <BodyText>Tipo de conexión:</BodyText>
+                <Text style={styles.metricValue}>{networkInfo.type ?? 'Desconocido'}</Text>
               </View>
-              <BodyText>
-                Para verificar E-03, activa el Modo Avión en Android y comprueba que YouTube
-                notifica la necesidad de conexión sin intentar descargas locales.
-              </BodyText>
             </InfoCard>
 
             <InfoCard>
-              <SectionTitle>Comprobación de resiliencia (E-05)</SectionTitle>
+              <SectionTitle>Aceptación: Simulación de fallo (E-05)</SectionTitle>
               <BodyText>
-                Prueba de compensación: induce un fallo de base de datos antes de confirmar el
-                commit para verificar que no se corrompe el almacenamiento ni se borran archivos
-                preexistentes.
+                Ejecuta el coordinador de guardado real y fuerza una excepción SQLite antes del
+                commit para verificar que la transacción revierte y la compensación elimina los
+                archivos de disco sin dejar huérfanos.
               </BodyText>
               <VisualButton
-                label="Inducir fallo en transacción (E-05)"
+                label={testing ? 'Probando compensación…' : 'Ejecutar prueba de fallo pre-commit'}
                 secondary
+                disabled={testing}
                 onPress={() => void handleTestPreCommitFailure()}
               />
               {testResult ? (
@@ -169,8 +210,6 @@ export function DiagnosticsDemoModal({ visible, onClose }: DiagnosticsDemoModalP
                 </View>
               ) : null}
             </InfoCard>
-
-            <VisualButton label="Cerrar diagnóstico" onPress={onClose} />
           </ScrollView>
         </View>
       </View>
@@ -214,7 +253,6 @@ function useStyles() {
     },
     closeButton: {
       padding: theme.spacing.xs,
-      borderRadius: theme.radius.sm,
     },
     scrollContent: {
       gap: theme.spacing.md,
@@ -224,14 +262,15 @@ function useStyles() {
       flexDirection: 'row',
       justifyContent: 'space-between',
       alignItems: 'center',
-      paddingVertical: theme.spacing.xs,
+      marginVertical: 4,
     },
     metricValue: {
-      fontSize: 15,
-      fontWeight: '700',
+      fontSize: 14,
+      fontWeight: '600',
       color: appTheme.colors.text,
     },
     testResultBox: {
+      marginTop: theme.spacing.sm,
       padding: theme.spacing.sm,
       borderRadius: theme.radius.sm,
       backgroundColor: appTheme.colors.mutedSurface,

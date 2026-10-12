@@ -14,6 +14,7 @@
     "lint": "eslint . --max-warnings=0",
     "typecheck": "tsc --project tsconfig.json --noEmit && pnpm -r --stream run typecheck",
     "test:local": "vitest run",
+    "test:ui": "pnpm --filter @modulo-movil-oncologia/mobile run test:ui",
     "check": "pnpm run format:check && pnpm run lint && pnpm run typecheck"
   },
   "devDependencies": {

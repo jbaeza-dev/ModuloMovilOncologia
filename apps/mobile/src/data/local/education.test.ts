@@ -231,6 +231,59 @@ describe('Educación multimedia - Repositorio SQLite (interacciones y copias)', 
     const resetByVersion = await eduA.getLocalCopy('edu-infografia-guia');
     expect(resetByVersion?.revisionDeclarada).toBe(false);
     expect(resetByVersion?.revisionDeclaradaEn).toBeNull();
+
+    // 6. Re-guardar con versión ausente en ambos y MISMO sha2: CONSERVA la revisión
+    await eduA.declareCopyReviewed('edu-infografia-guia');
+    const reviewedBeforeNull = await eduA.getLocalCopy('edu-infografia-guia');
+    expect(reviewedBeforeNull?.revisionDeclarada).toBe(true);
+
+    // Guardar copia 1 sin versión de origen
+    await eduA.saveLocalCopy({
+      contentId: 'edu-sin-version',
+      rutaLocal: '/data/user/0/recursos_educativos/A/guia_nv1.md',
+      formato: 'markdown',
+      tamanoBytes: 100,
+      metadataLocal: { sha256: sha1 },
+    });
+    await eduA.declareCopyReviewed('edu-sin-version');
+    const revSinVer = await eduA.getLocalCopy('edu-sin-version');
+    expect(revSinVer?.revisionDeclarada).toBe(true);
+    const dateSinVer = revSinVer?.revisionDeclaradaEn;
+
+    // Guardar copia 2 también sin versión de origen y con el mismo sha1
+    await eduA.saveLocalCopy({
+      contentId: 'edu-sin-version',
+      rutaLocal: '/data/user/0/recursos_educativos/A/guia_nv2.md',
+      formato: 'markdown',
+      tamanoBytes: 100,
+      metadataLocal: { sha256: sha1 },
+    });
+    const preservedSinVer = await eduA.getLocalCopy('edu-sin-version');
+    expect(preservedSinVer?.revisionDeclarada).toBe(true);
+    expect(preservedSinVer?.revisionDeclaradaEn).toBe(dateSinVer);
+  });
+
+  it('expone copias en estado error o pendiente en getLocalCopy y listLocalCopies', async () => {
+    const database = open();
+    await migrateDatabase(database);
+    await seedPatientContextIfEmpty(database, patientA, patientB);
+
+    const repoA = createPatientRepository(database, patientA, ids());
+    const eduA = repoA.education;
+
+    // Inserción directa de una descarga con estado de error
+    await database.run(
+      `INSERT INTO descarga (paciente_id, contenido_id, estado, fecha_descarga, visualizada, formato, tamano_bytes)
+       VALUES (?, ?, 'error', '2026-10-12T12:00:00.000Z', 0, 'png', 0)`,
+      [patientA, 'edu-copia-fallida'],
+    );
+
+    const copy = await eduA.getLocalCopy('edu-copia-fallida');
+    expect(copy).not.toBeNull();
+    expect(copy?.estado).toBe('error');
+
+    const allCopies = await eduA.listLocalCopies();
+    expect(allCopies.some((c) => c.contentId === 'edu-copia-fallida')).toBe(true);
   });
 
   it('aísla completamente copias e interacciones entre Paciente A y Paciente B', async () => {

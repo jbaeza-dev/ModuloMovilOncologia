@@ -105,27 +105,43 @@ export function getPatientResourceDirectory(pacienteId: string): Directory {
  * - Con options.allowLegacy = true, acepta también el formato anterior con guion bajo: `${contenidoId}_${timestamp}.md`
  *   (para dar soporte a rutas exactas ya registradas en SQLite sin reintroducir barridos ambiguos por prefijo).
  */
+const VALID_EDUCATIONAL_EXTS = new Set(['md', 'png', 'jpg', 'jpeg']);
+
 export function isResourceFileForContent(
   fileName: string,
   contenidoId: string,
-  options?: { allowLegacy?: boolean },
+  options?: { allowLegacy?: boolean; validExtensions?: string[] },
 ): boolean {
   assertSafeId(contenidoId, 'contenidoId');
-  if (fileName === `${contenidoId}.md`) return true;
+  const allowed = options?.validExtensions
+    ? new Set(options.validExtensions.map((e) => e.replace(/^\./, '').toLowerCase()))
+    : VALID_EDUCATIONAL_EXTS;
+
+  const dotIdx = fileName.lastIndexOf('.');
+  if (dotIdx <= 0) return false;
+  const ext = fileName.slice(dotIdx + 1).toLowerCase();
+  if (!allowed.has(ext)) return false;
+
+  const nameWithoutExt = fileName.slice(0, dotIdx);
+  if (nameWithoutExt === contenidoId) return true;
 
   // Formato estándar delimitado por punto
   const prefix = `${contenidoId}.`;
-  if (fileName.startsWith(prefix) && fileName.endsWith('.md')) {
-    const middle = fileName.slice(prefix.length, -3);
-    if (/^\d+$/.test(middle)) return true;
+  if (nameWithoutExt.startsWith(prefix)) {
+    const token = nameWithoutExt.slice(prefix.length);
+    if (/^[0-9a-zA-Z.-]+$/.test(token) && !token.includes('..')) {
+      return true;
+    }
   }
 
-  // Compatibilidad con formato anterior guardado con guion bajo
+  // Compatibilidad con formato anterior guardado con guion bajo (exclusivamente timestamp numérico)
   if (options?.allowLegacy) {
     const legacyPrefix = `${contenidoId}_`;
-    if (fileName.startsWith(legacyPrefix) && fileName.endsWith('.md')) {
-      const middle = fileName.slice(legacyPrefix.length, -3);
-      if (/^\d+$/.test(middle)) return true;
+    if (nameWithoutExt.startsWith(legacyPrefix)) {
+      const token = nameWithoutExt.slice(legacyPrefix.length);
+      if (/^\d+$/.test(token)) {
+        return true;
+      }
     }
   }
 
@@ -333,7 +349,16 @@ export async function deleteResourceFile(
     ) {
       return false;
     }
-    return adapter.deleteFile(rutaLocal);
+    // Si el archivo físico ya no existe en disco, se confirma ausente: seguro para limpiar SQLite
+    if (!(await adapter.exists(rutaLocal))) {
+      return true;
+    }
+    const deleted = await adapter.deleteFile(rutaLocal);
+    // Verificar que el archivo realmente haya desaparecido de disco tras el intento
+    if (!deleted || (await adapter.exists(rutaLocal))) {
+      return false;
+    }
+    return true;
   }
 
   const baseDir = baseDirResolver

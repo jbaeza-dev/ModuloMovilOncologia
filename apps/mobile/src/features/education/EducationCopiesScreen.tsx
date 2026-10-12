@@ -13,13 +13,12 @@ import {
   VisualButton,
 } from '../../components/Visual';
 import type { EducationalLocalCopy } from '../../data/local/education/education-types';
-import { deleteResourceFile } from '../../data/local/files/resource-storage';
+import { deleteResourceFile, resourceFileExists } from '../../data/local/files/resource-storage';
 import { formatDate } from '../../data/local/repository';
 import { useFocusedList } from '../../hooks/use-local-query';
 import { useLocalData } from '../../providers/LocalDataProvider';
 import { useAppTheme } from '../../providers/ThemeProvider';
 import { theme } from '../../theme';
-import { SAMPLE_EDUCATIONAL_CATALOG } from './sample-education-catalog';
 
 export function EducationCopiesScreen() {
   const { theme: appTheme } = useAppTheme();
@@ -41,8 +40,6 @@ export function EducationCopiesScreen() {
     return copy.formato === filterFormat;
   });
 
-  const catalogMap = new Map(SAMPLE_EDUCATIONAL_CATALOG.map((c) => [c.id, c]));
-
   async function handleDeclareReviewed(contentId: string) {
     if (!repository || actionBusy || saving) return;
     setActionBusy(true);
@@ -63,7 +60,18 @@ export function EducationCopiesScreen() {
     setActionBusy(true);
     try {
       await runSave(async () => {
-        await deleteResourceFile(patientId, copy.contentId, copy.rutaRelativa);
+        if (copy.rutaRelativa) {
+          const physicallyDeleted = await deleteResourceFile(
+            patientId,
+            copy.contentId,
+            copy.rutaRelativa,
+          );
+          if (!physicallyDeleted) {
+            throw new Error(
+              'No se pudo confirmar la eliminación física del archivo del almacenamiento local.',
+            );
+          }
+        }
         await repository.education.removeLocalCopy(copy.contentId);
       });
       refresh();
@@ -128,58 +136,101 @@ export function EducationCopiesScreen() {
         />
       ) : (
         filteredCopies.map((copy) => {
-          const resource = catalogMap.get(copy.contentId);
-          const title = resource?.title ?? copy.contentId;
+          const title = copy.titulo ?? copy.metadataLocal?.titulo ?? copy.contentId;
           const kb = Math.max(1, Math.round(copy.tamanoBytes / 1024));
+          const isImage = copy.formato === 'png' || copy.formato === 'jpeg';
+          const fileExists =
+            patientId && copy.rutaRelativa
+              ? resourceFileExists(patientId, copy.contentId, copy.rutaRelativa)
+              : false;
+          const isErrorState = copy.estado === 'error' || !fileExists;
 
           return (
             <InfoCard key={copy.contentId}>
               <View style={styles.cardHeader}>
                 <Feather
-                  name={copy.formato === 'png' ? 'image' : 'file-text'}
+                  name={isImage ? 'image' : 'file-text'}
                   size={24}
-                  color={appTheme.colors.primary}
+                  color={isErrorState ? appTheme.colors.error : appTheme.colors.primary}
                 />
                 <View style={styles.cardTitleBox}>
                   <Text style={styles.cardTitle}>{title}</Text>
                   <BodyText>
-                    {copy.formato.toUpperCase()} · {kb} KB · Guardado{' '}
-                    {formatDate(copy.descargadoEn)}
+                    {copy.formato.toUpperCase()} · {kb} KB ·{' '}
+                    {copy.descargadoEn ? `Guardado ${formatDate(copy.descargadoEn)}` : 'Sin fecha'}
                   </BodyText>
                 </View>
               </View>
 
               <View style={styles.statusBox}>
-                <StatusPill>
-                  {copy.revisionDeclarada
-                    ? `Revisada el ${copy.revisionDeclaradaEn ? formatDate(copy.revisionDeclaradaEn) : 'sí'}`
-                    : 'Pendiente de revisar'}
-                </StatusPill>
+                {isErrorState ? (
+                  <StatusPill variant="danger">
+                    {copy.estado === 'error' ? 'Error al guardar' : 'Archivo no disponible'}
+                  </StatusPill>
+                ) : (
+                  <StatusPill>
+                    {copy.revisionDeclarada
+                      ? `Revisada el ${copy.revisionDeclaradaEn ? formatDate(copy.revisionDeclaradaEn) : 'sí'}`
+                      : 'Pendiente de revisar'}
+                  </StatusPill>
+                )}
               </View>
 
               <View style={styles.actionsRow}>
-                <VisualButton
-                  label="Abrir"
-                  secondary
-                  onPress={() =>
-                    router.navigate(
-                      '/educacion/recurso?recurso=' + encodeURIComponent(copy.contentId),
-                    )
-                  }
-                />
-                {!copy.revisionDeclarada ? (
-                  <VisualButton
-                    label="Marcar revisada"
-                    disabled={actionBusy || saving}
-                    onPress={() => void handleDeclareReviewed(copy.contentId)}
-                  />
-                ) : null}
-                <VisualButton
-                  label="Eliminar"
-                  secondary
-                  disabled={actionBusy || saving}
-                  onPress={() => void handleDeleteCopy(copy)}
-                />
+                {isErrorState ? (
+                  <>
+                    <VisualButton
+                      label="Reintentar descarga"
+                      onPress={() =>
+                        router.navigate(
+                          '/educacion/recurso?recurso=' + encodeURIComponent(copy.contentId),
+                        )
+                      }
+                    />
+                    <VisualButton
+                      label="Eliminar registro"
+                      secondary
+                      disabled={actionBusy || saving}
+                      onPress={() => void handleDeleteCopy(copy)}
+                    />
+                  </>
+                ) : (
+                  <>
+                    <VisualButton
+                      label={isImage ? 'Ver infografía' : 'Leer guía'}
+                      secondary
+                      onPress={() =>
+                        router.navigate(
+                          '/educacion/recurso?recurso=' + encodeURIComponent(copy.contentId),
+                        )
+                      }
+                    />
+                    {!copy.revisionDeclarada ? (
+                      isImage ? (
+                        <VisualButton
+                          label="Abrir para revisar"
+                          onPress={() =>
+                            router.navigate(
+                              '/educacion/recurso?recurso=' + encodeURIComponent(copy.contentId),
+                            )
+                          }
+                        />
+                      ) : (
+                        <VisualButton
+                          label="Marcar revisada"
+                          disabled={actionBusy || saving}
+                          onPress={() => void handleDeclareReviewed(copy.contentId)}
+                        />
+                      )
+                    ) : null}
+                    <VisualButton
+                      label="Eliminar"
+                      secondary
+                      disabled={actionBusy || saving}
+                      onPress={() => void handleDeleteCopy(copy)}
+                    />
+                  </>
+                )}
               </View>
             </InfoCard>
           );
@@ -219,12 +270,12 @@ function useStyles() {
     },
     cardHeader: {
       flexDirection: 'row',
-      alignItems: 'flex-start',
-      gap: theme.spacing.sm,
+      alignItems: 'center',
+      gap: theme.spacing.md,
     },
     cardTitleBox: {
       flex: 1,
-      gap: theme.spacing.xs,
+      gap: 2,
     },
     cardTitle: {
       fontSize: 16,
@@ -233,18 +284,19 @@ function useStyles() {
     },
     statusBox: {
       flexDirection: 'row',
-      alignItems: 'center',
+      marginTop: theme.spacing.xs,
     },
     actionsRow: {
       flexDirection: 'row',
-      flexWrap: 'wrap',
       gap: theme.spacing.sm,
       marginTop: theme.spacing.sm,
+      flexWrap: 'wrap',
     },
     errorText: {
       color: appTheme.colors.error,
       fontSize: 14,
       fontWeight: '600',
+      marginBottom: theme.spacing.sm,
     },
   });
 }
