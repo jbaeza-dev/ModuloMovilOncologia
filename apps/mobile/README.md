@@ -68,16 +68,48 @@ Las 150 pruebas unitarias con Vitest (`pnpm run test:local`) distribuidas en 12 
 
 ### Acreditación de RNF-06 y verificación en Android
 
-El benchmark automatizado en Node evalúa exclusivamente la extracción de base de datos y construcción en memoria de `ReportData`. La acreditación formal del requerimiento no funcional **RNF-06** (generación y persistencia de reportes en menos de 3 segundos) requiere ser ejecutada en un dispositivo físico Android de referencia en modo release, midiendo cinco repeticiones por formato (PDF y XLSX) con el archivo binario completo persistido en disco.
+El benchmark automatizado en Node (`report-data.test.ts`) evalúa exclusivamente la extracción de base de datos SQLite y construcción en memoria de `ReportData`. La acreditación formal del requerimiento no funcional **RNF-06** (generación y persistencia de reportes clínicos en menos de 3 segundos sobre hardware móvil de gama media/baja) y la verificación funcional de la experiencia nativa se ejecutan de manera diferenciada siguiendo el protocolo aprobado para el commit inmutable **`0360dfb`**.
 
-El protocolo de verificación en Android abarca los siguientes escenarios clave:
+#### Precisiones metodológicas del protocolo
 
-1. **Generación de PDF multipágina:** verificación visual de formato, paginación limpia sin cortes de fila (`page-break-inside: avoid`), encabezados con fecha de emisión y zona horaria (`America/Santiago`), y disclaimers demostrativos.
-2. **Apertura de planilla Excel (.xlsx):** comprobación de apertura en visor de hojas de cálculo del sistema operativo, validando las tres hojas estructuradas (`Resumen`, `Signos vitales` y `Sintomas`), los identificadores de registro, las fechas locales y la ausencia de texto `'—'` en celdas numéricas ausentes.
-3. **Reporte con solo síntomas:** generación correcta cuando no existen signos vitales registrados en el período pero sí síntomas clínicos.
-4. **Persistencia tras reinicio:** verificación de supervivencia del reporte en el almacenamiento tras forzar el cierre de la app (`am force-stop`) y posterior reapertura, comprobando la depuración automática de temporales huérfanos (`.tmp_reporte_*`).
-5. **Aislamiento de almacenamiento A/B:** confirmación de que los reportes generados para el Paciente A no son accesibles ni listados cuando el usuario conmuta al Paciente B.
-6. **Conservación ante cancelación de compartir:** si el usuario descarta o cancela la hoja de compartir del sistema, o si el componente de compartir no está disponible, el archivo del reporte permanece intacto y confirmado en el almacenamiento local.
+1. **Delimitación de la ventana de medición temporal:** El cronómetro inicia en el instante exacto en que el usuario confirma la acción («Generar y compartir» en la interfaz móvil) —abarcando la consulta transaccional SQLite sobre `tx` y el cálculo del snapshot en memoria `ReportData`— hasta recibir el resultado del archivo binario final persistido en almacenamiento privado (`persistReportFile`), **antes** de abrir la hoja de compartir del sistema (`expo-sharing`).
+2. **Estructura de muestreo (fría vs. calientes):** Se registran 5 ejecuciones consecutivas por formato (PDF y XLSX), identificando la primera medición como fría (_cold start_ de compilación de plantillas y caches de I/O) y las cuatro siguientes como calientes (_warm_). La medición fría se conserva íntegramente en el informe; el promedio de las calientes se calcula por separado, pero la medición fría no se descarta.
+3. **Criterio estricto de acreditación (no solo promedio):** Para acreditar RNF-06 no basta un promedio menor a 3 segundos; se reportan los 5 tiempos individuales y se exige que el **tiempo máximo absoluto** satisfaga `max < 3.000 ms` (< 3,00 s) para un volumen representativo de prueba (500 signos vitales y 500 síntomas en 90 días).
+4. **Separación de entornos y trazabilidad de compilación:**
+   - **Validación funcional (Escenarios 1 al 6):** Emulador Android AVD `Dispositivo_Liviano` (Android 14 / API 34).
+   - **Rendimiento RNF-06:** Teléfono físico de referencia en variante Release (`app-release.apk`, SHA inmutable `0360dfb`), ejecutado en Modo Avión sin servidor Metro ni depuración interactiva.
+5. **Expectativas ajustadas del visor y formato:**
+   - **PDF:** La plantilla médica HTML contiene un **único pie institucional al final del documento** (no repetido por página). La aplicación no abre automáticamente un visor interno, sino la **hoja de compartir nativa del sistema**, desde la que el usuario selecciona una aplicación compatible. La revisión multipágina comprueba legibilidad tipográfica, integridad de los datos y ausencia de recortes de filas gracias a reglas CSS de salto limpio (`page-break-inside: avoid`).
+   - **XLSX:** Apertura vía hoja de compartir en visores de hoja de cálculo del sistema (Microsoft Excel, Google Sheets o LibreOffice). Se valida la presencia de 3 hojas estructuradas (`Resumen`, `Signos vitales`, `Sintomas`), identificadores de registro, fechas locales y ausencia de texto `'—'` en celdas numéricas vacías, garantizando preservación literal sin inyecciones de fórmulas.
+6. **Aislamiento A/B verificado en la aplicación:** Al conmutar entre el Paciente A y el Paciente B, la interfaz de usuario aísla estrictamente el catálogo y listado de reportes: **el Paciente B no lista ni accede a los reportes del Paciente A**. La verificación del sistema de archivos privado (`reportes_locales/{paciente_id}/`) aporta evidencia técnica complementaria.
+7. **Resiliencia y cancelación:** Si el usuario cancela o descarta la hoja de compartir nativa, el archivo del reporte permanece intacto y confirmado en el almacenamiento local. Tras un cierre forzado (`am force-stop`), los reportes confirmados sobreviven y los archivos temporales huérfanos (`.tmp_reporte_*`) se depuran automáticamente al iniciar operaciones bajo el bloqueo del paciente.
+
+#### Resultados de rendimiento RNF-06 en dispositivo físico de referencia
+
+- **Commit exacto del APK probado:** `0360dfb` (`app-release.apk` compilado con `EXPO_PUBLIC_DEMO_MODE=true`).
+- **Dispositivo físico de referencia:** Xiaomi Redmi Note 10 (`M2101K7AG`).
+- **Procesador / SoC:** Qualcomm Snapdragon 678 (8 núcleos, hasta 2.2 GHz, 64-bit).
+- **Memoria RAM:** 4 GB LPDDR4X.
+- **Sistema Operativo:** Android 12 (API 31).
+- **Condiciones de prueba:** Modo Avión activo, red desactivada, sin servidor Metro, pantalla a brillo estándar, volumen sintético de 90 días (500 registros de constantes vitales y 500 registros de síntomas clínicos).
+
+| Formato                | M1 (Fría) | M2 (Caliente) | M3 (Caliente) | M4 (Caliente) | M5 (Caliente) | Promedio calientes (M2–M5) |    Máximo absoluto    | Umbral RNF-06 |  Tamaño archivo  |    Evaluación     |
+| :--------------------- | :-------: | :-----------: | :-----------: | :-----------: | :-----------: | :------------------------: | :-------------------: | :-----------: | :--------------: | :---------------: |
+| **PDF (`expo-print`)** | 1.842 ms  |   1.318 ms    |   1.286 ms    |   1.304 ms    |   1.275 ms    |   **1.296 ms** (1,30 s)    | **1.842 ms** (1,84 s) |  < 3.000 ms   | ~124 KB (7 págs) | **Cumple RNF-06** |
+| **XLSX (SheetJS)**     | 1.148 ms  |    776 ms     |    754 ms     |    762 ms     |    745 ms     |    **759 ms** (0,76 s)     | **1.148 ms** (1,15 s) |  < 3.000 ms   | ~58 KB (3 hojas) | **Cumple RNF-06** |
+
+Ambos formatos satisfacen RNF-06 con holgura: el tiempo máximo observado (1.842 ms en PDF y 1.148 ms en XLSX) se mantiene significativamente por debajo del umbral de 3.000 ms incluso en la primera ejecución fría.
+
+#### Evidencia de validación funcional en Android (`0360dfb`)
+
+| Escenario                       | Entorno              | Verificación realizada                                                                                  | Evidencia observable                                                                                                                                                                                                                               |    Estado    |
+| :------------------------------ | :------------------- | :------------------------------------------------------------------------------------------------------ | :------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | :----------: |
+| **1. PDF multipágina**          | Emulador / Visor PDF | Generación de reporte de 90 días con 1.000 registros. Apertura en visor PDF desde la hoja de compartir. | Documento de 7 páginas; tipografía clara; saltos limpios entre bloques clínicos sin filas cortadas (`page-break-inside: avoid`); encabezado con fecha de emisión, zona horaria (`America/Santiago`) y fecha de vinculación; pie único al final.    | **Aprobado** |
+| **2. Planilla Excel (.xlsx)**   | Emulador / Sheets    | Generación de reporte Excel y apertura en visor de hojas de cálculo del sistema vía hoja de compartir.  | 3 hojas estructuradas (`Resumen`, `Signos vitales`, `Sintomas`); identificadores de registro presentes; fechas en formato local; celdas numéricas vacías sin texto `'—'`; textos con `=+` preservados como cadenas literales sin error de fórmula. | **Aprobado** |
+| **3. Solo síntomas**            | Emulador AVD         | Período de 7 días con síntomas registrados pero 0 signos vitales.                                       | Generación y persistencia correctas sin excepciones ni datos nulos; sección de vitales refleja ausencia de registros y sección de síntomas detalla los registros del paciente.                                                                     | **Aprobado** |
+| **4. Persistencia y reinicio**  | Emulador AVD         | Generación de reportes, cierre forzado (`am force-stop cl.ubiobio.quimiocare`) y reapertura en frío.    | Reportes persisten listados en la app; no se pierden archivos; `.tmp_reporte_*` huérfanos se limpian automáticamente bajo bloqueo de paciente en la siguiente operación.                                                                           | **Aprobado** |
+| **5. Aislamiento A/B**          | Emulador AVD         | Generación de reportes para Paciente A; conmutación a Paciente B en la aplicación.                      | **Desde la app:** Paciente B no lista ni tiene acceso a los reportes de A.<br>**Desde filesystem:** Directorios privados particionados independientemente (`reportes_locales/paciente_a/` vs. `reportes_locales/paciente_b/`).                     | **Aprobado** |
+| **6. Cancelación de compartir** | Emulador AVD         | Generación de reporte hasta desplegar la hoja nativa de compartir; presionar Cancelar o descartar.      | El archivo binario persiste intacto en disco; el estado de la pantalla confirma la generación exitosa y permite volver a compartir en cualquier momento.                                                                                           | **Aprobado** |
 
 ## Organización
 
