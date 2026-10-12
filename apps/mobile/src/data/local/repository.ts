@@ -6,9 +6,11 @@ import { createClinicalContextRepository } from './clinical-context/clinical-con
 import { createConsentRepository } from './consents/consent-repository';
 import { seedClinicalContextDemoInTransaction } from './clinical-context/clinical-context-seed';
 import { createReportRepository } from './reports/report-repository';
+import { createEducationRepository } from './education/education-repository';
 export * from './clinical-context/clinical-context-types';
 export * from './consents/consent-types';
 export * from './reports/report-types';
+export * from './education/education-types';
 
 export type VitalRecord = VitalValues & {
   id: string;
@@ -395,6 +397,7 @@ export function createPatientRepository(
     ...createClinicalContextRepository(database, patientId),
     ...createConsentRepository(database, patientId, newId, now),
     reports: reportRepo,
+    education: createEducationRepository(database, patientId, now),
   };
 }
 

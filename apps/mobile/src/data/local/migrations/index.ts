@@ -5,6 +5,7 @@ import { DESCARGAS_SQL, DESCARGAS_VERSION } from './003_descargas';
 import { FORMULARIOS_SQL, FORMULARIOS_VERSION } from './004_formularios';
 import { CONTEXTO_CLINICO_SQL, CONTEXTO_CLINICO_VERSION } from './005_contexto_clinico';
 import { CONSENTIMIENTOS_SQL, CONSENTIMIENTOS_VERSION } from './006_consentimientos';
+import { EDUCACION_MULTIMEDIA_SQL, EDUCACION_MULTIMEDIA_VERSION } from './007_educacion_multimedia';
 
 export type Migration = { version: number; sql: string };
 export const migrations: readonly Migration[] = [
@@ -14,6 +15,7 @@ export const migrations: readonly Migration[] = [
   { version: FORMULARIOS_VERSION, sql: FORMULARIOS_SQL },
   { version: CONTEXTO_CLINICO_VERSION, sql: CONTEXTO_CLINICO_SQL },
   { version: CONSENTIMIENTOS_VERSION, sql: CONSENTIMIENTOS_SQL },
+  { version: EDUCACION_MULTIMEDIA_VERSION, sql: EDUCACION_MULTIMEDIA_SQL },
 ];
 
 export async function migrateDatabase(

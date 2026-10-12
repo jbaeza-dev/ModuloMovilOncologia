@@ -12,6 +12,7 @@ export default defineConfig({
       'expo-file-system': resolve(__dirname, 'test-stubs/expo-file-system.js'),
       'expo-sharing': resolve(__dirname, 'test-stubs/expo-sharing.js'),
       'expo-crypto': resolve(__dirname, 'test-stubs/expo-crypto.js'),
+      'expo-linking': resolve(__dirname, 'test-stubs/expo-linking.js'),
     },
   },
   define: {
