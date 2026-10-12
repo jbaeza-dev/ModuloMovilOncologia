@@ -3,6 +3,7 @@ import * as SQLite from 'expo-sqlite';
 import {
   createContext,
   type ReactNode,
+  useCallback,
   useContext,
   useEffect,
   useMemo,
@@ -13,10 +14,12 @@ import { Text } from 'react-native';
 
 import { Screen } from '../components/Screen';
 import { BodyText, InfoCard, VisualButton } from '../components/Visual';
-import { createExpoConnection } from '../data/local/expo-connection';
+import { createExpoConnection } from '../data/local/core/expo-connection';
+import { ExpoFileStorageAdapter } from '../data/local/files/file-storage-adapter';
 import { migrateDatabase } from '../data/local/migrations';
 import { createPatientRepository, seedPatientContextIfEmpty } from '../data/local/repository';
-import type { SqlConnection } from '../data/local/sql';
+import type { SqlConnection } from '../data/local/core/sql';
+import { importLegacyDrafts } from '../features/medical-forms/form-legacy-import';
 import { isDemoMode } from '../utils/environment';
 
 export const DEMO_PATIENTS = [
@@ -24,11 +27,22 @@ export const DEMO_PATIENTS = [
   { id: '22222222-2222-4222-8222-222222222222', label: 'Paciente de prueba B' },
 ] as const;
 
+export type PreparationStatus = 'idle' | 'importing' | 'ready' | 'error';
+export type FormImportWarning = {
+  errors: number;
+  pendingCleanups: number;
+};
+
 type Repository = ReturnType<typeof createPatientRepository>;
 type DataContextValue = {
   patientId: string | null;
   repository: Repository | null;
   saving: boolean;
+  formStorageReady: boolean;
+  formImportStatus: PreparationStatus;
+  formImportError: string | null;
+  formImportWarning: FormImportWarning | null;
+  retryFormImport: () => Promise<void>;
   runSave: <T>(work: () => Promise<T>) => Promise<T>;
   changePatient: () => void;
 };
@@ -42,6 +56,14 @@ export function LocalDataProvider({ children }: { children: ReactNode }) {
   const [patientId, setPatientId] = useState<string | null>(null);
   const [saving, setSaving] = useState(false);
   const savingRef = useRef(false);
+  const [formImportStatus, setFormImportStatus] = useState<PreparationStatus>('idle');
+  const [formImportError, setFormImportError] = useState<string | null>(null);
+  const [formImportWarning, setFormImportWarning] = useState<FormImportWarning | null>(null);
+  const [importAttempt, setImportAttempt] = useState(0);
+
+  const retryFormImport = useCallback(async () => {
+    setImportAttempt((a) => a + 1);
+  }, []);
 
   useEffect(() => {
     let active = true;
@@ -72,6 +94,49 @@ export function LocalDataProvider({ children }: { children: ReactNode }) {
     };
   }, [attempt]);
 
+  useEffect(() => {
+    if (!database || !patientId) {
+      setFormImportStatus('idle');
+      setFormImportError(null);
+      setFormImportWarning(null);
+      return;
+    }
+    let active = true;
+    setFormImportStatus('importing');
+    setFormImportError(null);
+    const adapter = new ExpoFileStorageAdapter();
+    importLegacyDrafts(patientId, database, adapter, undefined, Crypto.randomUUID)
+      .then((counts) => {
+        if (active) {
+          setFormImportStatus('ready');
+          setFormImportError(null);
+          if (counts && (counts.errors > 0 || counts.pendingCleanups > 0)) {
+            setFormImportWarning({
+              errors: counts.errors,
+              pendingCleanups: counts.pendingCleanups,
+            });
+          } else {
+            setFormImportWarning(null);
+          }
+        }
+      })
+      .catch((err) => {
+        console.warn('Fallo en importación legacy:', err);
+        if (active) {
+          setFormImportStatus('error');
+          setFormImportWarning(null);
+          setFormImportError(
+            err instanceof Error ? err.message : 'Error al procesar almacenamiento de formularios',
+          );
+        }
+      });
+    return () => {
+      active = false;
+    };
+  }, [database, patientId, importAttempt]);
+
+  const formStorageReady = formImportStatus === 'ready';
+
   const repository = useMemo(
     () =>
       database && patientId
@@ -84,6 +149,11 @@ export function LocalDataProvider({ children }: { children: ReactNode }) {
       patientId,
       repository,
       saving,
+      formStorageReady,
+      formImportStatus,
+      formImportError,
+      formImportWarning,
+      retryFormImport,
       async runSave<T>(work: () => Promise<T>) {
         if (!patientId || savingRef.current) throw new Error('Selecciona un paciente de prueba.');
         savingRef.current = true;
@@ -99,7 +169,16 @@ export function LocalDataProvider({ children }: { children: ReactNode }) {
         if (!savingRef.current) setPatientId(null);
       },
     }),
-    [patientId, repository, saving],
+    [
+      patientId,
+      repository,
+      saving,
+      formStorageReady,
+      formImportStatus,
+      formImportError,
+      formImportWarning,
+      retryFormImport,
+    ],
   );
 
   if (error)

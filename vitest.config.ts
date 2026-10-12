@@ -11,6 +11,7 @@ export default defineConfig({
       'react-native': resolve(__dirname, 'test-stubs/react-native.js'),
       'expo-file-system': resolve(__dirname, 'test-stubs/expo-file-system.js'),
       'expo-sharing': resolve(__dirname, 'test-stubs/expo-sharing.js'),
+      'expo-crypto': resolve(__dirname, 'test-stubs/expo-crypto.js'),
     },
   },
   define: {

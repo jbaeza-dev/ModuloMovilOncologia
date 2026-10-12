@@ -3,8 +3,12 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { afterEach, describe, expect, it } from 'vitest';
 
-import type { FileStorageAdapter } from '../../data/local/file-storage-adapter';
-import { NodeFileStorageAdapter } from '../../data/local/node-file-storage-adapter';
+import { DatabaseSync } from 'node:sqlite';
+import type { FileStorageAdapter } from '../../data/local/files/file-storage-adapter';
+import { NodeFileStorageAdapter } from '../../data/local/files/node-file-storage-adapter';
+import { migrateDatabase } from '../../data/local/migrations';
+import { seedPatientContextIfEmpty } from '../../data/local/repository';
+import type { SqlConnection, SqlValue } from '../../data/local/core/sql';
 import {
   deleteFormDraft,
   isValidDraftPayload,
@@ -13,6 +17,8 @@ import {
   recoverOrphanDraftBackups,
   saveFormDraft,
 } from './form-draft-storage';
+import { importLegacyDrafts } from './form-legacy-import';
+import { computeSha256 } from '../../utils/crypto';
 import { medicalFormsService } from './medical-form-service';
 import type { MedicalFormDraft } from './medical-form-types';
 import { validateFormAnswers } from './medical-form-validation';
@@ -21,6 +27,7 @@ import { SAMPLE_MEDICAL_FORMS } from './sample-medical-forms';
 const patientA = '11111111-1111-4111-8111-111111111111';
 const patientB = '22222222-2222-4222-8222-222222222222';
 const temporaryDirs: string[] = [];
+const openedDbs: DatabaseSync[] = [];
 
 function createTempDir(): string {
   const dir = mkdtempSync(join(tmpdir(), 'quimiocare-forms-test-'));
@@ -28,7 +35,43 @@ function createTempDir(): string {
   return dir;
 }
 
+function createTestDb(): SqlConnection {
+  const native = new DatabaseSync(':memory:');
+  openedDbs.push(native);
+  const operations = {
+    exec: async (sql: string) => {
+      native.exec(sql);
+    },
+    run: async (sql: string, values: SqlValue[] = []) => {
+      native.prepare(sql).run(...values);
+    },
+    first: async <T>(sql: string, values: SqlValue[] = []) =>
+      (native.prepare(sql).get(...values) as T | undefined) ?? null,
+    all: async <T>(sql: string, values: SqlValue[] = []) =>
+      native.prepare(sql).all(...values) as T[],
+  };
+  return {
+    ...operations,
+    async transaction(work) {
+      native.exec('BEGIN IMMEDIATE');
+      try {
+        await work({
+          ...operations,
+          transaction: async () => {
+            throw new Error('Transacción anidada');
+          },
+        });
+        native.exec('COMMIT');
+      } catch (e) {
+        native.exec('ROLLBACK');
+        throw e;
+      }
+    },
+  };
+}
+
 afterEach(() => {
+  for (const db of openedDbs.splice(0)) db.close();
   for (const dir of temporaryDirs.splice(0)) {
     rmSync(dir, { recursive: true, force: true });
   }
@@ -131,6 +174,34 @@ describe('validación de respuestas de cuestionarios médicos', () => {
     };
     const resultMultiple = validateFormAnswers(esasForm, multipleAnswers);
     expect(resultMultiple.isValid).toBe(true);
+  });
+
+  it('rechaza identificadores de preguntas ajenos a la definición del cuestionario', () => {
+    const alienAnswers = {
+      esas_dolor: 0,
+      esas_fatiga: 0,
+      esas_nauseas: 0,
+      pregunta_ajena: 42,
+    };
+    const result = validateFormAnswers(esasForm, alienAnswers);
+    expect(result.isValid).toBe(false);
+    expect(result.errors.pregunta_ajena).toBe(
+      "La clave 'pregunta_ajena' no pertenece a la definición de este cuestionario.",
+    );
+  });
+
+  it('rechaza una cadena de texto o espacios para una pregunta opcional de selección múltiple', () => {
+    const whitespaceMultipleChoice = {
+      esas_dolor: 0,
+      esas_fatiga: 0,
+      esas_nauseas: 0,
+      esas_sintomas_secundarios: '   ' as unknown as string[],
+    };
+    const result = validateFormAnswers(esasForm, whitespaceMultipleChoice);
+    expect(result.isValid).toBe(false);
+    expect(result.errors.esas_sintomas_secundarios).toBe(
+      'El valor debe ser una lista de opciones.',
+    );
   });
 });
 
@@ -732,5 +803,878 @@ describe('almacenamiento de borradores con adaptador y reemplazo seguro', () => 
     );
     expect(finalLoaded?.respuestas.esas_dolor).toBe(1);
     expect(finalLoaded?.completado).toBe(false);
+  });
+});
+
+describe('importación legacy de borradores y respuestas a SQLite', () => {
+  it('importa borrador incompleto a borrador_formulario y limpia archivos físicos tras commit', async () => {
+    const dir = createTempDir();
+    const adapter = new NodeFileStorageAdapter();
+    const resolver = () => dir;
+
+    const db = createTestDb();
+    await migrateDatabase(db);
+    await seedPatientContextIfEmpty(db, patientA, patientB);
+
+    // Crear archivo JSON legacy de borrador incompleto
+    const draftContent: MedicalFormDraft = {
+      formularioId: 'form-esas-muestra',
+      version: '1.0',
+      pacienteId: patientA,
+      respuestas: { esas_dolor: 4 },
+      completado: false,
+      guardadoEn: '2026-10-06T10:00:00Z',
+    };
+    const jsonPath = join(dir, 'form-esas-muestra_v1.0.json');
+    writeFileSync(jsonPath, JSON.stringify(draftContent, null, 2));
+
+    const result = await importLegacyDrafts(patientA, db, adapter, resolver);
+    expect(result.imported).toBe(1);
+    expect(result.cleaned).toBe(1);
+
+    // Verificar en SQLite
+    const draftInSql = await db.first<{
+      entrega_id: string;
+      respuestas_json: string;
+    }>(
+      'SELECT entrega_id, respuestas_json FROM borrador_formulario WHERE paciente_id = ? AND formulario_id = ?',
+      [patientA, 'form-esas-muestra'],
+    );
+    expect(draftInSql).toBeTruthy();
+    expect(JSON.parse(draftInSql!.respuestas_json)).toEqual({ esas_dolor: 4 });
+
+    // Verificar trazabilidad
+    const tracking = await db.first<{ estado: string }>(
+      'SELECT estado FROM importacion_formularios_legacy WHERE paciente_id = ? AND archivo_relativo = ?',
+      [patientA, 'form-esas-muestra_v1.0.json'],
+    );
+    expect(tracking?.estado).toBe('importado');
+
+    // Verificar que el archivo físico fue eliminado
+    expect(await adapter.exists(jsonPath)).toBe(false);
+  });
+
+  it('importa cuestionario completado a respuesta_formulario y cola_envio y limpia archivos físicos', async () => {
+    const dir = createTempDir();
+    const adapter = new NodeFileStorageAdapter();
+    const resolver = () => dir;
+
+    const db = createTestDb();
+    await migrateDatabase(db);
+    await seedPatientContextIfEmpty(db, patientA, patientB);
+
+    const completedContent: MedicalFormDraft = {
+      formularioId: 'form-esas-muestra',
+      version: '1.0',
+      pacienteId: patientA,
+      respuestas: { esas_dolor: 3, esas_fatiga: 2, esas_nauseas: 0 },
+      completado: true,
+      guardadoEn: '2026-10-06T11:00:00Z',
+    };
+    const jsonPath = join(dir, 'form-esas-muestra_v1.0.json');
+    writeFileSync(jsonPath, JSON.stringify(completedContent, null, 2));
+
+    const result = await importLegacyDrafts(patientA, db, adapter, resolver);
+    expect(result.imported).toBe(1);
+    expect(result.cleaned).toBe(1);
+
+    // Verificar en respuesta_formulario
+    const submission = await db.first<{
+      id: string;
+      respuestas_json: string;
+    }>(
+      'SELECT id, respuestas_json FROM respuesta_formulario WHERE paciente_id = ? AND formulario_id = ?',
+      [patientA, 'form-esas-muestra'],
+    );
+    expect(submission).toBeTruthy();
+    expect(JSON.parse(submission!.respuestas_json)).toEqual({
+      esas_dolor: 3,
+      esas_fatiga: 2,
+      esas_nauseas: 0,
+    });
+
+    // Verificar en cola_envio
+    const queueItem = await db.first<{
+      tipo_entidad: string;
+      registro_id: string;
+      estado: string;
+    }>('SELECT * FROM cola_envio WHERE registro_id = ?', [submission!.id]);
+    expect(queueItem).toBeTruthy();
+    expect(queueItem?.tipo_entidad).toBe('respuesta_formulario');
+    expect(queueItem?.estado).toBe('pendiente');
+
+    // Verificar archivo físico eliminado
+    expect(await adapter.exists(jsonPath)).toBe(false);
+  });
+
+  it('lectura de recuperación pura: usa respaldo .bak válido si .json está ausente o corrupto sin modificar archivos antes de confirmar', async () => {
+    const dir = createTempDir();
+    const adapter = new NodeFileStorageAdapter();
+    const resolver = () => dir;
+
+    const db = createTestDb();
+    await migrateDatabase(db);
+    await seedPatientContextIfEmpty(db, patientA, patientB);
+
+    const validBakContent: MedicalFormDraft = {
+      formularioId: 'form-esas-muestra',
+      version: '1.0',
+      pacienteId: patientA,
+      respuestas: { esas_dolor: 7 },
+      completado: false,
+      guardadoEn: '2026-10-06T11:30:00Z',
+    };
+    const jsonPath = join(dir, 'form-esas-muestra_v1.0.json');
+    const bakPath = join(dir, 'form-esas-muestra_v1.0.bak');
+
+    // Escribir JSON corrupto y .bak válido
+    writeFileSync(jsonPath, '{ JSON corrupto con sintaxis invalida !!! ');
+    writeFileSync(bakPath, JSON.stringify(validBakContent, null, 2));
+
+    const result = await importLegacyDrafts(patientA, db, adapter, resolver);
+    expect(result.imported).toBe(1);
+    expect(result.cleaned).toBe(1);
+
+    // Verificar que importó el contenido del respaldo .bak
+    const draft = await db.first<{ respuestas_json: string }>(
+      'SELECT respuestas_json FROM borrador_formulario WHERE paciente_id = ? AND formulario_id = ?',
+      [patientA, 'form-esas-muestra'],
+    );
+    expect(draft).toBeTruthy();
+    expect(JSON.parse(draft!.respuestas_json)).toEqual({ esas_dolor: 7 });
+
+    // Ambos archivos eliminados limpiamente
+    expect(await adapter.exists(jsonPath)).toBe(false);
+    expect(await adapter.exists(bakPath)).toBe(false);
+  });
+
+  it('tolerancia a interrupciones: reintento de limpieza_pendiente limpia archivos físicos sin reinsertar entregas ni duplicar cola', async () => {
+    const dir = createTempDir();
+    const baseAdapter = new NodeFileStorageAdapter();
+    const resolver = () => dir;
+
+    const db = createTestDb();
+    await migrateDatabase(db);
+    await seedPatientContextIfEmpty(db, patientA, patientB);
+
+    const completedContent: MedicalFormDraft = {
+      formularioId: 'form-esas-muestra',
+      version: '1.0',
+      pacienteId: patientA,
+      respuestas: { esas_dolor: 2, esas_fatiga: 1, esas_nauseas: 0 },
+      completado: true,
+      guardadoEn: '2026-10-06T12:00:00Z',
+    };
+    const jsonPath = join(dir, 'form-esas-muestra_v1.0.json');
+    writeFileSync(jsonPath, JSON.stringify(completedContent, null, 2));
+
+    // Adapter que simula fallo al eliminar el archivo físico
+    class FailingDeleteAdapter extends NodeFileStorageAdapter {
+      override async deleteFile(): Promise<boolean> {
+        return false;
+      }
+    }
+    const failingDeleteAdapter = new FailingDeleteAdapter();
+
+    const firstRun = await importLegacyDrafts(patientA, db, failingDeleteAdapter, resolver);
+    expect(firstRun.imported).toBe(1);
+    expect(firstRun.pendingCleanups).toBe(1);
+
+    // Estado quedó en limpieza_pendiente en SQLite
+    const tracking = await db.first<{ estado: string }>(
+      'SELECT estado FROM importacion_formularios_legacy WHERE paciente_id = ? AND archivo_relativo = ?',
+      [patientA, 'form-esas-muestra_v1.0.json'],
+    );
+    expect(tracking?.estado).toBe('limpieza_pendiente');
+
+    // Cola tiene exactamente 1 registro
+    const queueBefore = await db.all(
+      "SELECT * FROM cola_envio WHERE tipo_entidad = 'respuesta_formulario'",
+    );
+    expect(queueBefore).toHaveLength(1);
+
+    // Segundo intento con adapter funcional
+    const secondRun = await importLegacyDrafts(patientA, db, baseAdapter, resolver);
+    expect(secondRun.cleaned).toBe(1);
+
+    // Estado ahora es importado y archivo fue eliminado
+    const trackingAfter = await db.first<{ estado: string }>(
+      'SELECT estado FROM importacion_formularios_legacy WHERE paciente_id = ? AND archivo_relativo = ?',
+      [patientA, 'form-esas-muestra_v1.0.json'],
+    );
+    expect(trackingAfter?.estado).toBe('importado');
+    expect(await baseAdapter.exists(jsonPath)).toBe(false);
+
+    // NO duplicó cola_envio ni respuesta_formulario
+    const queueAfter = await db.all(
+      "SELECT * FROM cola_envio WHERE tipo_entidad = 'respuesta_formulario'",
+    );
+    expect(queueAfter).toHaveLength(1);
+    const submissions = await db.all('SELECT * FROM respuesta_formulario WHERE paciente_id = ?', [
+      patientA,
+    ]);
+    expect(submissions).toHaveLength(1);
+  });
+
+  it('archivos con definición desconocida se conservan sin borrar en revision_requerida', async () => {
+    const dir = createTempDir();
+    const adapter = new NodeFileStorageAdapter();
+    const resolver = () => dir;
+
+    const db = createTestDb();
+    await migrateDatabase(db);
+    await seedPatientContextIfEmpty(db, patientA, patientB);
+
+    const unknownContent: MedicalFormDraft = {
+      formularioId: 'form-no-existente',
+      version: '1.0',
+      pacienteId: patientA,
+      respuestas: { q1: 'test' },
+      completado: false,
+      guardadoEn: '2026-10-06T13:00:00Z',
+    };
+    const jsonPath = join(dir, 'form-no-existente_v1.0.json');
+    writeFileSync(jsonPath, JSON.stringify(unknownContent, null, 2));
+
+    const result = await importLegacyDrafts(patientA, db, adapter, resolver);
+    expect(result.errors).toBe(1);
+
+    // Registrado en revision_requerida
+    const tracking = await db.first<{ estado: string }>(
+      'SELECT estado FROM importacion_formularios_legacy WHERE paciente_id = ? AND archivo_relativo = ?',
+      [patientA, 'form-no-existente_v1.0.json'],
+    );
+    expect(tracking?.estado).toBe('revision_requerida');
+
+    // Archivo físico conservado intacto
+    expect(await adapter.exists(jsonPath)).toBe(true);
+  });
+
+  it('no sobrescribe un borrador preexistente en SQLite', async () => {
+    const dir = createTempDir();
+    const adapter = new NodeFileStorageAdapter();
+    const resolver = () => dir;
+
+    const db = createTestDb();
+    await migrateDatabase(db);
+    await seedPatientContextIfEmpty(db, patientA, patientB);
+
+    // Insertar previamente borrador en SQLite
+    await db.run(
+      `INSERT INTO borrador_formulario (
+        paciente_id, formulario_id, version, entrega_id, respuestas_json, guardado_en, version_payload
+      ) VALUES (?, ?, ?, ?, ?, ?, 1)`,
+      [
+        patientA,
+        'form-esas-muestra',
+        '1.0',
+        'existing-uuid-999',
+        JSON.stringify({ esas_dolor: 9 }),
+        '2026-10-06T14:00:00Z',
+      ],
+    );
+
+    // Archivo legacy con respuesta diferente
+    const legacyContent: MedicalFormDraft = {
+      formularioId: 'form-esas-muestra',
+      version: '1.0',
+      pacienteId: patientA,
+      respuestas: { esas_dolor: 1 },
+      completado: false,
+      guardadoEn: '2026-10-06T10:00:00Z',
+    };
+    const jsonPath = join(dir, 'form-esas-muestra_v1.0.json');
+    writeFileSync(jsonPath, JSON.stringify(legacyContent, null, 2));
+
+    const result = await importLegacyDrafts(patientA, db, adapter, resolver);
+
+    // SQLite conserva { esas_dolor: 9 } sin ser sobrescrito por el legacy
+    const draftInSql = await db.first<{ respuestas_json: string }>(
+      'SELECT respuestas_json FROM borrador_formulario WHERE paciente_id = ? AND formulario_id = ?',
+      [patientA, 'form-esas-muestra'],
+    );
+    expect(JSON.parse(draftInSql!.respuestas_json)).toEqual({ esas_dolor: 9 });
+
+    // Corrección crítica: Como las respuestas difieren, el archivo físico se conserva y se registra en revision_requerida
+    expect(await adapter.exists(jsonPath)).toBe(true);
+    const tracking = await db.first<{ estado: string; ultimo_error: string }>(
+      'SELECT estado, ultimo_error FROM importacion_formularios_legacy WHERE paciente_id = ? AND archivo_relativo = ?',
+      [patientA, 'form-esas-muestra_v1.0.json'],
+    );
+    expect(tracking?.estado).toBe('revision_requerida');
+    expect(tracking?.ultimo_error).toContain(
+      'Conflicto: borrador existente en SQLite con respuestas diferentes',
+    );
+    expect(result.errors).toBe(1);
+  });
+
+  it('limpia archivo legacy si el borrador en SQLite tiene exactamente las mismas respuestas', async () => {
+    const dir = createTempDir();
+    const adapter = new NodeFileStorageAdapter();
+    const resolver = () => dir;
+
+    const db = createTestDb();
+    await migrateDatabase(db);
+    await seedPatientContextIfEmpty(db, patientA, patientB);
+
+    // Insertar borrador en SQLite
+    await db.run(
+      `INSERT INTO borrador_formulario (
+        paciente_id, formulario_id, version, entrega_id, respuestas_json, guardado_en, version_payload
+      ) VALUES (?, ?, ?, ?, ?, ?, 1)`,
+      [
+        patientA,
+        'form-esas-muestra',
+        '1.0',
+        'uuid-mismo-contenido',
+        JSON.stringify({ esas_dolor: 5, esas_fatiga: 2 }),
+        '2026-10-06T14:00:00Z',
+      ],
+    );
+
+    // Archivo legacy con las mismas respuestas
+    const legacyContent: MedicalFormDraft = {
+      formularioId: 'form-esas-muestra',
+      version: '1.0',
+      pacienteId: patientA,
+      respuestas: { esas_fatiga: 2, esas_dolor: 5 },
+      completado: false,
+      guardadoEn: '2026-10-06T10:00:00Z',
+    };
+    const jsonPath = join(dir, 'form-esas-muestra_v1.0.json');
+    writeFileSync(jsonPath, JSON.stringify(legacyContent, null, 2));
+
+    const result = await importLegacyDrafts(patientA, db, adapter, resolver);
+    expect(result.imported).toBe(1);
+    expect(result.cleaned).toBe(1);
+
+    // Archivo físico eliminado con éxito
+    expect(await adapter.exists(jsonPath)).toBe(false);
+    const tracking = await db.first<{ estado: string }>(
+      'SELECT estado FROM importacion_formularios_legacy WHERE paciente_id = ? AND archivo_relativo = ?',
+      [patientA, 'form-esas-muestra_v1.0.json'],
+    );
+    expect(tracking?.estado).toBe('importado');
+  });
+
+  it('computeSha256 calcula huellas criptográficas reales sin colisiones en cadenas distintas como Aa y BB', async () => {
+    const hashAa = await computeSha256('Aa');
+    const hashBb = await computeSha256('BB');
+
+    expect(hashAa).toHaveLength(64);
+    expect(hashBb).toHaveLength(64);
+    // Un hash de 32 bits de tipo sdbm/djb2 colisionaba en Aa y BB; SHA-256 jamás colisiona
+    expect(hashAa).not.toBe(hashBb);
+  });
+
+  it('en limpieza_pendiente no marca como importado si la lectura falla o el archivo sigue existiendo', async () => {
+    const dir = createTempDir();
+    const resolver = () => dir;
+    const db = createTestDb();
+    await migrateDatabase(db);
+    await seedPatientContextIfEmpty(db, patientA, patientB);
+
+    const jsonPath = join(dir, 'form-esas-muestra_v1.0.json');
+    const content = JSON.stringify({
+      formularioId: 'form-esas-muestra',
+      version: '1.0',
+      pacienteId: patientA,
+      respuestas: { esas_dolor: 3 },
+      completado: false,
+      guardadoEn: '2026-10-06T10:00:00Z',
+    });
+    writeFileSync(jsonPath, content);
+    const fileHash = await computeSha256(content);
+
+    // Registrar previamente en limpieza_pendiente
+    await db.run(
+      `INSERT INTO importacion_formularios_legacy (
+        paciente_id, archivo_relativo, huella_sha256, huella_bak_sha256,
+        destino_tipo, destino_id, estado, fecha_importacion, ultimo_error
+      ) VALUES (?, ?, ?, NULL, 'borrador', 'del-123', 'limpieza_pendiente', '2026-10-06T10:00:00Z', NULL)`,
+      [patientA, 'form-esas-muestra_v1.0.json', fileHash],
+    );
+
+    // Adaptador cuya eliminación falla
+    const baseAdapter = new NodeFileStorageAdapter();
+    class FailingDeleteAdapter extends NodeFileStorageAdapter {
+      override async deleteFile(): Promise<boolean> {
+        return false; // Falla deliberadamente
+      }
+    }
+    const failingAdapter = new FailingDeleteAdapter();
+
+    const result = await importLegacyDrafts(patientA, db, failingAdapter, resolver);
+    expect(result.cleaned).toBe(0);
+    expect(result.pendingCleanups).toBe(1);
+
+    // Debe permanecer en limpieza_pendiente y NO pasar a importado
+    const tracking = await db.first<{ estado: string }>(
+      'SELECT estado FROM importacion_formularios_legacy WHERE paciente_id = ? AND archivo_relativo = ?',
+      [patientA, 'form-esas-muestra_v1.0.json'],
+    );
+    expect(tracking?.estado).toBe('limpieza_pendiente');
+    expect(await baseAdapter.exists(jsonPath)).toBe(true);
+  });
+
+  it('rechaza entrega completada si las respuestas violan la validación médica y conserva el archivo en revision_requerida', async () => {
+    const dir = createTempDir();
+    const adapter = new NodeFileStorageAdapter();
+    const resolver = () => dir;
+
+    const db = createTestDb();
+    await migrateDatabase(db);
+    await seedPatientContextIfEmpty(db, patientA, patientB);
+
+    // Cuestionario con completado: true pero respuestas vacías (falta pregunta requerida esas_dolor)
+    const invalidCompleted: MedicalFormDraft = {
+      formularioId: 'form-esas-muestra',
+      version: '1.0',
+      pacienteId: patientA,
+      respuestas: {},
+      completado: true,
+      guardadoEn: '2026-10-06T10:00:00Z',
+    };
+    const jsonPath = join(dir, 'form-esas-muestra_v1.0.json');
+    writeFileSync(jsonPath, JSON.stringify(invalidCompleted, null, 2));
+
+    const result = await importLegacyDrafts(patientA, db, adapter, resolver);
+    expect(result.errors).toBe(1);
+    expect(result.imported).toBe(0);
+
+    // NO se insertó en respuesta_formulario
+    const submissions = await db.all('SELECT * FROM respuesta_formulario WHERE paciente_id = ?', [
+      patientA,
+    ]);
+    expect(submissions).toHaveLength(0);
+
+    // Archivo físico conservado
+    expect(await adapter.exists(jsonPath)).toBe(true);
+
+    const tracking = await db.first<{ estado: string; ultimo_error: string }>(
+      'SELECT estado, ultimo_error FROM importacion_formularios_legacy WHERE paciente_id = ? AND archivo_relativo = ?',
+      [patientA, 'form-esas-muestra_v1.0.json'],
+    );
+    expect(tracking?.estado).toBe('revision_requerida');
+    expect(tracking?.ultimo_error).toContain('Entrega completada con respuestas inválidas');
+  });
+
+  it('adapter.directoryExists se invoca cuando está disponible para comprobar el directorio base', async () => {
+    const dir = createTempDir();
+    const resolver = () => dir;
+    const db = createTestDb();
+    await migrateDatabase(db);
+    await seedPatientContextIfEmpty(db, patientA, patientB);
+
+    let directoryExistsCalled = false;
+    class CustomAdapter extends NodeFileStorageAdapter {
+      override directoryExists(p: string): boolean {
+        directoryExistsCalled = true;
+        return super.directoryExists(p);
+      }
+    }
+    const custom = new CustomAdapter();
+
+    await importLegacyDrafts(patientA, db, custom, resolver);
+    expect(directoryExistsCalled).toBe(true);
+  });
+
+  it('garantiza aislamiento A/B en la importación legacy', async () => {
+    const dirA = createTempDir();
+    const dirB = createTempDir();
+    const adapter = new NodeFileStorageAdapter();
+    const resolver = (p: string) => (p === patientA ? dirA : dirB);
+
+    const db = createTestDb();
+    await migrateDatabase(db);
+    await seedPatientContextIfEmpty(db, patientA, patientB);
+
+    // Archivo de Paciente A en dirA
+    const draftA: MedicalFormDraft = {
+      formularioId: 'form-esas-muestra',
+      version: '1.0',
+      pacienteId: patientA,
+      respuestas: { esas_dolor: 5 },
+      completado: false,
+      guardadoEn: '2026-10-06T10:00:00Z',
+    };
+    writeFileSync(join(dirA, 'form-esas-muestra_v1.0.json'), JSON.stringify(draftA, null, 2));
+
+    // Ejecutar importación para Paciente B
+    const resultB = await importLegacyDrafts(patientB, db, adapter, resolver);
+    expect(resultB.imported).toBe(0);
+
+    // Paciente B no tiene ningún borrador importado
+    const draftB = await db.first('SELECT * FROM borrador_formulario WHERE paciente_id = ?', [
+      patientB,
+    ]);
+    expect(draftB).toBeNull();
+  });
+
+  it('importLegacyDrafts pasa a revision_requerida si la huella cambia durante limpieza_pendiente y conserva el archivo', async () => {
+    const dir = createTempDir();
+    const adapter = new NodeFileStorageAdapter();
+    const resolver = () => dir;
+
+    const db = createTestDb();
+    await migrateDatabase(db);
+    await seedPatientContextIfEmpty(db, patientA, patientB);
+
+    const jsonPath = join(dir, 'form-esas-muestra_v1.0.json');
+    writeFileSync(
+      jsonPath,
+      JSON.stringify(
+        {
+          formularioId: 'form-esas-muestra',
+          version: '1.0',
+          pacienteId: patientA,
+          respuestas: { esas_dolor: 4 },
+          completado: false,
+          guardadoEn: '2026-10-06T10:00:00Z',
+        },
+        null,
+        2,
+      ),
+    );
+
+    // Simular que el commit previo registró el archivo en limpieza_pendiente con una huella previa
+    await db.run(
+      `INSERT INTO importacion_formularios_legacy (
+        paciente_id, archivo_relativo, huella_sha256, huella_bak_sha256,
+        destino_tipo, destino_id, estado, fecha_importacion, ultimo_error
+      ) VALUES (?, ?, ?, NULL, 'borrador', 'form-esas-muestra', 'limpieza_pendiente', '2026-10-06T10:00:00Z', NULL)`,
+      [patientA, 'form-esas-muestra_v1.0.json', 'sha256_antiguo_diferente'],
+    );
+
+    // Reintentar importación
+    const result = await importLegacyDrafts(patientA, db, adapter, resolver);
+    expect(result.errors).toBe(1);
+    expect(result.pendingCleanups).toBe(0);
+
+    // El estado pasó a revision_requerida con motivo registrado
+    const record = await db.first<{ estado: string; ultimo_error: string }>(
+      'SELECT estado, ultimo_error FROM importacion_formularios_legacy WHERE paciente_id = ? AND archivo_relativo = ?',
+      [patientA, 'form-esas-muestra_v1.0.json'],
+    );
+    expect(record?.estado).toBe('revision_requerida');
+    expect(record?.ultimo_error).toContain('huella modificada');
+
+    // El archivo físico se conserva intacto
+    expect(await adapter.exists(jsonPath)).toBe(true);
+  });
+
+  it('importLegacyDrafts retiene limpieza_pendiente si la huella coincide pero la eliminación física falla', async () => {
+    const dir = createTempDir();
+    const resolver = () => dir;
+
+    const db = createTestDb();
+    await migrateDatabase(db);
+    await seedPatientContextIfEmpty(db, patientA, patientB);
+
+    const jsonPath = join(dir, 'form-esas-muestra_v1.0.json');
+    writeFileSync(
+      jsonPath,
+      JSON.stringify(
+        {
+          formularioId: 'form-esas-muestra',
+          version: '1.0',
+          pacienteId: patientA,
+          respuestas: { esas_dolor: 4 },
+          completado: false,
+          guardadoEn: '2026-10-06T10:00:00Z',
+        },
+        null,
+        2,
+      ),
+    );
+
+    class FailDeleteAdapter extends NodeFileStorageAdapter {
+      override async deleteFile(): Promise<boolean> {
+        return false; // Fallo temporal al borrar
+      }
+    }
+    const failDeleteAdapter = new FailDeleteAdapter();
+
+    // Primera ejecución: se inserta en SQLite y queda en limpieza_pendiente al fallar el borrado
+    const result1 = await importLegacyDrafts(patientA, db, failDeleteAdapter, resolver);
+    expect(result1.imported).toBe(1);
+    expect(result1.pendingCleanups).toBe(1);
+
+    const record1 = await db.first<{ estado: string }>(
+      'SELECT estado FROM importacion_formularios_legacy WHERE paciente_id = ? AND archivo_relativo = ?',
+      [patientA, 'form-esas-muestra_v1.0.json'],
+    );
+    expect(record1?.estado).toBe('limpieza_pendiente');
+
+    // Segunda ejecución (reintento con misma huella): permanece en limpieza_pendiente
+    const result2 = await importLegacyDrafts(patientA, db, failDeleteAdapter, resolver);
+    expect(result2.pendingCleanups).toBe(1);
+    expect(result2.errors).toBe(0);
+
+    const record2 = await db.first<{ estado: string }>(
+      'SELECT estado FROM importacion_formularios_legacy WHERE paciente_id = ? AND archivo_relativo = ?',
+      [patientA, 'form-esas-muestra_v1.0.json'],
+    );
+    expect(record2?.estado).toBe('limpieza_pendiente');
+    expect(await failDeleteAdapter.exists(jsonPath)).toBe(true);
+  });
+
+  it('mantiene revision_requerida en ejecuciones consecutivas sin duplicar respuestas ni cola tras cambio de contenido', async () => {
+    const dir = createTempDir();
+    const resolver = () => dir;
+
+    const db = createTestDb();
+    await migrateDatabase(db);
+    await seedPatientContextIfEmpty(db, patientA, patientB);
+
+    const jsonPath = join(dir, 'form-esas-muestra_v1.0.json');
+    writeFileSync(
+      jsonPath,
+      JSON.stringify(
+        {
+          formularioId: 'form-esas-muestra',
+          version: '1.0',
+          pacienteId: patientA,
+          respuestas: { esas_dolor: 3, esas_fatiga: 2, esas_nauseas: 1 },
+          completado: true,
+          guardadoEn: '2026-10-06T10:00:00Z',
+        },
+        null,
+        2,
+      ),
+    );
+
+    class FailDeleteAdapter extends NodeFileStorageAdapter {
+      override async deleteFile(): Promise<boolean> {
+        return false; // Fallo al borrar el JSON
+      }
+    }
+    const failDeleteAdapter = new FailDeleteAdapter();
+    const normalAdapter = new NodeFileStorageAdapter();
+
+    // Ejecución 1: Se importa la entrega completada. Falla la eliminación del JSON y queda en limpieza_pendiente.
+    const result1 = await importLegacyDrafts(patientA, db, failDeleteAdapter, resolver);
+    expect(result1.imported).toBe(1);
+    expect(result1.pendingCleanups).toBe(1);
+
+    const subs1 = await db.all<{ id: string }>(
+      'SELECT * FROM respuesta_formulario WHERE paciente_id = ?',
+      [patientA],
+    );
+    expect(subs1).toHaveLength(1);
+
+    const queue1 = await db.all<{ id: string }>('SELECT * FROM cola_envio WHERE paciente_id = ?', [
+      patientA,
+    ]);
+    expect(queue1).toHaveLength(1);
+
+    // Modificar el contenido del archivo en disco tras el commit previo
+    writeFileSync(
+      jsonPath,
+      JSON.stringify(
+        {
+          formularioId: 'form-esas-muestra',
+          version: '1.0',
+          pacienteId: patientA,
+          respuestas: { esas_dolor: 9, esas_fatiga: 8, esas_nauseas: 7 },
+          completado: true,
+          guardadoEn: '2026-10-06T11:00:00Z',
+        },
+        null,
+        2,
+      ),
+    );
+
+    // Ejecución 2: Detecta cambio de huella tras el commit, lo conserva y marca revision_requerida.
+    const result2 = await importLegacyDrafts(patientA, db, normalAdapter, resolver);
+    expect(result2.errors).toBe(1);
+    expect(result2.imported).toBe(0);
+
+    const record2 = await db.first<{ estado: string; ultimo_error: string }>(
+      'SELECT estado, ultimo_error FROM importacion_formularios_legacy WHERE paciente_id = ? AND archivo_relativo = ?',
+      [patientA, 'form-esas-muestra_v1.0.json'],
+    );
+    expect(record2?.estado).toBe('revision_requerida');
+    expect(record2?.ultimo_error).toContain('huella modificada');
+    expect(await normalAdapter.exists(jsonPath)).toBe(true);
+
+    // Ejecución 3: Tercera ejecución consecutiva con adaptador normal donde deleteFile funcionaría.
+    // La marca revision_requerida debe detener el procesamiento, conservando el archivo sin crear otra entrega.
+    const result3 = await importLegacyDrafts(patientA, db, normalAdapter, resolver);
+    expect(result3.errors).toBe(1);
+    expect(result3.imported).toBe(0);
+
+    // Comprobar que sigue existiendo exactamente una sola respuesta y una sola operación en cola
+    const subsFinal = await db.all<{ id: string }>(
+      'SELECT * FROM respuesta_formulario WHERE paciente_id = ?',
+      [patientA],
+    );
+    expect(subsFinal).toHaveLength(1);
+    expect(subsFinal[0].id).toBe(subs1[0].id);
+
+    const queueFinal = await db.all<{ id: string }>(
+      'SELECT * FROM cola_envio WHERE paciente_id = ?',
+      [patientA],
+    );
+    expect(queueFinal).toHaveLength(1);
+    expect(queueFinal[0].id).toBe(queue1[0].id);
+
+    // El estado permanece en revision_requerida y el archivo físico continúa intacto
+    const recordFinal = await db.first<{ estado: string }>(
+      'SELECT estado FROM importacion_formularios_legacy WHERE paciente_id = ? AND archivo_relativo = ?',
+      [patientA, 'form-esas-muestra_v1.0.json'],
+    );
+    expect(recordFinal?.estado).toBe('revision_requerida');
+    expect(await normalAdapter.exists(jsonPath)).toBe(true);
+  });
+
+  it('importLegacyDrafts normaliza respuestas opcionales de entregas completadas antes de persistir y encolar', async () => {
+    const dir = createTempDir();
+    const adapter = new NodeFileStorageAdapter();
+    const resolver = () => dir;
+
+    const db = createTestDb();
+    await migrateDatabase(db);
+    await seedPatientContextIfEmpty(db, patientA, patientB);
+
+    const jsonPath = join(dir, 'form-esas-muestra_v1.0.json');
+    writeFileSync(
+      jsonPath,
+      JSON.stringify(
+        {
+          formularioId: 'form-esas-muestra',
+          version: '1.0',
+          pacienteId: patientA,
+          respuestas: {
+            esas_dolor: 2,
+            esas_fatiga: 1,
+            esas_nauseas: 0,
+            esas_notas: '   ',
+            esas_sintomas_secundarios: [],
+          },
+          completado: true,
+          guardadoEn: '2026-10-06T10:00:00Z',
+        },
+        null,
+        2,
+      ),
+    );
+
+    const result = await importLegacyDrafts(patientA, db, adapter, resolver);
+    expect(result.imported).toBe(1);
+
+    const sub = await db.first<{ respuestas_json: string }>(
+      'SELECT respuestas_json FROM respuesta_formulario WHERE paciente_id = ?',
+      [patientA],
+    );
+    expect(sub).not.toBeNull();
+    const storedAnswers = JSON.parse(sub!.respuestas_json);
+    expect(storedAnswers).toHaveProperty('esas_dolor', 2);
+    expect(storedAnswers).toHaveProperty('esas_fatiga', 1);
+    expect(storedAnswers).toHaveProperty('esas_nauseas', 0);
+    // Respuestas opcionales vacías se normalizan como ausencia
+    expect(storedAnswers).not.toHaveProperty('esas_notas');
+    expect(storedAnswers).not.toHaveProperty('esas_sintomas_secundarios');
+
+    const queue = await db.first<{ payload_json: string }>(
+      'SELECT payload_json FROM cola_envio WHERE paciente_id = ?',
+      [patientA],
+    );
+    expect(queue).not.toBeNull();
+    const payload = JSON.parse(queue!.payload_json);
+    expect(payload.record.respuestas).toEqual(storedAnswers);
+  });
+
+  it('importLegacyDrafts conserva borradores con claves ajenas en revision_requerida y permite borradores parciales válidos', async () => {
+    const dir = createTempDir();
+    const adapter = new NodeFileStorageAdapter();
+    const resolver = () => dir;
+
+    const db = createTestDb();
+    await migrateDatabase(db);
+    await seedPatientContextIfEmpty(db, patientA, patientB);
+
+    // 1. Borrador con clave ajena a la definición (respuesta conocida + clave inexistente)
+    const incompatibleDraft = {
+      formularioId: 'form-esas-muestra',
+      version: '1.0',
+      pacienteId: patientA,
+      respuestas: {
+        esas_dolor: 4,
+        clave_inexistente_en_definicion: 'valor_ajeno',
+      },
+      completado: false,
+      guardadoEn: '2026-10-06T10:00:00Z',
+    };
+    const jsonPathIncompatible = join(dir, 'form-esas-muestra_v1.0.json');
+    writeFileSync(jsonPathIncompatible, JSON.stringify(incompatibleDraft, null, 2));
+
+    const resultIncompatible = await importLegacyDrafts(patientA, db, adapter, resolver);
+    expect(resultIncompatible.errors).toBe(1);
+    expect(resultIncompatible.imported).toBe(0);
+
+    // El archivo físico debe conservarse en disco para evitar pérdida de datos
+    expect(await adapter.exists(jsonPathIncompatible)).toBe(true);
+
+    // No debe haberse insertado borrador incompleto con claves descartadas en borrador_formulario
+    const draftInDb = await db.first(
+      'SELECT * FROM borrador_formulario WHERE paciente_id = ? AND formulario_id = ?',
+      [patientA, 'form-esas-muestra'],
+    );
+    expect(draftInDb).toBeNull();
+
+    // Debe registrarse como revision_requerida con mensaje descriptivo
+    const trackingIncompatible = await db.first<{ estado: string; ultimo_error: string }>(
+      'SELECT estado, ultimo_error FROM importacion_formularios_legacy WHERE paciente_id = ? AND archivo_relativo = ?',
+      [patientA, 'form-esas-muestra_v1.0.json'],
+    );
+    expect(trackingIncompatible?.estado).toBe('revision_requerida');
+    expect(trackingIncompatible?.ultimo_error).toContain('clave_inexistente_en_definicion');
+
+    // Comprobar persistencia ante ejecuciones posteriores: se sigue conservando el archivo
+    const resultRetry = await importLegacyDrafts(patientA, db, adapter, resolver);
+    expect(resultRetry.errors).toBe(1);
+    expect(await adapter.exists(jsonPathIncompatible)).toBe(true);
+
+    // Limpiar para probar el caso de borrador parcial válido
+    rmSync(jsonPathIncompatible, { force: true });
+    await db.run('DELETE FROM importacion_formularios_legacy WHERE paciente_id = ?', [patientA]);
+
+    // 2. Borrador parcial válido: preguntas obligatorias (fatiga, nauseas) sin responder aún
+    const validPartialDraft = {
+      formularioId: 'form-esas-muestra',
+      version: '1.0',
+      pacienteId: patientA,
+      respuestas: {
+        esas_dolor: 3,
+      },
+      completado: false,
+      guardadoEn: '2026-10-06T11:00:00Z',
+    };
+    const jsonPathPartial = join(dir, 'form-esas-muestra_v1.0.json');
+    writeFileSync(jsonPathPartial, JSON.stringify(validPartialDraft, null, 2));
+
+    const resultPartial = await importLegacyDrafts(patientA, db, adapter, resolver);
+    expect(resultPartial.errors).toBe(0);
+    expect(resultPartial.imported).toBe(1);
+
+    // El borrador parcial se guardó correctamente en SQLite
+    const savedDraft = await db.first<{ respuestas_json: string }>(
+      'SELECT respuestas_json FROM borrador_formulario WHERE paciente_id = ? AND formulario_id = ?',
+      [patientA, 'form-esas-muestra'],
+    );
+    expect(savedDraft).not.toBeNull();
+    const parsedSaved = JSON.parse(savedDraft!.respuestas_json);
+    expect(parsedSaved).toEqual({ esas_dolor: 3 });
+
+    // El archivo legacy se eliminó tras la importación exitosa
+    expect(await adapter.exists(jsonPathPartial)).toBe(false);
+
+    // El seguimiento quedó en 'importado'
+    const trackingPartial = await db.first<{ estado: string }>(
+      'SELECT estado FROM importacion_formularios_legacy WHERE paciente_id = ? AND archivo_relativo = ?',
+      [patientA, 'form-esas-muestra_v1.0.json'],
+    );
+    expect(trackingPartial?.estado).toBe('importado');
   });
 });

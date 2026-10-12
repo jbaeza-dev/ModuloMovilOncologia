@@ -3,8 +3,12 @@ import { Directory, Paths } from 'expo-file-system';
 import {
   ExpoFileStorageAdapter,
   type FileStorageAdapter,
-} from '../../data/local/file-storage-adapter';
-import { assertSafeId, assertSafeVersion, AsyncMutex } from '../../data/local/resource-storage';
+} from '../../data/local/files/file-storage-adapter';
+import {
+  assertSafeId,
+  assertSafeVersion,
+  AsyncMutex,
+} from '../../data/local/files/resource-storage';
 import type { MedicalFormDraft } from './medical-form-types';
 
 function normalizePath(p: string): string {

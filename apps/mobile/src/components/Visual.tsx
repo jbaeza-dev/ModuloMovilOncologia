@@ -105,21 +105,32 @@ export function ChoiceChip({
   label,
   selected,
   onPress,
+  disabled,
 }: {
   label: string;
   selected: boolean;
   onPress: () => void;
+  disabled?: boolean;
 }) {
   const styles = useStyles();
   return (
     <Pressable
       accessibilityRole="button"
       accessibilityLabel={label}
-      accessibilityState={{ selected }}
+      accessibilityState={{ selected, disabled: !!disabled }}
+      disabled={disabled}
       onPress={onPress}
-      style={[styles.chip, selected && styles.selectedChip]}
+      style={[styles.chip, selected && styles.selectedChip, disabled && styles.disabledChip]}
     >
-      <Text style={[styles.chipText, selected && styles.selectedChipText]}>{label}</Text>
+      <Text
+        style={[
+          styles.chipText,
+          selected && styles.selectedChipText,
+          disabled && !selected && styles.disabledChipText,
+        ]}
+      >
+        {label}
+      </Text>
     </Pressable>
   );
 }
@@ -235,8 +246,10 @@ function useStyles() {
       backgroundColor: colors.background,
     },
     selectedChip: { backgroundColor: colors.primary, borderColor: colors.primary },
+    disabledChip: { opacity: 0.5 },
     chipText: { fontSize: 14, fontWeight: '600', color: colors.text },
     selectedChipText: { color: colors.onPrimary },
+    disabledChipText: { color: colors.secondary },
     empty: { alignItems: 'center', gap: theme.spacing.md, paddingVertical: theme.spacing.lg },
     emptyTitle: { fontSize: 19, fontWeight: '700', color: colors.text, textAlign: 'center' },
     progressTrack: {

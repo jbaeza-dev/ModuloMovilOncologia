@@ -6,6 +6,7 @@ import { Directory, File } from 'expo-file-system';
  */
 export interface FileStorageAdapter {
   exists(targetPath: string): Promise<boolean> | boolean;
+  directoryExists?(dirPath: string): Promise<boolean> | boolean;
   readText(targetPath: string): Promise<string>;
   writeText(targetPath: string, content: string): Promise<void>;
   deleteFile(targetPath: string): Promise<boolean>;
@@ -27,13 +28,23 @@ export interface FileStorageAdapter {
  * Se inicializa dinámicamente para no requerir expo-file-system en pruebas puras de Node.
  */
 export class ExpoFileStorageAdapter implements FileStorageAdapter {
-  async exists(targetPath: string): Promise<boolean> {
+  async directoryExists(dirPath: string): Promise<boolean> {
     try {
-      const file = new File(targetPath);
-      return file.exists;
+      const dir = new Directory(dirPath);
+      return dir.exists;
     } catch {
       return false;
     }
+  }
+
+  async exists(targetPath: string): Promise<boolean> {
+    try {
+      const file = new File(targetPath);
+      if (file.exists) return true;
+    } catch {
+      // Si falla porque targetPath es un directorio según la API nativa de Expo
+    }
+    return this.directoryExists(targetPath);
   }
 
   async readText(targetPath: string): Promise<string> {

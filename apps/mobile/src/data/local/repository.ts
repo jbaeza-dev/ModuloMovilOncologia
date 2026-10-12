@@ -1,5 +1,14 @@
-import type { SqlConnection } from './sql';
+import type { SqlConnection } from './core/sql';
 import { type VitalValues } from './validation';
+import { createFormRepository } from './forms/form-repository';
+import { seedMedicalFormsDemo } from './forms/form-seed';
+import { createClinicalContextRepository } from './clinical-context/clinical-context-repository';
+import { createConsentRepository } from './consents/consent-repository';
+import { seedClinicalContextDemoInTransaction } from './clinical-context/clinical-context-seed';
+import { createReportRepository } from './reports/report-repository';
+export * from './clinical-context/clinical-context-types';
+export * from './consents/consent-types';
+export * from './reports/report-types';
 
 export type VitalRecord = VitalValues & {
   id: string;
@@ -86,7 +95,11 @@ export function createPatientRepository(
 ) {
   if (!patientId) throw new Error('Selecciona un paciente de prueba.');
 
+  const formRepo = createFormRepository(database, patientId, newId, now);
+  const reportRepo = createReportRepository(database, patientId, now);
+
   return {
+    ...formRepo,
     async createVitals(values: VitalValues): Promise<string> {
       const id = newId();
       const queueId = newId();
@@ -209,13 +222,16 @@ export function createPatientRepository(
       );
     },
 
-    vitalsForReport(sinceIso: string) {
-      return database.all<VitalRecord>(
-        `SELECT * FROM signos_vitales
-         WHERE paciente_id = ? AND fecha_registro >= ?
-         ORDER BY fecha_registro ASC, id ASC`,
-        [patientId, sinceIso],
-      );
+    vitalsForReport(sinceIso: string, untilIso?: string) {
+      return reportRepo.vitalsForReport(sinceIso, untilIso);
+    },
+
+    symptomsForReport(sinceIso: string, untilIso?: string) {
+      return reportRepo.symptomsForReport(sinceIso, untilIso);
+    },
+
+    getReportData(periodDays: 7 | 30 | 90, customNow?: string) {
+      return reportRepo.getReportData(periodDays, customNow);
     },
 
     symptoms(limit = 30, offset = 0) {
@@ -374,6 +390,11 @@ export function createPatientRepository(
         contenidoId,
       ]);
     },
+
+    ...createFormRepository(database, patientId, newId, now),
+    ...createClinicalContextRepository(database, patientId),
+    ...createConsentRepository(database, patientId, newId, now),
+    reports: reportRepo,
   };
 }
 
@@ -438,6 +459,22 @@ export async function seedPatientContextIfEmpty(
         timestamp,
       ],
     );
+
+    // Seed de cuestionarios médicos de demostración (si la migración 004 ya está aplicada)
+    const hasForms = await tx.first<{ name: string }>(
+      "SELECT name FROM sqlite_master WHERE type = 'table' AND name = 'formulario_asignacion_cache'",
+    );
+    if (hasForms) {
+      await seedMedicalFormsDemo(tx, patientAId, patientBId, now);
+    }
+
+    // Seed de contexto clínico y consentimientos (si la migración 005 ya está aplicada)
+    const hasClinicalContext = await tx.first<{ name: string }>(
+      "SELECT name FROM sqlite_master WHERE type = 'table' AND name = 'ficha_clinica_cache'",
+    );
+    if (hasClinicalContext) {
+      await seedClinicalContextDemoInTransaction(tx, patientAId, patientBId, now);
+    }
   });
 }
 

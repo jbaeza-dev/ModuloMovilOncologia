@@ -12,7 +12,7 @@ import {
   VisualField,
 } from '../../components/Visual';
 import { formatDate, type SymptomWithSyncRecord } from '../../data/local/repository';
-import { useFocusedList } from '../../data/local/use-local-query';
+import { useFocusedList } from '../../hooks/use-local-query';
 import { InputError, parseSymptomDescription } from '../../data/local/validation';
 import { useLocalData } from '../../providers/LocalDataProvider';
 import { theme } from '../../theme';

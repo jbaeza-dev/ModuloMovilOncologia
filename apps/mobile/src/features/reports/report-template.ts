@@ -1,19 +1,37 @@
 import type {
   PatientProfileRecord,
+  SymptomRecord,
   TreatmentRecord,
   VitalRecord,
-  VitalsSummary,
 } from '../../data/local/repository';
 import { formatDate } from '../../data/local/repository';
+import type { ReportData, ReportLinkingCodeInfo } from '../../data/local/reports/report-types';
 
-export type GenerateReportParams = {
-  pacienteId: string;
-  periodDays: number;
-  profile: PatientProfileRecord | null;
-  treatment: TreatmentRecord | null;
-  summary: VitalsSummary;
-  vitals: VitalRecord[];
-};
+export type GenerateReportParams =
+  | ReportData
+  | {
+      pacienteId: string;
+      periodDays: number;
+      profile: Readonly<PatientProfileRecord> | null;
+      treatment: Readonly<TreatmentRecord> | null;
+      linkingCode?: Readonly<ReportLinkingCodeInfo>;
+      summary: {
+        vitalsCount?: number;
+        total?: number; // compatibilidad
+        symptomsCount?: number;
+        avgTemperature?: number | null;
+        avgPulse?: number | null;
+        avgSystolic?: number | null;
+        avgDiastolic?: number | null;
+        avgOxygenSaturation?: number | null;
+      };
+      vitals: readonly Readonly<VitalRecord>[];
+      symptoms?: readonly Readonly<SymptomRecord>[];
+      generatedAt?: string;
+      periodStart?: string;
+      periodEnd?: string;
+      timeZone?: string;
+    };
 
 export function escapeHtml(str: string): string {
   return str
@@ -24,23 +42,60 @@ export function escapeHtml(str: string): string {
     .replace(/'/g, '&#39;');
 }
 
-export function buildReportHtml({
-  periodDays,
-  profile,
-  treatment,
-  summary,
-  vitals,
-}: GenerateReportParams): string {
-  const generatedAt = formatDate(new Date().toISOString());
-  const patientName = escapeHtml(profile?.nombre ?? 'Paciente de prueba');
-  const patientRut = escapeHtml(profile?.rut ?? 'Sin registro');
-  const patientEmail = escapeHtml(profile?.email ?? 'Sin registro');
-  const treatmentName = escapeHtml(treatment?.nombre ?? 'Tratamiento activo en seguimiento');
+export function formatReportDate(iso: string, timeZone?: string): string {
+  try {
+    const opts: Intl.DateTimeFormatOptions = { dateStyle: 'medium', timeStyle: 'short' };
+    if (timeZone) {
+      opts.timeZone = timeZone;
+    }
+    return new Date(iso).toLocaleString('es-CL', opts);
+  } catch {
+    return formatDate(iso);
+  }
+}
 
-  const rowsHtml = vitals.length
+export function buildReportHtml(data: GenerateReportParams): string {
+  const timeZone = 'timeZone' in data && data.timeZone ? data.timeZone : 'America/Santiago';
+  const generatedAtIso =
+    'generatedAt' in data && data.generatedAt ? data.generatedAt : new Date().toISOString();
+  const generatedAt = formatReportDate(generatedAtIso, timeZone);
+
+  const profile = data.profile;
+  const treatment = data.treatment;
+  const linkingCode = data.linkingCode;
+  const periodDays = data.periodDays;
+  const summary = data.summary;
+  const vitals = data.vitals;
+  const symptoms = data.symptoms ?? [];
+
+  const patientName = profile?.nombre ? escapeHtml(profile.nombre) : 'Sin registro';
+  const patientRut = profile?.rut ? escapeHtml(profile.rut) : 'Sin registro';
+  const patientEmail = profile?.email ? escapeHtml(profile.email) : 'Sin registro';
+  const treatmentName = treatment?.nombre
+    ? escapeHtml(treatment.nombre)
+    : 'Sin tratamiento activo registrado';
+
+  const linkingText = linkingCode ? escapeHtml(linkingCode.displayText) : 'No registrado';
+  const linkingObtainedFormatted = linkingCode?.obtainedAt
+    ? formatReportDate(linkingCode.obtainedAt, timeZone)
+    : null;
+
+  const periodStartFormatted =
+    'periodStart' in data && data.periodStart ? formatReportDate(data.periodStart, timeZone) : null;
+  const periodEndFormatted =
+    'periodEnd' in data && data.periodEnd ? formatReportDate(data.periodEnd, timeZone) : null;
+  const periodDisplay =
+    periodStartFormatted && periodEndFormatted
+      ? `Últimos ${periodDays} días (${periodStartFormatted} – ${periodEndFormatted})`
+      : `Últimos ${periodDays} días`;
+
+  const totalVitals = summary.vitalsCount ?? ('total' in summary ? summary.total : undefined) ?? 0;
+  const totalSymptoms = summary.symptomsCount ?? symptoms.length;
+
+  const vitalsRowsHtml = vitals.length
     ? vitals
         .map((v) => {
-          const fecha = formatDate(v.fecha_registro);
+          const fecha = formatReportDate(v.fecha_registro, timeZone);
           const temp = v.temperatura !== null ? `${v.temperatura.toLocaleString('es-CL')} °C` : '—';
           const pa =
             v.presion_sistolica !== null && v.presion_diastolica !== null
@@ -59,11 +114,24 @@ export function buildReportHtml({
         .join('')
     : `<tr><td colspan="5" style="padding: 16px; text-align: center; color: #64748B;">No hay mediciones registradas en este período.</td></tr>`;
 
+  const symptomsRowsHtml = symptoms.length
+    ? symptoms
+        .map((s) => {
+          const fecha = formatReportDate(s.fecha_registro, timeZone);
+          const descripcion = escapeHtml(s.descripcion || '—');
+          return `<tr>
+            <td style="padding: 8px 12px; border-bottom: 1px solid #E2E8F0; font-size: 13px; white-space: nowrap; width: 160px;">${fecha}</td>
+            <td style="padding: 8px 12px; border-bottom: 1px solid #E2E8F0; font-size: 13px; white-space: pre-wrap; word-break: break-word;">${descripcion}</td>
+          </tr>`;
+        })
+        .join('')
+    : `<tr><td colspan="2" style="padding: 16px; text-align: center; color: #64748B;">No hay síntomas registrados en este período.</td></tr>`;
+
   return `<!DOCTYPE html>
 <html lang="es">
 <head>
   <meta charset="utf-8">
-  <title>Reporte de Signos Vitales — QuimioCare</title>
+  <title>Reporte de Signos Vitales y Síntomas — QuimioCare</title>
   <style>
     body {
       font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif;
@@ -97,6 +165,7 @@ export function buildReportHtml({
       padding: 16px;
       border-radius: 8px;
       border: 1px solid #E2E8F0;
+      page-break-inside: avoid;
     }
     .meta-item {
       font-size: 13px;
@@ -113,11 +182,13 @@ export function buildReportHtml({
       font-size: 12px;
       color: #92400E;
       margin-bottom: 24px;
+      page-break-inside: avoid;
     }
     .summary-card {
       display: flex;
-      gap: 16px;
+      gap: 12px;
       margin-bottom: 24px;
+      page-break-inside: avoid;
     }
     .metric {
       flex: 1;
@@ -127,7 +198,7 @@ export function buildReportHtml({
       text-align: center;
     }
     .metric-value {
-      font-size: 20px;
+      font-size: 18px;
       font-weight: 700;
       color: #0D9488;
     }
@@ -136,12 +207,13 @@ export function buildReportHtml({
       color: #64748B;
       text-transform: uppercase;
       font-weight: 600;
+      margin-top: 2px;
     }
     table {
       width: 100%;
       border-collapse: collapse;
-      margin-top: 12px;
-      margin-bottom: 32px;
+      margin-top: 8px;
+      margin-bottom: 28px;
     }
     th {
       background-color: #0D9488;
@@ -156,6 +228,16 @@ export function buildReportHtml({
     th:first-child {
       text-align: left;
     }
+    tr {
+      page-break-inside: avoid;
+    }
+    .section-title {
+      font-size: 15px;
+      font-weight: 600;
+      margin-top: 16px;
+      margin-bottom: 8px;
+      color: #334155;
+    }
     .footer {
       border-top: 1px solid #E2E8F0;
       padding-top: 12px;
@@ -163,21 +245,30 @@ export function buildReportHtml({
       color: #94A3B8;
       text-align: center;
     }
+    @media print {
+      body {
+        margin: 16px;
+      }
+      .summary-card, .meta-grid, tr {
+        page-break-inside: avoid;
+      }
+    }
   </style>
 </head>
 <body>
   <div class="header">
     <div class="brand">QuimioCare</div>
-    <div class="title">Resumen de Signos Vitales — Seguimiento de Quimioterapia</div>
+    <div class="title">Resumen de Signos Vitales y Síntomas — Seguimiento de Quimioterapia</div>
   </div>
 
   <div class="meta-grid">
     <div class="meta-item"><span class="meta-label">Paciente:</span> ${patientName}</div>
     <div class="meta-item"><span class="meta-label">RUT:</span> ${patientRut}</div>
     <div class="meta-item"><span class="meta-label">Tratamiento:</span> ${treatmentName}</div>
-    <div class="meta-item"><span class="meta-label">Período evaluado:</span> Últimos ${periodDays} días</div>
+    <div class="meta-item"><span class="meta-label">Período evaluado:</span> ${escapeHtml(periodDisplay)}</div>
     <div class="meta-item"><span class="meta-label">Correo registrado:</span> ${patientEmail}</div>
-    <div class="meta-item"><span class="meta-label">Fecha de emisión:</span> ${generatedAt}</div>
+    <div class="meta-item"><span class="meta-label">Fecha de emisión:</span> ${generatedAt} <span style="font-size: 11px; color: #64748B;">(${escapeHtml(timeZone)})</span></div>
+    <div class="meta-item"><span class="meta-label">Vinculación clínica:</span> ${linkingText} <em style="font-size: 11px; color: #64748B;">(en caché${linkingObtainedFormatted ? ` · obtenida el ${linkingObtainedFormatted}` : ''})</em></div>
   </div>
 
   <div class="disclaimer">
@@ -186,24 +277,28 @@ export function buildReportHtml({
 
   <div class="summary-card">
     <div class="metric">
-      <div class="metric-value">${summary.total}</div>
-      <div class="metric-label">Registros en el período</div>
+      <div class="metric-value">${totalVitals}</div>
+      <div class="metric-label">Signos vitales</div>
     </div>
     <div class="metric">
-      <div class="metric-value">${summary.avgTemperature !== null ? summary.avgTemperature.toLocaleString('es-CL') + ' °C' : '—'}</div>
-      <div class="metric-label">Temperatura promedio</div>
+      <div class="metric-value">${summary.avgTemperature !== null && summary.avgTemperature !== undefined ? summary.avgTemperature.toLocaleString('es-CL') + ' °C' : '—'}</div>
+      <div class="metric-label">Temp. promedio</div>
     </div>
     <div class="metric">
-      <div class="metric-value">${summary.avgPulse !== null ? summary.avgPulse + ' lpm' : '—'}</div>
+      <div class="metric-value">${summary.avgPulse !== null && summary.avgPulse !== undefined ? summary.avgPulse + ' lpm' : '—'}</div>
       <div class="metric-label">Pulso promedio</div>
+    </div>
+    <div class="metric">
+      <div class="metric-value">${totalSymptoms}</div>
+      <div class="metric-label">Síntomas reportados</div>
     </div>
   </div>
 
-  <h3 style="font-size: 15px; margin-bottom: 8px; color: #334155;">Detalle cronológico de mediciones</h3>
+  <div class="section-title">Detalle cronológico de mediciones de signos vitales</div>
   <table>
     <thead>
       <tr>
-        <th>Fecha y hora</th>
+        <th>Fecha y hora (${escapeHtml(timeZone)})</th>
         <th>Temperatura</th>
         <th>Presión arterial</th>
         <th>Pulso</th>
@@ -211,7 +306,20 @@ export function buildReportHtml({
       </tr>
     </thead>
     <tbody>
-      ${rowsHtml}
+      ${vitalsRowsHtml}
+    </tbody>
+  </table>
+
+  <div class="section-title">Detalle cronológico de síntomas reportados</div>
+  <table>
+    <thead>
+      <tr>
+        <th style="width: 160px; text-align: left;">Fecha y hora (${escapeHtml(timeZone)})</th>
+        <th style="text-align: left;">Descripción del síntoma</th>
+      </tr>
+    </thead>
+    <tbody>
+      ${symptomsRowsHtml}
     </tbody>
   </table>
 

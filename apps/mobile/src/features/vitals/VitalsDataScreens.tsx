@@ -21,7 +21,7 @@ import {
   sinceDays,
   type VitalWithSyncRecord,
 } from '../../data/local/repository';
-import { useFocusedList, useFocusedValue } from '../../data/local/use-local-query';
+import { useFocusedList, useFocusedValue } from '../../hooks/use-local-query';
 import { InputError, parseVitalInput, type VitalInput } from '../../data/local/validation';
 import { useLocalData } from '../../providers/LocalDataProvider';
 import { useAppTheme } from '../../providers/ThemeProvider';

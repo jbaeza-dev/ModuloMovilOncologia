@@ -1,0 +1,647 @@
+import { afterEach, describe, expect, it } from 'vitest';
+
+import { migrateDatabase } from './migrations';
+import { ingestMedicalFormBundle } from './forms/form-ingestion';
+import { seedMedicalFormsDemo } from './forms/form-seed';
+import {
+  ConflictoEntregaError,
+  TipoPreguntaNoSoportadoError,
+  VersionInmutableError,
+} from './forms/form-types';
+import { createPatientRepository, seedPatientContextIfEmpty } from './repository';
+import { SAMPLE_MEDICAL_FORMS } from '../../features/medical-forms/sample-medical-forms';
+import { createSqliteTestHarness, ids, patientA, patientB } from './testing/sqlite-test-harness';
+
+const harness = createSqliteTestHarness();
+const { open } = harness;
+
+afterEach(() => {
+  harness.cleanup();
+});
+
+describe('cuestionarios médicos de muestra y almacenamiento de borradores', () => {
+  it('valida la estructura clínica de los cuestionarios de demostración', () => {
+    expect(SAMPLE_MEDICAL_FORMS.length).toBeGreaterThanOrEqual(2);
+
+    for (const form of SAMPLE_MEDICAL_FORMS) {
+      expect(form.id).toBeTruthy();
+      expect(form.titulo).toBeTruthy();
+      expect(form.version).toBeTruthy();
+      expect(form.duracionEstimadaMin).toBeGreaterThan(0);
+      expect(form.preguntas.length).toBeGreaterThanOrEqual(3);
+
+      for (const q of form.preguntas) {
+        expect(['single_choice', 'multiple_choice', 'scale_0_10', 'text']).toContain(q.tipo);
+        if (q.tipo === 'single_choice' || q.tipo === 'multiple_choice') {
+          expect(q.opciones?.length).toBeGreaterThanOrEqual(2);
+        }
+      }
+    }
+  });
+});
+
+describe('formularios y persistencia clínica en SQLite', () => {
+  it('ingestMedicalFormBundle valida inmutabilidad y rechaza tipos de pregunta no soportados', async () => {
+    const database = open();
+    await migrateDatabase(database);
+    await seedPatientContextIfEmpty(database, patientA, patientB);
+
+    // 1. Rechazo de tipo no soportado
+    const invalidBundle = {
+      formularios: [
+        {
+          formularioId: 'form-test',
+          version: '1.0',
+          titulo: 'Test Form',
+          descripcion: 'Desc',
+          duracionEstimadaMin: 2,
+          preguntas: [
+            {
+              preguntaId: 'p1',
+              texto: '¿Pregunta con tipo no soportado?',
+              tipo: 'ranking_5_estrellas', // no soportado
+              orden: 1,
+            },
+          ],
+        },
+      ],
+      asignaciones: [],
+    };
+
+    await expect(ingestMedicalFormBundle(database, invalidBundle)).rejects.toThrow(
+      TipoPreguntaNoSoportadoError,
+    );
+
+    // 2. Ingestión válida
+    const validBundle = {
+      formularios: [
+        {
+          formularioId: 'form-test',
+          version: '1.0',
+          titulo: 'Test Form',
+          descripcion: 'Desc',
+          duracionEstimadaMin: 2,
+          preguntas: [
+            {
+              preguntaId: 'p1',
+              texto: '¿Pregunta válida?',
+              tipo: 'single_choice',
+              orden: 1,
+              requerida: true,
+              configuracion: { opciones: [{ valor: 'si', etiqueta: 'Sí' }] },
+            },
+          ],
+        },
+      ],
+      asignaciones: [
+        {
+          pacienteId: patientA,
+          formularioId: 'form-test',
+          version: '1.0',
+          estado: 'activa' as const,
+        },
+      ],
+    };
+
+    await ingestMedicalFormBundle(database, validBundle);
+
+    // 3. Idempotencia ante el mismo lote
+    await expect(ingestMedicalFormBundle(database, validBundle)).resolves.not.toThrow();
+
+    // 4. Conflicto de inmutabilidad si cambia el contenido bajo la misma versión
+    const alteredBundle = {
+      formularios: [
+        {
+          formularioId: 'form-test',
+          version: '1.0',
+          titulo: 'Test Form Modificado Ilegalmente',
+          descripcion: 'Desc',
+          duracionEstimadaMin: 2,
+          preguntas: [
+            {
+              preguntaId: 'p1',
+              texto: '¿Pregunta válida?',
+              tipo: 'single_choice',
+              orden: 1,
+              requerida: true,
+              configuracion: { opciones: [{ valor: 'si', etiqueta: 'Sí' }] },
+            },
+          ],
+        },
+      ],
+      asignaciones: [],
+    };
+
+    await expect(ingestMedicalFormBundle(database, alteredBundle)).rejects.toThrow(
+      VersionInmutableError,
+    );
+  });
+
+  it('seedMedicalFormsDemo respeta asignaciones retiradas sin reactivarlas', async () => {
+    const database = open();
+    await migrateDatabase(database);
+    await seedPatientContextIfEmpty(database, patientA, patientB);
+
+    const repoA = createPatientRepository(database, patientA, ids());
+    const assignedBefore = await repoA.listAssignedForms();
+    expect(assignedBefore.length).toBe(2);
+
+    // Marcar manualmente la asignación de QLQ-C30 como retirada
+    await database.run(
+      `UPDATE formulario_asignacion_cache
+       SET estado_conocido = 'retirada'
+       WHERE paciente_id = ? AND formulario_id = 'form-qlq30-muestra'`,
+      [patientA],
+    );
+
+    // Volver a ejecutar el seed de contexto
+    await seedPatientContextIfEmpty(database, patientA, patientB);
+
+    // Verificar que la asignación sigue estando en 'retirada'
+    const statusRow = await database.first<{ estado_conocido: string }>(
+      `SELECT estado_conocido FROM formulario_asignacion_cache
+       WHERE paciente_id = ? AND formulario_id = 'form-qlq30-muestra'`,
+      [patientA],
+    );
+    expect(statusRow?.estado_conocido).toBe('retirada');
+
+    // listAssignedForms solo devuelve activas, por lo que QLQ-C30 no debe listarse
+    const assignedAfter = await repoA.listAssignedForms();
+    expect(assignedAfter.length).toBe(1);
+    expect(assignedAfter[0].formulario_id).toBe('form-esas-muestra');
+  });
+
+  it('evolución de plantillas: versión 2.0 coexiste con versión 1.0 histórica y sus entregas', async () => {
+    const database = open();
+    await migrateDatabase(database);
+    await seedPatientContextIfEmpty(database, patientA, patientB);
+
+    const repoA = createPatientRepository(database, patientA, ids());
+
+    // Entrega de versión 1.0
+    await repoA.confirmSubmission(
+      'form-esas-muestra',
+      '1.0',
+      { esas_dolor: 4, esas_fatiga: 5, esas_nauseas: 1 },
+      'sub-v1-001',
+    );
+
+    // Ingestar versión 2.0 con nueva pregunta
+    const v2Bundle = {
+      formularios: [
+        {
+          formularioId: 'form-esas-muestra',
+          version: '2.0',
+          titulo: 'ESAS Actualizado (Versión 2.0)',
+          descripcion: 'Nueva versión con escala de ansiedad.',
+          duracionEstimadaMin: 3,
+          preguntas: [
+            {
+              preguntaId: 'esas_dolor',
+              texto: 'Nivel de dolor percibido:',
+              tipo: 'scale_0_10' as const,
+              orden: 1,
+              requerida: true,
+            },
+            {
+              preguntaId: 'esas_ansiedad',
+              texto: 'Nivel de ansiedad:',
+              tipo: 'scale_0_10' as const,
+              orden: 2,
+              requerida: true,
+            },
+          ],
+        },
+      ],
+      asignaciones: [
+        {
+          pacienteId: patientA,
+          formularioId: 'form-esas-muestra',
+          version: '2.0',
+          estado: 'activa' as const,
+        },
+      ],
+    };
+
+    await ingestMedicalFormBundle(database, v2Bundle);
+
+    // Entrega de versión 2.0
+    await repoA.confirmSubmission(
+      'form-esas-muestra',
+      '2.0',
+      { esas_dolor: 3, esas_ansiedad: 7 },
+      'sub-v2-001',
+    );
+
+    // Ambas entregas existen en el historial
+    const history = await repoA.listSubmissions('form-esas-muestra');
+    expect(history).toHaveLength(2);
+
+    const subV1 = await repoA.getSubmission('sub-v1-001');
+    expect(subV1?.version).toBe('1.0');
+    expect(subV1?.respuestas.esas_fatiga).toBe(5);
+
+    const subV2 = await repoA.getSubmission('sub-v2-001');
+    expect(subV2?.version).toBe('2.0');
+    expect(subV2?.respuestas.esas_ansiedad).toBe(7);
+  });
+
+  it('gestiona ciclo de vida de borradores y confirmación atómica en SQLite', async () => {
+    const database = open();
+    await migrateDatabase(database);
+    await seedPatientContextIfEmpty(database, patientA, patientB);
+
+    const repoA = createPatientRepository(database, patientA, ids());
+
+    // 1. Guardar borrador con deliveryId estable
+    const stableDeliveryId = 'delivery-uuid-123';
+    await repoA.saveDraft('form-esas-muestra', '1.0', { esas_dolor: 5 }, stableDeliveryId);
+
+    const draft = await repoA.getDraft('form-esas-muestra', '1.0');
+    expect(draft).toBeTruthy();
+    expect(draft?.entregaId).toBe(stableDeliveryId);
+    expect(draft?.respuestas).toEqual({ esas_dolor: 5 });
+
+    // 2. Confirmación atómica
+    const confirmedId = await repoA.confirmSubmission(
+      'form-esas-muestra',
+      '1.0',
+      { esas_dolor: 5, esas_fatiga: 3, esas_nauseas: 0 },
+      stableDeliveryId,
+    );
+    expect(confirmedId).toBe(stableDeliveryId);
+
+    // Borrador consumido en SQLite
+    const draftAfter = await repoA.getDraft('form-esas-muestra', '1.0');
+    expect(draftAfter).toBeNull();
+
+    // Entrega registrada en respuesta_formulario
+    const sub = await repoA.getSubmission(stableDeliveryId);
+    expect(sub).toBeTruthy();
+    expect(sub?.id).toBe(stableDeliveryId);
+    expect(sub?.respuestas.esas_dolor).toBe(5);
+
+    // Operación en cola_envio
+    const queueRow = await database.first<{
+      id: string;
+      tipo_entidad: string;
+      registro_id: string;
+      estado: string;
+    }>('SELECT * FROM cola_envio WHERE registro_id = ?', [stableDeliveryId]);
+    expect(queueRow).toBeTruthy();
+    expect(queueRow?.tipo_entidad).toBe('respuesta_formulario');
+    expect(queueRow?.estado).toBe('pendiente');
+
+    // 3. Idempotencia ante confirmación repetida con mismos datos
+    const reconfirmedId = await repoA.confirmSubmission(
+      'form-esas-muestra',
+      '1.0',
+      { esas_dolor: 5, esas_fatiga: 3, esas_nauseas: 0 },
+      stableDeliveryId,
+    );
+    expect(reconfirmedId).toBe(stableDeliveryId);
+
+    const queueCount = await database.first<{ total: number }>(
+      'SELECT count(*) AS total FROM cola_envio WHERE registro_id = ?',
+      [stableDeliveryId],
+    );
+    expect(queueCount?.total).toBe(1);
+
+    // 4. Conflicto explícito si se reusa deliveryId con respuestas diferentes
+    await expect(
+      repoA.confirmSubmission(
+        'form-esas-muestra',
+        '1.0',
+        { esas_dolor: 9, esas_fatiga: 9, esas_nauseas: 9 },
+        stableDeliveryId,
+      ),
+    ).rejects.toThrow(ConflictoEntregaError);
+  });
+
+  it('consumo condicional: confirmar entrega no elimina un borrador posterior con otro entrega_id', async () => {
+    const database = open();
+    await migrateDatabase(database);
+    await seedPatientContextIfEmpty(database, patientA, patientB);
+
+    const repoA = createPatientRepository(database, patientA, ids());
+
+    // Guardar borrador nuevo con otro entrega_id
+    await repoA.saveDraft('form-esas-muestra', '1.0', { esas_dolor: 2 }, 'delivery-uuid-nuevo');
+
+    // Confirmar entrega con deliveryId viejo
+    await repoA.confirmSubmission(
+      'form-esas-muestra',
+      '1.0',
+      { esas_dolor: 7, esas_fatiga: 7, esas_nauseas: 7 },
+      'delivery-uuid-viejo',
+    );
+
+    // El borrador nuevo NO fue eliminado porque su entrega_id no coincide
+    const draftStillExists = await repoA.getDraft('form-esas-muestra', '1.0');
+    expect(draftStillExists).toBeTruthy();
+    expect(draftStillExists?.entregaId).toBe('delivery-uuid-nuevo');
+  });
+
+  it('garantiza aislamiento A/B estricto de cuestionarios, borradores y entregas', async () => {
+    const database = open();
+    await migrateDatabase(database);
+    await seedPatientContextIfEmpty(database, patientA, patientB);
+
+    const repoA = createPatientRepository(database, patientA, ids());
+    const repoB = createPatientRepository(database, patientB, ids());
+
+    // Paciente A tiene 2 cuestionarios; Paciente B solo 1
+    const formsA = await repoA.listAssignedForms();
+    const formsB = await repoB.listAssignedForms();
+    expect(formsA.map((f) => f.formulario_id).sort()).toEqual(
+      ['form-esas-muestra', 'form-qlq30-muestra'].sort(),
+    );
+    expect(formsB.map((f) => f.formulario_id)).toEqual(['form-esas-muestra']);
+
+    // Paciente A guarda borrador y confirma entrega
+    await repoA.saveDraft('form-qlq30-muestra', '1.0', { q1: 'nada' }, 'del-a-1');
+    await repoA.confirmSubmission(
+      'form-esas-muestra',
+      '1.0',
+      { esas_dolor: 1, esas_fatiga: 1, esas_nauseas: 1 },
+      'sub-a-1',
+    );
+
+    // Paciente B no ve el borrador de A
+    const draftB = await repoB.getDraft('form-qlq30-muestra', '1.0');
+    expect(draftB).toBeNull();
+
+    // Paciente B no lista la entrega de A en su historial
+    const submissionsB = await repoB.listSubmissions();
+    expect(submissionsB).toHaveLength(0);
+
+    // Paciente B no puede acceder a la entrega de A ni pasando su UUID conocido
+    const leakAttempt = await repoB.getSubmission('sub-a-1');
+    expect(leakAttempt).toBeNull();
+  });
+
+  it('seed demo respeta asignaciones retiradas sin reactivarlas tras reinicio, pero lote explícito sí puede actualizar estado', async () => {
+    const database = open();
+    await migrateDatabase(database);
+    await seedPatientContextIfEmpty(database, patientA, patientB);
+
+    const repoA = createPatientRepository(database, patientA, ids());
+
+    // 1. Verificar estado inicial: paciente A tiene form-qlq30-muestra activo
+    const initialForms = await repoA.listAssignedForms();
+    expect(initialForms.map((f) => f.formulario_id)).toContain('form-qlq30-muestra');
+
+    // 2. Retirar la asignación explícitamente
+    await ingestMedicalFormBundle(database, {
+      asignaciones: [
+        {
+          pacienteId: patientA,
+          formularioId: 'form-qlq30-muestra',
+          version: '1.0',
+          estado: 'retirada',
+        },
+      ],
+    });
+
+    const formsAfterRetire = await repoA.listAssignedForms();
+    expect(formsAfterRetire.map((f) => f.formulario_id)).not.toContain('form-qlq30-muestra');
+
+    // 3. Simular reinicio / re-ejecución del seed demo
+    await seedMedicalFormsDemo(database, patientA, patientB);
+
+    // Debe permanecer retirada y no reactivarse por el seed
+    const assignmentRow = await database.first<{ estado_conocido: string }>(
+      `SELECT estado_conocido FROM formulario_asignacion_cache
+       WHERE paciente_id = ? AND formulario_id = ? AND version = ?`,
+      [patientA, 'form-qlq30-muestra', '1.0'],
+    );
+    expect(assignmentRow?.estado_conocido).toBe('retirada');
+
+    const formsAfterSeed = await repoA.listAssignedForms();
+    expect(formsAfterSeed.map((f) => f.formulario_id)).not.toContain('form-qlq30-muestra');
+
+    // 4. Incorporación explícita mediante lote sí puede reactivarla
+    await ingestMedicalFormBundle(database, {
+      asignaciones: [
+        {
+          pacienteId: patientA,
+          formularioId: 'form-qlq30-muestra',
+          version: '1.0',
+          estado: 'activa',
+        },
+      ],
+    });
+
+    const formsReactivated = await repoA.listAssignedForms();
+    expect(formsReactivated.map((f) => f.formulario_id)).toContain('form-qlq30-muestra');
+  });
+
+  it('saveDraft rechaza guardar borrador de un cuestionario no asignado activamente al paciente', async () => {
+    const database = open();
+    await migrateDatabase(database);
+    await seedPatientContextIfEmpty(database, patientA, patientB);
+
+    const repoB = createPatientRepository(database, patientB, ids());
+    // Paciente B solo tiene asignado form-esas-muestra, no form-qlq30-muestra
+    await expect(
+      repoB.saveDraft('form-qlq30-muestra', '1.0', { q1: 'nada' }, 'delivery-uuid-x'),
+    ).rejects.toThrow('No existe una asignación activa para este cuestionario.');
+  });
+
+  it('saveDraft rechaza guardar borrador con respuestas ajenas a la definición del cuestionario', async () => {
+    const database = open();
+    await migrateDatabase(database);
+    await seedPatientContextIfEmpty(database, patientA, patientB);
+
+    const repoA = createPatientRepository(database, patientA, ids());
+    await expect(
+      repoA.saveDraft(
+        'form-esas-muestra',
+        '1.0',
+        { esas_dolor: 4, clave_fantasma: 'invalido' },
+        'delivery-uuid-x',
+      ),
+    ).rejects.toThrow(
+      "La clave 'clave_fantasma' no pertenece a la definición de este cuestionario.",
+    );
+  });
+
+  it('confirmSubmission aplica validación médica: rechaza valores fuera de rango y opciones excluyentes combinadas', async () => {
+    const database = open();
+    await migrateDatabase(database);
+    await seedPatientContextIfEmpty(database, patientA, patientB);
+
+    const repoA = createPatientRepository(database, patientA, ids());
+
+    // 1. Rechaza escala fuera de rango (ej. 99 en escala 0 a 10)
+    await expect(
+      repoA.confirmSubmission(
+        'form-esas-muestra',
+        '1.0',
+        { esas_dolor: 99, esas_fatiga: 2, esas_nauseas: 0 },
+        'del-invalid-scale',
+      ),
+    ).rejects.toThrow('El valor debe encontrarse entre 0 y 10.');
+
+    // 2. Rechaza combinación de opciones excluyentes ('ninguna' con otra)
+    await expect(
+      repoA.confirmSubmission(
+        'form-esas-muestra',
+        '1.0',
+        {
+          esas_dolor: 2,
+          esas_fatiga: 2,
+          esas_nauseas: 0,
+          esas_sintomas_secundarios: ['ninguna', 'mareos'],
+        },
+        'del-invalid-excl',
+      ),
+    ).rejects.toThrow('no puede combinarse con otras opciones');
+  });
+
+  it('listAssignedForms desempata determinísticamente sin duplicar tarjetas cuando dos entregas comparten la misma fecha', async () => {
+    const database = open();
+    await migrateDatabase(database);
+    await seedPatientContextIfEmpty(database, patientA, patientB);
+
+    const sameTimestamp = '2026-10-08T12:00:00.000Z';
+    // Insertar dos entregas con el mismo timestamp para el mismo cuestionario
+    await database.run(
+      `INSERT INTO respuesta_formulario (
+        id, paciente_id, formulario_id, version, respuestas_json, fecha_confirmacion, creado_localmente_en
+      ) VALUES
+        ('sub-tie-1', ?, 'form-esas-muestra', '1.0', '{}', ?, ?),
+        ('sub-tie-2', ?, 'form-esas-muestra', '1.0', '{}', ?, ?)`,
+      [patientA, sameTimestamp, sameTimestamp, patientA, sameTimestamp, sameTimestamp],
+    );
+
+    const repoA = createPatientRepository(database, patientA, ids());
+    const assigned = await repoA.listAssignedForms();
+
+    // No debe haber duplicación de la tarjeta del formulario
+    const esasCards = assigned.filter((f) => f.formulario_id === 'form-esas-muestra');
+    expect(esasCards).toHaveLength(1);
+    // El desempate por id DESC seleccionó deterministicamente sub-tie-2
+    expect(esasCards[0].ultima_entrega_id).toBe('sub-tie-2');
+  });
+
+  it('listSubmissions soporta paginación con limit y offset', async () => {
+    const database = open();
+    await migrateDatabase(database);
+    await seedPatientContextIfEmpty(database, patientA, patientB);
+
+    // Insertar 35 entregas para el paciente A
+    for (let i = 1; i <= 35; i++) {
+      const pad = String(i).padStart(3, '0');
+      const timestamp = `2026-10-01T10:00:${String(i % 60).padStart(2, '0')}.000Z`;
+      await database.run(
+        `INSERT INTO respuesta_formulario (
+          id, paciente_id, formulario_id, version, respuestas_json, fecha_confirmacion, creado_localmente_en
+        ) VALUES (?, ?, 'form-esas-muestra', '1.0', '{}', ?, ?)`,
+        [`sub-page-${pad}`, patientA, timestamp, timestamp],
+      );
+    }
+
+    const repoA = createPatientRepository(database, patientA, ids());
+    const firstPage = await repoA.listSubmissions(undefined, 30, 0);
+    expect(firstPage).toHaveLength(30);
+
+    const secondPage = await repoA.listSubmissions(undefined, 30, 30);
+    expect(secondPage).toHaveLength(5);
+  });
+
+  it('confirmSubmission rechaza claves ajenas a la definición y tipos inválidos en opcionales sin encolar ni guardar', async () => {
+    const database = open();
+    await migrateDatabase(database);
+    await seedPatientContextIfEmpty(database, patientA, patientB);
+
+    const repoA = createPatientRepository(database, patientA, ids());
+
+    // 1. Clave ajena a la definición (ej: pregunta_ajena: 42)
+    await expect(
+      repoA.confirmSubmission(
+        'form-esas-muestra',
+        '1.0',
+        {
+          esas_dolor: 2,
+          esas_fatiga: 1,
+          esas_nauseas: 0,
+          pregunta_ajena: 42,
+        },
+        'del-alien-key',
+      ),
+    ).rejects.toThrow(
+      "La clave 'pregunta_ajena' no pertenece a la definición de este cuestionario.",
+    );
+
+    // Verificar que nada se haya guardado ni encolado
+    const alienSubmissions = await database.all('SELECT * FROM respuesta_formulario WHERE id = ?', [
+      'del-alien-key',
+    ]);
+    expect(alienSubmissions).toHaveLength(0);
+
+    const alienQueue = await database.all('SELECT * FROM cola_envio WHERE registro_id = ?', [
+      'del-alien-key',
+    ]);
+    expect(alienQueue).toHaveLength(0);
+
+    // 2. Cadena de espacios en pregunta opcional de selección múltiple (tipo incorrecto)
+    await expect(
+      repoA.confirmSubmission(
+        'form-esas-muestra',
+        '1.0',
+        {
+          esas_dolor: 2,
+          esas_fatiga: 1,
+          esas_nauseas: 0,
+          esas_sintomas_secundarios: '   ' as unknown as string[],
+        },
+        'del-invalid-opt-type',
+      ),
+    ).rejects.toThrow('El valor debe ser una lista de opciones.');
+  });
+
+  it('confirmSubmission normaliza respuestas opcionales vacías como ausencia antes de persistir y encolar', async () => {
+    const database = open();
+    await migrateDatabase(database);
+    await seedPatientContextIfEmpty(database, patientA, patientB);
+
+    const repoA = createPatientRepository(database, patientA, ids());
+
+    const deliveryId = 'del-norm-answers';
+    await repoA.confirmSubmission(
+      'form-esas-muestra',
+      '1.0',
+      {
+        esas_dolor: 3,
+        esas_fatiga: 2,
+        esas_nauseas: 1,
+        esas_notas: '   ',
+        esas_sintomas_secundarios: [],
+      },
+      deliveryId,
+    );
+
+    const sub = await database.first<{ respuestas_json: string }>(
+      'SELECT respuestas_json FROM respuesta_formulario WHERE id = ?',
+      [deliveryId],
+    );
+    expect(sub).not.toBeNull();
+    const storedAnswers = JSON.parse(sub!.respuestas_json);
+    expect(storedAnswers).toHaveProperty('esas_dolor', 3);
+    expect(storedAnswers).toHaveProperty('esas_fatiga', 2);
+    expect(storedAnswers).toHaveProperty('esas_nauseas', 1);
+    // Respuestas opcionales vacías se normalizan como ausencia
+    expect(storedAnswers).not.toHaveProperty('esas_notas');
+    expect(storedAnswers).not.toHaveProperty('esas_sintomas_secundarios');
+
+    // Cola de envío también tiene las respuestas normalizadas
+    const queue = await database.first<{ payload_json: string }>(
+      'SELECT payload_json FROM cola_envio WHERE registro_id = ?',
+      [deliveryId],
+    );
+    expect(queue).not.toBeNull();
+    const payload = JSON.parse(queue!.payload_json);
+    expect(payload.record.respuestas).toEqual(storedAnswers);
+  });
+});

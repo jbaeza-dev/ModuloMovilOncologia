@@ -3,9 +3,9 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { afterEach, describe, expect, it } from 'vitest';
 
-import type { FileStorageAdapter } from './file-storage-adapter';
-import { NodeFileStorageAdapter } from './node-file-storage-adapter';
-import { reconcileCopiesCore } from './reconciliation';
+import type { FileStorageAdapter } from './files/file-storage-adapter';
+import { NodeFileStorageAdapter } from './files/node-file-storage-adapter';
+import { reconcileCopiesCore } from './files/reconciliation';
 import {
   assertSafeId,
   assertSafeVersion,
@@ -17,7 +17,7 @@ import {
   registerActiveWrite,
   resourceFileExists,
   saveResourceWithCompensation,
-} from './resource-storage';
+} from './files/resource-storage';
 
 const patientA = '11111111-1111-4111-8111-111111111111';
 const temporaryDirs: string[] = [];
