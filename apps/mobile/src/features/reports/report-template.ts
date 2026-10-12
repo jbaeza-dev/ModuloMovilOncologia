@@ -5,27 +5,33 @@ import type {
   VitalRecord,
 } from '../../data/local/repository';
 import { formatDate } from '../../data/local/repository';
-import type { ReportLinkingCodeInfo } from '../../data/local/reports/report-types';
+import type { ReportData, ReportLinkingCodeInfo } from '../../data/local/reports/report-types';
 
-export type GenerateReportParams = {
-  pacienteId: string;
-  periodDays: number;
-  profile: Readonly<PatientProfileRecord> | null;
-  treatment: Readonly<TreatmentRecord> | null;
-  linkingCode?: Readonly<ReportLinkingCodeInfo>;
-  summary: {
-    vitalsCount?: number;
-    total?: number; // compatibilidad
-    symptomsCount?: number;
-    avgTemperature?: number | null;
-    avgPulse?: number | null;
-    avgSystolic?: number | null;
-    avgDiastolic?: number | null;
-    avgOxygenSaturation?: number | null;
-  };
-  vitals: readonly Readonly<VitalRecord>[];
-  symptoms?: readonly Readonly<SymptomRecord>[];
-};
+export type GenerateReportParams =
+  | ReportData
+  | {
+      pacienteId: string;
+      periodDays: number;
+      profile: Readonly<PatientProfileRecord> | null;
+      treatment: Readonly<TreatmentRecord> | null;
+      linkingCode?: Readonly<ReportLinkingCodeInfo>;
+      summary: {
+        vitalsCount?: number;
+        total?: number; // compatibilidad
+        symptomsCount?: number;
+        avgTemperature?: number | null;
+        avgPulse?: number | null;
+        avgSystolic?: number | null;
+        avgDiastolic?: number | null;
+        avgOxygenSaturation?: number | null;
+      };
+      vitals: readonly Readonly<VitalRecord>[];
+      symptoms?: readonly Readonly<SymptomRecord>[];
+      generatedAt?: string;
+      periodStart?: string;
+      periodEnd?: string;
+      timeZone?: string;
+    };
 
 export function escapeHtml(str: string): string {
   return str
@@ -36,30 +42,57 @@ export function escapeHtml(str: string): string {
     .replace(/'/g, '&#39;');
 }
 
-export function buildReportHtml({
-  periodDays,
-  profile,
-  treatment,
-  linkingCode,
-  summary,
-  vitals,
-  symptoms = [],
-}: GenerateReportParams): string {
-  const generatedAt = formatDate(new Date().toISOString());
-  const patientName = escapeHtml(profile?.nombre ?? 'Paciente de prueba');
-  const patientRut = escapeHtml(profile?.rut ?? 'Sin registro');
-  const patientEmail = escapeHtml(profile?.email ?? 'Sin registro');
-  const treatmentName = escapeHtml(treatment?.nombre ?? 'Tratamiento activo en seguimiento');
+export function formatReportDate(iso: string, timeZone?: string): string {
+  try {
+    const opts: Intl.DateTimeFormatOptions = { dateStyle: 'medium', timeStyle: 'short' };
+    if (timeZone) {
+      opts.timeZone = timeZone;
+    }
+    return new Date(iso).toLocaleString('es-CL', opts);
+  } catch {
+    return formatDate(iso);
+  }
+}
+
+export function buildReportHtml(data: GenerateReportParams): string {
+  const timeZone = 'timeZone' in data && data.timeZone ? data.timeZone : 'America/Santiago';
+  const generatedAtIso =
+    'generatedAt' in data && data.generatedAt ? data.generatedAt : new Date().toISOString();
+  const generatedAt = formatReportDate(generatedAtIso, timeZone);
+
+  const profile = data.profile;
+  const treatment = data.treatment;
+  const linkingCode = data.linkingCode;
+  const periodDays = data.periodDays;
+  const summary = data.summary;
+  const vitals = data.vitals;
+  const symptoms = data.symptoms ?? [];
+
+  const patientName = profile?.nombre ? escapeHtml(profile.nombre) : 'Sin registro';
+  const patientRut = profile?.rut ? escapeHtml(profile.rut) : 'Sin registro';
+  const patientEmail = profile?.email ? escapeHtml(profile.email) : 'Sin registro';
+  const treatmentName = treatment?.nombre
+    ? escapeHtml(treatment.nombre)
+    : 'Sin tratamiento activo registrado';
 
   const linkingText = linkingCode ? escapeHtml(linkingCode.displayText) : 'No registrado';
 
-  const totalVitals = summary.vitalsCount ?? summary.total ?? 0;
+  const periodStartFormatted =
+    'periodStart' in data && data.periodStart ? formatReportDate(data.periodStart, timeZone) : null;
+  const periodEndFormatted =
+    'periodEnd' in data && data.periodEnd ? formatReportDate(data.periodEnd, timeZone) : null;
+  const periodDisplay =
+    periodStartFormatted && periodEndFormatted
+      ? `Últimos ${periodDays} días (${periodStartFormatted} – ${periodEndFormatted})`
+      : `Últimos ${periodDays} días`;
+
+  const totalVitals = summary.vitalsCount ?? ('total' in summary ? summary.total : undefined) ?? 0;
   const totalSymptoms = summary.symptomsCount ?? symptoms.length;
 
   const vitalsRowsHtml = vitals.length
     ? vitals
         .map((v) => {
-          const fecha = formatDate(v.fecha_registro);
+          const fecha = formatReportDate(v.fecha_registro, timeZone);
           const temp = v.temperatura !== null ? `${v.temperatura.toLocaleString('es-CL')} °C` : '—';
           const pa =
             v.presion_sistolica !== null && v.presion_diastolica !== null
@@ -81,7 +114,7 @@ export function buildReportHtml({
   const symptomsRowsHtml = symptoms.length
     ? symptoms
         .map((s) => {
-          const fecha = formatDate(s.fecha_registro);
+          const fecha = formatReportDate(s.fecha_registro, timeZone);
           const descripcion = escapeHtml(s.descripcion || '—');
           return `<tr>
             <td style="padding: 8px 12px; border-bottom: 1px solid #E2E8F0; font-size: 13px; white-space: nowrap; width: 160px;">${fecha}</td>
@@ -229,9 +262,9 @@ export function buildReportHtml({
     <div class="meta-item"><span class="meta-label">Paciente:</span> ${patientName}</div>
     <div class="meta-item"><span class="meta-label">RUT:</span> ${patientRut}</div>
     <div class="meta-item"><span class="meta-label">Tratamiento:</span> ${treatmentName}</div>
-    <div class="meta-item"><span class="meta-label">Período evaluado:</span> Últimos ${periodDays} días</div>
+    <div class="meta-item"><span class="meta-label">Período evaluado:</span> ${escapeHtml(periodDisplay)}</div>
     <div class="meta-item"><span class="meta-label">Correo registrado:</span> ${patientEmail}</div>
-    <div class="meta-item"><span class="meta-label">Fecha de emisión:</span> ${generatedAt}</div>
+    <div class="meta-item"><span class="meta-label">Fecha de emisión:</span> ${generatedAt} <span style="font-size: 11px; color: #64748B;">(${escapeHtml(timeZone)})</span></div>
     <div class="meta-item"><span class="meta-label">Vinculación clínica:</span> ${linkingText} <em style="font-size: 11px; color: #64748B;">(en caché)</em></div>
   </div>
 
@@ -262,7 +295,7 @@ export function buildReportHtml({
   <table>
     <thead>
       <tr>
-        <th>Fecha y hora</th>
+        <th>Fecha y hora (${escapeHtml(timeZone)})</th>
         <th>Temperatura</th>
         <th>Presión arterial</th>
         <th>Pulso</th>
@@ -278,7 +311,7 @@ export function buildReportHtml({
   <table>
     <thead>
       <tr>
-        <th style="width: 160px; text-align: left;">Fecha y hora</th>
+        <th style="width: 160px; text-align: left;">Fecha y hora (${escapeHtml(timeZone)})</th>
         <th style="text-align: left;">Descripción del síntoma</th>
       </tr>
     </thead>

@@ -1,9 +1,9 @@
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it, vi } from 'vitest';
 import * as XLSX from 'xlsx';
 
 import { deletePatientReport } from '../../data/local/files/report-storage';
 import type { ReportData } from '../../data/local/reports/report-types';
-import { buildReportHtml } from './report-template';
+import { buildReportHtml, formatReportDate } from './report-template';
 import {
   buildReportWorkbook,
   generateAndPersistReportXlsx,
@@ -161,35 +161,203 @@ describe('exportador de reportes Excel (.xlsx) con SheetJS', () => {
     expect((foundCell as unknown as Record<string, unknown>)?.f).toBeUndefined();
   });
 
-  it('mantiene paridad de contenido entre la plantilla PDF y el libro XLSX para la misma instantánea', () => {
+  it('mantiene paridad exhaustiva de contenido entre PDF y XLSX verificando todos los registros, conteos y metadatos', () => {
     const data = createMockReportData();
 
     // 1. Verificar HTML generado para PDF
     const html = buildReportHtml(data);
     expect(html).toContain(data.profile!.nombre);
+    expect(html).toContain(data.profile!.rut);
     expect(html).toContain(data.treatment!.nombre);
     expect(html).toContain(data.linkingCode.displayText);
     expect(html).toContain('36,6 °C');
+    expect(html).toContain('72 lpm');
     expect(html).toContain('Náuseas moderadas');
+    expect(html).toContain('Cansancio intenso');
 
-    // 2. Verificar XLSX generado
+    // 2. Verificar XLSX generado y re-leído
     const bytes = generateReportXlsxBytes(data);
     const reReadWb = XLSX.read(bytes, { type: 'array' });
 
     const summarySheet = reReadWb.Sheets['Resumen'];
     const summaryText = JSON.stringify(summarySheet);
     expect(summaryText).toContain(data.profile!.nombre);
+    expect(summaryText).toContain(data.profile!.rut);
+    expect(summaryText).toContain(data.profile!.email);
     expect(summaryText).toContain(data.treatment!.nombre);
     expect(summaryText).toContain(data.linkingCode.displayText);
+    expect(summaryText).toContain(data.pacienteId);
+    expect(summaryText).toContain(data.periodStart);
+    expect(summaryText).toContain(data.periodEnd);
+    expect(summaryText).toContain(data.generatedAt);
+    expect(summaryText).toContain(data.timeZone);
 
+    // Hoja Signos vitales: verificar todos los registros de signos vitales por ID y mediciones
     const vitalsSheet = reReadWb.Sheets['Signos vitales'];
     const vitalsText = JSON.stringify(vitalsSheet);
-    expect(vitalsText).toContain('36.4');
-    expect(vitalsText).toContain('36.8');
+    for (const v of data.vitals) {
+      expect(vitalsText).toContain(v.id);
+      expect(vitalsText).toContain(v.fecha_registro);
+      expect(vitalsText).toContain(String(v.presion_sistolica));
+      expect(vitalsText).toContain(String(v.presion_diastolica));
+      expect(vitalsText).toContain(String(v.temperatura));
+      expect(vitalsText).toContain(String(v.pulso));
+    }
 
+    // Hoja Síntomas: verificar todos los síntomas por ID y descripciones
     const symptomsSheet = reReadWb.Sheets['Sintomas'];
-    const symptomsText = JSON.stringify(symptomsSheet);
-    expect(symptomsText).toContain('Náuseas moderadas');
+    expect(symptomsSheet['A2'].v).toBe(data.symptoms[0].id);
+    expect(symptomsSheet['B2'].v).toBe(data.symptoms[0].fecha_registro);
+    expect(symptomsSheet['D2'].v).toBe(data.symptoms[0].descripcion);
+    expect(symptomsSheet['A3'].v).toBe(data.symptoms[1].id);
+    expect(symptomsSheet['B3'].v).toBe(data.symptoms[1].fecha_registro);
+    expect(symptomsSheet['D3'].v).toBe(data.symptoms[1].descripcion);
+  });
+
+  it('incorpora ID del registro, fecha local identificada con zona, fecha de vinculación y celdas vacías para mediciones ausentes', () => {
+    const dataWithMissing = createMockReportData({
+      timeZone: 'America/Santiago',
+      vitals: [
+        {
+          id: 'vital-uuid-001',
+          paciente_id: patientId,
+          fecha_registro: '2026-10-10T14:30:00.000Z',
+          presion_sistolica: null, // Ausente
+          presion_diastolica: null, // Ausente
+          pulso: 78,
+          temperatura: 36.5,
+          saturacion_o2: null, // Ausente
+          fecha_subida: null,
+        },
+      ],
+      symptoms: [
+        {
+          id: 'symptom-uuid-001',
+          paciente_id: patientId,
+          fecha_registro: '2026-10-10T15:00:00.000Z',
+          descripcion: 'Cefalea leve',
+          fecha_subida: null,
+        },
+      ],
+    });
+
+    const bytes = generateReportXlsxBytes(dataWithMissing);
+    const reReadWb = XLSX.read(bytes, { type: 'array' });
+
+    // 1. Resumen: fecha de obtención en caché y zona local
+    const summarySheet = reReadWb.Sheets['Resumen'];
+    const summaryJson = JSON.stringify(summarySheet);
+    expect(summaryJson).toContain('Fecha de obtención en caché (UTC)');
+    expect(summaryJson).toContain(dataWithMissing.linkingCode.obtainedAt);
+    expect(summaryJson).toContain('Fecha de obtención local (America/Santiago)');
+
+    // 2. Signos vitales: encabezados con ID y zona horaria
+    const vitalsSheet = reReadWb.Sheets['Signos vitales'];
+    expect(vitalsSheet['A1'].v).toBe('ID del registro');
+    expect(vitalsSheet['B1'].v).toBe('Fecha y hora (UTC)');
+    expect(vitalsSheet['C1'].v).toBe('Fecha local (America/Santiago)');
+
+    // Fila 2: ID y fechas
+    expect(vitalsSheet['A2'].v).toBe('vital-uuid-001');
+    expect(vitalsSheet['B2'].v).toBe('2026-10-10T14:30:00.000Z');
+    expect(vitalsSheet['C2'].v).toContain('2026');
+
+    // Mediciones ausentes: las celdas D2 (sistólica), E2 (diastólica) y H2 (sat O2) NO deben tener texto '—'
+    // En SheetJS, una celda nula no se define o no contiene texto '—'
+    expect(vitalsSheet['D2']).toBeUndefined();
+    expect(vitalsSheet['E2']).toBeUndefined();
+    expect(vitalsSheet['H2']).toBeUndefined();
+
+    // Mediciones presentes: F2 (pulso) y G2 (temperatura) son numéricas
+    expect(vitalsSheet['F2'].t).toBe('n');
+    expect(vitalsSheet['F2'].v).toBe(78);
+    expect(vitalsSheet['G2'].t).toBe('n');
+    expect(vitalsSheet['G2'].v).toBe(36.5);
+
+    // 3. Síntomas: encabezados con ID y zona horaria
+    const symptomsSheet = reReadWb.Sheets['Sintomas'];
+    expect(symptomsSheet['A1'].v).toBe('ID del registro');
+    expect(symptomsSheet['B1'].v).toBe('Fecha y hora (UTC)');
+    expect(symptomsSheet['C1'].v).toBe('Fecha local (America/Santiago)');
+    expect(symptomsSheet['A2'].v).toBe('symptom-uuid-001');
+    expect(symptomsSheet['D2'].v).toBe('Cefalea leve');
+  });
+
+  it('etiqueta el código de vinculación explícitamente como histórico fuera de uso si su estado es usado o expirado', () => {
+    // Caso 1: Código usado
+    const dataUsed = createMockReportData({
+      linkingCode: {
+        status: 'cached_used',
+        displayText: 'Código ya utilizado',
+        code: 'VINC-1111',
+        expiresAt: '2026-10-15T12:00:00.000Z',
+        obtainedAt: '2026-10-01T12:00:00.000Z',
+      },
+    });
+    const wbUsed = buildReportWorkbook(dataUsed);
+    const summaryUsed = JSON.stringify(wbUsed.Sheets['Resumen']);
+    expect(summaryUsed).toContain('código histórico fuera de uso - utilizado');
+
+    // Caso 2: Código expirado
+    const dataExpired = createMockReportData({
+      linkingCode: {
+        status: 'cached_expired',
+        displayText: 'Código expirado',
+        code: 'VINC-2222',
+        expiresAt: '2026-10-05T12:00:00.000Z',
+        obtainedAt: '2026-10-01T12:00:00.000Z',
+      },
+    });
+    const wbExpired = buildReportWorkbook(dataExpired);
+    const summaryExpired = JSON.stringify(wbExpired.Sheets['Resumen']);
+    expect(summaryExpired).toContain('código histórico fuera de uso - expirado');
+
+    // Caso 3: No disponible
+    const dataUnavailable = createMockReportData({
+      linkingCode: {
+        status: 'unavailable',
+        displayText: 'Sin código de vinculación',
+        code: null,
+        expiresAt: null,
+        obtainedAt: null,
+      },
+    });
+    const wbUnavailable = buildReportWorkbook(dataUnavailable);
+    const summaryUnavailable = JSON.stringify(wbUnavailable.Sheets['Resumen']);
+    expect(summaryUnavailable).toContain('No disponible');
+  });
+
+  it('reloj congelado: alterar el reloj del sistema tras capturar la instantánea no modifica la fecha de emisión en PDF ni en XLSX', () => {
+    const fixedIso = '2026-10-04T12:30:00.000Z';
+    const data = createMockReportData({
+      generatedAt: fixedIso,
+      timeZone: 'America/Santiago',
+      periodStart: '2026-09-04T12:30:00.000Z',
+      periodEnd: fixedIso,
+    });
+
+    const expectedLocal = formatReportDate(fixedIso, 'America/Santiago');
+
+    // Cambiar el reloj a una fecha futura
+    vi.useFakeTimers();
+    vi.setSystemTime(new Date('2032-05-20T00:00:00.000Z'));
+
+    try {
+      // 1. PDF HTML debe reflejar la fecha capturada en data.generatedAt, NO el reloj del sistema
+      const html = buildReportHtml(data);
+      expect(html).toContain(expectedLocal);
+      expect(html).not.toContain('2032');
+
+      // 2. XLSX debe reflejar la fecha capturada en data.generatedAt, NO el reloj del sistema
+      const bytes = generateReportXlsxBytes(data);
+      const reReadWb = XLSX.read(bytes, { type: 'array' });
+      const summarySheet = reReadWb.Sheets['Resumen'];
+      const summaryText = JSON.stringify(summarySheet);
+      expect(summaryText).toContain(fixedIso);
+      expect(summaryText).not.toContain('2032');
+    } finally {
+      vi.useRealTimers();
+    }
   });
 
   it('maneja listas vacías de signos vitales y síntomas con fila descriptiva en ambas hojas', () => {

@@ -1,7 +1,7 @@
 import Feather from '@expo/vector-icons/Feather';
 import { File } from 'expo-file-system';
-import { router, useLocalSearchParams } from 'expo-router';
-import { useCallback, useState } from 'react';
+import { router, useFocusEffect, useLocalSearchParams } from 'expo-router';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import { StyleSheet, Text, View } from 'react-native';
 
 import { Screen } from '../../components/Screen';
@@ -44,6 +44,25 @@ export function ReportsScreen() {
   const [reportFeedback, setReportFeedback] = useState<string | null>(null);
   const [reportError, setReportError] = useState<string | null>(null);
 
+  const isMountedRef = useRef(true);
+  const isFocusedRef = useRef(true);
+
+  useEffect(() => {
+    isMountedRef.current = true;
+    return () => {
+      isMountedRef.current = false;
+    };
+  }, []);
+
+  useFocusEffect(
+    useCallback(() => {
+      isFocusedRef.current = true;
+      return () => {
+        isFocusedRef.current = false;
+      };
+    }, []),
+  );
+
   const { repository, patientId, runSave, saving } = useLocalData();
 
   const loadData = useCallback(async () => {
@@ -66,6 +85,7 @@ export function ReportsScreen() {
   const {
     value: savedReports,
     loading: loadingReports,
+    error: errorReports,
     refresh: refreshReports,
   } = useFocusedValue(loadExistingReports, [] as PatientReportItem[]);
 
@@ -78,28 +98,32 @@ export function ReportsScreen() {
 
   async function handleGenerateAndShare() {
     if (!repository || !patientId || saving || !reportData || !hasClinicalData) return;
+    const targetDays = days;
+    const targetFormat = selectedFormat;
+
     setReportFeedback(null);
     setReportError(null);
 
-    await runSave(async () => {
-      try {
-        let persistentUri = '';
-        let filename = '';
-
-        if (selectedFormat === 'pdf') {
-          const res = await generateAndPersistReportPdf(reportData);
-          persistentUri = res.persistentUri;
-          filename = res.filename;
-        } else {
-          const res = await generateAndPersistReportXlsx(reportData);
-          persistentUri = res.persistentUri;
-          filename = res.filename;
+    try {
+      await runSave(async () => {
+        // Capturar una instantánea fresca al momento de confirmar
+        const freshData = await repository.reports.getReportData(targetDays);
+        if (freshData.summary.vitalsCount === 0 && freshData.summary.symptomsCount === 0) {
+          throw new Error('No hay registros clínicos en el período para generar el reporte.');
         }
 
+        const res =
+          targetFormat === 'pdf'
+            ? await generateAndPersistReportPdf(freshData)
+            : await generateAndPersistReportXlsx(freshData);
+
+        if (!isMountedRef.current || !isFocusedRef.current) return;
         refreshReports();
 
-        const shareResult = await shareReportFile(persistentUri, selectedFormat);
-        const formatLabel = selectedFormat === 'pdf' ? 'PDF' : 'Excel (.xlsx)';
+        const shareResult = await shareReportFile(res.persistentUri, targetFormat);
+        if (!isMountedRef.current || !isFocusedRef.current) return;
+
+        const formatLabel = targetFormat === 'pdf' ? 'PDF' : 'Excel (.xlsx)';
         if (shareResult === 'shared_sheet_opened') {
           setReportFeedback(
             `Reporte ${formatLabel} guardado localmente y hoja de compartir abierta.`,
@@ -110,14 +134,15 @@ export function ReportsScreen() {
           );
         }
 
-        router.navigate('/vitales/reporte-estado?archivo=' + encodeURIComponent(filename));
-      } catch {
-        const formatLabel = selectedFormat === 'pdf' ? 'PDF' : 'Excel';
-        setReportError(
-          `No se pudo generar el reporte en formato ${formatLabel} en este dispositivo.`,
-        );
-      }
-    });
+        router.navigate('/vitales/reporte-estado?archivo=' + encodeURIComponent(res.filename));
+      });
+    } catch {
+      if (!isMountedRef.current || !isFocusedRef.current) return;
+      const formatLabel = targetFormat === 'pdf' ? 'PDF' : 'Excel';
+      setReportError(
+        `No se pudo generar el reporte en formato ${formatLabel} en este dispositivo.`,
+      );
+    }
   }
 
   async function handleDeleteReport(filename: string) {
@@ -126,6 +151,7 @@ export function ReportsScreen() {
     setReportError(null);
     try {
       const ok = await deletePatientReport(patientId, filename);
+      if (!isMountedRef.current || !isFocusedRef.current) return;
       if (ok) {
         setReportFeedback('Reporte eliminado del almacenamiento local.');
       } else {
@@ -133,6 +159,7 @@ export function ReportsScreen() {
       }
       refreshReports();
     } catch {
+      if (!isMountedRef.current || !isFocusedRef.current) return;
       setReportError('Error al eliminar el reporte del dispositivo.');
     }
   }
@@ -151,7 +178,9 @@ export function ReportsScreen() {
             key={item}
             label={`${item} días`}
             selected={days === item}
+            disabled={saving || loadingData}
             onPress={() => {
+              if (saving) return;
               setDays(item);
               setReportFeedback(null);
               setReportError(null);
@@ -165,7 +194,9 @@ export function ReportsScreen() {
         <ChoiceChip
           label="PDF (Documento)"
           selected={selectedFormat === 'pdf'}
+          disabled={saving || loadingData}
           onPress={() => {
+            if (saving) return;
             setSelectedFormat('pdf');
             setReportFeedback(null);
             setReportError(null);
@@ -174,7 +205,9 @@ export function ReportsScreen() {
         <ChoiceChip
           label="Excel (.xlsx)"
           selected={selectedFormat === 'xlsx'}
+          disabled={saving || loadingData}
           onPress={() => {
+            if (saving) return;
             setSelectedFormat('xlsx');
             setReportFeedback(null);
             setReportError(null);
@@ -285,6 +318,15 @@ export function ReportsScreen() {
       <SectionTitle>Reportes guardados en el dispositivo</SectionTitle>
       {loadingReports ? (
         <BodyText>Cargando reportes guardados…</BodyText>
+      ) : errorReports ? (
+        <InfoCard>
+          <EmptyState
+            icon="alert-circle"
+            title="Error al cargar reportes guardados"
+            description="No se pudieron leer los archivos del almacenamiento local."
+          />
+          <VisualButton label="Reintentar lectura" secondary onPress={refreshReports} />
+        </InfoCard>
       ) : savedReports.length === 0 ? (
         <InfoCard>
           <BodyText>No hay reportes generados previamente en este dispositivo.</BodyText>
