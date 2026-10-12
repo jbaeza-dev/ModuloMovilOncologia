@@ -76,6 +76,9 @@ export function buildReportHtml(data: GenerateReportParams): string {
     : 'Sin tratamiento activo registrado';
 
   const linkingText = linkingCode ? escapeHtml(linkingCode.displayText) : 'No registrado';
+  const linkingObtainedFormatted = linkingCode?.obtainedAt
+    ? formatReportDate(linkingCode.obtainedAt, timeZone)
+    : null;
 
   const periodStartFormatted =
     'periodStart' in data && data.periodStart ? formatReportDate(data.periodStart, timeZone) : null;
@@ -265,7 +268,7 @@ export function buildReportHtml(data: GenerateReportParams): string {
     <div class="meta-item"><span class="meta-label">Período evaluado:</span> ${escapeHtml(periodDisplay)}</div>
     <div class="meta-item"><span class="meta-label">Correo registrado:</span> ${patientEmail}</div>
     <div class="meta-item"><span class="meta-label">Fecha de emisión:</span> ${generatedAt} <span style="font-size: 11px; color: #64748B;">(${escapeHtml(timeZone)})</span></div>
-    <div class="meta-item"><span class="meta-label">Vinculación clínica:</span> ${linkingText} <em style="font-size: 11px; color: #64748B;">(en caché)</em></div>
+    <div class="meta-item"><span class="meta-label">Vinculación clínica:</span> ${linkingText} <em style="font-size: 11px; color: #64748B;">(en caché${linkingObtainedFormatted ? ` · obtenida el ${linkingObtainedFormatted}` : ''})</em></div>
   </div>
 
   <div class="disclaimer">

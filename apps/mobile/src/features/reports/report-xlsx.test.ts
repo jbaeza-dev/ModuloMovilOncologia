@@ -170,6 +170,7 @@ describe('exportador de reportes Excel (.xlsx) con SheetJS', () => {
     expect(html).toContain(data.profile!.rut);
     expect(html).toContain(data.treatment!.nombre);
     expect(html).toContain(data.linkingCode.displayText);
+    expect(html).toContain('en caché · obtenida el');
     expect(html).toContain('36,6 °C');
     expect(html).toContain('72 lpm');
     expect(html).toContain('Náuseas moderadas');

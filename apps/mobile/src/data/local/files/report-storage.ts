@@ -266,12 +266,12 @@ export async function flushPendingReportCleanups(
 }
 
 /**
- * Limpia archivos temporales (.tmp_reporte_*) que hayan quedado huérfanos
- * tras un fallo catastrófico o cierre abrupto de la aplicación, ejecutado bajo el bloqueo del paciente.
+ * Helper interno que ejecuta la limpieza de temporales huérfanos asumiendo
+ * que el invocador ya retiene el bloqueo de almacenamiento del paciente.
  */
-export async function cleanOrphanedTempReports(
+async function cleanOrphanedTempReportsInternal(
   pacienteId: string,
-  adapter: BinaryReportStorageAdapter = defaultAdapter,
+  adapter: BinaryReportStorageAdapter,
 ): Promise<number> {
   assertSafeId(pacienteId, 'pacienteId');
   const dir = getPatientReportDirectory(pacienteId);
@@ -293,6 +293,21 @@ export async function cleanOrphanedTempReports(
     // Si falla el listado, retornar los limpiados hasta el momento
   }
   return cleaned;
+}
+
+/**
+ * Limpia archivos temporales (.tmp_reporte_*) que hayan quedado huérfanos
+ * tras un fallo catastrófico o cierre abrupto de la aplicación. Adquiere
+ * de forma segura el bloqueo exclusivo del paciente (`withPatientReportLock`).
+ */
+export async function cleanOrphanedTempReports(
+  pacienteId: string,
+  adapter: BinaryReportStorageAdapter = defaultAdapter,
+): Promise<number> {
+  assertSafeId(pacienteId, 'pacienteId');
+  return withPatientReportLock(pacienteId, async () => {
+    return cleanOrphanedTempReportsInternal(pacienteId, adapter);
+  });
 }
 
 export type ReportFileSource =
@@ -324,7 +339,7 @@ export async function persistReportFile(
 
   return withPatientReportLock(pacienteId, async () => {
     // Reintento oportuno de limpiezas previas y temporales huérfanos sin cruce entre pacientes
-    await cleanOrphanedTempReports(pacienteId, adapter);
+    await cleanOrphanedTempReportsInternal(pacienteId, adapter);
     await flushPendingReportCleanups(adapter, pacienteId);
 
     const dir = getPatientReportDirectory(pacienteId);
@@ -569,7 +584,7 @@ export async function getPatientReportList(
 ): Promise<PatientReportItem[]> {
   assertSafeId(pacienteId, 'pacienteId');
   return withPatientReportLock(pacienteId, async () => {
-    await cleanOrphanedTempReports(pacienteId, adapter);
+    await cleanOrphanedTempReportsInternal(pacienteId, adapter);
     await flushPendingReportCleanups(adapter, pacienteId);
     const dir = getPatientReportDirectory(pacienteId);
     if (!(await adapter.directoryExists(dir.uri))) return [];
