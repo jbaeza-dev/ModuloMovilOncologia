@@ -33,6 +33,19 @@ export class NodeFileStorageAdapter implements FileStorageAdapter {
     fs.writeFileSync(targetPath, content, 'utf-8');
   }
 
+  async readBinary(targetPath: string): Promise<Uint8Array> {
+    const buf = fs.readFileSync(targetPath);
+    return new Uint8Array(buf.buffer, buf.byteOffset, buf.byteLength);
+  }
+
+  async writeBinary(targetPath: string, content: Uint8Array): Promise<void> {
+    const parent = path.dirname(targetPath);
+    if (!fs.existsSync(parent)) {
+      fs.mkdirSync(parent, { recursive: true });
+    }
+    fs.writeFileSync(targetPath, Buffer.from(content));
+  }
+
   async deleteFile(targetPath: string): Promise<boolean> {
     try {
       if (fs.existsSync(targetPath)) {

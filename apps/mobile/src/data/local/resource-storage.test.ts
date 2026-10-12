@@ -501,3 +501,119 @@ describe('guardado seguro con compensación y control de escrituras en curso', (
     expect(await adapter.exists(newlySavedFile)).toBe(true);
   });
 });
+
+describe('almacenamiento multimedia educativo y compensación de colisiones', () => {
+  it('guarda infografía PNG binaria calculando tamaño y SHA-256 sobre sus bytes reales', async () => {
+    const tempDir = createTempDir();
+    const resolver = (p: string) => join(tempDir, 'recursos_educativos', p);
+
+    // PNG mock de 8 bytes
+    const pngBytes = new Uint8Array([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a]);
+    const persistedMetaHolder: {
+      current?: {
+        tamanoBytes: number;
+        metadataLocal: { sha256: string };
+        formato: string;
+      };
+    } = {};
+
+    const { saveEducationalMediaWithCompensation } = await import('./files/educational-storage');
+
+    const result = await saveEducationalMediaWithCompensation({
+      pacienteId: patientA,
+      contenidoId: 'edu-infografia-1',
+      formato: 'png',
+      content: pngBytes,
+      versionOrigen: '1.0.0',
+      mimeType: 'image/png',
+      persistCopyInTx: async (params) => {
+        persistedMetaHolder.current = params;
+      },
+      adapter,
+      baseDirResolver: resolver,
+    });
+
+    expect(result.tamanoBytes).toBe(8);
+    expect(result.sha256).toMatch(/^[a-f0-9]{64}$/);
+    expect(persistedMetaHolder.current?.tamanoBytes).toBe(8);
+    expect(persistedMetaHolder.current?.metadataLocal.sha256).toBe(result.sha256);
+    expect(persistedMetaHolder.current?.formato).toBe('png');
+    expect(adapter.exists(result.uri)).toBe(true);
+
+    const readBack = await adapter.readBinary!(result.uri);
+    expect(Array.from(readBack)).toEqual(Array.from(pngBytes));
+  });
+
+  it('elimina archivo creado si persistCopyInTx falla antes del commit', async () => {
+    const tempDir = createTempDir();
+    const resolver = (p: string) => join(tempDir, 'recursos_educativos', p);
+
+    const { saveEducationalMediaWithCompensation } = await import('./files/educational-storage');
+
+    let createdUri = '';
+
+    await expect(
+      saveEducationalMediaWithCompensation({
+        pacienteId: patientA,
+        contenidoId: 'edu-infografia-error',
+        formato: 'png',
+        content: new Uint8Array([1, 2, 3]),
+        persistCopyInTx: async (params) => {
+          createdUri = params.rutaLocal;
+          throw new Error('Fallo de base de datos antes del commit');
+        },
+        adapter,
+        baseDirResolver: resolver,
+      }),
+    ).rejects.toThrow('Fallo de base de datos');
+
+    expect(createdUri).toBeTruthy();
+    expect(adapter.exists(createdUri)).toBe(false);
+  });
+
+  it('colisión: si moveFile falla porque el destino ya existía, la compensación NO borra el destino preexistente', async () => {
+    const tempDir = createTempDir();
+    const resolver = (p: string) => join(tempDir, 'recursos_educativos', p);
+    const patientDir = resolver(patientA);
+    await adapter.ensureDirectory(patientDir);
+
+    const { saveEducationalMediaWithCompensation } = await import('./files/educational-storage');
+
+    // Creamos un adaptador espía que simula colisión en moveFile
+    let attemptedTmpUri = '';
+    const collidingAdapter: FileStorageAdapter = Object.assign(Object.create(adapter), {
+      async moveFile(sourcePath: string, destinationPath: string) {
+        attemptedTmpUri = sourcePath;
+        // Simular que destinationPath ya existía y el sistema de archivos rechaza la sobrescritura
+        throw new Error(`EEXIST: Destination file collision at ${destinationPath}`);
+      },
+    });
+
+    // Pre-creamos un archivo legítimo en el directorio del paciente
+    const preExistingTarget = join(patientDir, 'pre_existente.png');
+    await adapter.writeBinary!(preExistingTarget, new Uint8Array([99, 99, 99]));
+    expect(adapter.exists(preExistingTarget)).toBe(true);
+
+    await expect(
+      saveEducationalMediaWithCompensation({
+        pacienteId: patientA,
+        contenidoId: 'edu-infografia-colision',
+        formato: 'png',
+        content: new Uint8Array([1, 2, 3]),
+        persistCopyInTx: async () => {},
+        adapter: collidingAdapter,
+        baseDirResolver: resolver,
+      }),
+    ).rejects.toThrow('Destination file collision');
+
+    // Comprobación de propiedad estricta:
+    // 1. El temporal creado para ese intento SÍ fue eliminado por compensación
+    expect(attemptedTmpUri).toBeTruthy();
+    expect(adapter.exists(attemptedTmpUri)).toBe(false);
+
+    // 2. El archivo preexistente NO fue borrado
+    expect(adapter.exists(preExistingTarget)).toBe(true);
+    const preservedBytes = await adapter.readBinary!(preExistingTarget);
+    expect(Array.from(preservedBytes)).toEqual([99, 99, 99]);
+  });
+});

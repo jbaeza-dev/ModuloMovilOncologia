@@ -9,6 +9,8 @@ export interface FileStorageAdapter {
   directoryExists?(dirPath: string): Promise<boolean> | boolean;
   readText(targetPath: string): Promise<string>;
   writeText(targetPath: string, content: string): Promise<void>;
+  readBinary?(targetPath: string): Promise<Uint8Array>;
+  writeBinary?(targetPath: string, content: Uint8Array): Promise<void>;
   deleteFile(targetPath: string): Promise<boolean>;
   moveFile(
     sourcePath: string,
@@ -53,6 +55,16 @@ export class ExpoFileStorageAdapter implements FileStorageAdapter {
   }
 
   async writeText(targetPath: string, content: string): Promise<void> {
+    const file = new File(targetPath);
+    await file.write(content);
+  }
+
+  async readBinary(targetPath: string): Promise<Uint8Array> {
+    const file = new File(targetPath);
+    return file.bytes();
+  }
+
+  async writeBinary(targetPath: string, content: Uint8Array): Promise<void> {
     const file = new File(targetPath);
     await file.write(content);
   }

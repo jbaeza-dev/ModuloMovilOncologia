@@ -35,6 +35,7 @@ export type FormImportWarning = {
 
 type Repository = ReturnType<typeof createPatientRepository>;
 type DataContextValue = {
+  database: SqlConnection | null;
   patientId: string | null;
   repository: Repository | null;
   saving: boolean;
@@ -146,6 +147,7 @@ export function LocalDataProvider({ children }: { children: ReactNode }) {
   );
   const context = useMemo<DataContextValue>(
     () => ({
+      database,
       patientId,
       repository,
       saving,
@@ -170,6 +172,7 @@ export function LocalDataProvider({ children }: { children: ReactNode }) {
       },
     }),
     [
+      database,
       patientId,
       repository,
       saving,
