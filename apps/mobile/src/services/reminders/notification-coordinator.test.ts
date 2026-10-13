@@ -196,9 +196,161 @@ describe('NotificationCoordinator', () => {
     const resBSuccess = await coordinator.reconcile(patientB);
     expect(resBSuccess.status).toBe('programada');
     expect(resBSuccess.programadasConfirmadas).toBeGreaterThan(0);
-
     // Ninguna notificación en el SO pertenece a A
     const allScheduled = Array.from(adapter.scheduled.values());
     expect(allScheduled.every((s) => s.payload?.pacienteId === patientB)).toBe(true);
+  });
+
+  it('reporta error y registra incidencia si falla la consulta de la agenda nativa (listScheduled)', async () => {
+    const db = open();
+    await migrateDatabase(db);
+    await seedPatientContextIfEmpty(db, patientA, patientB);
+
+    const repo = createReminderRepository(db, patientA);
+    await repo.setPreferences(true);
+    await repo.saveRule({
+      tipo: 'registro_vitales',
+      diasSemana: [1, 2, 3, 4, 5, 6, 7],
+      horasMinutos: ['09:00'],
+      habilitado: true,
+    });
+
+    const adapter = new FakeNotificationAdapter();
+    adapter.shouldFailList = true;
+    const coordinator = new NotificationCoordinator(db, adapter, () => '2026-10-13T00:00:00Z');
+
+    const res = await coordinator.reconcile(patientA);
+    expect(res.status).toBe('error');
+    expect(res.incidencias.length).toBeGreaterThan(0);
+    expect(res.incidencias[0]).toContain('consulta');
+  });
+
+  it('detecta agenda desaparecida en el SO y reprograma conservando UUIDs en lugar de confirmar falsamente', async () => {
+    const db = open();
+    await migrateDatabase(db);
+    await seedPatientContextIfEmpty(db, patientA, patientB);
+
+    const repo = createReminderRepository(db, patientA);
+    await repo.setPreferences(true);
+    await repo.saveRule({
+      tipo: 'registro_vitales',
+      diasSemana: [1, 2, 3, 4, 5, 6, 7],
+      horasMinutos: ['09:00'],
+      habilitado: true,
+    });
+
+    const adapter = new FakeNotificationAdapter();
+    const coordinator = new NotificationCoordinator(db, adapter, () => '2026-10-13T00:00:00Z');
+
+    // 1. Programar inicialmente
+    const res1 = await coordinator.reconcile(patientA);
+    expect(res1.status).toBe('programada');
+    expect(adapter.scheduled.size).toBeGreaterThan(0);
+
+    // Obtener los UUIDs de SQLite
+    const rowsBefore = await db.all<{ id: string }>(
+      'SELECT id FROM notificacion_local WHERE paciente_id = ? AND estado = ?',
+      [patientA, 'programada'],
+    );
+    const originalIds = new Set(rowsBefore.map((r) => r.id));
+
+    // 2. Simular vaciado repentino de la agenda en el SO (reinicio o force-stop) conservando SQLite
+    adapter.scheduled.clear();
+    expect(adapter.scheduled.size).toBe(0);
+
+    // 3. Reconciliar nuevamente: el coordinador NO debe confirmar 14 si hay 0 en el SO; debe reprogramar
+    const res2 = await coordinator.reconcile(patientA);
+    expect(res2.status).toBe('programada');
+    expect(adapter.scheduled.size).toBe(res2.programadasConfirmadas);
+    expect(adapter.scheduled.size).toBeGreaterThan(0);
+
+    // Los UUIDs reprogramados deben conservar los mismos identificadores estables
+    for (const item of adapter.scheduled.values()) {
+      expect(originalIds.has(item.payload?.notificacionId ?? '')).toBe(true);
+    }
+  });
+
+  it('retorna permiso_denegado si el canal de notificaciones está bloqueado (channelStatus: blocked)', async () => {
+    const db = open();
+    await migrateDatabase(db);
+    await seedPatientContextIfEmpty(db, patientA, patientB);
+
+    const repo = createReminderRepository(db, patientA);
+    await repo.setPreferences(true);
+
+    const adapter = new FakeNotificationAdapter();
+    adapter.permission = { status: 'granted', canAskAgain: true, channelStatus: 'blocked' };
+    const coordinator = new NotificationCoordinator(db, adapter);
+
+    const res = await coordinator.reconcile(patientA);
+    expect(res.status).toBe('permiso_denegado');
+  });
+
+  it('transiciona ocurrencias pasadas no observadas a finalizada_sin_observacion', async () => {
+    const db = open();
+    await migrateDatabase(db);
+    await seedPatientContextIfEmpty(db, patientA, patientB);
+
+    const repo = createReminderRepository(db, patientA);
+    await repo.setPreferences(true);
+    await repo.saveRule({
+      tipo: 'registro_vitales',
+      diasSemana: [1, 2, 3, 4, 5, 6, 7],
+      horasMinutos: ['09:00'],
+      habilitado: true,
+    });
+
+    const adapter = new FakeNotificationAdapter();
+    // 1. Reconciliar el 10 de octubre de 2026
+    const coord1 = new NotificationCoordinator(db, adapter, () => '2026-10-10T00:00:00Z');
+    await coord1.reconcile(patientA);
+
+    // 2. Avanzar el tiempo al 13 de octubre de 2026 y volver a reconciliar
+    const coord2 = new NotificationCoordinator(db, adapter, () => '2026-10-13T00:00:00Z');
+    await coord2.reconcile(patientA);
+
+    // 3. Verificar que las ocurrencias de días anteriores pasaron a 'finalizada_sin_observacion'
+    const pastRows = await db.all<{ estado: string }>(
+      "SELECT estado FROM notificacion_local WHERE paciente_id = ? AND fecha_prevista_utc < '2026-10-13T00:00:00Z'",
+      [patientA],
+    );
+    expect(pastRows.length).toBeGreaterThan(0);
+    expect(pastRows.every((r) => r.estado === 'finalizada_sin_observacion')).toBe(true);
+  });
+
+  it('conserva cancelacion_pendiente en SQLite si falla la cancelación al desactivar preferencias', async () => {
+    const db = open();
+    await migrateDatabase(db);
+    await seedPatientContextIfEmpty(db, patientA, patientB);
+
+    const repo = createReminderRepository(db, patientA);
+    await repo.setPreferences(true);
+    await repo.saveRule({
+      tipo: 'registro_vitales',
+      diasSemana: [1, 2, 3, 4, 5, 6, 7],
+      horasMinutos: ['09:00'],
+      habilitado: true,
+    });
+
+    const adapter = new FakeNotificationAdapter();
+    const coordinator = new NotificationCoordinator(db, adapter, () => '2026-10-13T00:00:00Z');
+
+    // 1. Programar
+    await coordinator.reconcile(patientA);
+    expect(adapter.scheduled.size).toBeGreaterThan(0);
+
+    // 2. Desactivar preferencias en SQLite y hacer que falle el cancel nativo
+    await repo.setPreferences(false);
+    adapter.shouldFailCancel = true;
+
+    const res = await coordinator.reconcile(patientA);
+    expect(res.status).toBe('programacion_pendiente');
+
+    // Filas en SQLite deben estar como 'cancelacion_pendiente', NO como 'cancelada'
+    const pendingRows = await db.all<{ id: string }>(
+      'SELECT id FROM notificacion_local WHERE paciente_id = ? AND estado = ?',
+      [patientA, 'cancelacion_pendiente'],
+    );
+    expect(pendingRows.length).toBeGreaterThan(0);
   });
 });

@@ -119,10 +119,18 @@ const mockDatabase = {
     .mockImplementation(async (cb: (tx: unknown) => Promise<unknown>) => cb(mockDatabase)),
 };
 
+const mockCoordinator = {
+  reconcile: jest
+    .fn()
+    .mockImplementation((...args: unknown[]) => mockCoordinatorReconcile(...args)),
+  cancelPatientSchedule: jest.fn().mockResolvedValue(undefined),
+};
+
 const mockUseLocalData = jest.fn().mockReturnValue({
   patientId: 'paciente-a',
   database: mockDatabase,
   repository: mockRepository,
+  coordinator: mockCoordinator,
   runSave: (fn: () => Promise<unknown>) => fn(),
   saving: false,
 });
@@ -222,6 +230,22 @@ describe('Incremento 5: UI de Recordatorios y Avisos Locales', () => {
       });
       expect(screen.getByText('Abrir Ajustes de Android')).toBeTruthy();
     });
+
+    it('muestra aviso de canal bloqueado cuando channelStatus es blocked', async () => {
+      mockAdapter.getPermissionState.mockResolvedValueOnce({
+        status: 'granted',
+        canAskAgain: true,
+        channelStatus: 'blocked',
+      });
+      mockReminderRepo.listRules.mockResolvedValueOnce([]);
+
+      await render(<RemindersListScreen />);
+
+      await waitFor(() => {
+        expect(screen.getByText('Canal de notificaciones bloqueado')).toBeTruthy();
+      });
+      expect(screen.getByText('Abrir Ajustes de Android')).toBeTruthy();
+    });
   });
 
   describe('ReminderEditScreen', () => {
@@ -261,6 +285,18 @@ describe('Incremento 5: UI de Recordatorios y Avisos Locales', () => {
         expect(screen.getByText('Guardar recordatorio')).toBeTruthy();
       });
 
+      // Seleccionar una hora de los preajustes y activar la regla
+      fireEvent.press(screen.getByLabelText('Hora preajuste 09:00'));
+      await waitFor(() => {
+        expect(screen.getByLabelText('Eliminar hora 09:00')).toBeTruthy();
+      });
+      fireEvent.press(screen.getByLabelText('Habilitar este recordatorio'));
+      await waitFor(() => {
+        expect(
+          screen.getByLabelText('Habilitar este recordatorio').props.accessibilityState.checked,
+        ).toBe(true);
+      });
+
       fireEvent.press(screen.getByText('Guardar recordatorio'));
 
       await waitFor(() => {
@@ -273,6 +309,43 @@ describe('Incremento 5: UI de Recordatorios y Avisos Locales', () => {
         );
       });
       expect(mockRouterBack).toHaveBeenCalled();
+    });
+
+    it('valida que existan horas seleccionadas antes de guardar', async () => {
+      await render(<ReminderEditScreen />);
+
+      await waitFor(() => {
+        expect(screen.getByText('Guardar recordatorio')).toBeTruthy();
+      });
+
+      // Intentar guardar sin haber seleccionado horas
+      fireEvent.press(screen.getByText('Guardar recordatorio'));
+
+      await waitFor(() => {
+        expect(
+          screen.getByText('Debes añadir al menos una hora para el recordatorio.'),
+        ).toBeTruthy();
+      });
+      expect(mockReminderRepo.saveRule).not.toHaveBeenCalled();
+    });
+
+    it('permite añadir una hora personalizada en formato HH:mm', async () => {
+      await render(<ReminderEditScreen />);
+
+      await waitFor(() => {
+        expect(screen.getByLabelText('Hora personalizada formato HH:mm')).toBeTruthy();
+      });
+
+      const timeInput = screen.getByLabelText('Hora personalizada formato HH:mm');
+      fireEvent.changeText(timeInput, '08:30');
+      await waitFor(() => {
+        expect(timeInput.props.value).toBe('08:30');
+      });
+      fireEvent.press(screen.getByText('Añadir hora'));
+
+      await waitFor(() => {
+        expect(screen.getByLabelText('Eliminar hora 08:30')).toBeTruthy();
+      });
     });
 
     it('permite eliminar lógicamente una regla existente', async () => {

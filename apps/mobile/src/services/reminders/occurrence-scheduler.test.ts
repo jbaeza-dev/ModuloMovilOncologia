@@ -36,7 +36,7 @@ describe('OccurrenceScheduler', () => {
     const result = calculateOccurrences([rule], [], {
       now,
       zonaHoraria: 'America/Santiago',
-      ventanaDias: 1, // hoy y mañana
+      ventanaDias: 2, // ventana de 2 días que cubre completamente el día siguiente
     });
 
     // Para el día de hoy, solo 12:00 debe figurar; 08:00 no debe estar
@@ -163,5 +163,50 @@ describe('OccurrenceScheduler', () => {
     const utcIso = civilToUtcIso(2026, 10, 15, 9, 0, 'America/Santiago');
     // En octubre en Chile el huso horario es UTC-3 (horario de verano de Chile)
     expect(utcIso).toBe('2026-10-15T12:00:00.000Z');
+  });
+
+  it('aplica estrictamente la ventana de 14 días (regla diaria a las 21:00 produce exactamente 14 ocurrencias)', () => {
+    // Si now es a las 10:00 del 13 de Octubre de 2026 en Santiago
+    const now = new Date('2026-10-13T13:00:00Z');
+    const dailyRule = fakeRule({
+      diasSemana: [1, 2, 3, 4, 5, 6, 7],
+      horasMinutos: ['21:00'],
+    });
+
+    const result = calculateOccurrences([dailyRule], [], {
+      now,
+      zonaHoraria: 'America/Santiago',
+      ventanaDias: 14,
+    });
+
+    // Debe producir exactamente 14 ocurrencias (1 por día, descartando el día 14 a las 21:00 que supera finDeVentana a las 10:00)
+    expect(result.seleccionadas).toHaveLength(14);
+  });
+
+  it('desplaza hora inexistente en cambio de horario de primavera (06-sept-2026 00:30 a 01:00 válido)', () => {
+    // El 6 de septiembre de 2026 a medianoche, los relojes saltan de 23:59:59 a 01:00:00 (UTC-3)
+    // 00:30 no existe en America/Santiago. El plan exige desplazarse al siguiente minuto válido (01:00:00 local = 04:00:00Z)
+    const shiftedUtc = civilToUtcIso(2026, 9, 6, 0, 30, 'America/Santiago');
+    expect(shiftedUtc).toBe('2026-09-06T04:00:00.000Z');
+  });
+
+  it('resuelve deterministamente horas repetidas en cambio de horario de otoño', () => {
+    // El primer fin de semana de abril de 2026, los relojes retroceden 1 hora (de UTC-3 a UTC-4)
+    // Una regla en el horario repetido debe generar una ocurrencia única y determinista
+    const rule = fakeRule({
+      diasSemana: [6, 7], // Sábado y Domingo
+      horasMinutos: ['23:30'],
+    });
+    const now = new Date('2026-04-04T12:00:00Z');
+    const result = calculateOccurrences([rule], [], {
+      now,
+      zonaHoraria: 'America/Santiago',
+      ventanaDias: 3,
+    });
+    // Verifica que no haya duplicados para el mismo día
+    const ocurrencias4Abril = result.seleccionadas.filter(
+      (c) => c.fechaCivilLocal === '2026-04-04',
+    );
+    expect(ocurrencias4Abril).toHaveLength(1);
   });
 });
