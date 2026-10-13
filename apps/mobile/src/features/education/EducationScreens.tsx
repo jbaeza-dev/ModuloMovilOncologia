@@ -262,9 +262,7 @@ export function EducationCategoryScreen() {
                     label="Ver detalle completo"
                     secondary
                     onPress={() =>
-                      router.navigate(
-                        '/educacion/recurso?recurso=' + encodeURIComponent(resource.id),
-                      )
+                      router.push('/educacion/recurso?recurso=' + encodeURIComponent(resource.id))
                     }
                   />
                 </View>

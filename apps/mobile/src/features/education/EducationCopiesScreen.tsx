@@ -182,7 +182,7 @@ export function EducationCopiesScreen() {
                     <VisualButton
                       label="Reintentar descarga"
                       onPress={() =>
-                        router.navigate(
+                        router.push(
                           '/educacion/recurso?recurso=' + encodeURIComponent(copy.contentId),
                         )
                       }
@@ -200,7 +200,7 @@ export function EducationCopiesScreen() {
                       label={isImage ? 'Ver infografía' : 'Leer guía'}
                       secondary
                       onPress={() =>
-                        router.navigate(
+                        router.push(
                           '/educacion/recurso?recurso=' + encodeURIComponent(copy.contentId),
                         )
                       }
@@ -210,7 +210,7 @@ export function EducationCopiesScreen() {
                         <VisualButton
                           label="Abrir para revisar"
                           onPress={() =>
-                            router.navigate(
+                            router.push(
                               '/educacion/recurso?recurso=' + encodeURIComponent(copy.contentId),
                             )
                           }

@@ -106,7 +106,7 @@ export function DiagnosticsDemoModal({ visible, onClose }: DiagnosticsDemoModalP
             await database.transaction(async (tx) => {
               // Inserción real de prueba dentro de la transacción antes del fallo
               await tx.run(
-                `INSERT INTO descarga (paciente_id, contenido_id, ruta_local, formato, tamano_bytes, descargado_en, revision_declarada, estado)
+                `INSERT INTO descarga (paciente_id, contenido_id, ruta_local, formato, tamano_bytes, fecha_descarga, revision_declarada, estado)
                  VALUES (?, ?, ?, ?, ?, ?, 0, 'descargado')`,
                 [
                   patientId,
@@ -124,7 +124,9 @@ export function DiagnosticsDemoModal({ visible, onClose }: DiagnosticsDemoModalP
         });
       } catch (err) {
         errorThrown = true;
-        if (err instanceof Error && err.message.includes(EXPECTED_ERROR)) {
+        const msg = err instanceof Error ? err.message : String(err);
+        const causeMsg = (err as { cause?: Error })?.cause?.message ?? '';
+        if (msg.includes(EXPECTED_ERROR) || causeMsg.includes(EXPECTED_ERROR)) {
           matchedExpectedError = true;
         }
       }
