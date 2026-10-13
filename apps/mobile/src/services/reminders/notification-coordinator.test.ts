@@ -532,6 +532,7 @@ describe('NotificationCoordinator', () => {
       tipo: 'registro_vitales',
       diasSemana: [1, 2, 3, 4, 5, 6, 7],
       horasMinutos: ['09:00'],
+      zonaHoraria: 'America/Santiago',
       habilitado: true,
     });
 
@@ -548,5 +549,169 @@ describe('NotificationCoordinator', () => {
 
     // La fecha de cobertura DEBE corresponder a la 7ma ocurrencia confirmada (19 de octubre), no al fin de la ventana
     expect(res.cubiertoHastaIso).toBe('2026-10-19T12:00:00.000Z');
+  });
+
+  it('conserva cancelacion_pendiente y pausa a B si falla la cancelación parcial de duplicados nativos', async () => {
+    const db = open();
+    await migrateDatabase(db);
+    await seedPatientContextIfEmpty(db, patientA, patientB);
+
+    const repoA = createReminderRepository(db, patientA);
+    await repoA.setPreferences(true);
+    await repoA.saveRule({
+      tipo: 'registro_vitales',
+      diasSemana: [1, 2, 3, 4, 5, 6, 7],
+      horasMinutos: ['09:00'],
+      zonaHoraria: 'America/Santiago',
+      habilitado: true,
+    });
+
+    const adapter = new FakeNotificationAdapter();
+    const coordinator = new NotificationCoordinator(db, adapter, () => '2026-10-13T00:00:00Z');
+
+    // 1. Programar inicialmente para A
+    await coordinator.reconcile(patientA);
+    expect(adapter.scheduled.size).toBe(14);
+
+    // Obtener la primera notificación de A
+    const firstScheduled = Array.from(adapter.scheduled.values())[0];
+    const notifId = firstScheduled.payload!.notificacionId;
+
+    // Inyectar un trabajo duplicado en el SO con el mismo notificacionId
+    const duplicateNativeId = 'fake-native-duplicate-1';
+    adapter.scheduled.set(duplicateNativeId, {
+      nativeId: duplicateNativeId,
+      triggerDateUtc: firstScheduled.triggerDateUtc,
+      payload: { ...firstScheduled.payload! },
+    });
+
+    // Configurar el adapter para que falle al cancelar el duplicado
+    adapter.failCancelForNativeIds = new Set([duplicateNativeId]);
+
+    // Conmutar a B: cancelPatientSchedule(patientA)
+    const cancelRes = await coordinator.cancelPatientSchedule(patientA);
+    expect(cancelRes.success).toBe(false);
+    expect(cancelRes.pendingCount).toBeGreaterThan(0);
+
+    // Verificar en SQLite que la fila de esa notificación permanece en cancelacion_pendiente
+    const dbRow = await db.first<{ estado: string }>(
+      'SELECT estado FROM notificacion_local WHERE id = ?',
+      [notifId],
+    );
+    expect(dbRow?.estado).toBe('cancelacion_pendiente');
+
+    // Preparar B
+    const repoB = createReminderRepository(db, patientB);
+    await repoB.setPreferences(true);
+    await repoB.saveRule({
+      tipo: 'medicacion',
+      medicamentoId: 'med-b-1',
+      diasSemana: [1, 2, 3, 4, 5, 6, 7],
+      horasMinutos: ['12:00'],
+      zonaHoraria: 'America/Santiago',
+      habilitado: true,
+    });
+
+    // Intentar reconciliar B: debe permanecer pausada esperando resolver A
+    const resB = await coordinator.reconcile(patientB);
+    expect(resB.status).toBe('programacion_pendiente');
+    expect(resB.motivoPendiente).toBe('contexto_anterior');
+    expect(resB.programadasConfirmadas).toBe(0);
+  });
+
+  it('resuelve en SQLite el trabajo en cancelacion_pendiente cuando ya no existe en el sistema nativo', async () => {
+    const db = open();
+    await migrateDatabase(db);
+    await seedPatientContextIfEmpty(db, patientA, patientB);
+
+    const repo = createReminderRepository(db, patientA);
+    await repo.setPreferences(true);
+    const rule = await repo.saveRule({
+      tipo: 'registro_vitales',
+      diasSemana: [1, 2, 3, 4, 5, 6, 7],
+      horasMinutos: ['09:00'],
+      zonaHoraria: 'America/Santiago',
+      habilitado: true,
+    });
+
+    const dummyNotifId = 'notif-pending-vanished-1';
+    await repo.reserveOccurrence({
+      id: dummyNotifId,
+      recordatorioId: rule.id,
+      revision: 1,
+      tipo: 'registro_vitales',
+      fechaPrevistaUtc: '2026-10-15T12:00:00.000Z',
+      payload: {
+        version: 1,
+        notificacionId: dummyNotifId,
+        revision: 1,
+        pacienteId: patientA,
+        recordatorioId: rule.id,
+        tipo: 'registro_vitales',
+        destino: '/vitales/registrar',
+      },
+    });
+
+    // Marcar como cancelacion_pendiente con un id_nativo ficticio
+    await db.run(
+      "UPDATE notificacion_local SET estado = 'cancelacion_pendiente', id_nativo = 'native-already-gone' WHERE id = ?",
+      [dummyNotifId],
+    );
+
+    const adapter = new FakeNotificationAdapter();
+    // El SO NO tiene trabajos agendados (0 trabajos)
+    expect(adapter.scheduled.size).toBe(0);
+
+    const coordinator = new NotificationCoordinator(db, adapter, () => '2026-10-13T00:00:00Z');
+
+    // Ejecutar reintento de cancelaciones pendientes
+    const retryRes = await coordinator.retryPendingCancellations();
+    expect(retryRes.resolved).toBe(true);
+    expect(retryRes.remainingCount).toBe(0);
+
+    // La fila en SQLite DEBE haber transitado a 'cancelada'
+    const updatedRow = await db.first<{ estado: string; id_nativo: string | null }>(
+      'SELECT estado, id_nativo FROM notificacion_local WHERE id = ?',
+      [dummyNotifId],
+    );
+    expect(updatedRow?.estado).toBe('cancelada');
+    expect(updatedRow?.id_nativo).toBeNull();
+
+    // Comprobar que no quedan filas en cancelacion_pendiente
+    const pendingCount = await db.first<{ count: number }>(
+      "SELECT count(*) as count FROM notificacion_local WHERE estado = 'cancelacion_pendiente'",
+    );
+    expect(pendingCount?.count).toBe(0);
+  });
+
+  it('rechaza programar cuando getActivePatientId devuelve null (ausencia de contexto activo)', async () => {
+    const db = open();
+    await migrateDatabase(db);
+    await seedPatientContextIfEmpty(db, patientA, patientB);
+
+    const repo = createReminderRepository(db, patientA);
+    await repo.setPreferences(true);
+    await repo.saveRule({
+      tipo: 'registro_vitales',
+      diasSemana: [1, 2, 3, 4, 5, 6, 7],
+      horasMinutos: ['09:00'],
+      zonaHoraria: 'America/Santiago',
+      habilitado: true,
+    });
+
+    const adapter = new FakeNotificationAdapter();
+    // Proveedor de identidad que simula selector abierto (paciente activo = null)
+    const coordinator = new NotificationCoordinator(
+      db,
+      adapter,
+      () => '2026-10-13T00:00:00Z',
+      undefined,
+      () => null,
+    );
+
+    const res = await coordinator.reconcile(patientA);
+    expect(res.status).toBe('desactivada');
+    expect(res.incidencias[0]).toContain('Operación omitida por cambio de contexto activo');
+    expect(adapter.scheduled.size).toBe(0);
   });
 });

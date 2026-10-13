@@ -56,31 +56,47 @@ export class NotificationCoordinator {
   }
 
   /**
-   * Cancela un trabajo nativo y actualiza el estado en SQLite de forma atómica.
-   * Si falla, marca como cancelacion_pendiente en SQLite.
+   * Resuelve la cancelación de una ocurrencia lógica cancelando todos sus trabajos nativos asociados.
+   * Si cualquiera falla, la fila permanece o pasa a 'cancelacion_pendiente'.
+   * Si todos se cancelan con éxito (o no existía ninguno en el SO), pasa a 'cancelada'.
    */
-  private async cancelJob(
-    nativeId: string,
-    notifId?: string,
+  private async cancelOccurrenceJobs(
+    notifId: string,
+    nativeItems: readonly ScheduledNotificationItem[],
   ): Promise<{ success: boolean; error?: Error }> {
-    try {
-      await this.adapter.cancel(nativeId);
-      if (notifId) {
-        await this.database.run(
-          "UPDATE notificacion_local SET estado = CASE WHEN estado IN ('pendiente', 'programada', 'cancelacion_pendiente') THEN 'cancelada' ELSE estado END, id_nativo = NULL, error = NULL, actualizado_el = ? WHERE id = ?",
-          [this.now(), notifId],
-        );
+    let allCancelled = true;
+    let lastError: Error | undefined;
+
+    for (const item of nativeItems) {
+      try {
+        await this.adapter.cancel(item.nativeId);
+      } catch (err) {
+        allCancelled = false;
+        lastError = err as Error;
       }
-      return { success: true };
-    } catch (err) {
-      if (notifId) {
-        await this.database.run(
-          "UPDATE notificacion_local SET estado = CASE WHEN estado IN ('pendiente', 'programada') THEN 'cancelacion_pendiente' ELSE estado END, error = ?, actualizado_el = ? WHERE id = ?",
-          [(err as Error).message, this.now(), notifId],
-        );
-      }
-      return { success: false, error: err as Error };
     }
+
+    const timestamp = this.now();
+    if (!allCancelled) {
+      await this.database.run(
+        `UPDATE notificacion_local
+         SET estado = 'cancelacion_pendiente', error = ?, actualizado_el = ?
+         WHERE id = ?`,
+        [lastError?.message ?? 'Fallo al cancelar trabajo nativo en el SO', timestamp, notifId],
+      );
+      return { success: false, error: lastError };
+    }
+
+    await this.database.run(
+      `UPDATE notificacion_local
+       SET estado = CASE WHEN estado IN ('pendiente', 'programada', 'cancelacion_pendiente') THEN 'cancelada' ELSE estado END,
+           id_nativo = NULL,
+           error = NULL,
+           actualizado_el = ?
+       WHERE id = ?`,
+      [timestamp, notifId],
+    );
+    return { success: true };
   }
 
   /**
@@ -103,28 +119,18 @@ export class NotificationCoordinator {
       return { resolved: false, remainingCount: pendingJobs.length };
     }
 
-    const scheduledByNativeId = new Set(scheduled.map((s) => s.nativeId));
     let remaining = 0;
 
     for (const job of pendingJobs) {
-      let cancelledOk = true;
-      if (job.id_nativo && scheduledByNativeId.has(job.id_nativo)) {
-        const res = await this.cancelJob(job.id_nativo, job.id);
-        if (!res.success) {
-          cancelledOk = false;
-        }
-      }
+      // Buscar todos los trabajos en el SO asociados a esta notificación
+      const matchingNative = scheduled.filter(
+        (s) =>
+          s.payload?.notificacionId === job.id ||
+          (Boolean(job.id_nativo) && s.nativeId === job.id_nativo),
+      );
 
-      for (const item of scheduled) {
-        if (item.payload?.notificacionId === job.id && item.nativeId !== job.id_nativo) {
-          const res = await this.cancelJob(item.nativeId, job.id);
-          if (!res.success) {
-            cancelledOk = false;
-          }
-        }
-      }
-
-      if (!cancelledOk) {
+      const res = await this.cancelOccurrenceJobs(job.id, matchingNative);
+      if (!res.success) {
         remaining++;
       }
     }
@@ -133,49 +139,91 @@ export class NotificationCoordinator {
   }
 
   /**
-   * Intenta cancelar todos los trabajos nativos de un paciente dado (ej. al cambiar de contexto A -> B).
+   * Implementación interna para cancelar la agenda completa de un paciente.
+   * Agrupa los trabajos nativos por ocurrencia lógica y actualiza SQLite de forma consistente.
    */
-  async cancelPatientSchedule(
+  private async cancelPatientScheduleInternal(
     patientId: string,
   ): Promise<{ success: boolean; pendingCount: number }> {
-    return this.mutex.enqueue(async () => {
-      let scheduled: readonly ScheduledNotificationItem[] = [];
-      let listFailed = false;
+    let scheduled: readonly ScheduledNotificationItem[] = [];
+    let listFailed = false;
+    try {
+      scheduled = await this.adapter.listScheduled();
+    } catch {
+      listFailed = true;
+    }
+
+    const timestamp = this.now();
+    if (listFailed) {
+      await this.database.run(
+        `UPDATE notificacion_local
+         SET estado = 'cancelacion_pendiente', actualizado_el = ?
+         WHERE paciente_id = ? AND estado IN ('pendiente', 'programada')`,
+        [timestamp, patientId],
+      );
+      return { success: false, pendingCount: 1 };
+    }
+
+    const patientJobs = scheduled.filter((s) => s.payload?.pacienteId === patientId);
+    const jobsByNotifId = new Map<string, ScheduledNotificationItem[]>();
+    const orphans: ScheduledNotificationItem[] = [];
+
+    for (const item of patientJobs) {
+      const notifId = item.payload?.notificacionId;
+      if (notifId) {
+        const list = jobsByNotifId.get(notifId) ?? [];
+        list.push(item);
+        jobsByNotifId.set(notifId, list);
+      } else {
+        orphans.push(item);
+      }
+    }
+
+    let failedCount = 0;
+    for (const orphan of orphans) {
       try {
-        scheduled = await this.adapter.listScheduled();
+        await this.adapter.cancel(orphan.nativeId);
       } catch {
-        listFailed = true;
+        failedCount++;
       }
+    }
 
-      const patientJobs = scheduled.filter((s) => s.payload?.pacienteId === patientId);
-
-      let pending = listFailed ? 1 : 0;
-      for (const item of patientJobs) {
-        const res = await this.cancelJob(item.nativeId, item.payload?.notificacionId);
-        if (!res.success) {
-          pending++;
-        }
+    for (const [notifId, items] of jobsByNotifId.entries()) {
+      const res = await this.cancelOccurrenceJobs(notifId, items);
+      if (!res.success) {
+        failedCount++;
       }
+    }
 
-      const timestamp = this.now();
-      if (pending > 0) {
-        await this.database.run(
-          `UPDATE notificacion_local
-           SET estado = 'cancelacion_pendiente', actualizado_el = ?
-           WHERE paciente_id = ? AND estado IN ('pendiente', 'programada')`,
-          [timestamp, patientId],
-        );
-        return { success: false, pendingCount: pending };
-      }
-
+    // Cerrar también en SQLite cualquier fila activa de este paciente que ya no existiese en el SO
+    const notifIdsArray = Array.from(jobsByNotifId.keys());
+    if (notifIdsArray.length > 0) {
+      const placeholders = notifIdsArray.map(() => '?').join(',');
+      await this.database.run(
+        `UPDATE notificacion_local
+         SET estado = 'cancelada', id_nativo = NULL, actualizado_el = ?
+         WHERE paciente_id = ? AND estado IN ('pendiente', 'programada') AND id NOT IN (${placeholders})`,
+        [timestamp, patientId, ...notifIdsArray],
+      );
+    } else {
       await this.database.run(
         `UPDATE notificacion_local
          SET estado = 'cancelada', id_nativo = NULL, actualizado_el = ?
          WHERE paciente_id = ? AND estado IN ('pendiente', 'programada')`,
         [timestamp, patientId],
       );
-      return { success: true, pendingCount: 0 };
-    });
+    }
+
+    return { success: failedCount === 0, pendingCount: failedCount };
+  }
+
+  /**
+   * Intenta cancelar todos los trabajos nativos de un paciente dado (ej. al cambiar de contexto A -> B).
+   */
+  async cancelPatientSchedule(
+    patientId: string,
+  ): Promise<{ success: boolean; pendingCount: number }> {
+    return this.mutex.enqueue(() => this.cancelPatientScheduleInternal(patientId));
   }
 
   /**
@@ -187,7 +235,7 @@ export class NotificationCoordinator {
         if (isContextActive && !isContextActive()) return false;
         if (this.getActivePatientId) {
           const active = this.getActivePatientId();
-          if (active !== null && active !== patientId) return false;
+          if (active !== patientId) return false;
         }
         return true;
       };
@@ -237,31 +285,8 @@ export class NotificationCoordinator {
 
       // Si las preferencias del paciente están desactivadas
       if (!prefs.enabled) {
-        let allNative: readonly ScheduledNotificationItem[] = [];
-        let listFailed = false;
-        try {
-          allNative = await this.adapter.listScheduled();
-        } catch {
-          listFailed = true;
-        }
-
-        const patientJobs = allNative.filter((s) => s.payload?.pacienteId === patientId);
-        let failedCancels = listFailed ? 1 : 0;
-        for (const item of patientJobs) {
-          const res = await this.cancelJob(item.nativeId, item.payload?.notificacionId);
-          if (!res.success) {
-            failedCancels++;
-          }
-        }
-
-        const timestamp = this.now();
-        if (failedCancels > 0) {
-          await this.database.run(
-            `UPDATE notificacion_local
-             SET estado = 'cancelacion_pendiente', actualizado_el = ?
-             WHERE paciente_id = ? AND estado IN ('pendiente', 'programada')`,
-            [timestamp, patientId],
-          );
+        const cancelRes = await this.cancelPatientScheduleInternal(patientId);
+        if (!cancelRes.success) {
           return {
             status: 'programacion_pendiente',
             motivoPendiente: 'cancelacion_regla_previa',
@@ -276,12 +301,6 @@ export class NotificationCoordinator {
           };
         }
 
-        await this.database.run(
-          `UPDATE notificacion_local
-           SET estado = 'cancelada', id_nativo = NULL, actualizado_el = ?
-           WHERE paciente_id = ? AND estado IN ('pendiente', 'programada')`,
-          [timestamp, patientId],
-        );
         return {
           status: 'desactivada',
           totalDeseadas: 0,
@@ -298,46 +317,13 @@ export class NotificationCoordinator {
       if (!isStillActive()) return abortResult;
 
       if (permState.status !== 'granted' || permState.channelStatus === 'blocked') {
-        let allNative: readonly ScheduledNotificationItem[] = [];
-        let listFailed = false;
-        try {
-          allNative = await this.adapter.listScheduled();
-        } catch {
-          listFailed = true;
-        }
-        let failedCancels = listFailed;
-        for (const item of allNative) {
-          if (item.payload?.pacienteId === patientId) {
-            const res = await this.cancelJob(item.nativeId, item.payload?.notificacionId);
-            if (!res.success) {
-              failedCancels = true;
-            }
-          }
-        }
-
-        const timestamp = this.now();
-        if (failedCancels) {
-          await this.database.run(
-            `UPDATE notificacion_local
-             SET estado = 'cancelacion_pendiente', actualizado_el = ?
-             WHERE paciente_id = ? AND estado IN ('pendiente', 'programada')`,
-            [timestamp, patientId],
-          );
-        } else {
-          await this.database.run(
-            `UPDATE notificacion_local
-             SET estado = 'cancelada', id_nativo = NULL, actualizado_el = ?
-             WHERE paciente_id = ? AND estado IN ('pendiente', 'programada')`,
-            [timestamp, patientId],
-          );
-        }
-
+        const cancelRes = await this.cancelPatientScheduleInternal(patientId);
         const incidencias = [
           permState.channelStatus === 'blocked'
             ? 'El canal de notificaciones está bloqueado en los ajustes del sistema.'
             : 'Permiso de notificaciones no concedido en el sistema operativo.',
         ];
-        if (failedCancels) {
+        if (!cancelRes.success) {
           incidencias.push(
             'Fallo al cancelar notificaciones en el SO tras revocación o bloqueo de permisos.',
           );
@@ -443,13 +429,14 @@ export class NotificationCoordinator {
       for (const item of patientNative) {
         const notifId = item.payload?.notificacionId;
         if (!notifId) {
-          const res = await this.cancelJob(item.nativeId);
-          if (!res.success) {
+          try {
+            await this.adapter.cancel(item.nativeId);
+          } catch (err) {
             if (item.payload?.recordatorioId) {
               rulesWithFailedCancellation.add(item.payload.recordatorioId);
             }
             incidencias.push(
-              `Fallo al cancelar trabajo nativo huérfano ${item.nativeId}: ${res.error?.message}`,
+              `Fallo al cancelar trabajo nativo huérfano ${item.nativeId}: ${(err as Error).message}`,
             );
           }
           continue;
@@ -477,36 +464,55 @@ export class NotificationCoordinator {
           } else {
             chosen = [...group].sort((a, b) => a.nativeId.localeCompare(b.nativeId))[0];
           }
-          for (const item of group) {
-            if (item.nativeId !== chosen.nativeId) {
-              const res = await this.cancelJob(item.nativeId, notifId);
-              if (!res.success) {
-                const ruleId = chosen.payload?.recordatorioId || dbJob?.recordatorio_id;
-                if (ruleId) rulesWithFailedCancellation.add(ruleId);
-                incidencias.push(
-                  `Fallo al cancelar trabajo duplicado en el SO (${item.nativeId}): ${res.error?.message}`,
-                );
-              }
-            }
-          }
         }
 
+        const duplicates = group.filter((g) => g.nativeId !== chosen.nativeId);
         const candidateKey = `${chosen.payload?.recordatorioId}:${chosen.payload?.revision}:${chosen.triggerDateUtc}`;
         const isInDesiredSet = desiredMap.has(candidateKey);
         const isNotPendingCancel = dbJob?.estado !== 'cancelacion_pendiente';
 
         if (dbJob && isInDesiredSet && isNotPendingCancel) {
-          await this.database.run(
-            "UPDATE notificacion_local SET id_nativo = ?, estado = 'programada', error = NULL, actualizado_el = ? WHERE id = ?",
-            [chosen.nativeId, this.now(), notifId],
-          );
-          adoptedNativeIds.add(chosen.nativeId);
-          const candidate = desiredMap.get(candidateKey);
-          if (candidate) {
-            candidate.id = notifId;
+          let duplicateCancelFailed = false;
+          let lastDupError: Error | undefined;
+          for (const dup of duplicates) {
+            try {
+              await this.adapter.cancel(dup.nativeId);
+            } catch (err) {
+              duplicateCancelFailed = true;
+              lastDupError = err as Error;
+            }
+          }
+
+          if (duplicateCancelFailed) {
+            const ruleId = chosen.payload?.recordatorioId || dbJob?.recordatorio_id;
+            if (ruleId) rulesWithFailedCancellation.add(ruleId);
+            await this.database.run(
+              `UPDATE notificacion_local
+               SET estado = 'cancelacion_pendiente', error = ?, actualizado_el = ?
+               WHERE id = ?`,
+              [
+                lastDupError?.message ?? 'Fallo al cancelar trabajo duplicado en el SO',
+                this.now(),
+                notifId,
+              ],
+            );
+            incidencias.push(
+              `Fallo al cancelar trabajo duplicado en el SO (regla: ${ruleId ?? 'desconocida'}): ${lastDupError?.message}`,
+            );
+          } else {
+            await this.database.run(
+              "UPDATE notificacion_local SET id_nativo = ?, estado = 'programada', error = NULL, actualizado_el = ? WHERE id = ?",
+              [chosen.nativeId, this.now(), notifId],
+            );
+            adoptedNativeIds.add(chosen.nativeId);
+            const candidate = desiredMap.get(candidateKey);
+            if (candidate) {
+              candidate.id = notifId;
+            }
           }
         } else {
-          const res = await this.cancelJob(chosen.nativeId, notifId);
+          // No es deseada o está en cancelacion_pendiente: se deben cancelar TODOS los trabajos nativos
+          const res = await this.cancelOccurrenceJobs(notifId, group);
           if (!res.success) {
             const ruleId = chosen.payload?.recordatorioId || dbJob?.recordatorio_id;
             if (ruleId) rulesWithFailedCancellation.add(ruleId);
@@ -517,26 +523,23 @@ export class NotificationCoordinator {
         }
       }
 
-      // Cancelar en SQLite cualquier trabajo activo que ya no esté en desiredMap
+      // Cancelar en SQLite cualquier trabajo activo que ya no esté en desiredMap ni en nativeByNotifId
       const nonDesiredDbJobs = await this.database.all<NotificationRecord>(
         "SELECT * FROM notificacion_local WHERE paciente_id = ? AND estado IN ('pendiente', 'programada')",
         [patientId],
       );
       for (const job of nonDesiredDbJobs) {
+        if (nativeByNotifId.has(job.id)) continue;
         const key = `${job.recordatorio_id}:${job.revision}:${job.fecha_prevista_utc}`;
         if (!desiredMap.has(key)) {
-          if (job.id_nativo && patientNative.some((n) => n.nativeId === job.id_nativo)) {
-            const res = await this.cancelJob(job.id_nativo, job.id);
-            if (!res.success) {
-              rulesWithFailedCancellation.add(job.recordatorio_id);
-              incidencias.push(
-                `No se pudo cancelar trabajo en SO para regla ${job.recordatorio_id}: ${res.error?.message}`,
-              );
-            }
-          } else {
-            await this.database.run(
-              "UPDATE notificacion_local SET estado = 'cancelada', id_nativo = NULL, actualizado_el = ? WHERE id = ?",
-              [this.now(), job.id],
+          const matchingNative = patientNative.filter(
+            (n) => n.nativeId === job.id_nativo || n.payload?.notificacionId === job.id,
+          );
+          const res = await this.cancelOccurrenceJobs(job.id, matchingNative);
+          if (!res.success) {
+            rulesWithFailedCancellation.add(job.recordatorio_id);
+            incidencias.push(
+              `No se pudo cancelar trabajo en SO para regla ${job.recordatorio_id}: ${res.error?.message}`,
             );
           }
         }

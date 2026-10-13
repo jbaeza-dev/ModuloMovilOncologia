@@ -23,30 +23,20 @@ import { importLegacyDrafts } from '../features/medical-forms/form-legacy-import
 import * as Notifications from 'expo-notifications';
 import { router } from 'expo-router';
 import { isDemoMode } from '../utils/environment';
-import type { NotificationJobPayload } from '../data/local/reminders/reminder-types';
+import {
+  isValidNotificationPayload,
+  ALLOWED_NOTIFICATION_DESTINATIONS as ALLOWED_DESTINATIONS,
+  type NotificationJobPayload,
+} from '../data/local/reminders/reminder-types';
 import { ExpoNotificationAdapter } from '../services/notifications/expo-notification-adapter';
-import { NotificationCoordinator } from '../services/reminders/notification-coordinator';
+import {
+  NotificationCoordinator,
+  type CoordinatorResult,
+} from '../services/reminders/notification-coordinator';
 
-const ALLOWED_DESTINATIONS = new Set(['/vitales/registrar', '/perfil/medicacion']);
-
-function isValidNotificationPayload(data: unknown): data is NotificationJobPayload {
-  if (!data || typeof data !== 'object') return false;
-  const p = data as Record<string, unknown>;
-  return (
-    p.version === 1 &&
-    typeof p.notificacionId === 'string' &&
-    p.notificacionId.length > 0 &&
-    typeof p.pacienteId === 'string' &&
-    p.pacienteId.length > 0 &&
-    typeof p.recordatorioId === 'string' &&
-    p.recordatorioId.length > 0 &&
-    typeof p.revision === 'number' &&
-    Number.isInteger(p.revision) &&
-    p.revision >= 1 &&
-    (p.tipo === 'registro_vitales' || p.tipo === 'toma_medicamento') &&
-    typeof p.destino === 'string' &&
-    ALLOWED_DESTINATIONS.has(p.destino)
-  );
+interface PendingNotificationIntent {
+  payload: NotificationJobPayload;
+  dedupeKey: string;
 }
 
 try {
@@ -85,7 +75,7 @@ type DataContextValue = {
   formImportError: string | null;
   formImportWarning: FormImportWarning | null;
   retryFormImport: () => Promise<void>;
-  reconcileReminders: (targetPatientId?: string) => Promise<void>;
+  reconcileReminders: (targetPatientId?: string) => Promise<CoordinatorResult | undefined>;
   runSave: <T>(work: () => Promise<T>) => Promise<T>;
   changePatient: () => void;
 };
@@ -210,20 +200,23 @@ export function LocalDataProvider({ children }: { children: ReactNode }) {
 
   const inFlightNotificationsRef = useRef<Set<string>>(new Set());
   const completedNotificationsRef = useRef<Set<string>>(new Set());
-  const pendingNotificationIntentRef = useRef<NotificationJobPayload | null>(null);
+  const pendingNotificationIntentRef = useRef<PendingNotificationIntent | null>(null);
 
   const handleNotificationOpen = useCallback(
-    async (payload: NotificationJobPayload, dedupeKey?: string) => {
-      const currentId = patientIdRef.current;
-      if (!currentId || currentId !== payload.pacienteId) {
-        // Guardar intención pendiente hasta que el paciente coincida
-        pendingNotificationIntentRef.current = payload;
-        return;
-      }
-
-      if (!database) return;
-
+    async (payload: NotificationJobPayload, dedupeKey?: string): Promise<boolean> => {
+      let navigatedSuccessfully = false;
       try {
+        const currentId = patientIdRef.current;
+        if (!currentId || currentId !== payload.pacienteId) {
+          // Si el paciente activo no coincide, conservar la intención junto con su clave original
+          if (dedupeKey) {
+            pendingNotificationIntentRef.current = { payload, dedupeKey };
+          }
+          return false;
+        }
+
+        if (!database) return false;
+
         // Validar contra SQLite que la notificación existe para este paciente y coinciden los campos
         const row = await database.first<{
           id: string;
@@ -238,12 +231,14 @@ export function LocalDataProvider({ children }: { children: ReactNode }) {
 
         // Comprobar si el paciente cambió durante la consulta a SQLite
         if (patientIdRef.current !== currentId) {
-          pendingNotificationIntentRef.current = payload;
-          return;
+          if (dedupeKey) {
+            pendingNotificationIntentRef.current = { payload, dedupeKey };
+          }
+          return false;
         }
 
         if (!row) {
-          return;
+          return false;
         }
 
         if (
@@ -251,7 +246,7 @@ export function LocalDataProvider({ children }: { children: ReactNode }) {
           row.revision !== payload.revision ||
           row.tipo !== payload.tipo
         ) {
-          return;
+          return false;
         }
 
         // Marcar como abierta en SQLite
@@ -262,22 +257,28 @@ export function LocalDataProvider({ children }: { children: ReactNode }) {
 
         // Comprobar nuevamente tras la actualización en SQLite
         if (patientIdRef.current !== currentId) {
-          pendingNotificationIntentRef.current = payload;
-          return;
+          if (dedupeKey) {
+            pendingNotificationIntentRef.current = { payload, dedupeKey };
+          }
+          return false;
         }
 
         // Resolver destino mediante lista permitida y navegar
         if (ALLOWED_DESTINATIONS.has(payload.destino)) {
-          if (dedupeKey) {
-            completedNotificationsRef.current.add(dedupeKey);
-          }
           router.push(payload.destino as Parameters<typeof router.push>[0]);
+          navigatedSuccessfully = true;
+          return true;
         }
+        return false;
       } catch (err) {
         console.warn('Fallo transitorio al procesar apertura de notificación:', err);
+        return false;
       } finally {
         if (dedupeKey) {
           inFlightNotificationsRef.current.delete(dedupeKey);
+          if (navigatedSuccessfully) {
+            completedNotificationsRef.current.add(dedupeKey);
+          }
         }
       }
     },
@@ -287,28 +288,34 @@ export function LocalDataProvider({ children }: { children: ReactNode }) {
   // Procesar intención de navegación pendiente cuando el paciente coincida
   useEffect(() => {
     if (patientId && pendingNotificationIntentRef.current) {
-      if (pendingNotificationIntentRef.current.pacienteId === patientId) {
-        const pending = pendingNotificationIntentRef.current;
-        pendingNotificationIntentRef.current = null;
-        const dedupeKey = `${pending.notificacionId}:pending`;
+      if (pendingNotificationIntentRef.current.payload.pacienteId === patientId) {
+        const { payload, dedupeKey } = pendingNotificationIntentRef.current;
         if (
           !completedNotificationsRef.current.has(dedupeKey) &&
           !inFlightNotificationsRef.current.has(dedupeKey)
         ) {
           inFlightNotificationsRef.current.add(dedupeKey);
-          void handleNotificationOpen(pending, dedupeKey).catch((err) => {
-            console.warn('Error en handleNotificationOpen pendiente:', err);
-          });
+          void handleNotificationOpen(payload, dedupeKey)
+            .then((success) => {
+              if (success) {
+                if (pendingNotificationIntentRef.current?.dedupeKey === dedupeKey) {
+                  pendingNotificationIntentRef.current = null;
+                }
+              }
+            })
+            .catch((err) => {
+              console.warn('Error en handleNotificationOpen pendiente:', err);
+            });
         }
       }
     }
   }, [patientId, handleNotificationOpen]);
 
   const reconcileReminders = useCallback(
-    async (targetPatientId?: string) => {
+    async (targetPatientId?: string): Promise<CoordinatorResult | undefined> => {
       const currentId = targetPatientId ?? patientIdRef.current;
-      if (!coordinator || !currentId) return;
-      await coordinator.reconcile(currentId, () => patientIdRef.current === currentId);
+      if (!coordinator || !currentId) return undefined;
+      return await coordinator.reconcile(currentId, () => patientIdRef.current === currentId);
     },
     [coordinator],
   );

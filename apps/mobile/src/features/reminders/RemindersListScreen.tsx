@@ -59,7 +59,7 @@ function getStatusCoverageText(res: CoordinatorResult | null): string {
 export function RemindersListScreen() {
   const { theme: appTheme } = useAppTheme();
   const styles = useStyles();
-  const { database, repository, patientId, coordinator } = useLocalData();
+  const { database, repository, patientId, reconcileReminders } = useLocalData();
   const adapter = useMemo(() => new ExpoNotificationAdapter(), []);
 
   const [toggling, setToggling] = useState(false);
@@ -96,14 +96,14 @@ export function RemindersListScreen() {
       const perms = await adapter.getPermissionState();
       setPermissionState(perms);
 
-      if (coordinator) {
-        const result = await coordinator.reconcile(patientId, () => true);
+      const result = await reconcileReminders(patientId);
+      if (result) {
         setCoordinatorResult(result);
       }
     } catch {
       // Reconciliación silente para no bloquear interfaz
     }
-  }, [adapter, database, patientId, coordinator]);
+  }, [adapter, database, patientId, reconcileReminders]);
 
   useFocusEffect(
     useCallback(() => {

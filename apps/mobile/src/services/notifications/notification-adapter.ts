@@ -82,8 +82,10 @@ export class FakeNotificationAdapter implements LocalNotificationAdapter {
     return { nativeId };
   }
 
+  failCancelForNativeIds?: Set<string>;
+
   async cancel(nativeId: string): Promise<void> {
-    if (this.shouldFailCancel) {
+    if (this.shouldFailCancel || this.failCancelForNativeIds?.has(nativeId)) {
       throw new Error(`Error simulado al cancelar notificación ${nativeId}`);
     }
     this.scheduled.delete(nativeId);

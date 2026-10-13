@@ -115,3 +115,32 @@ export interface SaveReminderInput {
   fechaFin?: string | null;
   habilitado?: boolean;
 }
+
+export const ALLOWED_NOTIFICATION_DESTINATIONS = new Set<string>([
+  '/vitales/registrar',
+  '/perfil/medicacion',
+]);
+
+export const ALLOWED_REMINDER_TYPES = new Set<ReminderType>(['registro_vitales', 'medicacion']);
+
+export function isValidNotificationPayload(data: unknown): data is NotificationJobPayload {
+  if (!data || typeof data !== 'object') return false;
+  const p = data as Record<string, unknown>;
+  return (
+    p.version === 1 &&
+    typeof p.notificacionId === 'string' &&
+    p.notificacionId.length > 0 &&
+    typeof p.pacienteId === 'string' &&
+    p.pacienteId.length > 0 &&
+    typeof p.recordatorioId === 'string' &&
+    p.recordatorioId.length > 0 &&
+    typeof p.revision === 'number' &&
+    Number.isInteger(p.revision) &&
+    p.revision >= 1 &&
+    typeof p.tipo === 'string' &&
+    ALLOWED_REMINDER_TYPES.has(p.tipo as ReminderType) &&
+    (p.medicamentoId === undefined || typeof p.medicamentoId === 'string') &&
+    typeof p.destino === 'string' &&
+    ALLOWED_NOTIFICATION_DESTINATIONS.has(p.destino)
+  );
+}

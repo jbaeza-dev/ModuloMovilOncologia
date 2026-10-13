@@ -126,11 +126,16 @@ const mockCoordinator = {
   cancelPatientSchedule: jest.fn().mockResolvedValue(undefined),
 };
 
+const mockReconcileReminders = jest
+  .fn()
+  .mockImplementation((...args: unknown[]) => mockCoordinatorReconcile(...args));
+
 const mockUseLocalData = jest.fn().mockReturnValue({
   patientId: 'paciente-a',
   database: mockDatabase,
   repository: mockRepository,
   coordinator: mockCoordinator,
+  reconcileReminders: (...args: unknown[]) => mockReconcileReminders(...args),
   runSave: (fn: () => Promise<unknown>) => fn(),
   saving: false,
 });
