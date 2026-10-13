@@ -11,7 +11,10 @@ import {
   VisualButton,
 } from '../../components/Visual';
 import { saveEducationalMediaWithCompensation } from '../../data/local/files/educational-storage';
-import { resourceFileExists } from '../../data/local/files/resource-storage';
+import {
+  getPatientResourceDirectory,
+  resourceFileExists,
+} from '../../data/local/files/resource-storage';
 import { useLocalData } from '../../providers/LocalDataProvider';
 import { useAppTheme } from '../../providers/ThemeProvider';
 import { theme } from '../../theme';
@@ -80,6 +83,7 @@ export function DiagnosticsDemoModal({ visible, onClose }: DiagnosticsDemoModalP
     setTesting(true);
     setTestResult('Ejecutando simulación de fallo transaccional E-05…');
     const testContentId = 'diag-test-precommit-e05';
+    const EXPECTED_ERROR = 'FALLO_INDUCIDO_TEST_E05: Simulación SQLite antes del commit';
 
     try {
       // 1. Estado inicial
@@ -89,38 +93,75 @@ export function DiagnosticsDemoModal({ visible, onClose }: DiagnosticsDemoModalP
         [patientId, testContentId],
       );
 
-      // 2. Ejecutar coordinador real con excepción controlada dentro de la transacción SQLite
+      // 2. Ejecutar coordinador real con inserción activa en SQLite y excepción controlada
       let errorThrown = false;
+      let matchedExpectedError = false;
       try {
         await saveEducationalMediaWithCompensation({
           pacienteId: patientId,
           contenidoId: testContentId,
           formato: 'markdown',
           content: '# Test E-05 Contenido Temporal',
-          persistCopyInTx: async () => {
-            await database.transaction(async () => {
-              throw new Error('FALLO_INDUCIDO_TEST_E05: Simulación SQLite antes del commit');
+          persistCopyInTx: async (params) => {
+            await database.transaction(async (tx) => {
+              // Inserción real de prueba dentro de la transacción antes del fallo
+              await tx.run(
+                `INSERT INTO descarga (paciente_id, contenido_id, ruta_local, formato, tamano_bytes, descargado_en, revision_declarada, estado)
+                 VALUES (?, ?, ?, ?, ?, ?, 0, 'descargado')`,
+                [
+                  patientId,
+                  testContentId,
+                  params.rutaLocal,
+                  'markdown',
+                  128,
+                  new Date().toISOString(),
+                ],
+              );
+              // Lanzar la excepción identificada esperada para forzar el rollback
+              throw new Error(EXPECTED_ERROR);
             });
           },
         });
-      } catch {
+      } catch (err) {
         errorThrown = true;
+        if (err instanceof Error && err.message.includes(EXPECTED_ERROR)) {
+          matchedExpectedError = true;
+        }
       }
 
-      // 3. Estado posterior comprobando reversión física y de base de datos
+      // 3. Estado posterior comprobando reversión física, base de datos y temporales residuales
       const fileAfter = resourceFileExists(patientId, testContentId);
       const rowAfter = await database.first<{ c: number }>(
         'SELECT count(*) as c FROM descarga WHERE paciente_id = ? AND contenido_id = ?',
         [patientId, testContentId],
       );
 
-      if (errorThrown && !fileAfter && (rowAfter?.c ?? 0) === 0) {
+      const dir = getPatientResourceDirectory(patientId);
+      let danglingTmpCount = 0;
+      if (dir.exists) {
+        try {
+          const entries = dir.list();
+          danglingTmpCount = entries.filter(
+            (e) => e.uri.endsWith('.tmp') && e.uri.includes(testContentId),
+          ).length;
+        } catch {
+          // Ignorar fallo al listar
+        }
+      }
+
+      if (
+        errorThrown &&
+        matchedExpectedError &&
+        !fileAfter &&
+        (rowAfter?.c ?? 0) === 0 &&
+        danglingTmpCount === 0
+      ) {
         setTestResult(
-          `Prueba E-05 comprobada con éxito: El coordinador lanzó el error transaccional previsto, la transacción SQLite revirtió (filas: ${rowBefore?.c ?? 0} -> ${rowAfter?.c ?? 0}) y la compensación eliminó el archivo temporal de disco (archivo: ${fileBefore ? 'existía' : 'no existía'} -> ${fileAfter ? 'permanece (error)' : 'ausente (correcto)'}).`,
+          `Prueba E-05 comprobada con éxito: El coordinador lanzó la excepción esperada (${EXPECTED_ERROR}), la transacción SQLite revirtió la fila insertada (filas: ${rowBefore?.c ?? 0} -> 1 -> ${rowAfter?.c ?? 0}), la compensación eliminó el archivo destino (disco: ${fileBefore ? 'existía' : 'ausente'} -> ${fileAfter ? 'error' : 'ausente'}) y no quedaron archivos temporales residuales (.tmp: ${danglingTmpCount}).`,
         );
       } else {
         setTestResult(
-          `Prueba E-05 falló la validación: errorLanzado=${errorThrown}, archivoEnDisco=${fileAfter}, filasSQLite=${rowAfter?.c ?? 0}.`,
+          `Prueba E-05 falló la validación: errorEsperado=${matchedExpectedError}, archivoEnDisco=${fileAfter}, filasSQLite=${rowAfter?.c ?? 0}, temporalesResiduales=${danglingTmpCount}.`,
         );
       }
       void loadDiagnostics();

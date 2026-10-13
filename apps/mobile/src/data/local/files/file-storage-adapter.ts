@@ -31,22 +31,13 @@ export interface FileStorageAdapter {
  */
 export class ExpoFileStorageAdapter implements FileStorageAdapter {
   async directoryExists(dirPath: string): Promise<boolean> {
-    try {
-      const dir = new Directory(dirPath);
-      return dir.exists;
-    } catch {
-      return false;
-    }
+    const dir = new Directory(dirPath);
+    return dir.exists;
   }
 
   async exists(targetPath: string): Promise<boolean> {
-    try {
-      const file = new File(targetPath);
-      if (file.exists) return true;
-    } catch {
-      // Si falla porque targetPath es un directorio según la API nativa de Expo
-    }
-    return this.directoryExists(targetPath);
+    const file = new File(targetPath);
+    return file.exists;
   }
 
   async readText(targetPath: string): Promise<string> {

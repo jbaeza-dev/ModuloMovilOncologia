@@ -1,6 +1,6 @@
 /// <reference types="jest" />
 
-import { render, screen } from '@testing-library/react-native';
+import { fireEvent, render, screen, waitFor } from '@testing-library/react-native';
 import React from 'react';
 
 // Mock expo-router
@@ -24,10 +24,11 @@ jest.mock('expo-router', () => {
 });
 
 // Mock network
+const mockGetNetworkStateAsync = jest
+  .fn()
+  .mockResolvedValue({ isConnected: true, isInternetReachable: true });
 jest.mock('expo-network', () => ({
-  getNetworkStateAsync: jest
-    .fn()
-    .mockResolvedValue({ isConnected: true, isInternetReachable: true }),
+  getNetworkStateAsync: () => mockGetNetworkStateAsync(),
 }));
 
 // Mock theme
@@ -65,6 +66,7 @@ const mockRepository = {
     listLocalCopies: jest.fn().mockResolvedValue([]),
     declareCopyReviewed: jest.fn().mockResolvedValue({ updated: true }),
     declareYouTubeReviewed: jest.fn().mockResolvedValue({ updated: true }),
+    recordYouTubeInteraction: jest.fn().mockResolvedValue({ id: '1' }),
     removeLocalCopy: jest.fn().mockResolvedValue({ removed: true }),
   },
 };
@@ -82,19 +84,37 @@ jest.mock('../providers/LocalDataProvider', () => ({
 }));
 
 // Mock file storage helpers
+const mockDeleteResourceFile = jest.fn().mockResolvedValue(true);
+const mockResourceFileExists = jest.fn().mockReturnValue(true);
+const mockReadResourceFile = jest.fn().mockResolvedValue('## Contenido');
+
 jest.mock('../data/local/files/resource-storage', () => ({
-  deleteResourceFile: jest.fn().mockResolvedValue(true),
-  resourceFileExists: jest.fn().mockReturnValue(true),
+  deleteResourceFile: (...args: unknown[]) => mockDeleteResourceFile(...args),
+  resourceFileExists: (...args: unknown[]) => mockResourceFileExists(...args),
+  readResourceFile: (...args: unknown[]) => mockReadResourceFile(...args),
   reconcileResourceCopies: jest.fn().mockResolvedValue({}),
 }));
 
 import { EducationCopiesScreen } from '../features/education/EducationCopiesScreen';
-import { getEducationalCatalogReader } from '../features/education/educational-catalog-service';
+import {
+  getEducationalCatalogReader,
+  InMemoryEducationalCatalogReader,
+  setEducationalCatalogReader,
+} from '../features/education/educational-catalog-service';
 import { EducationResourceScreen } from '../features/education/EducationScreens';
 
 describe('Pruebas de interfaz (UI) para módulo de Educación', () => {
   beforeEach(() => {
     jest.clearAllMocks();
+    mockGetNetworkStateAsync.mockResolvedValue({ isConnected: true, isInternetReachable: true });
+    mockDeleteResourceFile.mockResolvedValue(true);
+    mockResourceFileExists.mockReturnValue(true);
+    mockReadResourceFile.mockResolvedValue('## Contenido');
+    setEducationalCatalogReader(new InMemoryEducationalCatalogReader());
+  });
+
+  afterEach(() => {
+    setEducationalCatalogReader(new InMemoryEducationalCatalogReader());
   });
 
   describe('Detalle de recurso multimedia YouTube', () => {
@@ -117,9 +137,28 @@ describe('Pruebas de interfaz (UI) para módulo de Educación', () => {
       expect(screen.queryByText('Descargar video')).toBeNull();
       expect(screen.queryByText(/Guardar.*sin conexión/i)).toBeNull();
     });
+
+    it('cuando no hay conexión a internet, no se despacha el enlace de YouTube y muestra alerta', async () => {
+      mockUseLocalSearchParams.mockReturnValue({ recurso: 'edu-video-induccion' });
+      mockGetNetworkStateAsync.mockResolvedValueOnce({
+        isConnected: false,
+        isInternetReachable: false,
+      });
+
+      await render(<EducationResourceScreen />);
+
+      const openBtn = await screen.findByText('Abrir en YouTube');
+      await fireEvent.press(openBtn);
+
+      // No debe llamar a recordYouTubeInteraction ni abrir enlace
+      expect(mockRepository.education.recordYouTubeInteraction).not.toHaveBeenCalled();
+
+      // Debe mostrar advertencia de falta de conexión
+      expect(await screen.findByText(/No hay conexión a internet disponible/i)).toBeTruthy();
+    });
   });
 
-  describe('Detalle de infografía descargable', () => {
+  describe('Detalle de infografía descargable y manejo de fallos', () => {
     it('muestra botón para guardar copia local offline', async () => {
       mockUseLocalSearchParams.mockReturnValue({ recurso: 'edu-infografia-alimentacion' });
 
@@ -133,6 +172,117 @@ describe('Pruebas de interfaz (UI) para módulo de Educación', () => {
 
       // No debe ser tratado como video de YouTube
       expect(screen.queryByText('Abrir en YouTube')).toBeNull();
+    });
+
+    it('cuando falla la eliminación física del archivo, SQLite conserva el registro y muestra error', async () => {
+      mockUseLocalSearchParams.mockReturnValue({ recurso: 'edu-infografia-alimentacion' });
+      mockRepository.education.getLocalCopy.mockResolvedValueOnce({
+        patientId: 'paciente-a',
+        contentId: 'edu-infografia-alimentacion',
+        rutaRelativa: 'edu-infografia-alimentacion.12345.png',
+        formato: 'png',
+        tamanoBytes: 4096,
+        estado: 'descargado',
+        revisionDeclarada: false,
+      });
+      mockDeleteResourceFile.mockResolvedValueOnce(false);
+
+      await render(<EducationResourceScreen />);
+
+      const deleteBtn = await screen.findByText('Eliminar copia local');
+      await fireEvent.press(deleteBtn);
+
+      // No debe llamar a removeLocalCopy en la base de datos
+      expect(mockRepository.education.removeLocalCopy).not.toHaveBeenCalled();
+
+      // Debe mostrar mensaje de error explicativo
+      expect(
+        await screen.findByText(
+          'No se pudo confirmar la eliminación física del archivo del almacenamiento local.',
+        ),
+      ).toBeTruthy();
+    });
+
+    it('ante error de carga de imagen, deshabilita botón de revisión y ofrece botón de reintento', async () => {
+      mockUseLocalSearchParams.mockReturnValue({ recurso: 'edu-infografia-alimentacion' });
+      mockRepository.education.getLocalCopy.mockResolvedValueOnce({
+        patientId: 'paciente-a',
+        contentId: 'edu-infografia-alimentacion',
+        rutaRelativa: 'edu-infografia-alimentacion.12345.png',
+        formato: 'png',
+        tamanoBytes: 4096,
+        estado: 'descargado',
+        revisionDeclarada: false,
+      });
+
+      await render(<EducationResourceScreen />);
+
+      const image = await screen.findByLabelText(
+        'Infografía: Infografía: Guía nutricional en quimioterapia',
+      );
+      expect(image).toBeTruthy();
+
+      // Simular fallo de renderizado de la imagen
+      fireEvent(image, 'error', { nativeEvent: { error: 'Failed to load image' } });
+
+      // Mensaje de advertencia visible
+      expect(
+        await screen.findByText(
+          /No se pudo renderizar la infografía desde el almacenamiento local/i,
+        ),
+      ).toBeTruthy();
+
+      // Botón de revisión deshabilitado
+      const reviewButton = screen.getByRole('button', { name: 'Declarar material revisado' });
+      expect(reviewButton.props.accessibilityState?.disabled).toBe(true);
+
+      // Botón de recuperación disponible
+      const retryBtn = screen.getByRole('button', { name: 'Reintentar visualización' });
+      expect(retryBtn).toBeTruthy();
+
+      // Al pulsar reintentar, se recupera el estado
+      fireEvent.press(retryBtn);
+      await waitFor(() => {
+        expect(
+          screen.queryByText(/No se pudo renderizar la infografía desde el almacenamiento local/i),
+        ).toBeNull();
+      });
+    });
+  });
+
+  describe('Copia local existente desacoplada del catálogo', () => {
+    it('permite leer copia local existente aunque el catálogo esté vacío o falte la entrada', async () => {
+      mockUseLocalSearchParams.mockReturnValue({ recurso: 'edu-recurso-sin-catalogo' });
+      // Simular catálogo vacío donde no existe este recurso
+      setEducationalCatalogReader(new InMemoryEducationalCatalogReader([]));
+
+      mockRepository.education.getLocalCopy.mockResolvedValueOnce({
+        patientId: 'paciente-a',
+        contentId: 'edu-recurso-sin-catalogo',
+        rutaRelativa: 'edu-recurso-sin-catalogo.12345.md',
+        formato: 'markdown',
+        tamanoBytes: 1500,
+        estado: 'descargado',
+        titulo: 'Guía guardada sin catálogo',
+        tipo: 'guia',
+        descripcion: 'Material persistido localmente',
+        revisionDeclarada: false,
+      });
+      mockReadResourceFile.mockResolvedValueOnce('# Guía local disponible offline');
+
+      await render(<EducationResourceScreen />);
+
+      // Debe mostrar el título del material recuperado de los metadatos de SQLite
+      const titles = await screen.findAllByText('Guía guardada sin catálogo');
+      expect(titles.length).toBeGreaterThanOrEqual(1);
+      expect(screen.queryByText('Recurso no disponible')).toBeNull();
+
+      // Botón para leer sin conexión disponible
+      const readBtn = screen.getByText('Leer recurso sin conexión');
+      await fireEvent.press(readBtn);
+
+      // Debe desplegar el contenido leído
+      expect(await screen.findByText('# Guía local disponible offline')).toBeTruthy();
     });
   });
 

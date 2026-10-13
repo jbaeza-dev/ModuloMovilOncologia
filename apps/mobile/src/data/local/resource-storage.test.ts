@@ -14,6 +14,7 @@ import {
   isPathInPatientResourceDirectory,
   isResourceFileForContent,
   readResourceFile,
+  reconcileResourceCopies,
   registerActiveWrite,
   resourceFileExists,
   saveResourceWithCompensation,
@@ -704,5 +705,116 @@ describe('almacenamiento multimedia educativo y compensación de colisiones', ()
     );
     expect(failedDelete).toBe(false);
     expect(adapter.exists(targetFile)).toBe(true);
+  });
+
+  it('deleteResourceFile propaga errores de acceso en exists() en lugar de tratarlos como ausencia', async () => {
+    const tempDir = createTempDir();
+    const resolver = (p: string) => join(tempDir, 'recursos_educativos', p);
+    const patientDir = resolver(patientA);
+    await adapter.ensureDirectory(patientDir);
+
+    const targetFile = join(patientDir, 'edu-prueba.png');
+    await adapter.writeBinary!(targetFile, new Uint8Array([1, 2, 3]));
+    expect(adapter.exists(targetFile)).toBe(true);
+
+    // Inyectar fallo de acceso / permisos en exists()
+    const errorAdapter: FileStorageAdapter = Object.assign(Object.create(adapter), {
+      exists(p: string) {
+        if (p === targetFile) {
+          throw new Error('EACCES: permission denied');
+        }
+        return adapter.exists(p);
+      },
+    });
+
+    // Debe propagar la excepción de consulta en lugar de retornar true (que causaría borrado de SQLite)
+    await expect(
+      deleteResourceFile(patientA, 'edu-prueba', targetFile, errorAdapter, resolver),
+    ).rejects.toThrow('EACCES: permission denied');
+
+    // El archivo físico sigue intacto en disco
+    expect(adapter.exists(targetFile)).toBe(true);
+  });
+
+  it('saveEducationalMediaWithCompensation limpia copia anterior tras confirmar la nueva', async () => {
+    const tempDir = createTempDir();
+    const resolver = (p: string) => join(tempDir, 'recursos_educativos', p);
+    const { saveEducationalMediaWithCompensation } = await import('./files/educational-storage');
+
+    // Guardado 1: Primera versión
+    const res1 = await saveEducationalMediaWithCompensation({
+      pacienteId: patientA,
+      contenidoId: 'edu-infografia',
+      formato: 'png',
+      content: new Uint8Array([1, 2, 3]),
+      adapter,
+      baseDirResolver: resolver,
+      persistCopyInTx: async () => {},
+    });
+    expect(adapter.exists(res1.uri)).toBe(true);
+
+    // Guardado 2: Reemplazo pasando previousRutaLocal
+    const res2 = await saveEducationalMediaWithCompensation({
+      pacienteId: patientA,
+      contenidoId: 'edu-infografia',
+      formato: 'png',
+      content: new Uint8Array([4, 5, 6]),
+      previousRutaLocal: res1.uri,
+      adapter,
+      baseDirResolver: resolver,
+      persistCopyInTx: async () => {},
+    });
+    expect(adapter.exists(res2.uri)).toBe(true);
+
+    // La copia anterior res1.uri debe haber sido limpiada del almacenamiento
+    expect(adapter.exists(res1.uri)).toBe(false);
+  });
+
+  it('reconcileResourceCopies contempla PNG/JPEG, limpia huérfanos y preserva archivos desconocidos', async () => {
+    const tempDir = createTempDir();
+    const resolver = (p: string) => join(tempDir, 'recursos_educativos', p);
+    const patientDir = resolver(patientA);
+    await adapter.ensureDirectory(patientDir);
+
+    // 1. Archivo PNG huérfano legítimo (antigua versión reemplazada)
+    const orphanPng = join(patientDir, 'edu-infografia.1700000000000.uuid1.png');
+    await adapter.writeBinary!(orphanPng, new Uint8Array([1, 2, 3]));
+
+    // 2. Archivo PNG activo en base de datos
+    const activePng = join(patientDir, 'edu-infografia.1700000001000.uuid2.png');
+    await adapter.writeBinary!(activePng, new Uint8Array([4, 5, 6]));
+
+    // 3. Archivos desconocidos que no son recursos educativos (deben preservarse)
+    const unknownFile = join(patientDir, 'mi_foto_personal.png');
+    await adapter.writeBinary!(unknownFile, new Uint8Array([9, 9, 9]));
+
+    const unknownDoc = join(patientDir, 'documento.pdf');
+    await adapter.writeBinary!(unknownDoc, new Uint8Array([8, 8, 8]));
+
+    const fakeRepo = {
+      async downloads() {
+        return [
+          {
+            contenido_id: 'edu-infografia',
+            ruta_local: activePng,
+            estado: 'descargado',
+          },
+        ];
+      },
+      async markDownloadUnavailable() {},
+    };
+
+    const result = await reconcileResourceCopies(patientA, fakeRepo, adapter, resolver);
+
+    // Debe limpiar el PNG huérfano
+    expect(result.cleanedOrphans).toBe(1);
+    expect(adapter.exists(orphanPng)).toBe(false);
+
+    // Debe conservar el PNG activo de SQLite
+    expect(adapter.exists(activePng)).toBe(true);
+
+    // Debe preservar intactos los archivos desconocidos
+    expect(adapter.exists(unknownFile)).toBe(true);
+    expect(adapter.exists(unknownDoc)).toBe(true);
   });
 });

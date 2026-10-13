@@ -35,6 +35,8 @@ export interface SaveMediaParams {
   titulo?: string;
   tipo?: EducationalContentType;
   descripcion?: string;
+  previousRutaLocal?: string | null;
+  getPreviousRutaLocal?: () => Promise<string | null | undefined> | string | null | undefined;
   tokenGenerator?: () => string;
   persistCopyInTx: (params: {
     rutaLocal: string;
@@ -143,6 +145,11 @@ export async function saveEducationalMediaWithCompensation(
   const adapter = params.adapter ?? defaultExpoAdapter;
 
   return withPatientResourceLock(pacienteId, async () => {
+    // Identificar la ruta anterior dentro del bloqueo de exclusión mutua
+    const previousRutaLocal = params.getPreviousRutaLocal
+      ? await params.getPreviousRutaLocal()
+      : params.previousRutaLocal;
+
     const baseDir = params.baseDirResolver
       ? params.baseDirResolver(pacienteId)
       : getPatientResourceDirectory(pacienteId).uri;
@@ -199,6 +206,32 @@ export async function saveEducationalMediaWithCompensation(
 
       // 4. dbCommitted cambia ESTRICTAMENTE DESPUÉS del COMMIT real
       dbCommitted = true;
+
+      // 5. Tras confirmar la nueva copia y su transacción en SQLite,
+      // limpiar el archivo anterior reemplazado si existía y difiere del nuevo
+      if (previousRutaLocal && previousRutaLocal !== finalUri) {
+        const normPrev = previousRutaLocal.replace(/\\/g, '/');
+        const normFinal = finalUri.replace(/\\/g, '/');
+        if (normPrev !== normFinal) {
+          try {
+            if (
+              isPathInPatientMediaDirectory(
+                previousRutaLocal,
+                pacienteId,
+                contenidoId,
+                params.baseDirResolver,
+                { allowLegacy: true },
+              )
+            ) {
+              if (await adapter.exists(previousRutaLocal)) {
+                await adapter.deleteFile(previousRutaLocal);
+              }
+            }
+          } catch {
+            // Ignorar fallo de limpieza no crítica de archivo anterior
+          }
+        }
+      }
 
       return {
         uri: finalUri,

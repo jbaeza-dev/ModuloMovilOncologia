@@ -10,7 +10,7 @@
     "run:android:demo": "cross-env EXPO_PUBLIC_DEMO_MODE=true expo run:android --variant release",
     "bundle:android": "expo export --platform android",
     "doctor": "expo-doctor",
-    "test:ui": "jest --passWithNoTests",
+    "test:ui": "jest",
     "typecheck": "tsc --noEmit"
   },
   "dependencies": {

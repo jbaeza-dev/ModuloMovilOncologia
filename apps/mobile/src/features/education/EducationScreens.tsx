@@ -324,6 +324,34 @@ export function EducationResourceScreen() {
   const [imageLoaded, setImageLoaded] = useState(false);
   const [imageLoadError, setImageLoadError] = useState(false);
 
+  const localCopy = statusData?.copy;
+  const interaction = statusData?.interaction;
+
+  // Permitir lectura sin conexión mediante los metadatos y la ruta persistidos
+  // incluso cuando el recurso no esté presente en el catálogo
+  const effectiveResource: EducationalResource | null =
+    resource ??
+    (localCopy
+      ? {
+          id: recurso ?? localCopy.contentId,
+          title: localCopy.titulo ?? localCopy.metadataLocal?.titulo ?? 'Material guardado',
+          category: 0,
+          categoryName: 'Material local',
+          description:
+            localCopy.descripcion ??
+            localCopy.metadataLocal?.descripcion ??
+            'Copia local disponible para lectura sin conexión.',
+          type:
+            localCopy.tipo ??
+            localCopy.metadataLocal?.tipo ??
+            (localCopy.formato === 'markdown' ? 'guia' : 'infografia'),
+          version:
+            localCopy.metadataLocal?.versionOrigen ??
+            localCopy.metadataLocal?.sha256?.slice(0, 8) ??
+            'local',
+        }
+      : null);
+
   if (loadingResource) {
     return (
       <Screen title="Cargando recurso" backTo="/educacion">
@@ -333,7 +361,7 @@ export function EducationResourceScreen() {
     );
   }
 
-  if (!resource) {
+  if (!effectiveResource) {
     return (
       <Screen title="Recurso no encontrado" backTo="/educacion">
         <DemoBadge />
@@ -346,12 +374,9 @@ export function EducationResourceScreen() {
     );
   }
 
-  const localCopy = statusData?.copy;
-  const interaction = statusData?.interaction;
-
   const fileExists =
     patientId && localCopy?.rutaRelativa
-      ? resourceFileExists(patientId, resource.id, localCopy.rutaRelativa)
+      ? resourceFileExists(patientId, effectiveResource.id, localCopy.rutaRelativa)
       : false;
   const isDownloaded = Boolean(localCopy && fileExists && localCopy.estado !== 'error');
   const isFileMissing = Boolean(localCopy && (!fileExists || localCopy.estado === 'error'));
@@ -359,7 +384,7 @@ export function EducationResourceScreen() {
 
   // Lógica de apertura externa para videos de YouTube con comprobación de red
   async function handleOpenYouTube() {
-    if (!repository || !patientId || !resource?.youtubeVideoId || busy) return;
+    if (!repository || !patientId || !effectiveResource?.youtubeVideoId || busy) return;
     setActionBusy(true);
     setOpError(null);
 
@@ -374,12 +399,12 @@ export function EducationResourceScreen() {
 
       // Registrar interacción de apertura en SQLite
       await repository.education.recordYouTubeInteraction({
-        contentId: resource.id,
-        youtubeVideoId: resource.youtubeVideoId,
-        versionOrigen: resource.version,
+        contentId: effectiveResource.id,
+        youtubeVideoId: effectiveResource.youtubeVideoId,
+        versionOrigen: effectiveResource.version,
       });
 
-      const launchResult = await launchYouTubeVideo(resource.youtubeVideoId);
+      const launchResult = await launchYouTubeVideo(effectiveResource.youtubeVideoId);
       if (!launchResult.success) {
         setOpError(launchResult.error || 'No se pudo abrir YouTube en este dispositivo.');
       }
@@ -393,16 +418,16 @@ export function EducationResourceScreen() {
 
   // Declarar video de YouTube como revisado
   async function handleDeclareYouTubeReviewed() {
-    if (!repository || !patientId || !resource?.youtubeVideoId || busy) return;
+    if (!repository || !patientId || !effectiveResource?.youtubeVideoId || busy) return;
     setActionBusy(true);
     setOpError(null);
 
     try {
       await runSave(async () => {
         const res = await repository.education.declareYouTubeReviewed({
-          contentId: resource.id,
-          youtubeVideoId: resource.youtubeVideoId!,
-          versionOrigen: resource.version,
+          contentId: effectiveResource.id,
+          youtubeVideoId: effectiveResource.youtubeVideoId!,
+          versionOrigen: effectiveResource.version,
         });
         if (!res.updated) {
           throw new Error('No se pudo confirmar la revisión del video.');
@@ -418,7 +443,13 @@ export function EducationResourceScreen() {
 
   // Guardar copia local offline (Guía o Infografía) sin fallbacks corruptos
   async function handleSaveOfflineCopy() {
-    if (!repository || !patientId || !resource || busy || !database) return;
+    if (!repository || !patientId || !effectiveResource || busy || !database) return;
+    if (!resource) {
+      setOpError(
+        'El catálogo es necesario para recuperar o descargar una nueva copia. Solo la lectura de la copia existente está disponible.',
+      );
+      return;
+    }
     setActionBusy(true);
     setOpError(null);
 
@@ -454,7 +485,7 @@ export function EducationResourceScreen() {
             resource.contentMarkdown ?? `# ${resource.title}\n\nContenido de muestra.`;
         }
 
-        // Coordinar guardado seguro con compensación atómica
+        // Coordinar guardado seguro con compensación atómica y limpieza de copia anterior post-commit
         await saveEducationalMediaWithCompensation({
           pacienteId: patientId,
           contenidoId: resource.id,
@@ -465,6 +496,11 @@ export function EducationResourceScreen() {
           titulo: resource.title,
           tipo: resource.type,
           descripcion: resource.description,
+          previousRutaLocal: localCopy?.rutaRelativa ?? localCopy?.rutaAbsoluta,
+          getPreviousRutaLocal: async () => {
+            const current = await repository.education.getLocalCopy(resource.id);
+            return current?.rutaAbsoluta ?? current?.rutaRelativa ?? null;
+          },
           persistCopyInTx: async (params) => {
             // Guardar dentro de transacción de SQLite
             await database.transaction(async (tx: SqlConnection) => {
@@ -494,13 +530,13 @@ export function EducationResourceScreen() {
 
   // Declarar copia local como revisada
   async function handleDeclareCopyReviewed() {
-    if (!repository || !patientId || !resource || busy) return;
+    if (!repository || !patientId || !effectiveResource || busy) return;
     setActionBusy(true);
     setOpError(null);
 
     try {
       await runSave(async () => {
-        await repository.education.declareCopyReviewed(resource.id);
+        await repository.education.declareCopyReviewed(effectiveResource.id);
       });
       refreshStatus();
     } catch {
@@ -512,7 +548,7 @@ export function EducationResourceScreen() {
 
   // Eliminar copia local con verificación física previa
   async function handleDeleteCopy() {
-    if (!repository || !patientId || !resource || busy) return;
+    if (!repository || !patientId || !effectiveResource || busy) return;
     setActionBusy(true);
     setOpError(null);
 
@@ -521,7 +557,7 @@ export function EducationResourceScreen() {
         if (localCopy?.rutaRelativa) {
           const physicallyDeleted = await deleteResourceFile(
             patientId,
-            resource.id,
+            effectiveResource.id,
             localCopy.rutaRelativa,
           );
           if (!physicallyDeleted) {
@@ -530,7 +566,7 @@ export function EducationResourceScreen() {
             );
           }
         }
-        await repository.education.removeLocalCopy(resource.id);
+        await repository.education.removeLocalCopy(effectiveResource.id);
       });
       setReadingContent(null);
       setImageLoaded(false);
@@ -549,12 +585,12 @@ export function EducationResourceScreen() {
 
   // Leer guía de texto
   async function handleReadGuide() {
-    if (!patientId || !resource || busy) return;
+    if (!patientId || !effectiveResource || busy) return;
     setActionBusy(true);
     setOpError(null);
 
     try {
-      const text = await readResourceFile(patientId, resource.id, localCopy?.rutaRelativa);
+      const text = await readResourceFile(patientId, effectiveResource.id, localCopy?.rutaRelativa);
       if (text) {
         setReadingContent(text);
       } else {
@@ -568,22 +604,24 @@ export function EducationResourceScreen() {
   }
 
   return (
-    <Screen title={resource.title} backTo="/educacion">
+    <Screen title={effectiveResource.title} backTo="/educacion">
       <DemoBadge />
 
       <InfoCard>
-        <SectionTitle>{resource.title}</SectionTitle>
-        <BodyText>{resource.description}</BodyText>
-        <BodyText>Categoría: {resource.categoryName}</BodyText>
-        {resource.estimatedReadTimeMinutes ? (
-          <BodyText>Tiempo estimado: ~{resource.estimatedReadTimeMinutes} minutos</BodyText>
+        <SectionTitle>{effectiveResource.title}</SectionTitle>
+        <BodyText>{effectiveResource.description}</BodyText>
+        <BodyText>Categoría: {effectiveResource.categoryName}</BodyText>
+        {effectiveResource.estimatedReadTimeMinutes ? (
+          <BodyText>
+            Tiempo estimado: ~{effectiveResource.estimatedReadTimeMinutes} minutos
+          </BodyText>
         ) : null}
       </InfoCard>
 
       <InfoCard>
         <SectionTitle>Estado en este dispositivo</SectionTitle>
         <StatusPill>
-          {resource.type === 'video'
+          {effectiveResource.type === 'video'
             ? interaction?.revisionDeclaradaEn
               ? `Video revisado el ${formatDate(interaction.revisionDeclaradaEn)}`
               : interaction
@@ -598,7 +636,7 @@ export function EducationResourceScreen() {
                 : 'Disponible para descarga'}
         </StatusPill>
 
-        {resource.type === 'video' ? (
+        {effectiveResource.type === 'video' ? (
           <View style={styles.noticeBox}>
             <Feather name="info" size={18} color={appTheme.colors.primary} />
             <Text style={styles.noticeText}>
@@ -609,14 +647,16 @@ export function EducationResourceScreen() {
         ) : null}
       </InfoCard>
 
-      {/* Visor de infografía (PNG) con control onLoad/onError */}
-      {resource.type === 'infografia' && isDownloaded && localCopy?.rutaRelativa ? (
+      {/* Visor de infografía (PNG) con control onLoad/onError, texto accesible y recuperación */}
+      {effectiveResource.type === 'infografia' && isDownloaded && localCopy?.rutaRelativa ? (
         <InfoCard>
           <SectionTitle>Infografía guardada en disco</SectionTitle>
           <Image
             source={{ uri: localCopy.rutaRelativa }}
             style={styles.infographicImage}
             resizeMode="contain"
+            accessibilityRole="image"
+            accessibilityLabel={`Infografía: ${effectiveResource.title}`}
             onLoad={() => {
               setImageLoaded(true);
               setImageLoadError(false);
@@ -627,12 +667,22 @@ export function EducationResourceScreen() {
             }}
           />
           {imageLoadError ? (
-            <View style={styles.imageLoadingBox}>
-              <Feather name="alert-triangle" size={18} color={appTheme.colors.error} />
-              <BodyText style={{ color: appTheme.colors.error }}>
-                No se pudo renderizar la infografía desde el almacenamiento local. El archivo podría
-                estar dañado o no ser compatible.
-              </BodyText>
+            <View style={{ gap: 8 }}>
+              <View style={styles.imageLoadingBox}>
+                <Feather name="alert-triangle" size={18} color={appTheme.colors.error} />
+                <BodyText style={{ color: appTheme.colors.error }}>
+                  No se pudo renderizar la infografía desde el almacenamiento local. El archivo
+                  podría estar dañado o no ser compatible.
+                </BodyText>
+              </View>
+              <VisualButton
+                label="Reintentar visualización"
+                secondary
+                onPress={() => {
+                  setImageLoadError(false);
+                  setImageLoaded(false);
+                }}
+              />
             </View>
           ) : !imageLoaded ? (
             <View style={styles.imageLoadingBox}>
@@ -662,7 +712,7 @@ export function EducationResourceScreen() {
       ) : null}
 
       {/* Botones de acción según el tipo de recurso */}
-      {resource.type === 'video' ? (
+      {effectiveResource.type === 'video' ? (
         <View style={styles.stack}>
           <VisualButton
             label={busy ? 'Abriendo…' : 'Abrir en YouTube'}
@@ -680,7 +730,7 @@ export function EducationResourceScreen() {
         </View>
       ) : isDownloaded ? (
         <View style={styles.stack}>
-          {resource.type === 'guia' ? (
+          {effectiveResource.type === 'guia' ? (
             <VisualButton
               label={readingContent ? 'Cerrar lectura' : 'Leer recurso sin conexión'}
               disabled={busy}
@@ -695,7 +745,8 @@ export function EducationResourceScreen() {
             <VisualButton
               label={busy ? 'Confirmando…' : 'Declarar material revisado'}
               disabled={
-                busy || (resource.type === 'infografia' && (!imageLoaded || imageLoadError))
+                busy ||
+                (effectiveResource.type === 'infografia' && (!imageLoaded || imageLoadError))
               }
               onPress={() => void handleDeclareCopyReviewed()}
             />
@@ -734,7 +785,7 @@ export function EducationResourceScreen() {
           label={
             busy
               ? 'Guardando copia…'
-              : resource.type === 'infografia'
+              : effectiveResource.type === 'infografia'
                 ? 'Guardar infografía sin conexión'
                 : 'Guardar copia sin conexión'
           }
