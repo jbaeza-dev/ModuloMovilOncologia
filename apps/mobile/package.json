@@ -10,7 +10,7 @@
     "run:android:demo": "cross-env EXPO_PUBLIC_DEMO_MODE=true expo run:android --variant release",
     "bundle:android": "expo export --platform android",
     "doctor": "expo-doctor",
-    "test:ui": "jest",
+    "test:ui": "jest --runInBand",
     "typecheck": "tsc --noEmit"
   },
   "dependencies": {
@@ -25,6 +25,7 @@
     "expo-font": "~57.0.4",
     "expo-linking": "~57.0.12",
     "expo-network": "~57.0.2",
+    "expo-notifications": "~57.0.22",
     "expo-print": "^57.0.2",
     "expo-router": "~57.0.26",
     "expo-sharing": "^57.0.23",

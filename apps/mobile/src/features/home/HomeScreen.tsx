@@ -112,6 +112,18 @@ export function HomeScreen() {
           icon="message-circle"
           href="/asistente"
         />
+        <NavigationCard
+          title="Recordatorios locales"
+          description="Avisos configurados en este dispositivo para signos y medicación."
+          icon="clock"
+          href="/recordatorios"
+        />
+        <NavigationCard
+          title="Bandeja de avisos"
+          description="Historial y estado de los recordatorios planificados."
+          icon="bell"
+          href="/avisos"
+        />
         {__DEV__ ? (
           <NavigationCard
             title="Galería de revisión"

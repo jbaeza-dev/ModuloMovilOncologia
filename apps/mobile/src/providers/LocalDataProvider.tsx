@@ -20,7 +20,25 @@ import { migrateDatabase } from '../data/local/migrations';
 import { createPatientRepository, seedPatientContextIfEmpty } from '../data/local/repository';
 import type { SqlConnection } from '../data/local/core/sql';
 import { importLegacyDrafts } from '../features/medical-forms/form-legacy-import';
+import * as Notifications from 'expo-notifications';
+import { router } from 'expo-router';
 import { isDemoMode } from '../utils/environment';
+import type { NotificationJobPayload } from '../data/local/reminders/reminder-types';
+import { ExpoNotificationAdapter } from '../services/notifications/expo-notification-adapter';
+import { NotificationCoordinator } from '../services/reminders/notification-coordinator';
+
+try {
+  Notifications.setNotificationHandler({
+    handleNotification: async () => ({
+      shouldShowBanner: true,
+      shouldShowList: true,
+      shouldPlaySound: true,
+      shouldSetBadge: false,
+    }),
+  });
+} catch {
+  // Entornos de prueba o sin soporte nativo
+}
 
 export const DEMO_PATIENTS = [
   { id: '11111111-1111-4111-8111-111111111111', label: 'Paciente de prueba A' },
@@ -145,6 +163,63 @@ export function LocalDataProvider({ children }: { children: ReactNode }) {
         : null,
     [database, patientId],
   );
+
+  // Manejo de eventos y toques de notificaciones locales para el paciente activo
+  useEffect(() => {
+    if (!database || !patientId || !repository) return;
+
+    // Procesar respuesta previa de arranque (cold start)
+    try {
+      const last = Notifications.getLastNotificationResponse();
+      if (last) {
+        Notifications.clearLastNotificationResponse();
+        const payload = last.notification.request.content.data as unknown as
+          | NotificationJobPayload
+          | undefined;
+        if (payload && payload.version === 1 && payload.pacienteId === patientId) {
+          void repository.reminders.recordNotificationOpened(payload.notificacionId);
+          if (payload.destino) {
+            router.push(payload.destino as unknown as Parameters<typeof router.push>[0]);
+          }
+        }
+      }
+    } catch {
+      // Ignorar en plataformas o entornos sin soporte
+    }
+
+    let responseSub: { remove: () => void } | null = null;
+    let receivedSub: { remove: () => void } | null = null;
+
+    try {
+      responseSub = Notifications.addNotificationResponseReceivedListener((response) => {
+        const payload = response.notification.request.content.data as unknown as
+          | NotificationJobPayload
+          | undefined;
+        if (payload && payload.version === 1 && payload.pacienteId === patientId) {
+          void repository.reminders.recordNotificationOpened(payload.notificacionId);
+          if (payload.destino) {
+            router.push(payload.destino as unknown as Parameters<typeof router.push>[0]);
+          }
+        }
+      });
+
+      receivedSub = Notifications.addNotificationReceivedListener((notification) => {
+        const payload = notification.request.content.data as unknown as
+          | NotificationJobPayload
+          | undefined;
+        if (payload && payload.version === 1 && payload.pacienteId === patientId) {
+          void repository.reminders.recordNotificationObserved(payload.notificacionId);
+        }
+      });
+    } catch {
+      // Ignorar si no está disponible en este entorno
+    }
+
+    return () => {
+      responseSub?.remove();
+      receivedSub?.remove();
+    };
+  }, [database, patientId, repository]);
   const context = useMemo<DataContextValue>(
     () => ({
       database,
@@ -168,7 +243,14 @@ export function LocalDataProvider({ children }: { children: ReactNode }) {
         }
       },
       changePatient() {
-        if (!savingRef.current) setPatientId(null);
+        if (savingRef.current) return;
+        const previousPatientId = patientId;
+        setPatientId(null);
+        if (database && previousPatientId) {
+          const adapter = new ExpoNotificationAdapter();
+          const coordinator = new NotificationCoordinator(database, adapter);
+          void coordinator.cancelPatientSchedule(previousPatientId);
+        }
       },
     }),
     [

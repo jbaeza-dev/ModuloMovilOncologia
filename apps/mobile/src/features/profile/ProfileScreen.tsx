@@ -354,8 +354,28 @@ export function LinkCodeScreen() {
 
 export function PreferencesScreen() {
   const styles = useStyles();
+  const { repository } = useLocalData();
   const { theme: appTheme, paletteId, selectPalette } = useAppTheme();
-  const [notices, setNotices] = useState(true);
+
+  const loadPrefs = useCallback(
+    () =>
+      repository
+        ? repository.reminders.getPreferences()
+        : Promise.resolve({ enabled: false, updatedAt: null }),
+    [repository],
+  );
+  const { value: prefs, refresh: refreshPrefs } = useFocusedValue(loadPrefs, {
+    enabled: false,
+    updatedAt: null,
+  });
+
+  const toggleNotices = async () => {
+    if (!repository) return;
+    const nextVal = !prefs.enabled;
+    await repository.reminders.setPreferences(nextVal);
+    await refreshPrefs();
+  };
+
   return (
     <Screen title="Preferencias" backTo="/perfil">
       <DemoBadge />
@@ -394,25 +414,39 @@ export function PreferencesScreen() {
         </View>
       </InfoCard>
       <InfoCard>
-        <SectionTitle>Avisos</SectionTitle>
+        <SectionTitle>Avisos y recordatorios</SectionTitle>
         <Pressable
           accessibilityRole="switch"
-          accessibilityLabel="Mostrar avisos"
-          accessibilityState={{ checked: notices }}
-          onPress={() => setNotices(!notices)}
+          accessibilityLabel="Habilitar avisos"
+          accessibilityState={{ checked: prefs.enabled }}
+          onPress={toggleNotices}
           style={styles.disclosure}
         >
-          <Text style={styles.heading}>Mostrar avisos</Text>
+          <Text style={styles.heading}>Habilitar avisos locales</Text>
           <Feather
-            name={notices ? 'toggle-right' : 'toggle-left'}
+            name={prefs.enabled ? 'toggle-right' : 'toggle-left'}
             size={28}
             color={appTheme.colors.text}
           />
         </Pressable>
         <BodyText>
-          Control de presentación. La preferencia no se guarda ni activa notificaciones.
+          {prefs.enabled
+            ? 'Los avisos locales están autorizados en este dispositivo para el paciente activo.'
+            : 'Los avisos locales están desactivados. No se emitirán alertas nativas.'}
         </BodyText>
       </InfoCard>
+      <NavigationCard
+        title="Configurar recordatorios"
+        description="Gestiona horarios y reglas para signos vitales y medicación."
+        icon="clock"
+        href="/recordatorios"
+      />
+      <NavigationCard
+        title="Bandeja de avisos"
+        description="Consulta la agenda de avisos locales y su historial de recepción."
+        icon="bell"
+        href="/avisos"
+      />
       <InfoCard>
         <SectionTitle>Cuenta y seguridad</SectionTitle>
         <BodyText>La gestión de la cuenta se incorporará con el flujo de identidad.</BodyText>

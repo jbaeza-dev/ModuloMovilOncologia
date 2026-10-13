@@ -7,10 +7,12 @@ import { createConsentRepository } from './consents/consent-repository';
 import { seedClinicalContextDemoInTransaction } from './clinical-context/clinical-context-seed';
 import { createReportRepository } from './reports/report-repository';
 import { createEducationRepository } from './education/education-repository';
+import { createReminderRepository } from './reminders/reminder-repository';
 export * from './clinical-context/clinical-context-types';
 export * from './consents/consent-types';
 export * from './reports/report-types';
 export * from './education/education-types';
+export * from './reminders/reminder-types';
 
 export type VitalRecord = VitalValues & {
   id: string;
@@ -398,6 +400,7 @@ export function createPatientRepository(
     ...createConsentRepository(database, patientId, newId, now),
     reports: reportRepo,
     education: createEducationRepository(database, patientId, now),
+    reminders: createReminderRepository(database, patientId, now, newId),
   };
 }
 
@@ -477,6 +480,33 @@ export async function seedPatientContextIfEmpty(
     );
     if (hasClinicalContext) {
       await seedClinicalContextDemoInTransaction(tx, patientAId, patientBId, now);
+    }
+
+    // Seed de recordatorios y preferencias (si la migración 008 ya está aplicada)
+    const hasReminders = await tx.first<{ name: string }>(
+      "SELECT name FROM sqlite_master WHERE type = 'table' AND name = 'preferencia_avisos'",
+    );
+    if (hasReminders) {
+      // Iniciar con preferencias estrictamente deshabilitadas (habilitado = 0)
+      await tx.run(
+        `INSERT OR IGNORE INTO preferencia_avisos (paciente_id, habilitado, actualizado_el)
+         VALUES (?, 0, ?)`,
+        [patientAId, timestamp],
+      );
+      await tx.run(
+        `INSERT OR IGNORE INTO preferencia_avisos (paciente_id, habilitado, actualizado_el)
+         VALUES (?, 0, ?)`,
+        [patientBId, timestamp],
+      );
+
+      // Regla de plantilla de ejemplo para Paciente A (estrictamente deshabilitada: habilitado = 0)
+      await tx.run(
+        `INSERT OR IGNORE INTO recordatorio_local (
+           id, paciente_id, tipo, medicamento_id, dias_semana, horas_minutos, zona_horaria,
+           fecha_inicio, fecha_fin, habilitado, revision, eliminado_el, creado_el, actualizado_el
+         ) VALUES (?, ?, 'registro_vitales', NULL, '[1,2,3,4,5,6,7]', '["09:00"]', 'America/Santiago', NULL, NULL, 0, 1, NULL, ?, ?)`,
+        ['rule-template-vitales-a', patientAId, timestamp, timestamp],
+      );
     }
   });
 }
