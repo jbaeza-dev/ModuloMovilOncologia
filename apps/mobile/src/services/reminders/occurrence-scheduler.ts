@@ -160,7 +160,7 @@ export function civilToUtcIso(
 
 /**
  * Planificador puro de ocurrencias.
- * Genera candidatos deterministas dentro del intervalo estricto `now < fechaPrevistaUtc <= finDeVentana` (14 días calendario),
+ * Genera candidatos deterministas dentro del intervalo estricto `now < fechaPrevistaUtc < finDeVentana` (14 días calendario),
  * respetando reglas, medicación, DST y tope de 128 trabajos.
  */
 export function calculateOccurrences(
@@ -271,8 +271,8 @@ export function calculateOccurrences(
           targetTz,
         );
 
-        // Estricto: now < fechaPrevistaUtc <= finDeVentanaIso
-        if (scheduledUtcIso <= nowIso || scheduledUtcIso > finDeVentanaIso) continue;
+        // Estricto: now < fechaPrevistaUtc < finDeVentanaIso
+        if (scheduledUtcIso <= nowIso || scheduledUtcIso >= finDeVentanaIso) continue;
 
         allCandidates.push({
           id: newId(),

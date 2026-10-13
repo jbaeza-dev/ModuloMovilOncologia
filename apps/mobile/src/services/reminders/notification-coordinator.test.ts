@@ -353,4 +353,200 @@ describe('NotificationCoordinator', () => {
     );
     expect(pendingRows.length).toBeGreaterThan(0);
   });
+
+  it('desactivar una regla individual conserva cancelacion_pendiente en SQLite e informa incidencia si falla la cancelación nativa', async () => {
+    const db = open();
+    await migrateDatabase(db);
+    await seedPatientContextIfEmpty(db, patientA, patientB);
+
+    const repo = createReminderRepository(db, patientA);
+    await repo.setPreferences(true);
+    const rule = await repo.saveRule({
+      tipo: 'registro_vitales',
+      diasSemana: [1, 2, 3, 4, 5, 6, 7],
+      horasMinutos: ['09:00'],
+      habilitado: true,
+    });
+
+    const adapter = new FakeNotificationAdapter();
+    const coordinator = new NotificationCoordinator(db, adapter, () => '2026-10-13T00:00:00Z');
+
+    // 1. Programar inicialmente
+    const res1 = await coordinator.reconcile(patientA);
+    expect(res1.status).toBe('programada');
+    expect(adapter.scheduled.size).toBe(14);
+
+    // 2. Desactivar la regla individual y hacer que falle el cancel nativo
+    await repo.saveRule({
+      id: rule.id,
+      tipo: 'registro_vitales',
+      diasSemana: [1, 2, 3, 4, 5, 6, 7],
+      horasMinutos: ['09:00'],
+      habilitado: false,
+    });
+    adapter.shouldFailCancel = true;
+
+    const res2 = await coordinator.reconcile(patientA);
+    expect(res2.status).toBe('programacion_pendiente');
+    expect(res2.motivoPendiente).toBe('cancelacion_regla_previa');
+    expect(res2.incidencias.some((i) => i.includes('No se pudo cancelar el aviso obsoleto'))).toBe(
+      true,
+    );
+
+    // Ocurrencias en SQLite deben transicionar a 'cancelacion_pendiente'
+    const pendingRows = await db.all<{ id: string }>(
+      'SELECT id FROM notificacion_local WHERE paciente_id = ? AND estado = ?',
+      [patientA, 'cancelacion_pendiente'],
+    );
+    expect(pendingRows.length).toBe(14);
+  });
+
+  it('editar horario de regla pospone la programación sustitutiva si falla la cancelación de la versión previa', async () => {
+    const db = open();
+    await migrateDatabase(db);
+    await seedPatientContextIfEmpty(db, patientA, patientB);
+
+    const repo = createReminderRepository(db, patientA);
+    await repo.setPreferences(true);
+    const rule = await repo.saveRule({
+      tipo: 'registro_vitales',
+      diasSemana: [1, 2, 3, 4, 5, 6, 7],
+      horasMinutos: ['09:00'],
+      habilitado: true,
+    });
+
+    const adapter = new FakeNotificationAdapter();
+    const coordinator = new NotificationCoordinator(db, adapter, () => '2026-10-13T00:00:00Z');
+
+    // 1. Programar a las 09:00
+    await coordinator.reconcile(patientA);
+    expect(adapter.scheduled.size).toBe(14);
+
+    // 2. Editar horario a las 15:00 y hacer fallar cancelaciones
+    await repo.saveRule({
+      id: rule.id,
+      tipo: 'registro_vitales',
+      diasSemana: [1, 2, 3, 4, 5, 6, 7],
+      horasMinutos: ['15:00'],
+      habilitado: true,
+    });
+    adapter.shouldFailCancel = true;
+
+    const resEdit = await coordinator.reconcile(patientA);
+    expect(resEdit.status).toBe('programacion_pendiente');
+    expect(resEdit.motivoPendiente).toBe('cancelacion_regla_previa');
+
+    // La programación sustitutiva debe posponerse: NO se crean 14 avisos extra (quedan 14, no 28)
+    expect(adapter.scheduled.size).toBe(14);
+    expect(
+      resEdit.incidencias.some((i) => i.includes('pospuesta hasta resolver la cancelación')),
+    ).toBe(true);
+
+    // Las filas anteriores quedan marcadas como cancelacion_pendiente
+    const pendingRows = await db.all<{ id: string }>(
+      'SELECT id FROM notificacion_local WHERE paciente_id = ? AND estado = ?',
+      [patientA, 'cancelacion_pendiente'],
+    );
+    expect(pendingRows.length).toBe(14);
+  });
+
+  it('falla de cancelación al revocar permisos en el SO marca cancelacion_pendiente y reporta incidencia', async () => {
+    const db = open();
+    await migrateDatabase(db);
+    await seedPatientContextIfEmpty(db, patientA, patientB);
+
+    const repo = createReminderRepository(db, patientA);
+    await repo.setPreferences(true);
+    await repo.saveRule({
+      tipo: 'registro_vitales',
+      diasSemana: [1, 2, 3, 4, 5, 6, 7],
+      horasMinutos: ['09:00'],
+      habilitado: true,
+    });
+
+    const adapter = new FakeNotificationAdapter();
+    const coordinator = new NotificationCoordinator(db, adapter, () => '2026-10-13T00:00:00Z');
+
+    // 1. Programar con permisos concedidos
+    await coordinator.reconcile(patientA);
+
+    // 2. Revocar permisos en el SO y hacer fallar cancelación
+    adapter.permission = { status: 'denied', canAskAgain: true, channelStatus: 'ok' };
+    adapter.shouldFailCancel = true;
+
+    const res = await coordinator.reconcile(patientA);
+    expect(res.status).toBe('permiso_denegado');
+    expect(
+      res.incidencias.some((i) => i.includes('Fallo al cancelar notificaciones en el SO')),
+    ).toBe(true);
+
+    const pendingRows = await db.all<{ id: string }>(
+      'SELECT id FROM notificacion_local WHERE paciente_id = ? AND estado = ?',
+      [patientA, 'cancelacion_pendiente'],
+    );
+    expect(pendingRows.length).toBe(14);
+  });
+
+  it('comprueba contexto activo continuo y rechaza reprogramación tardía de paciente inactivo', async () => {
+    const db = open();
+    await migrateDatabase(db);
+    await seedPatientContextIfEmpty(db, patientA, patientB);
+
+    const repoA = createReminderRepository(db, patientA);
+    await repoA.setPreferences(true);
+    await repoA.saveRule({
+      tipo: 'registro_vitales',
+      diasSemana: [1, 2, 3, 4, 5, 6, 7],
+      horasMinutos: ['09:00'],
+      habilitado: true,
+    });
+
+    const adapter = new FakeNotificationAdapter();
+    // Simular que el paciente activo en la sesión es B
+    const currentActive = patientB;
+    const coordinator = new NotificationCoordinator(
+      db,
+      adapter,
+      () => '2026-10-13T00:00:00Z',
+      undefined,
+      () => currentActive,
+    );
+
+    // Tarea tardía intentando reconciliar paciente A cuando B es el activo
+    const resA = await coordinator.reconcile(patientA);
+    expect(resA.status).toBe('desactivada');
+    expect(resA.incidencias).toContain('Operación omitida por cambio de contexto activo.');
+
+    // No se debe haber programado nada de A en el adaptador nativo
+    expect(adapter.scheduled.size).toBe(0);
+  });
+
+  it('calcula la cobertura desde los trabajos confirmados cuando la programación es parcial', async () => {
+    const db = open();
+    await migrateDatabase(db);
+    await seedPatientContextIfEmpty(db, patientA, patientB);
+
+    const repo = createReminderRepository(db, patientA);
+    await repo.setPreferences(true);
+    await repo.saveRule({
+      tipo: 'registro_vitales',
+      diasSemana: [1, 2, 3, 4, 5, 6, 7],
+      horasMinutos: ['09:00'],
+      habilitado: true,
+    });
+
+    const adapter = new FakeNotificationAdapter();
+    // Permitir exactamente 7 programaciones y hacer fallar las siguientes 7
+    adapter.failScheduleAfterCount = 7;
+    const coordinator = new NotificationCoordinator(db, adapter, () => '2026-10-13T00:00:00Z');
+
+    const res = await coordinator.reconcile(patientA);
+    expect(res.status).toBe('programacion_pendiente');
+    expect(res.motivoPendiente).toBe('programacion_parcial');
+    expect(res.programadasConfirmadas).toBe(7);
+    expect(res.totalDeseadas).toBe(14);
+
+    // La fecha de cobertura DEBE corresponder a la 7ma ocurrencia confirmada (19 de octubre), no al fin de la ventana
+    expect(res.cubiertoHastaIso).toBe('2026-10-19T12:00:00.000Z');
+  });
 });

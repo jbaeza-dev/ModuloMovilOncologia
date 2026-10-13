@@ -38,6 +38,12 @@ function isValidNotificationPayload(data: unknown): data is NotificationJobPaylo
     p.notificacionId.length > 0 &&
     typeof p.pacienteId === 'string' &&
     p.pacienteId.length > 0 &&
+    typeof p.recordatorioId === 'string' &&
+    p.recordatorioId.length > 0 &&
+    typeof p.revision === 'number' &&
+    Number.isInteger(p.revision) &&
+    p.revision >= 1 &&
+    (p.tipo === 'registro_vitales' || p.tipo === 'toma_medicamento') &&
     typeof p.destino === 'string' &&
     ALLOWED_DESTINATIONS.has(p.destino)
   );
@@ -79,7 +85,7 @@ type DataContextValue = {
   formImportError: string | null;
   formImportWarning: FormImportWarning | null;
   retryFormImport: () => Promise<void>;
-  reconcileReminders: () => Promise<void>;
+  reconcileReminders: (targetPatientId?: string) => Promise<void>;
   runSave: <T>(work: () => Promise<T>) => Promise<T>;
   changePatient: () => void;
 };
@@ -189,15 +195,25 @@ export function LocalDataProvider({ children }: { children: ReactNode }) {
 
   const notificationAdapter = useMemo(() => new ExpoNotificationAdapter(), []);
   const coordinator = useMemo(
-    () => (database ? new NotificationCoordinator(database, notificationAdapter) : null),
+    () =>
+      database
+        ? new NotificationCoordinator(
+            database,
+            notificationAdapter,
+            undefined,
+            undefined,
+            () => patientIdRef.current,
+          )
+        : null,
     [database, notificationAdapter],
   );
 
-  const processedNotificationsRef = useRef<Set<string>>(new Set());
+  const inFlightNotificationsRef = useRef<Set<string>>(new Set());
+  const completedNotificationsRef = useRef<Set<string>>(new Set());
   const pendingNotificationIntentRef = useRef<NotificationJobPayload | null>(null);
 
   const handleNotificationOpen = useCallback(
-    async (payload: NotificationJobPayload) => {
+    async (payload: NotificationJobPayload, dedupeKey?: string) => {
       const currentId = patientIdRef.current;
       if (!currentId || currentId !== payload.pacienteId) {
         // Guardar intención pendiente hasta que el paciente coincida
@@ -207,24 +223,62 @@ export function LocalDataProvider({ children }: { children: ReactNode }) {
 
       if (!database) return;
 
-      // Validar contra SQLite que la notificación existe para este paciente
-      const row = await database.first<{ id: string }>(
-        'SELECT id FROM notificacion_local WHERE id = ? AND paciente_id = ?',
-        [payload.notificacionId, currentId],
-      );
-      if (!row) {
-        return;
-      }
+      try {
+        // Validar contra SQLite que la notificación existe para este paciente y coinciden los campos
+        const row = await database.first<{
+          id: string;
+          paciente_id: string;
+          recordatorio_id: string;
+          revision: number;
+          tipo: string;
+        }>(
+          'SELECT id, paciente_id, recordatorio_id, revision, tipo FROM notificacion_local WHERE id = ? AND paciente_id = ?',
+          [payload.notificacionId, currentId],
+        );
 
-      // Marcar como abierta en SQLite
-      await database.run(
-        'UPDATE notificacion_local SET abierta_en = ? WHERE id = ? AND paciente_id = ? AND abierta_en IS NULL',
-        [new Date().toISOString(), payload.notificacionId, currentId],
-      );
+        // Comprobar si el paciente cambió durante la consulta a SQLite
+        if (patientIdRef.current !== currentId) {
+          pendingNotificationIntentRef.current = payload;
+          return;
+        }
 
-      // Resolver destino mediante lista permitida y navegar
-      if (ALLOWED_DESTINATIONS.has(payload.destino)) {
-        router.push(payload.destino as Parameters<typeof router.push>[0]);
+        if (!row) {
+          return;
+        }
+
+        if (
+          row.recordatorio_id !== payload.recordatorioId ||
+          row.revision !== payload.revision ||
+          row.tipo !== payload.tipo
+        ) {
+          return;
+        }
+
+        // Marcar como abierta en SQLite
+        await database.run(
+          'UPDATE notificacion_local SET abierta_en = ? WHERE id = ? AND paciente_id = ? AND abierta_en IS NULL',
+          [new Date().toISOString(), payload.notificacionId, currentId],
+        );
+
+        // Comprobar nuevamente tras la actualización en SQLite
+        if (patientIdRef.current !== currentId) {
+          pendingNotificationIntentRef.current = payload;
+          return;
+        }
+
+        // Resolver destino mediante lista permitida y navegar
+        if (ALLOWED_DESTINATIONS.has(payload.destino)) {
+          if (dedupeKey) {
+            completedNotificationsRef.current.add(dedupeKey);
+          }
+          router.push(payload.destino as Parameters<typeof router.push>[0]);
+        }
+      } catch (err) {
+        console.warn('Fallo transitorio al procesar apertura de notificación:', err);
+      } finally {
+        if (dedupeKey) {
+          inFlightNotificationsRef.current.delete(dedupeKey);
+        }
       }
     },
     [database],
@@ -236,16 +290,28 @@ export function LocalDataProvider({ children }: { children: ReactNode }) {
       if (pendingNotificationIntentRef.current.pacienteId === patientId) {
         const pending = pendingNotificationIntentRef.current;
         pendingNotificationIntentRef.current = null;
-        void handleNotificationOpen(pending);
+        const dedupeKey = `${pending.notificacionId}:pending`;
+        if (
+          !completedNotificationsRef.current.has(dedupeKey) &&
+          !inFlightNotificationsRef.current.has(dedupeKey)
+        ) {
+          inFlightNotificationsRef.current.add(dedupeKey);
+          void handleNotificationOpen(pending, dedupeKey).catch((err) => {
+            console.warn('Error en handleNotificationOpen pendiente:', err);
+          });
+        }
       }
     }
   }, [patientId, handleNotificationOpen]);
 
-  const reconcileReminders = useCallback(async () => {
-    const currentId = patientIdRef.current;
-    if (!coordinator || !currentId) return;
-    await coordinator.reconcile(currentId, () => patientIdRef.current === currentId);
-  }, [coordinator]);
+  const reconcileReminders = useCallback(
+    async (targetPatientId?: string) => {
+      const currentId = targetPatientId ?? patientIdRef.current;
+      if (!coordinator || !currentId) return;
+      await coordinator.reconcile(currentId, () => patientIdRef.current === currentId);
+    },
+    [coordinator],
+  );
 
   // Reconciliación al seleccionar paciente
   useEffect(() => {
@@ -279,9 +345,14 @@ export function LocalDataProvider({ children }: { children: ReactNode }) {
         const identifier = last.notification.request.identifier;
         if (isValidNotificationPayload(data)) {
           const dedupeKey = `${data.notificacionId}:${identifier || 'cold'}`;
-          if (!processedNotificationsRef.current.has(dedupeKey)) {
-            processedNotificationsRef.current.add(dedupeKey);
-            void handleNotificationOpen(data);
+          if (
+            !completedNotificationsRef.current.has(dedupeKey) &&
+            !inFlightNotificationsRef.current.has(dedupeKey)
+          ) {
+            inFlightNotificationsRef.current.add(dedupeKey);
+            void handleNotificationOpen(data, dedupeKey).catch((err) => {
+              console.warn('Error en handleNotificationOpen cold start:', err);
+            });
           }
         }
       }
@@ -298,9 +369,14 @@ export function LocalDataProvider({ children }: { children: ReactNode }) {
         const identifier = response.notification.request.identifier;
         if (isValidNotificationPayload(data)) {
           const dedupeKey = `${data.notificacionId}:${identifier || 'listener'}`;
-          if (!processedNotificationsRef.current.has(dedupeKey)) {
-            processedNotificationsRef.current.add(dedupeKey);
-            void handleNotificationOpen(data);
+          if (
+            !completedNotificationsRef.current.has(dedupeKey) &&
+            !inFlightNotificationsRef.current.has(dedupeKey)
+          ) {
+            inFlightNotificationsRef.current.add(dedupeKey);
+            void handleNotificationOpen(data, dedupeKey).catch((err) => {
+              console.warn('Error en handleNotificationOpen listener:', err);
+            });
           }
         }
       });

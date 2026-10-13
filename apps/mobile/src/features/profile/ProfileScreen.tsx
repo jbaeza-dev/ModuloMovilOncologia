@@ -354,7 +354,7 @@ export function LinkCodeScreen() {
 
 export function PreferencesScreen() {
   const styles = useStyles();
-  const { repository, coordinator, patientId } = useLocalData();
+  const { repository, coordinator, patientId, reconcileReminders } = useLocalData();
   const { theme: appTheme, paletteId, selectPalette } = useAppTheme();
 
   const loadPrefs = useCallback(
@@ -373,8 +373,12 @@ export function PreferencesScreen() {
     if (!repository) return;
     const nextVal = !prefs.enabled;
     await repository.reminders.setPreferences(nextVal);
-    if (coordinator && patientId) {
-      await coordinator.reconcile(patientId);
+    if (patientId) {
+      if (reconcileReminders) {
+        await reconcileReminders(patientId);
+      } else if (coordinator) {
+        await coordinator.reconcile(patientId, () => true);
+      }
     }
     await refreshPrefs();
   };

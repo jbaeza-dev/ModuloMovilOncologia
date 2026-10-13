@@ -58,10 +58,20 @@ export class FakeNotificationAdapter implements LocalNotificationAdapter {
     return Array.from(this.scheduled.values());
   }
 
+  failScheduleAfterCount?: number;
+  private scheduleCount = 0;
+
   async schedule(job: NotificationScheduleJob): Promise<{ nativeId: string }> {
     if (this.shouldFailSchedule) {
       throw new Error('Error simulado al programar notificación en el sistema operativo');
     }
+    if (
+      this.failScheduleAfterCount !== undefined &&
+      this.scheduleCount >= this.failScheduleAfterCount
+    ) {
+      throw new Error('Error simulado al superar el cupo de programaciones');
+    }
+    this.scheduleCount++;
     const nativeId = `fake-native-${this.nextId++}`;
     const item: ScheduledNotificationItem = {
       nativeId,

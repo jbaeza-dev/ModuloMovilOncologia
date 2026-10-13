@@ -209,4 +209,27 @@ describe('OccurrenceScheduler', () => {
     );
     expect(ocurrencias4Abril).toHaveLength(1);
   });
+
+  it('excluye ocurrencias que caen exactamente en el límite superior de la ventana (scheduledUtcIso === finDeVentanaIso)', () => {
+    // Si now es exactamente a las 08:00 del 13 de octubre en Santiago (11:00 UTC)
+    // El fin de ventana a los 14 días cae exactamente a las 08:00 del 27 de octubre en Santiago (11:00 UTC)
+    const now = new Date('2026-10-13T11:00:00.000Z');
+    const rule = fakeRule({
+      diasSemana: [1, 2, 3, 4, 5, 6, 7],
+      horasMinutos: ['08:00'],
+    });
+
+    const result = calculateOccurrences([rule], [], {
+      now,
+      zonaHoraria: 'America/Santiago',
+      ventanaDias: 14,
+    });
+
+    // 14 días después: la ocurrencia del 27 de octubre a las 08:00 cae exactamente en finDeVentanaIso.
+    // El plan establece < finDeVentana, por lo que NO debe incluirse la ocurrencia del día 27.
+    // Días incluidos: 14 al 26 de octubre (13 días = 13 ocurrencias, ya que el día 13 a las 08:00 ya pasó respecto a now).
+    const fechas = result.seleccionadas.map((c) => c.fechaCivilLocal);
+    expect(fechas).not.toContain('2026-10-27');
+    expect(result.seleccionadas).toHaveLength(13);
+  });
 });

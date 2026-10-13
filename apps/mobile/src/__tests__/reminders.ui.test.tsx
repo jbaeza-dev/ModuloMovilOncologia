@@ -246,6 +246,61 @@ describe('Incremento 5: UI de Recordatorios y Avisos Locales', () => {
       });
       expect(screen.getByText('Abrir Ajustes de Android')).toBeTruthy();
     });
+
+    it('distingue visualmente la cobertura parcial cuando faltan ocurrencias por programar', async () => {
+      mockReminderRepo.getPreferences.mockResolvedValueOnce({ enabled: true, updatedAt: null });
+      mockAdapter.getPermissionState.mockResolvedValueOnce({
+        status: 'granted',
+        canAskAgain: true,
+        channelStatus: 'granted',
+      });
+      mockCoordinatorReconcile.mockResolvedValueOnce({
+        status: 'programacion_pendiente',
+        motivoPendiente: 'programacion_parcial',
+        totalDeseadas: 14,
+        programadasConfirmadas: 7,
+        cubiertoHastaIso: '2026-10-19T12:00:00.000Z',
+        truncadas: 0,
+        reglasAfectadas: [],
+        incidencias: [],
+      });
+      mockReminderRepo.listRules.mockResolvedValueOnce([]);
+
+      await render(<RemindersListScreen />);
+
+      await waitFor(() => {
+        expect(screen.getByText('Parcial: 7 de 14 confirmadas')).toBeTruthy();
+      });
+      expect(screen.getByText(/Programados hasta:/)).toBeTruthy();
+    });
+
+    it('distingue visualmente el estado pausado cuando se resuelven cancelaciones del contexto anterior', async () => {
+      mockReminderRepo.getPreferences.mockResolvedValueOnce({ enabled: true, updatedAt: null });
+      mockAdapter.getPermissionState.mockResolvedValueOnce({
+        status: 'granted',
+        canAskAgain: true,
+        channelStatus: 'granted',
+      });
+      mockCoordinatorReconcile.mockResolvedValueOnce({
+        status: 'programacion_pendiente',
+        motivoPendiente: 'contexto_anterior',
+        totalDeseadas: 0,
+        programadasConfirmadas: 0,
+        cubiertoHastaIso: null,
+        truncadas: 0,
+        reglasAfectadas: [],
+        incidencias: [
+          'La programación permanece pausada esperando resolver cancelaciones del contexto anterior.',
+        ],
+      });
+      mockReminderRepo.listRules.mockResolvedValueOnce([]);
+
+      await render(<RemindersListScreen />);
+
+      await waitFor(() => {
+        expect(screen.getByText('Pausada (resolviendo contexto anterior)')).toBeTruthy();
+      });
+    });
   });
 
   describe('ReminderEditScreen', () => {

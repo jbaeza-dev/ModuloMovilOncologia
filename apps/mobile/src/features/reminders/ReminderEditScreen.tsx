@@ -27,7 +27,7 @@ const TIME_REGEX = /^([01]\d|2[0-3]):[0-5]\d$/;
 export function ReminderEditScreen() {
   const { theme: appTheme } = useAppTheme();
   const styles = useStyles();
-  const { database, repository, patientId, coordinator } = useLocalData();
+  const { database, repository, patientId, coordinator, reconcileReminders } = useLocalData();
   const { id } = useLocalSearchParams<{ id?: string }>();
 
   const isEditing = Boolean(id);
@@ -140,9 +140,11 @@ export function ReminderEditScreen() {
         habilitado,
       });
 
-      // Reconciliar con la agenda del SO usando el coordinador compartido
-      if (coordinator) {
-        await coordinator.reconcile(patientId);
+      // Reconciliar con la agenda del SO usando la guarda de contexto activo
+      if (reconcileReminders) {
+        await reconcileReminders(patientId);
+      } else if (coordinator) {
+        await coordinator.reconcile(patientId, () => true);
       }
 
       router.back();
@@ -158,8 +160,10 @@ export function ReminderEditScreen() {
     setSaving(true);
     try {
       await repository.reminders.deleteRule(id);
-      if (coordinator) {
-        await coordinator.reconcile(patientId);
+      if (reconcileReminders) {
+        await reconcileReminders(patientId);
+      } else if (coordinator) {
+        await coordinator.reconcile(patientId, () => true);
       }
       router.back();
     } finally {

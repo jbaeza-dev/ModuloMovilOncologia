@@ -33,6 +33,29 @@ const DAYS_MAP: Record<number, string> = {
   7: 'Dom',
 };
 
+function getStatusCoverageText(res: CoordinatorResult | null): string {
+  if (!res) return 'Reconciliando...';
+  if (res.status === 'programada') {
+    if (res.programadasConfirmadas < res.totalDeseadas) {
+      return `Parcial: ${res.programadasConfirmadas} de ${res.totalDeseadas} confirmadas`;
+    }
+    return `${res.programadasConfirmadas} confirmadas`;
+  }
+  if (res.status === 'programacion_pendiente') {
+    if (res.motivoPendiente === 'contexto_anterior') {
+      return 'Pausada (resolviendo contexto anterior)';
+    }
+    if (res.motivoPendiente === 'cancelacion_regla_previa') {
+      return 'Pausada (limpiando versión anterior)';
+    }
+    return `Parcial: ${res.programadasConfirmadas} de ${res.totalDeseadas} confirmadas`;
+  }
+  if (res.status === 'error') {
+    return 'Error de coordinación';
+  }
+  return 'Reconciliando...';
+}
+
 export function RemindersListScreen() {
   const { theme: appTheme } = useAppTheme();
   const styles = useStyles();
@@ -74,7 +97,7 @@ export function RemindersListScreen() {
       setPermissionState(perms);
 
       if (coordinator) {
-        const result = await coordinator.reconcile(patientId);
+        const result = await coordinator.reconcile(patientId, () => true);
         setCoordinatorResult(result);
       }
     } catch {
@@ -222,17 +245,7 @@ export function RemindersListScreen() {
           <SectionTitle>Estado de la agenda</SectionTitle>
           <View style={styles.row}>
             <Text style={styles.subheading}>Cobertura efectiva:</Text>
-            <StatusPill>
-              {coordinatorResult?.status === 'programada'
-                ? coordinatorResult.programadasConfirmadas < coordinatorResult.totalDeseadas
-                  ? `Parcial: ${coordinatorResult.programadasConfirmadas} de ${coordinatorResult.totalDeseadas} confirmadas`
-                  : `${coordinatorResult.programadasConfirmadas} confirmadas`
-                : coordinatorResult?.status === 'programacion_pendiente'
-                  ? 'Pausada (resolviendo contexto anterior)'
-                  : coordinatorResult?.status === 'error'
-                    ? 'Error de coordinación'
-                    : 'Reconciliando...'}
-            </StatusPill>
+            <StatusPill>{getStatusCoverageText(coordinatorResult)}</StatusPill>
           </View>
 
           {coordinatorResult?.cubiertoHastaIso ? (
