@@ -20,10 +20,7 @@ import { useLocalData } from '../../providers/LocalDataProvider';
 import { useAppTheme } from '../../providers/ThemeProvider';
 import { ExpoNotificationAdapter } from '../../services/notifications/expo-notification-adapter';
 import type { NotificationPermissionState } from '../../services/notifications/notification-adapter';
-import {
-  NotificationCoordinator,
-  type CoordinatorResult,
-} from '../../services/reminders/notification-coordinator';
+import type { CoordinatorResult } from '../../services/reminders/notification-coordinator';
 import { theme } from '../../theme';
 
 const DAYS_MAP: Record<number, string> = {
@@ -39,7 +36,7 @@ const DAYS_MAP: Record<number, string> = {
 export function RemindersListScreen() {
   const { theme: appTheme } = useAppTheme();
   const styles = useStyles();
-  const { database, repository, patientId } = useLocalData();
+  const { database, repository, patientId, coordinator } = useLocalData();
   const adapter = useMemo(() => new ExpoNotificationAdapter(), []);
 
   const [toggling, setToggling] = useState(false);
@@ -76,13 +73,14 @@ export function RemindersListScreen() {
       const perms = await adapter.getPermissionState();
       setPermissionState(perms);
 
-      const coordinator = new NotificationCoordinator(database, adapter);
-      const result = await coordinator.reconcile(patientId);
-      setCoordinatorResult(result);
+      if (coordinator) {
+        const result = await coordinator.reconcile(patientId);
+        setCoordinatorResult(result);
+      }
     } catch {
       // Reconciliación silente para no bloquear interfaz
     }
-  }, [adapter, database, patientId]);
+  }, [adapter, database, patientId, coordinator]);
 
   useFocusEffect(
     useCallback(() => {
@@ -138,6 +136,7 @@ export function RemindersListScreen() {
   };
 
   const isBlockedInSettings = permissionState?.status === 'denied' && !permissionState?.canAskAgain;
+  const isChannelBlocked = permissionState?.channelStatus === 'blocked';
 
   return (
     <Screen title="Recordatorios y avisos" backTo="/">
@@ -170,16 +169,19 @@ export function RemindersListScreen() {
         </Pressable>
       </InfoCard>
 
-      {/* Banner de permiso bloqueado en el sistema */}
-      {isBlockedInSettings ? (
+      {/* Banner de permiso bloqueado en el sistema o canal */}
+      {isBlockedInSettings || isChannelBlocked ? (
         <InfoCard>
           <View style={styles.alertHeader}>
             <Feather name="alert-triangle" size={24} color="#dc2626" />
-            <Text style={[styles.heading, { color: '#dc2626' }]}>Permiso bloqueado</Text>
+            <Text style={[styles.heading, { color: '#dc2626' }]}>
+              {isChannelBlocked ? 'Canal de notificaciones bloqueado' : 'Permiso bloqueado'}
+            </Text>
           </View>
           <BodyText>
-            Las notificaciones están bloqueadas en los Ajustes del sistema operativo. Para recibir
-            avisos, debes habilitarlas manualmente en Android.
+            {isChannelBlocked
+              ? 'El canal de avisos de QuimioCare ha sido bloqueado en los Ajustes de Android. Para recibir avisos, debes habilitar el canal de recordatorios.'
+              : 'Las notificaciones están bloqueadas en los Ajustes del sistema operativo. Para recibir avisos, debes habilitarlas manualmente en Android.'}
           </BodyText>
           <VisualButton
             label="Abrir Ajustes de Android"
@@ -191,18 +193,45 @@ export function RemindersListScreen() {
         </InfoCard>
       ) : null}
 
+      {/* Incidencias de coordinación / errores */}
+      {coordinatorResult &&
+      (coordinatorResult.status === 'error' || coordinatorResult.incidencias.length > 0) ? (
+        <InfoCard>
+          <View style={styles.alertHeader}>
+            <Feather name="alert-circle" size={24} color="#dc2626" />
+            <Text style={[styles.heading, { color: '#dc2626' }]}>Incidencias en la agenda</Text>
+          </View>
+          {coordinatorResult.incidencias.map((inc, idx) => (
+            <BodyText key={idx} style={{ color: '#dc2626', fontSize: 13 }}>
+              • {inc}
+            </BodyText>
+          ))}
+          <VisualButton
+            label="Reintentar reconciliación"
+            secondary
+            onPress={() => {
+              void checkAndReconcile();
+            }}
+          />
+        </InfoCard>
+      ) : null}
+
       {/* Estado y Cobertura de la Agenda */}
-      {prefs.enabled && permissionState?.status === 'granted' ? (
+      {prefs.enabled && permissionState?.status === 'granted' && !isChannelBlocked ? (
         <InfoCard>
           <SectionTitle>Estado de la agenda</SectionTitle>
           <View style={styles.row}>
             <Text style={styles.subheading}>Cobertura efectiva:</Text>
             <StatusPill>
               {coordinatorResult?.status === 'programada'
-                ? `${coordinatorResult.programadasConfirmadas} programadas`
+                ? coordinatorResult.programadasConfirmadas < coordinatorResult.totalDeseadas
+                  ? `Parcial: ${coordinatorResult.programadasConfirmadas} de ${coordinatorResult.totalDeseadas} confirmadas`
+                  : `${coordinatorResult.programadasConfirmadas} confirmadas`
                 : coordinatorResult?.status === 'programacion_pendiente'
                   ? 'Pausada (resolviendo contexto anterior)'
-                  : 'Reconciliando...'}
+                  : coordinatorResult?.status === 'error'
+                    ? 'Error de coordinación'
+                    : 'Reconciliando...'}
             </StatusPill>
           </View>
 

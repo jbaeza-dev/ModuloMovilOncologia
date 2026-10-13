@@ -67,10 +67,6 @@ export function civilToUtcIso(
   minute: number,
   timeZone: string,
 ): string {
-  // Usamos Intl.DateTimeFormat para resolver el offset real de esa zona
-  // Probamos un rango de búsqueda para resolver la fecha civil exacta en la zona horaria
-  const tentativeUtc = new Date(Date.UTC(year, month - 1, day, hour, minute));
-
   // Función para obtener componentes civiles en la zona horaria para una fecha UTC dada
   const formatter = new Intl.DateTimeFormat('en-US', {
     timeZone,
@@ -112,23 +108,59 @@ export function civilToUtcIso(
     return { y, m, dt, h, min };
   }
 
-  // Iteración de aproximación de offset (máximo 3 pasos)
-  let currentEstimate = tentativeUtc.getTime();
-  for (let i = 0; i < 3; i++) {
-    const local = getLocalParts(new Date(currentEstimate));
-    const targetLocalMin = Date.UTC(year, month - 1, day, hour, minute) / 60000;
-    const actualLocalMin = Date.UTC(local.y, local.m - 1, local.dt, local.h, local.min) / 60000;
-    const diffMin = targetLocalMin - actualLocalMin;
-    if (diffMin === 0) break;
-    currentEstimate += diffMin * 60000;
+  const targetMinuteOfDay = hour * 60 + minute;
+  let estUtc = Date.UTC(year, month - 1, day, hour, minute);
+
+  // Intentar aproximación iterativa (convergencia rápida para fechas ordinarias)
+  let prevDiff: number | null = null;
+  for (let i = 0; i < 4; i++) {
+    const loc = getLocalParts(new Date(estUtc));
+    const dayDiff =
+      (Date.UTC(loc.y, loc.m - 1, loc.dt) - Date.UTC(year, month - 1, day)) / 86400000;
+    const locMinuteOfDay = dayDiff * 1440 + loc.h * 60 + loc.min;
+    const diff = targetMinuteOfDay - locMinuteOfDay;
+    if (diff === 0) {
+      return new Date(estUtc).toISOString();
+    }
+    if (prevDiff !== null && Math.abs(diff) === Math.abs(prevDiff) && diff === -prevDiff) {
+      // Oscilación detectada: estamos en un salto de horario de verano inexistente (gap)
+      break;
+    }
+    prevDiff = diff;
+    estUtc += diff * 60000;
   }
 
-  return new Date(currentEstimate).toISOString();
+  // Si cayó en un gap inexistente: buscar el primer minuto UTC en ese día donde local >= targetMinuteOfDay
+  // (avanza al siguiente minuto válido según la política del plan, ej. 01:00 tras 00:30 inexistente)
+  const low = estUtc - 2 * 3600000;
+  const high = estUtc + 2 * 3600000;
+  let bestUtc: number | null = null;
+
+  for (let t = low; t <= high; t += 60000) {
+    const loc = getLocalParts(new Date(t));
+    if (loc.y === year && loc.m === month && loc.dt === day) {
+      const curMin = loc.h * 60 + loc.min;
+      if (curMin === targetMinuteOfDay) {
+        return new Date(t).toISOString();
+      }
+      if (curMin > targetMinuteOfDay) {
+        if (bestUtc === null || t < bestUtc) {
+          bestUtc = t;
+        }
+      }
+    }
+  }
+
+  if (bestUtc !== null) {
+    return new Date(bestUtc).toISOString();
+  }
+
+  return new Date(estUtc).toISOString();
 }
 
 /**
  * Planificador puro de ocurrencias.
- * Genera candidatos deterministas dentro del intervalo estricto `now < fechaPrevistaUtc < finDeVentana` (14 días calendario),
+ * Genera candidatos deterministas dentro del intervalo estricto `now < fechaPrevistaUtc <= finDeVentana` (14 días calendario),
  * respetando reglas, medicación, DST y tope de 128 trabajos.
  */
 export function calculateOccurrences(
@@ -143,34 +175,52 @@ export function calculateOccurrences(
   const newId = options.idGenerator ?? generateUuid;
 
   const nowIso = now.toISOString();
-
   // Calcular partes civiles actuales de 'now' en la zona horaria
   const nowPartsFormatter = new Intl.DateTimeFormat('en-US', {
     timeZone,
     year: 'numeric',
     month: 'numeric',
     day: 'numeric',
+    hour: 'numeric',
+    minute: 'numeric',
+    second: 'numeric',
     hour12: false,
   });
   const parts = nowPartsFormatter.formatToParts(now);
   let nowYear = 0,
     nowMonth = 0,
-    nowDay = 0;
+    nowDay = 0,
+    nowHour = 0,
+    nowMinute = 0;
   for (const p of parts) {
     if (p.type === 'year') nowYear = parseInt(p.value, 10);
     if (p.type === 'month') nowMonth = parseInt(p.value, 10);
     if (p.type === 'day') nowDay = parseInt(p.value, 10);
+    if (p.type === 'hour') nowHour = parseInt(p.value, 10);
+    if (p.type === 'minute') nowMinute = parseInt(p.value, 10);
   }
   if (nowYear === 0) {
     nowYear = now.getUTCFullYear();
     nowMonth = now.getUTCMonth() + 1;
     nowDay = now.getUTCDate();
+    nowHour = now.getUTCHours();
+    nowMinute = now.getUTCMinutes();
   }
+
+  // Calcular explícitamente finDeVentana en la zona horaria correspondiente
+  const finDeVentanaIso = civilToUtcIso(
+    nowYear,
+    nowMonth,
+    nowDay + ventanaDias,
+    nowHour,
+    nowMinute,
+    timeZone,
+  );
 
   // Mapa de medicamentos para consulta rápida
   const medMap = new Map<string, MedicationContext>();
-  for (const med of medications) {
-    medMap.set(med.id, med);
+  for (const m of medications) {
+    medMap.set(m.id, m);
   }
 
   const allCandidates: OccurrenceCandidate[] = [];
@@ -221,8 +271,8 @@ export function calculateOccurrences(
           targetTz,
         );
 
-        // Estricto: now < fechaPrevistaUtc
-        if (scheduledUtcIso <= nowIso) continue;
+        // Estricto: now < fechaPrevistaUtc <= finDeVentanaIso
+        if (scheduledUtcIso <= nowIso || scheduledUtcIso > finDeVentanaIso) continue;
 
         allCandidates.push({
           id: newId(),

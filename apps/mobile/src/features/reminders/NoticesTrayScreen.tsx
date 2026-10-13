@@ -43,16 +43,11 @@ export function NoticesTrayScreen() {
       estadoFilter = 'cancelada';
     }
 
-    const items = await repository.reminders.listNotifications({
+    return repository.reminders.listNotifications({
       limit,
       estado: estadoFilter,
+      soloObservadas: filter === 'observada',
     });
-
-    if (filter === 'observada') {
-      return items.filter((item) => item.recibidaObservadaEn || item.abiertaEn);
-    }
-
-    return items;
   }, [repository, filter, limit]);
 
   const { value: notifications, loading } = useFocusedValue(

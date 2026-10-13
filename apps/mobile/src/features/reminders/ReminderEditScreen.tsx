@@ -1,7 +1,7 @@
 import Feather from '@expo/vector-icons/Feather';
 import { router, useLocalSearchParams } from 'expo-router';
-import { useEffect, useMemo, useState } from 'react';
-import { Pressable, StyleSheet, Text, View } from 'react-native';
+import { useEffect, useState } from 'react';
+import { Pressable, StyleSheet, Text, TextInput, View } from 'react-native';
 
 import { Screen } from '../../components/Screen';
 import { BodyText, DemoBadge, InfoCard, SectionTitle, VisualButton } from '../../components/Visual';
@@ -9,8 +9,6 @@ import type { ActiveMedicationRecord } from '../../data/local/clinical-context/c
 import type { ReminderType } from '../../data/local/reminders/reminder-types';
 import { useLocalData } from '../../providers/LocalDataProvider';
 import { useAppTheme } from '../../providers/ThemeProvider';
-import { ExpoNotificationAdapter } from '../../services/notifications/expo-notification-adapter';
-import { NotificationCoordinator } from '../../services/reminders/notification-coordinator';
 import { theme } from '../../theme';
 
 const DAYS = [
@@ -24,12 +22,12 @@ const DAYS = [
 ];
 
 const PRESET_HOURS = ['08:00', '09:00', '12:00', '14:00', '20:00', '21:00'];
+const TIME_REGEX = /^([01]\d|2[0-3]):[0-5]\d$/;
 
 export function ReminderEditScreen() {
   const { theme: appTheme } = useAppTheme();
   const styles = useStyles();
-  const { database, repository, patientId } = useLocalData();
-  const adapter = useMemo(() => new ExpoNotificationAdapter(), []);
+  const { database, repository, patientId, coordinator } = useLocalData();
   const { id } = useLocalSearchParams<{ id?: string }>();
 
   const isEditing = Boolean(id);
@@ -37,25 +35,32 @@ export function ReminderEditScreen() {
   const [tipo, setTipo] = useState<ReminderType>('registro_vitales');
   const [medicamentoId, setMedicamentoId] = useState<string | null>(null);
   const [selectedDays, setSelectedDays] = useState<number[]>([1, 2, 3, 4, 5, 6, 7]);
-  const [selectedHours, setSelectedHours] = useState<string[]>(['09:00']);
-  const [habilitado, setHabilitado] = useState(true);
+  // Inicialmente vacío y desactivado según plan aprobado
+  const [selectedHours, setSelectedHours] = useState<string[]>([]);
+  const [habilitado, setHabilitado] = useState(false);
+
+  // Metadatos preservados de la regla
+  const [zonaHoraria, setZonaHoraria] = useState<string | undefined>(undefined);
+  const [fechaInicio, setFechaInicio] = useState<string | null | undefined>(undefined);
+  const [fechaFin, setFechaFin] = useState<string | null | undefined>(undefined);
+
+  // Entrada personalizada de hora
+  const [customHour, setCustomHour] = useState('');
+  const [customHourError, setCustomHourError] = useState<string | null>(null);
 
   const [medications, setMedications] = useState<ActiveMedicationRecord[]>([]);
   const [errorMsg, setErrorMsg] = useState<string | null>(null);
   const [saving, setSaving] = useState(false);
 
-  // Cargar medicamentos activos del paciente
+  // Cargar medicamentos activos del paciente (sin auto-selección para exigir elección explícita)
   useEffect(() => {
     if (!repository) return;
     repository.activeMedications().then((meds) => {
       setMedications(meds);
-      if (meds.length > 0 && !medicamentoId) {
-        setMedicamentoId(meds[0].id);
-      }
     });
-  }, [repository, medicamentoId]);
+  }, [repository]);
 
-  // Si es edición, cargar la regla existente
+  // Si es edición, cargar la regla existente conservando todos sus metadatos
   useEffect(() => {
     if (!repository || !id) return;
     repository.reminders.getRule(id).then((rule) => {
@@ -65,31 +70,62 @@ export function ReminderEditScreen() {
         setSelectedDays(rule.diasSemana);
         setSelectedHours(rule.horasMinutos);
         setHabilitado(rule.habilitado);
+        setZonaHoraria(rule.zonaHoraria);
+        setFechaInicio(rule.fechaInicio);
+        setFechaFin(rule.fechaFin);
       }
     });
   }, [repository, id]);
 
   const toggleDay = (dayId: number) => {
-    if (selectedDays.includes(dayId)) {
-      if (selectedDays.length === 1) return; // al menos 1 día
-      setSelectedDays(selectedDays.filter((d) => d !== dayId));
-    } else {
-      setSelectedDays([...selectedDays, dayId].sort((a, b) => a - b));
-    }
+    setSelectedDays((prev) => {
+      if (prev.includes(dayId)) {
+        if (prev.length === 1) return prev; // al menos 1 día
+        return prev.filter((d) => d !== dayId);
+      }
+      return [...prev, dayId].sort((a, b) => a - b);
+    });
   };
 
-  const toggleHour = (hour: string) => {
-    if (selectedHours.includes(hour)) {
-      if (selectedHours.length === 1) return; // al menos 1 hora
-      setSelectedHours(selectedHours.filter((h) => h !== hour));
-    } else {
-      setSelectedHours([...selectedHours, hour].sort());
+  const togglePresetHour = (hour: string) => {
+    setSelectedHours((prev) =>
+      prev.includes(hour) ? prev.filter((h) => h !== hour) : [...prev, hour].sort(),
+    );
+  };
+
+  const removeHour = (hour: string) => {
+    setSelectedHours((prev) => prev.filter((h) => h !== hour));
+  };
+
+  const handleAddCustomHour = () => {
+    const trimmed = customHour.trim();
+    if (!TIME_REGEX.test(trimmed)) {
+      setCustomHourError('Formato inválido. Ingresa HH:mm entre 00:00 y 23:59 (ej: 08:30).');
+      return;
     }
+    setCustomHourError(null);
+    setSelectedHours((prev) => (prev.includes(trimmed) ? prev : [...prev, trimmed].sort()));
+    setCustomHour('');
   };
 
   const handleSave = async () => {
     if (!repository || !database || !patientId || saving) return;
     setErrorMsg(null);
+
+    // Validaciones estrictas
+    if (selectedDays.length === 0) {
+      setErrorMsg('Debes seleccionar al menos un día de la semana.');
+      return;
+    }
+    if (selectedHours.length === 0) {
+      setErrorMsg('Debes añadir al menos una hora para el recordatorio.');
+      return;
+    }
+    if (tipo === 'medicacion' && !medicamentoId) {
+      setErrorMsg('Debes seleccionar un medicamento explícitamente para este recordatorio.');
+      return;
+    }
+
     setSaving(true);
     try {
       await repository.reminders.saveRule({
@@ -98,12 +134,16 @@ export function ReminderEditScreen() {
         medicamentoId: tipo === 'medicacion' ? medicamentoId : null,
         diasSemana: selectedDays,
         horasMinutos: selectedHours,
+        zonaHoraria,
+        fechaInicio,
+        fechaFin,
         habilitado,
       });
 
-      // Reconciliar con la agenda del SO
-      const coordinator = new NotificationCoordinator(database, adapter);
-      await coordinator.reconcile(patientId);
+      // Reconciliar con la agenda del SO usando el coordinador compartido
+      if (coordinator) {
+        await coordinator.reconcile(patientId);
+      }
 
       router.back();
     } catch (err) {
@@ -118,8 +158,9 @@ export function ReminderEditScreen() {
     setSaving(true);
     try {
       await repository.reminders.deleteRule(id);
-      const coordinator = new NotificationCoordinator(database, adapter);
-      await coordinator.reconcile(patientId);
+      if (coordinator) {
+        await coordinator.reconcile(patientId);
+      }
       router.back();
     } finally {
       setSaving(false);
@@ -142,6 +183,31 @@ export function ReminderEditScreen() {
           <BodyText style={{ color: '#dc2626' }}>{errorMsg}</BodyText>
         </InfoCard>
       ) : null}
+
+      {/* Switch de activación de la regla */}
+      <InfoCard>
+        <Pressable
+          accessibilityRole="switch"
+          accessibilityLabel="Habilitar este recordatorio"
+          accessibilityState={{ checked: habilitado }}
+          onPress={() => setHabilitado((prev) => !prev)}
+          style={styles.toggleRow}
+        >
+          <View style={{ flex: 1, paddingRight: theme.spacing.sm }}>
+            <Text style={styles.heading}>Habilitar este recordatorio</Text>
+            <BodyText>
+              {habilitado
+                ? 'El recordatorio está activo y programará avisos según los días y horas indicados.'
+                : 'El recordatorio está guardado pero desactivado.'}
+            </BodyText>
+          </View>
+          <Feather
+            name={habilitado ? 'toggle-right' : 'toggle-left'}
+            size={32}
+            color={habilitado ? appTheme.colors.primary : appTheme.colors.secondary}
+          />
+        </Pressable>
+      </InfoCard>
 
       {/* Tipo de recordatorio */}
       <InfoCard>
@@ -258,23 +324,74 @@ export function ReminderEditScreen() {
       {/* Horas del recordatorio */}
       <InfoCard>
         <SectionTitle>Horas de aviso</SectionTitle>
-        <BodyText>Selecciona una o más horas:</BodyText>
-        <View style={styles.hoursGrid}>
-          {PRESET_HOURS.map((hour) => {
-            const isSelected = selectedHours.includes(hour);
-            return (
+        <BodyText>Horarios seleccionados:</BodyText>
+        {selectedHours.length === 0 ? (
+          <BodyText style={{ color: appTheme.colors.secondary, fontStyle: 'italic' }}>
+            No hay horarios seleccionados. Añade una hora personalizada o elige un preajuste abajo.
+          </BodyText>
+        ) : (
+          <View style={styles.selectedHoursContainer}>
+            {selectedHours.map((hour) => (
               <Pressable
                 key={hour}
                 accessibilityRole="button"
-                accessibilityLabel={`Hora ${hour}`}
-                accessibilityState={{ selected: isSelected }}
-                onPress={() => toggleHour(hour)}
-                style={[styles.hourPill, isSelected && styles.hourPillSelected]}
+                accessibilityLabel={`Eliminar hora ${hour}`}
+                onPress={() => removeHour(hour)}
+                style={styles.selectedHourChip}
               >
-                <Text style={[styles.hourText, isSelected && styles.hourTextSelected]}>{hour}</Text>
+                <Text style={styles.selectedHourChipText}>{hour}</Text>
+                <Feather name="x" size={16} color="#ffffff" />
               </Pressable>
-            );
-          })}
+            ))}
+          </View>
+        )}
+
+        <View style={{ marginTop: theme.spacing.md }}>
+          <Text style={styles.subheading}>Añadir hora personalizada (HH:mm):</Text>
+          <View style={styles.customHourRow}>
+            <TextInput
+              style={styles.timeInput}
+              placeholder="08:30"
+              placeholderTextColor={appTheme.colors.secondary}
+              value={customHour}
+              onChangeText={(text) => {
+                setCustomHour(text);
+                if (customHourError) setCustomHourError(null);
+              }}
+              keyboardType="numbers-and-punctuation"
+              maxLength={5}
+              accessibilityLabel="Hora personalizada formato HH:mm"
+            />
+            <VisualButton label="Añadir hora" onPress={handleAddCustomHour} />
+          </View>
+          {customHourError ? (
+            <BodyText style={{ color: '#dc2626', fontSize: 13, marginTop: 4 }}>
+              {customHourError}
+            </BodyText>
+          ) : null}
+        </View>
+
+        <View style={{ marginTop: theme.spacing.md }}>
+          <Text style={styles.subheading}>O selecciona horarios rápidos:</Text>
+          <View style={styles.hoursGrid}>
+            {PRESET_HOURS.map((hour) => {
+              const isSelected = selectedHours.includes(hour);
+              return (
+                <Pressable
+                  key={hour}
+                  accessibilityRole="button"
+                  accessibilityLabel={`Hora preajuste ${hour}`}
+                  accessibilityState={{ selected: isSelected }}
+                  onPress={() => togglePresetHour(hour)}
+                  style={[styles.hourPill, isSelected && styles.hourPillSelected]}
+                >
+                  <Text style={[styles.hourText, isSelected && styles.hourTextSelected]}>
+                    {hour}
+                  </Text>
+                </Pressable>
+              );
+            })}
+          </View>
         </View>
       </InfoCard>
 
@@ -306,6 +423,17 @@ function useStyles() {
     heading: {
       fontSize: 16,
       fontWeight: '700',
+    },
+    subheading: {
+      fontSize: 14,
+      fontWeight: '600',
+      color: colors.text,
+      marginBottom: theme.spacing.xs,
+    },
+    toggleRow: {
+      flexDirection: 'row',
+      alignItems: 'center',
+      justifyContent: 'space-between',
     },
     errorHeader: {
       flexDirection: 'row',
@@ -391,11 +519,49 @@ function useStyles() {
     dayButtonTextSelected: {
       color: '#ffffff',
     },
+    selectedHoursContainer: {
+      flexDirection: 'row',
+      flexWrap: 'wrap',
+      gap: theme.spacing.sm,
+      marginTop: theme.spacing.xs,
+      marginBottom: theme.spacing.sm,
+    },
+    selectedHourChip: {
+      flexDirection: 'row',
+      alignItems: 'center',
+      gap: 6,
+      paddingHorizontal: 12,
+      paddingVertical: 8,
+      borderRadius: 999,
+      backgroundColor: colors.primary,
+    },
+    selectedHourChipText: {
+      fontSize: 15,
+      fontWeight: '700',
+      color: '#ffffff',
+    },
+    customHourRow: {
+      flexDirection: 'row',
+      alignItems: 'center',
+      gap: theme.spacing.sm,
+      marginTop: 4,
+    },
+    timeInput: {
+      flex: 1,
+      height: 46,
+      borderWidth: 1,
+      borderColor: colors.border,
+      borderRadius: theme.radius.sm,
+      paddingHorizontal: 12,
+      fontSize: 16,
+      color: colors.text,
+      backgroundColor: colors.surface,
+    },
     hoursGrid: {
       flexDirection: 'row',
       flexWrap: 'wrap',
       gap: theme.spacing.sm,
-      marginTop: theme.spacing.sm,
+      marginTop: theme.spacing.xs,
     },
     hourPill: {
       paddingHorizontal: theme.spacing.md,

@@ -354,7 +354,7 @@ export function LinkCodeScreen() {
 
 export function PreferencesScreen() {
   const styles = useStyles();
-  const { repository } = useLocalData();
+  const { repository, coordinator, patientId } = useLocalData();
   const { theme: appTheme, paletteId, selectPalette } = useAppTheme();
 
   const loadPrefs = useCallback(
@@ -373,6 +373,9 @@ export function PreferencesScreen() {
     if (!repository) return;
     const nextVal = !prefs.enabled;
     await repository.reminders.setPreferences(nextVal);
+    if (coordinator && patientId) {
+      await coordinator.reconcile(patientId);
+    }
     await refreshPrefs();
   };
 
