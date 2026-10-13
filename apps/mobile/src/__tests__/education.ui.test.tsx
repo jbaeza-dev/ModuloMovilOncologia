@@ -240,12 +240,27 @@ describe('Pruebas de interfaz (UI) para módulo de Educación', () => {
       const retryBtn = screen.getByRole('button', { name: 'Reintentar visualización' });
       expect(retryBtn).toBeTruthy();
 
-      // Al pulsar reintentar, se recupera el estado
+      // Al pulsar reintentar, se remonta la imagen con una nueva key para forzar nueva carga
       fireEvent.press(retryBtn);
       await waitFor(() => {
         expect(
           screen.queryByText(/No se pudo renderizar la infografía desde el almacenamiento local/i),
         ).toBeNull();
+      });
+
+      // Se muestra el estado de carga y la nueva instancia de la imagen montada
+      expect(screen.getByText('Cargando visualización de imagen…')).toBeTruthy();
+      const reloadedImage = screen.getByLabelText(
+        'Infografía: Infografía: Guía nutricional en quimioterapia',
+      );
+      expect(reloadedImage).not.toBe(image);
+
+      // Al completar exitosamente la nueva carga, desaparece la carga y se rehabilita la revisión
+      fireEvent(reloadedImage, 'load');
+      await waitFor(() => {
+        expect(screen.queryByText('Cargando visualización de imagen…')).toBeNull();
+        const activeReviewBtn = screen.getByRole('button', { name: 'Declarar material revisado' });
+        expect(activeReviewBtn.props.accessibilityState?.disabled).toBeFalsy();
       });
     });
   });

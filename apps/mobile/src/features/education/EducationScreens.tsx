@@ -321,6 +321,7 @@ export function EducationResourceScreen() {
   const [actionBusy, setActionBusy] = useState(false);
   const [imageLoaded, setImageLoaded] = useState(false);
   const [imageLoadError, setImageLoadError] = useState(false);
+  const [imageRetryCount, setImageRetryCount] = useState(0);
 
   const localCopy = statusData?.copy;
   const interaction = statusData?.interaction;
@@ -469,14 +470,32 @@ export function EducationResourceScreen() {
           }
 
           const [loadedAsset] = await Asset.loadAsync(assetModule);
-          const sourceUri = loadedAsset?.localUri;
-          if (!sourceUri) {
+          if (
+            loadedAsset &&
+            (!loadedAsset.localUri ||
+              (!loadedAsset.localUri.startsWith('file://') &&
+                !loadedAsset.localUri.startsWith('/'))) &&
+            typeof loadedAsset.downloadAsync === 'function'
+          ) {
+            // En builds Release de Android, los drawables empaquetados no tienen ruta de archivo local aún.
+            // Forzar descarga nativa para materializar el recurso empaquetado en caché y obtener una URI file://
+            loadedAsset.downloaded = false;
+            await loadedAsset.downloadAsync();
+          }
+
+          const rawUri = loadedAsset?.localUri ?? loadedAsset?.uri;
+          if (!rawUri) {
             throw new Error(
               'No se pudo resolver la ruta local de la infografía empaquetada. Se cancela la operación para conservar la integridad del almacenamiento.',
             );
           }
 
-          const fileObj = new File(sourceUri);
+          const absoluteUri = rawUri.startsWith('file://')
+            ? rawUri
+            : rawUri.startsWith('/')
+              ? `file://${rawUri}`
+              : rawUri;
+          const fileObj = new File(absoluteUri);
           contentToSave = await fileObj.bytes();
         } else {
           contentToSave =
@@ -650,6 +669,7 @@ export function EducationResourceScreen() {
         <InfoCard>
           <SectionTitle>Infografía guardada en disco</SectionTitle>
           <Image
+            key={`infographic-${localCopy.rutaRelativa}-${imageRetryCount}`}
             source={{ uri: localCopy.rutaRelativa }}
             style={styles.infographicImage}
             resizeMode="contain"
@@ -679,6 +699,7 @@ export function EducationResourceScreen() {
                 onPress={() => {
                   setImageLoadError(false);
                   setImageLoaded(false);
+                  setImageRetryCount((c) => c + 1);
                 }}
               />
             </View>

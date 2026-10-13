@@ -39,7 +39,15 @@ export async function reconcileCopiesCore(
       }
       continue;
     }
-    const exists = await ops.checkDiskExists(record.ruta_local);
+    let exists: boolean;
+    try {
+      exists = await ops.checkDiskExists(record.ruta_local);
+    } catch {
+      // Ante un fallo de acceso o consulta en disco, conservar el estado previo sin marcar como ausente
+      validDbUris.add(norm(record.ruta_local));
+      validDbUris.add(record.ruta_local);
+      continue;
+    }
     if (!exists) {
       if (record.estado !== 'error') {
         await ops.markDbUnavailable(record.contenido_id);

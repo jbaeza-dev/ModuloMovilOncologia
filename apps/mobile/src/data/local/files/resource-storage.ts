@@ -592,13 +592,7 @@ export async function reconcileResourceCopies(
       {
         markDbUnavailable: async (id) => repository.markDownloadUnavailable(id),
         deleteDisk: async (uri) => adapter.deleteFile(uri),
-        checkDiskExists: async (uri) => {
-          try {
-            return await adapter.exists(uri);
-          } catch {
-            return false;
-          }
-        },
+        checkDiskExists: async (uri) => adapter.exists(uri),
         isProtectedOrphan: async (uri) => {
           if (isFileWriteInFlight(uri)) return true;
           const fresh = await repository.downloads();

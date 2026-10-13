@@ -13,12 +13,18 @@ import {
 import { saveEducationalMediaWithCompensation } from '../../data/local/files/educational-storage';
 import {
   getPatientResourceDirectory,
+  readResourceFile,
   resourceFileExists,
 } from '../../data/local/files/resource-storage';
 import { useLocalData } from '../../providers/LocalDataProvider';
 import { useAppTheme } from '../../providers/ThemeProvider';
 import { theme } from '../../theme';
 import { isDemoMode } from '../../utils/environment';
+import {
+  getEducationalCatalogReader,
+  InMemoryEducationalCatalogReader,
+  setEducationalCatalogReader,
+} from './educational-catalog-service';
 
 interface DiagnosticsDemoModalProps {
   visible: boolean;
@@ -41,6 +47,8 @@ export function DiagnosticsDemoModal({ visible, onClose }: DiagnosticsDemoModalP
 
   const [testing, setTesting] = useState(false);
   const [testResult, setTestResult] = useState<string | null>(null);
+  const [catalogCount, setCatalogCount] = useState<number>(0);
+  const [emptyCatalogTestResult, setEmptyCatalogTestResult] = useState<string | null>(null);
 
   const loadDiagnostics = useCallback(async () => {
     if (!database || !repository) return;
@@ -64,10 +72,66 @@ export function DiagnosticsDemoModal({ visible, onClose }: DiagnosticsDemoModalP
         isInternetReachable: netState.isInternetReachable ?? false,
         type: String(netState.type ?? 'DESCONOCIDO'),
       });
+
+      const reader = getEducationalCatalogReader();
+      const allRes = await reader.getAllResources();
+      setCatalogCount(allRes.length);
     } catch {
       // Ignorar fallo de diagnóstico
     }
   }, [database, repository]);
+
+  async function handleToggleEmptyCatalog() {
+    const reader = getEducationalCatalogReader();
+    const all = await reader.getAllResources();
+    if (all.length > 0) {
+      setEducationalCatalogReader(new InMemoryEducationalCatalogReader([]));
+      setCatalogCount(0);
+      setEmptyCatalogTestResult(
+        'Catálogo retirado/vaciado explícitamente (0 contenidos). Puedes navegar a «Mis copias guardadas» y comprobar la lectura desacoplada sin catálogo.',
+      );
+    } else {
+      setEducationalCatalogReader(new InMemoryEducationalCatalogReader());
+      const restored = await getEducationalCatalogReader().getAllResources();
+      setCatalogCount(restored.length);
+      setEmptyCatalogTestResult('Catálogo sintético restaurado a su estado original.');
+    }
+  }
+
+  async function handleTestEmptyCatalogReading() {
+    if (!repository || !patientId) return;
+    try {
+      // 1. Vaciar explícitamente el catálogo
+      setEducationalCatalogReader(new InMemoryEducationalCatalogReader([]));
+      const catalogSize = (await getEducationalCatalogReader().getAllResources()).length;
+
+      // 2. Consultar copias existentes en SQLite
+      const copies = await repository.education.listLocalCopies();
+      if (copies.length === 0) {
+        setEmptyCatalogTestResult(
+          'No hay copias guardadas en este paciente para comprobar. Guarda una copia primero.',
+        );
+        return;
+      }
+
+      // 3. Tomar una copia guardada y comprobar que su lectura física funciona sin catálogo
+      const targetCopy = copies[0];
+      const fileContent = await readResourceFile(
+        patientId,
+        targetCopy.contentId,
+        targetCopy.rutaRelativa,
+      );
+
+      setEmptyCatalogTestResult(
+        `Prueba de catálogo vacío superada con éxito: Catálogo en memoria = ${catalogSize} recursos. La copia «${targetCopy.contentId}» (${targetCopy.formato}, ${targetCopy.tamanoBytes} bytes) se resolvió y leyó desde el almacenamiento privado (${fileContent ? 'contenido leído correctamente' : 'archivo verificado'}) de forma 100% desacoplada del catálogo.`,
+      );
+      setCatalogCount(0);
+    } catch (err) {
+      setEmptyCatalogTestResult(
+        `Error en prueba de catálogo vacío: ${err instanceof Error ? err.message : String(err)}`,
+      );
+    }
+  }
 
   useEffect(() => {
     if (visible && isDemoMode()) {
@@ -250,6 +314,41 @@ export function DiagnosticsDemoModal({ visible, onClose }: DiagnosticsDemoModalP
               {testResult ? (
                 <View style={styles.testResultBox}>
                   <Text style={styles.testResultText}>{testResult}</Text>
+                </View>
+              ) : null}
+            </InfoCard>
+
+            <InfoCard>
+              <SectionTitle>Aceptación: Catálogo desacoplado</SectionTitle>
+              <View style={styles.metricRow}>
+                <BodyText>Recursos en catálogo activo:</BodyText>
+                <Text style={styles.metricValue}>
+                  {catalogCount > 0 ? `${catalogCount} contenidos` : '0 contenidos (Vacío)'}
+                </Text>
+              </View>
+              <BodyText>
+                Sustituye o retira explícitamente el catálogo sintético para verificar de forma
+                nativa que las copias locales guardadas pueden consultarse y leerse sin depender del
+                catálogo.
+              </BodyText>
+              <View style={{ gap: 8 }}>
+                <VisualButton
+                  label={
+                    catalogCount > 0
+                      ? 'Vaciar catálogo temporalmente'
+                      : 'Restaurar catálogo completo'
+                  }
+                  secondary
+                  onPress={() => void handleToggleEmptyCatalog()}
+                />
+                <VisualButton
+                  label="Ejecutar prueba de lectura con catálogo vacío"
+                  onPress={() => void handleTestEmptyCatalogReading()}
+                />
+              </View>
+              {emptyCatalogTestResult ? (
+                <View style={styles.testResultBox}>
+                  <Text style={styles.testResultText}>{emptyCatalogTestResult}</Text>
                 </View>
               ) : null}
             </InfoCard>

@@ -213,7 +213,10 @@ export async function recoverOrphanDraftBackups(
   baseDir: string,
   adapter: FileStorageAdapter = defaultExpoAdapter,
 ): Promise<number> {
-  if (!(await adapter.exists(baseDir))) return 0;
+  const dirExists = adapter.directoryExists
+    ? await adapter.directoryExists(baseDir)
+    : await adapter.exists(baseDir);
+  if (!dirExists) return 0;
   let recovered = 0;
   try {
     const files = await adapter.listDirectory(baseDir);
@@ -383,7 +386,11 @@ export async function listPatientDrafts(
     ? baseDirResolver(pacienteId)
     : getPatientDraftDirectory(pacienteId).uri;
 
-  if (!(await adapter.exists(baseDir))) return [];
+  const dirExists = adapter.directoryExists
+    ? await adapter.directoryExists(baseDir)
+    : await adapter.exists(baseDir);
+
+  if (!dirExists) return [];
 
   // Paso 1: Recuperar cualquier respaldo huérfano antes de listar o limpiar
   await recoverOrphanDraftBackups(baseDir, adapter);

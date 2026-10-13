@@ -817,4 +817,47 @@ describe('almacenamiento multimedia educativo y compensación de colisiones', ()
     expect(adapter.exists(unknownFile)).toBe(true);
     expect(adapter.exists(unknownDoc)).toBe(true);
   });
+
+  it('reconcileResourceCopies conserva el estado previo y no marca como no disponible ante un error de acceso a disco', async () => {
+    const tempDir = createTempDir();
+    const resolver = (p: string) => join(tempDir, 'recursos_educativos', p);
+    const patientDir = resolver(patientA);
+    await adapter.ensureDirectory(patientDir);
+
+    const activeMd = join(patientDir, 'edu-guia.1700000000000.uuid.md');
+    await adapter.writeText(activeMd, '# Guia');
+
+    let markUnavailableCalled = false;
+    const fakeRepo = {
+      async downloads() {
+        return [
+          {
+            contenido_id: 'edu-guia',
+            ruta_local: activeMd,
+            estado: 'descargado',
+          },
+        ];
+      },
+      async markDownloadUnavailable() {
+        markUnavailableCalled = true;
+      },
+    };
+
+    class AccessErrorAdapter extends NodeFileStorageAdapter {
+      override exists(p: string): boolean {
+        if (p === activeMd) {
+          throw new Error('EACCES: permission denied, stat');
+        }
+        return super.exists(p);
+      }
+    }
+
+    const failingAdapter = new AccessErrorAdapter();
+    const result = await reconcileResourceCopies(patientA, fakeRepo, failingAdapter, resolver);
+
+    // Ante el fallo de acceso, no debe marcarse como ausente en SQLite ni eliminarse
+    expect(markUnavailableCalled).toBe(false);
+    expect(result.markedUnavailable).toBe(0);
+    expect(result.cleanedOrphans).toBe(0);
+  });
 });
