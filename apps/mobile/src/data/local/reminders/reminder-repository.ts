@@ -292,6 +292,7 @@ export function createReminderRepository(
       limit?: number;
       offset?: number;
       estado?: NotificationJobState;
+      soloObservadas?: boolean;
     }): Promise<NotificationItem[]> {
       const limit = options?.limit ?? 50;
       const offset = options?.offset ?? 0;
@@ -301,6 +302,9 @@ export function createReminderRepository(
       if (options?.estado) {
         sql += ' AND estado = ?';
         params.push(options.estado);
+      }
+      if (options?.soloObservadas) {
+        sql += ' AND (recibida_observada_en IS NOT NULL OR abierta_en IS NOT NULL)';
       }
       sql += ' ORDER BY fecha_prevista_utc DESC, id DESC LIMIT ? OFFSET ?';
       params.push(limit, offset);

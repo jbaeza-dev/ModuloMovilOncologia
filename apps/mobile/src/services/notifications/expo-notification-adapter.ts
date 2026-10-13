@@ -91,34 +91,30 @@ export class ExpoNotificationAdapter implements LocalNotificationAdapter {
   }
 
   async listScheduled(): Promise<readonly ScheduledNotificationItem[]> {
-    try {
-      const all = await Notifications.getAllScheduledNotificationsAsync();
-      const items: ScheduledNotificationItem[] = [];
+    const all = await Notifications.getAllScheduledNotificationsAsync();
+    const items: ScheduledNotificationItem[] = [];
 
-      for (const req of all) {
-        const payloadData = req.content?.data as NotificationJobPayload | undefined;
-        let triggerDateUtc = '';
-        const trigger = req.trigger;
+    for (const req of all) {
+      const payloadData = req.content?.data as NotificationJobPayload | undefined;
+      let triggerDateUtc = '';
+      const trigger = req.trigger;
 
-        if (trigger && typeof trigger === 'object') {
-          if ('date' in trigger && trigger.date) {
-            triggerDateUtc = new Date(trigger.date).toISOString();
-          } else if ('value' in trigger && typeof trigger.value === 'number') {
-            triggerDateUtc = new Date(trigger.value).toISOString();
-          }
+      if (trigger && typeof trigger === 'object') {
+        if ('date' in trigger && trigger.date) {
+          triggerDateUtc = new Date(trigger.date).toISOString();
+        } else if ('value' in trigger && typeof trigger.value === 'number') {
+          triggerDateUtc = new Date(trigger.value).toISOString();
         }
-
-        items.push({
-          nativeId: req.identifier,
-          triggerDateUtc,
-          payload: payloadData && payloadData.version === 1 ? payloadData : null,
-        });
       }
 
-      return items;
-    } catch {
-      return [];
+      items.push({
+        nativeId: req.identifier,
+        triggerDateUtc,
+        payload: payloadData && payloadData.version === 1 ? payloadData : null,
+      });
     }
+
+    return items;
   }
 
   async schedule(job: NotificationScheduleJob): Promise<{ nativeId: string }> {
@@ -145,10 +141,6 @@ export class ExpoNotificationAdapter implements LocalNotificationAdapter {
   }
 
   async cancel(nativeId: string): Promise<void> {
-    try {
-      await Notifications.cancelScheduledNotificationAsync(nativeId);
-    } catch {
-      // Ignora fallo si ya no existe en el SO
-    }
+    await Notifications.cancelScheduledNotificationAsync(nativeId);
   }
 }

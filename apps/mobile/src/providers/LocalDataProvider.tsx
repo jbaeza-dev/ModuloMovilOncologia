@@ -10,7 +10,7 @@ import {
   useRef,
   useState,
 } from 'react';
-import { Text } from 'react-native';
+import { AppState, Text } from 'react-native';
 
 import { Screen } from '../components/Screen';
 import { BodyText, InfoCard, VisualButton } from '../components/Visual';
@@ -26,6 +26,22 @@ import { isDemoMode } from '../utils/environment';
 import type { NotificationJobPayload } from '../data/local/reminders/reminder-types';
 import { ExpoNotificationAdapter } from '../services/notifications/expo-notification-adapter';
 import { NotificationCoordinator } from '../services/reminders/notification-coordinator';
+
+const ALLOWED_DESTINATIONS = new Set(['/vitales/registrar', '/perfil/medicacion']);
+
+function isValidNotificationPayload(data: unknown): data is NotificationJobPayload {
+  if (!data || typeof data !== 'object') return false;
+  const p = data as Record<string, unknown>;
+  return (
+    p.version === 1 &&
+    typeof p.notificacionId === 'string' &&
+    p.notificacionId.length > 0 &&
+    typeof p.pacienteId === 'string' &&
+    p.pacienteId.length > 0 &&
+    typeof p.destino === 'string' &&
+    ALLOWED_DESTINATIONS.has(p.destino)
+  );
+}
 
 try {
   Notifications.setNotificationHandler({
@@ -56,12 +72,14 @@ type DataContextValue = {
   database: SqlConnection | null;
   patientId: string | null;
   repository: Repository | null;
+  coordinator: NotificationCoordinator | null;
   saving: boolean;
   formStorageReady: boolean;
   formImportStatus: PreparationStatus;
   formImportError: string | null;
   formImportWarning: FormImportWarning | null;
   retryFormImport: () => Promise<void>;
+  reconcileReminders: () => Promise<void>;
   runSave: <T>(work: () => Promise<T>) => Promise<T>;
   changePatient: () => void;
 };
@@ -154,6 +172,11 @@ export function LocalDataProvider({ children }: { children: ReactNode }) {
     };
   }, [database, patientId, importAttempt]);
 
+  const patientIdRef = useRef<string | null>(patientId);
+  useEffect(() => {
+    patientIdRef.current = patientId;
+  }, [patientId]);
+
   const formStorageReady = formImportStatus === 'ready';
 
   const repository = useMemo(
@@ -164,22 +187,101 @@ export function LocalDataProvider({ children }: { children: ReactNode }) {
     [database, patientId],
   );
 
-  // Manejo de eventos y toques de notificaciones locales para el paciente activo
+  const notificationAdapter = useMemo(() => new ExpoNotificationAdapter(), []);
+  const coordinator = useMemo(
+    () => (database ? new NotificationCoordinator(database, notificationAdapter) : null),
+    [database, notificationAdapter],
+  );
+
+  const processedNotificationsRef = useRef<Set<string>>(new Set());
+  const pendingNotificationIntentRef = useRef<NotificationJobPayload | null>(null);
+
+  const handleNotificationOpen = useCallback(
+    async (payload: NotificationJobPayload) => {
+      const currentId = patientIdRef.current;
+      if (!currentId || currentId !== payload.pacienteId) {
+        // Guardar intención pendiente hasta que el paciente coincida
+        pendingNotificationIntentRef.current = payload;
+        return;
+      }
+
+      if (!database) return;
+
+      // Validar contra SQLite que la notificación existe para este paciente
+      const row = await database.first<{ id: string }>(
+        'SELECT id FROM notificacion_local WHERE id = ? AND paciente_id = ?',
+        [payload.notificacionId, currentId],
+      );
+      if (!row) {
+        return;
+      }
+
+      // Marcar como abierta en SQLite
+      await database.run(
+        'UPDATE notificacion_local SET abierta_en = ? WHERE id = ? AND paciente_id = ? AND abierta_en IS NULL',
+        [new Date().toISOString(), payload.notificacionId, currentId],
+      );
+
+      // Resolver destino mediante lista permitida y navegar
+      if (ALLOWED_DESTINATIONS.has(payload.destino)) {
+        router.push(payload.destino as Parameters<typeof router.push>[0]);
+      }
+    },
+    [database],
+  );
+
+  // Procesar intención de navegación pendiente cuando el paciente coincida
   useEffect(() => {
-    if (!database || !patientId || !repository) return;
+    if (patientId && pendingNotificationIntentRef.current) {
+      if (pendingNotificationIntentRef.current.pacienteId === patientId) {
+        const pending = pendingNotificationIntentRef.current;
+        pendingNotificationIntentRef.current = null;
+        void handleNotificationOpen(pending);
+      }
+    }
+  }, [patientId, handleNotificationOpen]);
+
+  const reconcileReminders = useCallback(async () => {
+    const currentId = patientIdRef.current;
+    if (!coordinator || !currentId) return;
+    await coordinator.reconcile(currentId, () => patientIdRef.current === currentId);
+  }, [coordinator]);
+
+  // Reconciliación al seleccionar paciente
+  useEffect(() => {
+    if (patientId && coordinator) {
+      void reconcileReminders();
+    }
+  }, [patientId, coordinator, reconcileReminders]);
+
+  // Reconciliación al volver a primer plano (AppState active)
+  useEffect(() => {
+    const subscription = AppState.addEventListener('change', (nextState) => {
+      if (nextState === 'active' && patientIdRef.current && coordinator) {
+        void reconcileReminders();
+      }
+    });
+    return () => {
+      subscription.remove();
+    };
+  }, [coordinator, reconcileReminders]);
+
+  // Manejo de eventos y toques de notificaciones locales
+  useEffect(() => {
+    if (!database) return;
 
     // Procesar respuesta previa de arranque (cold start)
     try {
       const last = Notifications.getLastNotificationResponse();
       if (last) {
         Notifications.clearLastNotificationResponse();
-        const payload = last.notification.request.content.data as unknown as
-          | NotificationJobPayload
-          | undefined;
-        if (payload && payload.version === 1 && payload.pacienteId === patientId) {
-          void repository.reminders.recordNotificationOpened(payload.notificacionId);
-          if (payload.destino) {
-            router.push(payload.destino as unknown as Parameters<typeof router.push>[0]);
+        const data = last.notification.request.content.data;
+        const identifier = last.notification.request.identifier;
+        if (isValidNotificationPayload(data)) {
+          const dedupeKey = `${data.notificacionId}:${identifier || 'cold'}`;
+          if (!processedNotificationsRef.current.has(dedupeKey)) {
+            processedNotificationsRef.current.add(dedupeKey);
+            void handleNotificationOpen(data);
           }
         }
       }
@@ -192,23 +294,24 @@ export function LocalDataProvider({ children }: { children: ReactNode }) {
 
     try {
       responseSub = Notifications.addNotificationResponseReceivedListener((response) => {
-        const payload = response.notification.request.content.data as unknown as
-          | NotificationJobPayload
-          | undefined;
-        if (payload && payload.version === 1 && payload.pacienteId === patientId) {
-          void repository.reminders.recordNotificationOpened(payload.notificacionId);
-          if (payload.destino) {
-            router.push(payload.destino as unknown as Parameters<typeof router.push>[0]);
+        const data = response.notification.request.content.data;
+        const identifier = response.notification.request.identifier;
+        if (isValidNotificationPayload(data)) {
+          const dedupeKey = `${data.notificacionId}:${identifier || 'listener'}`;
+          if (!processedNotificationsRef.current.has(dedupeKey)) {
+            processedNotificationsRef.current.add(dedupeKey);
+            void handleNotificationOpen(data);
           }
         }
       });
 
       receivedSub = Notifications.addNotificationReceivedListener((notification) => {
-        const payload = notification.request.content.data as unknown as
-          | NotificationJobPayload
-          | undefined;
-        if (payload && payload.version === 1 && payload.pacienteId === patientId) {
-          void repository.reminders.recordNotificationObserved(payload.notificacionId);
+        const data = notification.request.content.data;
+        if (isValidNotificationPayload(data)) {
+          const currentId = patientIdRef.current;
+          if (currentId && data.pacienteId === currentId && repository) {
+            void repository.reminders.recordNotificationObserved(data.notificacionId);
+          }
         }
       });
     } catch {
@@ -219,18 +322,21 @@ export function LocalDataProvider({ children }: { children: ReactNode }) {
       responseSub?.remove();
       receivedSub?.remove();
     };
-  }, [database, patientId, repository]);
+  }, [database, repository, handleNotificationOpen]);
+
   const context = useMemo<DataContextValue>(
     () => ({
       database,
       patientId,
       repository,
+      coordinator,
       saving,
       formStorageReady,
       formImportStatus,
       formImportError,
       formImportWarning,
       retryFormImport,
+      reconcileReminders,
       async runSave<T>(work: () => Promise<T>) {
         if (!patientId || savingRef.current) throw new Error('Selecciona un paciente de prueba.');
         savingRef.current = true;
@@ -246,9 +352,7 @@ export function LocalDataProvider({ children }: { children: ReactNode }) {
         if (savingRef.current) return;
         const previousPatientId = patientId;
         setPatientId(null);
-        if (database && previousPatientId) {
-          const adapter = new ExpoNotificationAdapter();
-          const coordinator = new NotificationCoordinator(database, adapter);
+        if (coordinator && previousPatientId) {
           void coordinator.cancelPatientSchedule(previousPatientId);
         }
       },
@@ -257,12 +361,14 @@ export function LocalDataProvider({ children }: { children: ReactNode }) {
       database,
       patientId,
       repository,
+      coordinator,
       saving,
       formStorageReady,
       formImportStatus,
       formImportError,
       formImportWarning,
       retryFormImport,
+      reconcileReminders,
     ],
   );
 

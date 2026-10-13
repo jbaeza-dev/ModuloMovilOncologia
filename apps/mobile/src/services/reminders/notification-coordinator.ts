@@ -4,6 +4,7 @@ import { generateUuid, type NotificationRecord } from '../../data/local/reminder
 import type {
   LocalNotificationAdapter,
   NotificationPermissionState,
+  ScheduledNotificationItem,
 } from '../notifications/notification-adapter';
 import {
   calculateOccurrences,
@@ -25,7 +26,7 @@ export interface CoordinatorResult {
 /**
  * Mutex para serializar operaciones sobre la agenda y evitar condiciones de carrera.
  */
-class CoordinatorMutex {
+export class CoordinatorMutex {
   private queue = Promise.resolve();
 
   enqueue<T>(operation: () => Promise<T>): Promise<T> {
@@ -38,14 +39,19 @@ class CoordinatorMutex {
   }
 }
 
+export const defaultCoordinatorMutex = new CoordinatorMutex();
+
 export class NotificationCoordinator {
-  private mutex = new CoordinatorMutex();
+  private mutex: CoordinatorMutex;
 
   constructor(
     private database: SqlConnection,
     private adapter: LocalNotificationAdapter,
     private now: () => string = () => new Date().toISOString(),
-  ) {}
+    mutex?: CoordinatorMutex,
+  ) {
+    this.mutex = mutex ?? defaultCoordinatorMutex;
+  }
 
   /**
    * Intenta resolver cancelaciones pendientes en el sistema operativo.
@@ -60,7 +66,13 @@ export class NotificationCoordinator {
       return { resolved: true, remainingCount: 0 };
     }
 
-    const scheduled = await this.adapter.listScheduled();
+    let scheduled: readonly ScheduledNotificationItem[];
+    try {
+      scheduled = await this.adapter.listScheduled();
+    } catch {
+      return { resolved: false, remainingCount: pendingJobs.length };
+    }
+
     const scheduledByNativeId = new Set(scheduled.map((s) => s.nativeId));
     let remaining = 0;
 
@@ -74,7 +86,6 @@ export class NotificationCoordinator {
         }
       }
 
-      // También buscar por payload si no tiene id_nativo
       for (const item of scheduled) {
         if (item.payload?.notificacionId === job.id) {
           try {
@@ -105,10 +116,17 @@ export class NotificationCoordinator {
     patientId: string,
   ): Promise<{ success: boolean; pendingCount: number }> {
     return this.mutex.enqueue(async () => {
-      const scheduled = await this.adapter.listScheduled();
+      let scheduled: readonly ScheduledNotificationItem[] = [];
+      let listFailed = false;
+      try {
+        scheduled = await this.adapter.listScheduled();
+      } catch {
+        listFailed = true;
+      }
+
       const patientJobs = scheduled.filter((s) => s.payload?.pacienteId === patientId);
 
-      let pending = 0;
+      let pending = listFailed ? 1 : 0;
       for (const item of patientJobs) {
         try {
           await this.adapter.cancel(item.nativeId);
@@ -141,7 +159,7 @@ export class NotificationCoordinator {
   /**
    * Reconcilia la agenda de un paciente de manera determinista.
    */
-  async reconcile(patientId: string): Promise<CoordinatorResult> {
+  async reconcile(patientId: string, isContextActive?: () => boolean): Promise<CoordinatorResult> {
     return this.mutex.enqueue(async () => {
       // 1. Reintentar resolver cancelaciones pendientes en esta misma reconciliación
       await this.retryPendingCancellations();
@@ -166,26 +184,67 @@ export class NotificationCoordinator {
         };
       }
 
+      if (isContextActive && !isContextActive()) {
+        return {
+          status: 'desactivada',
+          totalDeseadas: 0,
+          programadasConfirmadas: 0,
+          cubiertoHastaIso: null,
+          truncadas: 0,
+          reglasAfectadas: [],
+          incidencias: ['Operación omitida por cambio de contexto durante la espera en cola.'],
+        };
+      }
+
       const repo = createReminderRepository(this.database, patientId, this.now, generateUuid);
       const prefs = await repo.getPreferences();
 
       // Si las preferencias del paciente están desactivadas
       if (!prefs.enabled) {
-        const scheduled = await this.adapter.listScheduled();
-        for (const item of scheduled) {
-          if (item.payload?.pacienteId === patientId) {
-            try {
-              await this.adapter.cancel(item.nativeId);
-            } catch {
-              // Ignorar
-            }
+        let allNative: readonly ScheduledNotificationItem[] = [];
+        let listFailed = false;
+        try {
+          allNative = await this.adapter.listScheduled();
+        } catch {
+          listFailed = true;
+        }
+
+        const patientJobs = allNative.filter((s) => s.payload?.pacienteId === patientId);
+        let failedCancels = listFailed ? 1 : 0;
+        for (const item of patientJobs) {
+          try {
+            await this.adapter.cancel(item.nativeId);
+          } catch {
+            failedCancels++;
           }
         }
+
+        const timestamp = this.now();
+        if (failedCancels > 0) {
+          await this.database.run(
+            `UPDATE notificacion_local
+             SET estado = 'cancelacion_pendiente', actualizado_el = ?
+             WHERE paciente_id = ? AND estado IN ('pendiente', 'programada')`,
+            [timestamp, patientId],
+          );
+          return {
+            status: 'programacion_pendiente',
+            totalDeseadas: 0,
+            programadasConfirmadas: 0,
+            cubiertoHastaIso: null,
+            truncadas: 0,
+            reglasAfectadas: [],
+            incidencias: [
+              'No se pudieron cancelar todas las notificaciones en el sistema operativo.',
+            ],
+          };
+        }
+
         await this.database.run(
           `UPDATE notificacion_local
            SET estado = 'cancelada', actualizado_el = ?
            WHERE paciente_id = ? AND estado IN ('pendiente', 'programada')`,
-          [this.now(), patientId],
+          [timestamp, patientId],
         );
         return {
           status: 'desactivada',
@@ -198,11 +257,16 @@ export class NotificationCoordinator {
         };
       }
 
-      // Consultar permiso nativo
+      // Consultar permiso nativo y estado del canal
       const permState = await this.adapter.getPermissionState();
-      if (permState.status !== 'granted') {
-        const scheduled = await this.adapter.listScheduled();
-        for (const item of scheduled) {
+      if (permState.status !== 'granted' || permState.channelStatus === 'blocked') {
+        let allNative: readonly ScheduledNotificationItem[] = [];
+        try {
+          allNative = await this.adapter.listScheduled();
+        } catch {
+          // Ignorar fallo de consulta si el permiso está denegado
+        }
+        for (const item of allNative) {
           if (item.payload?.pacienteId === patientId) {
             try {
               await this.adapter.cancel(item.nativeId);
@@ -218,12 +282,25 @@ export class NotificationCoordinator {
           cubiertoHastaIso: null,
           truncadas: 0,
           reglasAfectadas: [],
-          incidencias: ['Permiso de notificaciones no concedido en el sistema operativo.'],
+          incidencias: [
+            permState.channelStatus === 'blocked'
+              ? 'El canal de notificaciones está bloqueado en los ajustes del sistema.'
+              : 'Permiso de notificaciones no concedido en el sistema operativo.',
+          ],
           permission: permState,
         };
       }
 
-      // 2. Calcular ocurrencias deseadas
+      // 2. Transicionar ocurrencias pasadas no observadas a 'finalizada_sin_observacion'
+      const nowIso = this.now();
+      await this.database.run(
+        `UPDATE notificacion_local
+         SET estado = 'finalizada_sin_observacion', actualizado_el = ?
+         WHERE paciente_id = ? AND fecha_prevista_utc <= ? AND estado IN ('pendiente', 'programada') AND recibida_observada_en IS NULL`,
+        [nowIso, patientId, nowIso],
+      );
+
+      // 3. Calcular ocurrencias deseadas
       const rules = await repo.listRules();
       const medRows = await this.database.all<{
         id: string;
@@ -245,12 +322,29 @@ export class NotificationCoordinator {
       }));
 
       const plan = calculateOccurrences(rules, medications, {
-        now: new Date(this.now()),
+        now: new Date(nowIso),
         idGenerator: generateUuid,
       });
 
-      // 3. Obtener lista actual de trabajos nativos en el SO
-      const allNative = await this.adapter.listScheduled();
+      // 4. Obtener lista actual de trabajos nativos en el SO
+      let allNative: readonly ScheduledNotificationItem[];
+      try {
+        allNative = await this.adapter.listScheduled();
+      } catch (listErr) {
+        return {
+          status: 'error',
+          totalDeseadas: plan.totalCalculadas,
+          programadasConfirmadas: 0,
+          cubiertoHastaIso: null,
+          truncadas: plan.truncadas,
+          reglasAfectadas: plan.reglasAfectadas,
+          incidencias: [
+            `No se pudo consultar la agenda del sistema operativo: ${(listErr as Error).message}`,
+          ],
+          permission: permState,
+        };
+      }
+
       const patientNative = allNative.filter((s) => s.payload?.pacienteId === patientId);
 
       // Mapa de candidatos deseados por clave lógica
@@ -260,13 +354,11 @@ export class NotificationCoordinator {
         desiredMap.set(`${cand.recordatorioId}:${cand.revision}:${cand.fechaPrevistaUtc}`, cand);
       }
 
-      // 4. Cancelar obsoletos, evaluar adopción condicionada y desempate de duplicados
-      // Agrupar trabajos nativos por notificacionId
+      // 5. Cancelar obsoletos, evaluar adopción condicionada y desempate de duplicados
       const nativeByNotifId = new Map<string, typeof patientNative>();
       for (const item of patientNative) {
         const notifId = item.payload?.notificacionId;
         if (!notifId) {
-          // Sin payload o inválido: cancelar
           try {
             await this.adapter.cancel(item.nativeId);
           } catch {
@@ -282,24 +374,19 @@ export class NotificationCoordinator {
       const adoptedNativeIds = new Set<string>();
 
       for (const [notifId, group] of nativeByNotifId.entries()) {
-        // Verificar si la fila existe en SQLite
         const dbJob = await this.database.first<NotificationRecord>(
           'SELECT * FROM notificacion_local WHERE paciente_id = ? AND id = ?',
           [patientId, notifId],
         );
 
-        // Desempate de duplicados propios:
         let chosen = group[0];
         if (group.length > 1) {
-          // Conservar el que coincide con id_nativo registrado en SQLite
           const matchingDb = group.find((g) => g.nativeId === dbJob?.id_nativo);
           if (matchingDb) {
             chosen = matchingDb;
           } else {
-            // Desempate determinista lexicográfico
             chosen = [...group].sort((a, b) => a.nativeId.localeCompare(b.nativeId))[0];
           }
-          // Cancelar los duplicados redundantes
           for (const item of group) {
             if (item.nativeId !== chosen.nativeId) {
               try {
@@ -311,26 +398,21 @@ export class NotificationCoordinator {
           }
         }
 
-        // Adopción condicionada:
-        // Solo se adopta si existe en SQLite, pertenece al conjunto deseado vigente y no está en cancelacion_pendiente
         const candidateKey = `${chosen.payload?.recordatorioId}:${chosen.payload?.revision}:${chosen.triggerDateUtc}`;
         const isInDesiredSet = desiredMap.has(candidateKey);
         const isNotPendingCancel = dbJob?.estado !== 'cancelacion_pendiente';
 
         if (dbJob && isInDesiredSet && isNotPendingCancel) {
-          // Adoptar
           await this.database.run(
             "UPDATE notificacion_local SET id_nativo = ?, estado = 'programada', error = NULL, actualizado_el = ? WHERE id = ?",
             [chosen.nativeId, this.now(), notifId],
           );
           adoptedNativeIds.add(chosen.nativeId);
-          // Marcar como ya resuelta en el mapa deseado
           const candidate = desiredMap.get(candidateKey);
           if (candidate) {
-            candidate.id = notifId; // Mantener ID consistente
+            candidate.id = notifId;
           }
         } else {
-          // No deseado o ya cancelado: cancelar del SO
           try {
             await this.adapter.cancel(chosen.nativeId);
           } catch {
@@ -339,18 +421,22 @@ export class NotificationCoordinator {
         }
       }
 
-      // 5. Programar las ocurrencias restantes que no tengan trabajo nativo adoptado
+      // 6. Programar las ocurrencias restantes que no tengan trabajo nativo adoptado
       let confirmadas = 0;
       const incidencias: string[] = [];
 
       for (const cand of plan.seleccionadas) {
-        // Consultar si ya tiene un trabajo programado activo en SQLite
         const existing = await this.database.first<NotificationRecord>(
           'SELECT * FROM notificacion_local WHERE paciente_id = ? AND recordatorio_id = ? AND revision = ? AND fecha_prevista_utc = ?',
           [patientId, cand.recordatorioId, cand.revision, cand.fechaPrevistaUtc],
         );
 
-        if (existing?.estado === 'programada' && existing.id_nativo) {
+        // Verificación estricta: debe existir y su id_nativo debe haber sido adoptado efectivamente del SO
+        if (
+          existing?.estado === 'programada' &&
+          existing.id_nativo &&
+          adoptedNativeIds.has(existing.id_nativo)
+        ) {
           confirmadas++;
           continue;
         }
@@ -404,26 +490,41 @@ export class NotificationCoordinator {
           continue;
         }
 
-        // Paso C: Persistir id_nativo en SQLite (con rollback compensatorio)
+        // Paso C: Persistir id_nativo en SQLite (con compensación inmediata si falla)
         try {
           await repo.markNotificationScheduled(stableNotifId, nativeId);
           confirmadas++;
         } catch {
-          // Compensación inmediata: cancelar en el SO
           try {
             await this.adapter.cancel(nativeId);
-          } catch {
-            // Ignorar
+            incidencias.push('Fallo de persistencia en SQLite; trabajo nativo compensado.');
+          } catch (cancelErr) {
+            incidencias.push(
+              `Fallo de persistencia en SQLite y fallo al compensar trabajo nativo: ${(cancelErr as Error).message}`,
+            );
           }
-          incidencias.push('Fallo de persistencia en SQLite; trabajo nativo compensado.');
         }
       }
 
+      let status: CoordinatorResult['status'] = 'programada';
+      let cubiertoHasta = plan.cubiertoHastaIso;
+
+      if (plan.seleccionadas.length > 0) {
+        if (confirmadas === 0) {
+          status = 'error';
+          cubiertoHasta = null;
+        } else if (confirmadas < plan.seleccionadas.length) {
+          status = 'programacion_pendiente';
+        }
+      } else {
+        cubiertoHasta = null;
+      }
+
       return {
-        status: 'programada',
+        status,
         totalDeseadas: plan.totalCalculadas,
         programadasConfirmadas: confirmadas,
-        cubiertoHastaIso: plan.cubiertoHastaIso,
+        cubiertoHastaIso: cubiertoHasta,
         truncadas: plan.truncadas,
         reglasAfectadas: plan.reglasAfectadas,
         incidencias,

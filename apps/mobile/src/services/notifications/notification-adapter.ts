@@ -40,6 +40,7 @@ export class FakeNotificationAdapter implements LocalNotificationAdapter {
   public scheduled = new Map<string, ScheduledNotificationItem>();
   public shouldFailSchedule = false;
   public shouldFailCancel = false;
+  public shouldFailList = false;
   private nextId = 1;
 
   async getPermissionState(): Promise<NotificationPermissionState> {
@@ -51,6 +52,9 @@ export class FakeNotificationAdapter implements LocalNotificationAdapter {
   }
 
   async listScheduled(): Promise<readonly ScheduledNotificationItem[]> {
+    if (this.shouldFailList) {
+      throw new Error('Error simulado al consultar notificaciones en el sistema operativo');
+    }
     return Array.from(this.scheduled.values());
   }
 
