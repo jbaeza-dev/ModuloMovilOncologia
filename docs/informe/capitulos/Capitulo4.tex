@@ -1,0 +1,232 @@
+\chapter{Especificación de requerimientos}
+
+\section{Alcances y limitaciones}
+
+\subsection{Alcances}
+
+
+\subsection{Limitaciones}
+
+\subsubsection{Limitaciones de Hardware y Software}
+
+
+
+\subsubsection{Limitaciones Operativas:}
+
+
+\section{Planificación de reuniones con el cliente}
+
+
+
+\section{Requerimientos funcionales}
+
+% --- TABLA REPARTIDOR ---
+\begin{table}[H]
+\centering
+\renewcommand{\arraystretch}{1.3}
+\setlength{\tabcolsep}{6pt}
+\begin{tabularx}{\textwidth}{|c|p{3.5cm}|X|c|}
+\hline
+\textbf{ID} & \textbf{Nombre} & \textbf{Descripción} & \textbf{Prioridad} \\ \hline
+RF\_01 & Registrar entregas realizadas & El sistema debe permitir al repartidor registrar la entrega realizada a cada cliente asignado. & Alta \\ \hline
+RF\_02 & Ingresar comentarios de entrega & El sistema debe permitir al repartidor agregar observaciones o comentarios asociados a cada entrega. & Media \\ \hline
+RF\_03 & Visualizar listado de clientes & El sistema debe mostrar al repartidor los clientes que tiene asignados en su ruta diaria. & Alta \\ \hline
+RF\_04 & Registrar programación de pedido & El sistema debe permitir al repartidor registrar y programar la próxima entrega o pedido para cada cliente. & Alta \\ \hline
+RF\_05 & Visualizar ruta optimizada & El sistema debe mostrar al repartidor la ruta optimizada para las entregas del día. & Alta \\ \hline
+RF\_06 & Editar cantidad entrega & El sistema debe permitir al repartidor editar la cantidad de producto en caso de que el cliente lo solicite. & Media \\ \hline
+\end{tabularx}
+\caption{Requerimientos funcionales – vista del repartidor}
+\label{tab:repartidor}
+\end{table}
+
+% --- TABLA GESTIÓN DE REPARTO Y RUTAS ---
+\begin{table}[H]
+\centering
+\renewcommand{\arraystretch}{1.3}
+\setlength{\tabcolsep}{6pt}
+\begin{tabularx}{\textwidth}{|c|p{3.5cm}|X|c|}
+\hline
+\textbf{ID} & \textbf{Nombre} & \textbf{Descripción} & \textbf{Prioridad} \\ \hline
+RF\_07 & Gestionar pedidos & El sistema debe permitir al administrador registrar, modificar o eliminar pedidos realizados por los clientes. & Alta \\ \hline
+RF\_08 & Visualizar entregas por repartidor & El sistema debe permitir visualizar el historial de entregas realizadas por cada repartidor. & Media \\ \hline
+RF\_09 & Gestionar rutas & El sistema debe permitir asignar clientes registrados a rutas existentes o nuevas. & Alta \\ \hline
+RF\_10 & Asignar cliente a ruta & El sistema debe permitir asignar clientes registrados a rutas existentes. & Alta \\ \hline
+RF\_11 & Asignar conductor a ruta & El sistema debe permitir vincular repartidores a rutas de distribución específicas. & Alta \\ \hline
+RF\_12 & Programar entregas & El sistema debe permitir planificar fechas y horarios de entrega de pedidos. & Alta \\ \hline
+RF\_13 & Asignar productos a rutas & El sistema debe permitir asociar productos a las rutas o entregas correspondientes. & Alta \\ \hline
+RF\_14 & Visualizar rutas activas & El sistema debe permitir al administrador visualizar las rutas actualmente activas y su estado. & Media \\ \hline
+RF\_15 & Visualizar dashboard de rutas & El sistema debe mostrar un panel con métricas sobre pedidos, entregas, etc. & Media \\ \hline
+\end{tabularx}
+\caption{R.F Gestión de reparto y rutas (Vista de Administrador)}
+\label{tab:gestion_rutas}
+\end{table}
+
+% --- TABLA GESTIÓN DE INVENTARIO ---
+\begin{table}[H]
+\centering
+\renewcommand{\arraystretch}{1.3}
+\setlength{\tabcolsep}{6pt}
+\begin{tabularx}{\textwidth}{|c|p{3.5cm}|X|c|}
+\hline
+\textbf{ID} & \textbf{Nombre} & \textbf{Descripción} & \textbf{Prioridad} \\ \hline
+RF\_16 & Gestionar materias primas & El sistema debe permitir registrar, editar y eliminar materias primas utilizadas en la producción. & Alta \\ \hline
+RF\_17 & Registrar compras de materias primas & El sistema debe permitir registrar y visualizar las compras de materias primas para mantener trazabilidad. & Alta \\ \hline
+RF\_18 & Gestionar recetas & El sistema debe permitir crear, modificar o eliminar recetas que definan la composición de los productos. & Alta \\ \hline
+RF\_19 & Gestionar productos & El sistema debe permitir crear, editar y visualizar productos terminados a partir de recetas. & Alta \\ \hline
+RF\_20 & Gestionar lotes y producción & El sistema debe permitir registrar la producción, crear lotes y mantener control del stock de productos. & Alta \\ \hline
+RF\_21 & Visualizar dashboard de inventario & El sistema debe mostrar un panel con indicadores del inventario, stock disponible y alertas por bajo nivel. & Media \\ \hline
+\end{tabularx}
+\caption{R.F Gestión de inventario (Administrador y Productor)}
+\label{tab:inventario}
+\end{table}
+
+% --- TABLA CLIENTES ---
+\begin{table}[H]
+\centering
+\renewcommand{\arraystretch}{1.3}
+\setlength{\tabcolsep}{6pt}
+\begin{tabularx}{\textwidth}{|c|p{3.5cm}|X|c|}
+\hline
+\textbf{ID} & \textbf{Nombre} & \textbf{Descripción} & \textbf{Prioridad} \\ \hline
+RF\_22 & Registrar clientes & El sistema debe permitir al administrador registrar nuevos clientes. & Alta \\ \hline
+RF\_23 & Editar o eliminar clientes & El sistema debe permitir modificar o eliminar la información de un cliente. & Alta \\ \hline
+RF\_24 & Visualizar historial de entregas por clientes & El sistema debe permitir consultar el historial de entregas asociadas a cada cliente. & Media \\ \hline
+RF\_25 & Visualizar rutas y sus clientes & El sistema debe mostrar las rutas existentes con sus respectivos clientes asignados. & Alta \\ \hline
+\end{tabularx}
+\caption{R.F Clientes (Administrador)}
+\label{tab:clientes}
+\end{table}
+
+% --- TABLA REPORTES ---
+\begin{table}[H]
+\centering
+\renewcommand{\arraystretch}{1.3}
+\setlength{\tabcolsep}{6pt}
+\begin{tabularx}{\textwidth}{|c|p{3.5cm}|X|c|}
+\hline
+\textbf{ID} & \textbf{Nombre} & \textbf{Descripción} & \textbf{Prioridad} \\ \hline
+RF\_26 & Generar reporte de entregas & Reporte de entregas programadas, realizadas, etc. & Media \\ \hline
+RF\_27 & Generar reporte de ventas & Reporte de ventas por período. & Media \\ \hline
+RF\_28 & Generar reporte de inventario & Reporte del estado de inventario y stock. & Media \\ \hline
+RF\_29 & Generar reporte de clientes & Reporte de clientes y su actividad. & Media \\ \hline
+RF\_30 & Exportar reportes a Excel & Exportar cualquier reporte a planilla Excel. & Baja \\ \hline
+\end{tabularx}
+\caption{R.F Reportes (Administrador)}
+\label{tab:reportes}
+\end{table}
+
+% --- TABLA ADMINISTRACIÓN ---
+\begin{table}[H]
+\centering
+\renewcommand{\arraystretch}{1.3}
+\setlength{\tabcolsep}{6pt}
+\begin{tabularx}{\textwidth}{|c|p{3.5cm}|X|c|}
+\hline
+\textbf{ID} & \textbf{Nombre} & \textbf{Descripción} & \textbf{Prioridad} \\ \hline
+RF\_31 & Gestionar usuarios & El sistema debe permitir crear, editar y eliminar usuarios del sistema. & Alta \\ \hline
+\end{tabularx}
+\caption{R.F Administración (Administrador)}
+\label{tab:administracion}
+\end{table}
+
+
+
+\begin{table}[H]
+\centering
+\renewcommand{\arraystretch}{1.3}
+\setlength{\tabcolsep}{6pt}
+\begin{tabularx}{\textwidth}{|c|c|X|l|} % Se cambió la 'l' de Caso de Uso por 'X'
+\hline
+\textbf{Objetivo} & \textbf{RF} & \textbf{Caso de Uso} & \textbf{Módulo} \\ \hline
+
+OE1, OE2 & RF\_01 & CU\_07 Registrar entregas realizadas & Repartidor \\ \hline
+OE1, OE2 & RF\_02 & CU\_08 Ingresar comentarios de entrega & Repartidor \\ \hline
+OE1, OE4 & RF\_03 & CU\_09 Visualizar listado de clientes & Repartidor \\ \hline
+OE1, OE2 & RF\_04 & CU\_10 Programar próxima entrega & Repartidor \\ \hline
+OE3 & RF\_05 & CU\_11 Visualizar ruta optimizada & Repartidor \\ \hline
+OE1 & RF\_06 & CU\_12 Editar cantidad de entrega & Repartidor \\ \hline
+
+OE1, OE2 & RF\_07 & CU\_01 Gestionar pedidos & Pedidos y Rutas \\ \hline
+OE1 & RF\_08 & CU\_01 Gestionar pedidos & Pedidos y Rutas \\ \hline
+OE2, OE3 & RF\_09 & CU\_02 Gestionar rutas & Pedidos y Rutas \\ \hline
+OE4 & RF\_10 & CU\_03 Asignar clientes y productos a rutas & Pedidos y Rutas \\ \hline
+OE2 & RF\_11 & CU\_02 Gestionar rutas & Pedidos y Rutas \\ \hline
+OE1, OE2 & RF\_12 & CU\_01 Gestionar pedidos & Pedidos y Rutas \\ \hline
+OE4 & RF\_13 & CU\_03 Asignar clientes y productos a rutas & Pedidos y Rutas \\ \hline
+OE1 & RF\_14 & CU\_04 Visualizar dashboard de rutas & Pedidos y Rutas \\ \hline
+OE1 & RF\_15 & CU\_04 Visualizar dashboard de rutas & Pedidos y Rutas \\ \hline
+
+\end{tabularx}
+\caption{Matriz de trazabilidad – Repartidor y Pedidos/Rutas}
+\label{tab:trazabilidad_rutas}
+\end{table}
+
+\subsection{Tablas de trazabilidad }
+
+% --- TABLA 1: INVENTARIO Y PRODUCCIÓN ---
+\begin{table}[H]
+\centering
+\renewcommand{\arraystretch}{1.3}
+\setlength{\tabcolsep}{6pt}
+\begin{tabularx}{\textwidth}{|c|c|X|l|}
+\hline
+\textbf{Objetivo} & \textbf{RF} & \textbf{Caso de Uso} & \textbf{Módulo} \\ \hline
+OE1, OE2 & RF\_12 & CU\_01 Gestionar materias primas & Inventario \\ \hline
+OE1, OE2 & RF\_13 & CU\_02 Registrar compras & Inventario \\ \hline
+OE1, OE2 & RF\_14 & CU\_03 Gestionar recetas & Producción \\ \hline
+OE1, OE2 & RF\_15 & CU\_04 Gestionar productos & Producción \\ \hline
+OE1, OE2 & RF\_16 & CU\_05 Gestionar lotes y producción & Producción \\ \hline
+OE4 & RF\_17 & CU\_06 Visualizar dashboard & Inventario \\ \hline
+\end{tabularx}
+\caption{Matriz de trazabilidad – Inventario y Producción}
+\label{tab:trazabilidad_inv_prod}
+\end{table}
+
+% --- TABLA 2: CLIENTES ---
+\begin{table}[H]
+\centering
+\renewcommand{\arraystretch}{1.3}
+\setlength{\tabcolsep}{6pt}
+\begin{tabularx}{\textwidth}{|c|c|X|l|}
+\hline
+\textbf{Objetivo} & \textbf{RF} & \textbf{Caso de Uso} & \textbf{Módulo} \\ \hline
+OE1, OE4 & RF\_22 & CU\_13 Registrar clientes & Clientes \\ \hline
+OE1, OE4 & RF\_23 & CU\_14 Editar o eliminar clientes & Clientes \\ \hline
+OE1, OE4 & RF\_24 & CU\_15 Visualizar historial de entregas por cliente & Clientes \\ \hline
+\end{tabularx}
+\caption{Matriz de trazabilidad – Clientes}
+\label{tab:trazabilidad_clientes}
+\end{table}
+
+% --- TABLA 3: REPORTES ---
+\begin{table}[H]
+\centering
+\renewcommand{\arraystretch}{1.3}
+\setlength{\tabcolsep}{6pt}
+\begin{tabularx}{\textwidth}{|c|c|X|l|}
+\hline
+\textbf{Objetivo} & \textbf{RF} & \textbf{Caso de Uso} & \textbf{Módulo} \\ \hline
+OE4 & RF\_25 & CU\_01 Generar reportes & Reportes \\ \hline
+OE4 & RF\_26 & CU\_01 Generar reportes & Reportes \\ \hline
+OE4 & RF\_27 & CU\_01 Generar reportes & Reportes \\ \hline
+OE4 & RF\_28 & CU\_01 Generar reportes & Reportes \\ \hline
+OE4 & RF\_29 & CU\_02 Exportar reportes a Excel & Reportes \\ \hline
+\end{tabularx}
+\caption{Matriz de trazabilidad – Reportes}
+\label{tab:trazabilidad_reportes}
+\end{table}
+
+% --- TABLA 4: ADMINISTRACIÓN ---
+\begin{table}[H]
+\centering
+\renewcommand{\arraystretch}{1.3}
+\setlength{\tabcolsep}{6pt}
+\begin{tabularx}{\textwidth}{|c|c|X|l|}
+\hline
+\textbf{Objetivo} & \textbf{RF} & \textbf{Caso de Uso} & \textbf{Módulo} \\ \hline
+OE2, OE4 & RF\_30 & CU\_01 Gestionar usuarios & Administración \\ \hline
+OE2, OE4 & RF\_31 & CU\_02 Configurar sistema & Administración \\ \hline
+\end{tabularx}
+\caption{Matriz de trazabilidad – Administración}
+\label{tab:trazabilidad_admin}
+\end{table}

@@ -12,6 +12,22 @@ test-results/
 *.tsbuildinfo
 .cache/
 
+# Archivos auxiliares de compilación LaTeX
+*.aux
+*.bbl
+*.bcf
+*.blg
+*.fdb_latexmk
+*.fls
+*.out
+*.run.xml
+*.synctex.gz
+*.toc
+*.lof
+*.lot
+*.nav
+*.snm
+
 # Archivos locales de Expo y prebuild nativo generado
 .expo/
 .expo-shared/

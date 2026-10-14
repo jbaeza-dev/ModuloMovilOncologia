@@ -1,0 +1,102 @@
+\documentclass[12pt, oneside]{book}
+\usepackage[paperwidth=216mm, paperheight=279mm,top=3cm, bottom=2.5cm, right=2.5cm, left=2.5cm]{geometry}
+% Paquetes necesarios
+
+\usepackage[utf8]{inputenc}
+\usepackage[T1]{fontenc}
+\usepackage[spanish, es-tabla]{babel} % Español
+
+\usepackage{titlesec}
+\usepackage{lipsum} 
+\usepackage{setspace} 
+\usepackage{hyperref}
+\usepackage{graphicx}
+\usepackage{float}
+\usepackage{amssymb} 
+\usepackage{amsmath}
+\usepackage{etoolbox}
+\usepackage{subcaption} 
+\usepackage{array}
+\usepackage{algorithm}
+\usepackage{algpseudocode}
+\usepackage{pgfplots}
+\usepackage{adjustbox}
+\usepackage{booktabs}
+\usepackage{tabularx}
+\usepackage[table,xcdraw]{xcolor}
+\usepackage{enumitem}
+\usepackage{csquotes}
+\usepackage{longtable}
+\usepackage{pdflscape}
+\usepackage{graphicx}
+\usepackage{float}
+\usepackage{multicol}
+\usepackage{multirow}
+
+
+%para bibliografía en formato APA, requerido en biblioteca
+\usepackage[style=apa,sortcites=true,sorting=nyt,backend=biber]{biblatex}
+%\DeclareLanguageMapping{american}{american-apa} % para texto en inglés
+\DeclareLanguageMapping{spanish}{spanish-apa}    % para texto en español
+
+\addbibresource{bibliografia.bib}
+
+
+%%%%% configuración de párrafos
+\setlength{\parindent}{4em} %identación inicial
+\raggedbottom %para evitar espacio grandes entre parrafos
+%\setlength{\parskip}{0.7em} %separación entre párrafos
+
+\renewcommand{\baselinestretch}{1.5} %separación entre lineas
+
+\titleformat{name=\chapter}[display]{\filright\bfseries}{\Large\chaptername~\thechapter}{20pt}{\Huge}
+\titlespacing*{name=\chapter}{0pt}{0pt}{20pt}
+
+
+%\titleformat{\chapter}[display]
+%  {\normalfont\Huge\bfseries}{}{0pt}{\fontsize{20}{22}\selectfont}
+%\titlespacing*{\chapter}{0pt}{-20pt}{20pt}
+
+\let\cleardoublepage\clearpage
+
+\begin{document}
+
+\include{preliminares/Portada}
+
+
+% Página en blanco después de la portada
+\newpage
+\thispagestyle{empty}
+\mbox{}
+
+\include{capitulos/Agradecimientos}
+
+
+\include{capitulos/Resumen}
+\include{capitulos/Abstract}
+% Índice
+\tableofcontents
+\listoftables
+\listoffigures
+
+\include{capitulos/Introduccion}
+\include{capitulos/Capitulo2}
+\include{capitulos/Capitulo3}
+\include{capitulos/Capitulo4}
+\include{capitulos/Capitulo5}
+\include{capitulos/Capitulo6}
+\include{capitulos/Capitulo7}
+\include{capitulos/Capitulo8}
+\include{capitulos/Capitulo9}
+\include{capitulos/Capitulo10}
+\include{preliminares/Conclusiones}
+\nocite{openai2026chatgpt}
+\nocite{google2026gemini}
+\printbibliography[title={Bibliografía}]
+\include{preliminares/Anexos}
+
+
+
+
+
+\end{document}

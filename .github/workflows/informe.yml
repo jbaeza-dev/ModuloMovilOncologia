@@ -1,0 +1,37 @@
+name: Compilar Informe LaTeX
+
+on:
+  push:
+    paths:
+      - 'docs/informe/**'
+      - '.github/workflows/informe.yml'
+  pull_request:
+    paths:
+      - 'docs/informe/**'
+      - '.github/workflows/informe.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  build_latex:
+    name: Compilar PDF con LaTeX
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout del repositorio
+        uses: actions/checkout@v4
+
+      - name: Compilar LaTeX a PDF
+        uses: xu-cheng/latex-action@v3
+        with:
+          root_file: main.tex
+          working_directory: docs/informe
+          latexmk_use_biber: true
+
+      - name: Subir PDF generado
+        uses: actions/upload-artifact@v4
+        with:
+          name: Informe-QuimioCare-PDF
+          path: docs/informe/main.pdf
+          retention-days: 30

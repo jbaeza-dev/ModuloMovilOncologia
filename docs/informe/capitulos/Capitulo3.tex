@@ -1,0 +1,84 @@
+\chapter{Definición del proyecto}
+
+\section{Objetivos del proyecto}
+
+\subsection*{Objetivo General}
+
+Desarrollar el módulo móvil de una plataforma integrada de acompañamiento oncológico domiciliario, mediante una aplicación Android con arquitectura offline-first y motor de triaje edge local, que permitió a pacientes en tratamiento de quimioterapia registrar síntomas y signos vitales sin depender de conectividad, recibir alertas de urgencia evaluadas localmente en el dispositivo, y acceder al contenido educativo y al asistente conversacional del sistema.
+
+\subsection*{Objetivos Específicos}
+\begin{enumerate}
+    \item \textbf{Interfaz y Accesibilidad:} Se diseñó e implementó una aplicación móvil Android en React Native con Expo, accesible para pacientes con fatiga cognitiva, con módulos de registro de síntomas y signos vitales, biblioteca educativa y acceso al asistente conversacional, garantizando un máximo de 3 interacciones para alcanzar cualquier función principal.
+    \item \textbf{Motor de Triaje Edge:} Se construyó un motor de triaje edge local que evaluó en tiempo real los signos vitales registrados en el dispositivo, emitiendo alertas de urgencia sin requerir conexión a internet, y derivando automáticamente al paciente a atención médica ante la detección de valores críticos o palabras clave de riesgo.
+    \item \textbf{Arquitectura Offline-First:} Se implementó una arquitectura offline-first mediante SQLite local (expo-sqlite) y sincronización bidireccional diferida con PowerSync, garantizando que los registros de síntomas persistieran íntegramente en el dispositivo durante períodos sin conectividad y se sincronizaran automáticamente sin duplicación con la base central de la plataforma al recuperar señal.
+    \item \textbf{Backend Pasarela:} Se desarrolló un backend de pasarela (gateway) en Node.js + Express que gestionó notificaciones push, sesiones de dispositivo y consumo autenticado de la API clínica central mediante el token JWT emitido por el módulo de inteligencia clínica, sin replicar lógica de autenticación de usuarios.
+    \item \textbf{Motor Nativo de Reportes:} Se implementó un motor nativo de generación de reportes que exportó el historial de síntomas y signos vitales en formato PDF y Excel directamente desde el dispositivo, incluyendo el código único de vinculación del paciente para su presentación al equipo médico en controles programados.
+    \item \textbf{Evaluación Técnica y Robustez:} Se evaluó la robustez del motor de triaje edge y la integridad de la sincronización offline-first ante escenarios de desconexión prolongada y valores clínicos límite, midiendo la tasa de falsos negativos/positivos en alertas críticas y la tasa de conflictos resueltos correctamente durante la sincronización diferida.
+\end{enumerate}
+
+\section{Ambiente de Ingeniería de Software}
+
+\subsection*{Metodología de trabajo}
+
+Se utilizó Scrum como marco de trabajo ágil, dada la necesidad de un desarrollo iterativo e incremental. Los requerimientos se priorizaron según su impacto en la seguridad clínica del paciente (Alta, Media, Baja), permitiendo entregas funcionales constantes. La planificación de los sprints y el diseño de API se coordinó directamente con el equipo responsable del módulo de inteligencia clínica y plataforma web.
+
+\subsection*{Arquitectura del sistema}
+
+\subsection*{Justificación de la arquitectura seleccionada}
+
+La arquitectura offline-first se justificó por la necesidad de garantizar disponibilidad del registro de síntomas y de la evaluación de triaje en zonas rurales de la región de Ñuble con conectividad intermitente. La separación entre el gateway del módulo móvil y la API clínica central permitió que el equipo de desarrollo del Módulo Móvil no dependiera de replicar lógica de autenticación ni el motor de inteligencia artificial RAG, responsabilidad del módulo de plataforma web (Jiménez \& Muñoz, 2026).
+
+\subsection*{Evaluación de Impacto y Compromisos}
+
+
+\section{Tecnologías Utilizadas}
+
+\subsection*{Aplicación móvil:}
+\begin{itemize}
+    \item \textbf{React Native + Expo:} Se utilizó como framework principal del cliente móvil, permitiendo compilar una aplicación nativa para Android a partir de una base de código tipada en TypeScript. Expo proporcionó acceso simplificado a funcionalidades del dispositivo como sistema de archivos, notificaciones locales y SQLite embebido.
+    \item \textbf{TypeScript:} Se empleó en todo el stack (móvil, gateway) para añadir tipado estático, mejorando la detección de errores y la mantenibilidad del código.
+    \item \textbf{Expo Router:} Se utilizó para gestionar la navegación interna entre pantallas de la aplicación.
+    \item \textbf{expo-sqlite:} Se integró como motor relacional embebido para garantizar la disponibilidad total del registro de síntomas sin conexión a internet (RNF-04).
+    \item \textbf{expo-file-system / expo-notifications:} Se utilizaron para la gestión de archivos de reportes generados en cliente y para las notificaciones push y recordatorios locales, respectivamente.
+\end{itemize}
+
+\subsection*{Motor de triaje edge local:}
+\begin{itemize}
+    \item Se implementó de forma nativa en el dispositivo en TypeScript, procesando de forma síncrona y local los datos ingresados en expo-sqlite, comparándolos contra la matriz de umbrales fisiológicos validados por el equipo de enfermería, sin realizar peticiones HTTP ni depender de conectividad.
+    \item Cada resultado emitido se registró localmente en la tabla \texttt{EVALUACION\_TRIAJE} (fecha, nivel de alerta, parámetro gatillante y derivación), permitiendo la auditoría histórica de eventos críticos.
+\end{itemize}
+
+\subsection*{Backend de pasarela (gateway):}
+\begin{itemize}
+    \item \textbf{Node.js + Express (TypeScript):} Se utilizó para implementar el servidor intermedio entre la aplicación móvil, los servicios de notificaciones y la API clínica central.
+    \item \textbf{jsonwebtoken:} Se empleó para validar la firma y vigencia del token JWT emitido por el backend central en cada petición, retornando un código HTTP 401 ante un token expirado o inválido.
+    \item \textbf{Prisma ORM + PostgreSQL:} Se utilizó una instancia liviana de PostgreSQL gestionada con Prisma ORM para la gestión de sesiones de dispositivo (\texttt{SESION\_DISPOSITIVO}) y el registro de tokens push, aislando estos datos operativos de la base de datos clínica central.
+    \item \textbf{Axios, CORS, Helmet:} Se utilizaron para la comunicación saliente hacia la API central y para reforzar la seguridad HTTP del servicio.
+\end{itemize}
+
+\subsection*{Base de datos y sincronización:}
+\begin{itemize}
+    \item \textbf{PowerSync:} Se utilizó para ejecutar la sincronización bidireccional diferida entre la base de datos SQLite local del dispositivo móvil y la base de datos PostgreSQL central de la plataforma integrada, gestionando una arquitectura offline-first transparente sin intervención manual del paciente.
+\end{itemize}
+
+\subsection*{Gestión de estado, validación y exportación nativa:}
+\begin{itemize}
+    \item \textbf{Zustand:} Se utilizó para la gestión del estado global, garantizando reactividad liviana en el cliente móvil.
+    \item \textbf{Zod:} Se empleó para centralizar la validación de la estructura de los datos de entrada y salida.
+    \item \textbf{jsPDF:} Se utilizó para la exportación del historial de síntomas en formato PDF directamente en el cliente.
+    \item \textbf{SheetJS (XLSX):} Se empleó para la generación de hojas de cálculo, incorporando el código único de vinculación en el encabezado.
+\end{itemize}
+
+\subsection*{Pruebas:}
+\begin{itemize}
+    \item \textbf{Vitest (TypeScript):} Se utilizó como framework de pruebas unitarias e integración para el motor de triaje edge, los formateadores de reportes y los middlewares de validación JWT en el gateway.
+\end{itemize}
+
+\subsection*{Definiciones, Siglas y Abreviaciones:}
+\begin{itemize}
+    \item \textbf{Offline-first:} Enfoque de diseño en el que la aplicación funciona completamente desde una base de datos local en el dispositivo, sincronizando con el servidor en segundo plano al recuperar conectividad.
+    \item \textbf{Edge computing:} Paradigma que ejecuta la lógica de cómputo directamente en el dispositivo del usuario final, en lugar de depender de un servidor remoto.
+    \item \textbf{JWT:} (JSON Web Token). Estándar abierto para la transmisión segura de información entre partes en forma de un objeto compacto y firmado digitalmente.
+    \item \textbf{API REST:} Estilo de arquitectura para diseñar servicios web mediante el protocolo HTTP, utilizado para la comunicación entre el gateway del módulo móvil y la API clínica central.
+    \item \textbf{RAG:} (Retrieval-Augmented Generation). Técnica de inteligencia artificial que combina un modelo de lenguaje generativo con un sistema de recuperación de información sobre un corpus controlado.
+\end{itemize}
