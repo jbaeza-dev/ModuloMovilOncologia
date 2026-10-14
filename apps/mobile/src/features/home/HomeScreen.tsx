@@ -21,7 +21,7 @@ import { isDemoMode } from '../../utils/environment';
 export function HomeScreen() {
   const { theme: appTheme } = useAppTheme();
   const styles = createStyles(appTheme.colors);
-  const { repository, patientId, changePatient, saving } = useLocalData();
+  const { repository, patientId, changePatient, saving, isClosing } = useLocalData();
   const load = useCallback(
     () => (repository ? repository.latestVital() : Promise.resolve(null)),
     [repository],
@@ -51,10 +51,10 @@ export function HomeScreen() {
             autenticada ni sustituyen una evaluación médica.
           </BodyText>
           <VisualButton
-            label="Cambiar paciente de prueba"
+            label={isClosing ? 'Cerrando contexto…' : 'Cambiar paciente de prueba'}
             secondary
-            disabled={saving}
-            onPress={changePatient}
+            disabled={saving || isClosing}
+            onPress={() => void changePatient()}
           />
         </InfoCard>
       ) : null}

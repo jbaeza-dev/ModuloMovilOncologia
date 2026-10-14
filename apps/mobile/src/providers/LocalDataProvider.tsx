@@ -10,10 +10,10 @@ import {
   useRef,
   useState,
 } from 'react';
-import { AppState, Text } from 'react-native';
+import { AppState } from 'react-native';
 
 import { Screen } from '../components/Screen';
-import { BodyText, InfoCard, VisualButton } from '../components/Visual';
+import { BodyText, VisualButton } from '../components/Visual';
 import { createExpoConnection } from '../data/local/core/expo-connection';
 import { ExpoFileStorageAdapter } from '../data/local/files/file-storage-adapter';
 import { migrateDatabase } from '../data/local/migrations';
@@ -63,6 +63,15 @@ export type FormImportWarning = {
   pendingCleanups: number;
 };
 
+export type CloseReason = 'change_patient' | 'manual_close' | 'session_required';
+
+export type TeardownResult = {
+  success: boolean;
+  cancelledPatientId: string | null;
+  pendingNotificationsCount: number;
+  error?: string;
+};
+
 type Repository = ReturnType<typeof createPatientRepository>;
 type DataContextValue = {
   database: SqlConnection | null;
@@ -70,6 +79,7 @@ type DataContextValue = {
   repository: Repository | null;
   coordinator: NotificationCoordinator | null;
   saving: boolean;
+  isClosing: boolean;
   formStorageReady: boolean;
   formImportStatus: PreparationStatus;
   formImportError: string | null;
@@ -77,7 +87,11 @@ type DataContextValue = {
   retryFormImport: () => Promise<void>;
   reconcileReminders: (targetPatientId?: string) => Promise<CoordinatorResult | undefined>;
   runSave: <T>(work: () => Promise<T>) => Promise<T>;
+  trackOperation: <T>(operation: () => Promise<T>) => Promise<T>;
+  closeActiveContext: (reason?: CloseReason) => Promise<TeardownResult>;
+  selectPatient: (newPatientId: string) => Promise<void>;
   changePatient: () => void;
+  activeTeardownPromise: Promise<TeardownResult> | null;
 };
 
 const DataContext = createContext<DataContextValue | null>(null);
@@ -197,6 +211,168 @@ export function LocalDataProvider({ children }: { children: ReactNode }) {
         : null,
     [database, notificationAdapter],
   );
+
+  const contextEpochRef = useRef<number>(0);
+  const activeOperationsRef = useRef<number>(0);
+  const drainResolversRef = useRef<Set<() => void>>(new Set());
+  const activeTeardownPromiseRef = useRef<Promise<TeardownResult> | null>(null);
+
+  const [isClosing, setIsClosing] = useState(false);
+  const closingRef = useRef(false);
+
+  const trackOperation = useCallback(async <T,>(operation: () => Promise<T>): Promise<T> => {
+    if (closingRef.current) {
+      throw new Error('Operación rechazada: el contexto se encuentra en proceso de cierre.');
+    }
+    activeOperationsRef.current += 1;
+    try {
+      return await operation();
+    } finally {
+      activeOperationsRef.current -= 1;
+      if (activeOperationsRef.current === 0) {
+        drainResolversRef.current.forEach((resolve) => resolve());
+        drainResolversRef.current.clear();
+      }
+    }
+  }, []);
+
+  const closeActiveContext = useCallback(
+    (reason: CloseReason = 'manual_close'): Promise<TeardownResult> => {
+      if (activeTeardownPromiseRef.current) {
+        return activeTeardownPromiseRef.current;
+      }
+
+      // --- FASE 1: TRANSICIÓN INMEDIATA (< 1 segundo, RNF-05 local) ---
+      contextEpochRef.current += 1;
+      const currentEpoch = contextEpochRef.current;
+      const outgoingPatientId = patientIdRef.current;
+      closingRef.current = true;
+      setIsClosing(true);
+
+      // 1. Invalidar identidad activa en ref y en React
+      patientIdRef.current = null;
+      setPatientId(null);
+
+      // 2. Limpiar intenciones de notificación pendientes y dedupe
+      pendingNotificationIntentRef.current = null;
+      inFlightNotificationsRef.current.clear();
+
+      // 3. Redirección inmediata según motivo de salida
+      if (reason === 'change_patient') {
+        router.replace('/acceso/seleccionar-paciente');
+      } else if (reason === 'session_required') {
+        router.replace('/acceso?motivo=sesion_requerida');
+      } else {
+        router.replace('/acceso');
+      }
+
+      // --- FASE 2: DRENAJE SEGURO OBSERVABLE ---
+      let resolveTeardown!: (res: TeardownResult) => void;
+      const teardownPromise = new Promise<TeardownResult>((resolve) => {
+        resolveTeardown = resolve;
+      });
+      activeTeardownPromiseRef.current = teardownPromise;
+
+      queueMicrotask(() => {
+        void (async () => {
+          let cancelSuccess = true;
+          let pendingCount = 0;
+          let teardownError: string | undefined;
+
+          try {
+            // 1. Aguardar que concluyan las operaciones atómicas en curso sin truncarlas
+            if (activeOperationsRef.current > 0) {
+              await new Promise<void>((resolveDrain) => {
+                drainResolversRef.current.add(resolveDrain);
+              });
+            }
+
+            // 2. Cancelar agenda nativa del paciente saliente y registrar resultado exacto
+            if (coordinator && outgoingPatientId) {
+              try {
+                const cancelResult = await coordinator.cancelPatientSchedule(outgoingPatientId);
+                cancelSuccess = cancelResult.success && cancelResult.pendingCount === 0;
+                pendingCount = cancelResult.pendingCount;
+                if (!cancelSuccess) {
+                  console.warn(
+                    `[Teardown] Quedan ${pendingCount} cancelaciones pendientes para paciente saliente.`,
+                  );
+                }
+              } catch (cancelErr) {
+                cancelSuccess = false;
+                pendingCount = -1;
+                teardownError = cancelErr instanceof Error ? cancelErr.message : String(cancelErr);
+                console.warn('[Teardown] Excepción en cancelación de agenda nativa:', cancelErr);
+              }
+            }
+          } catch (err) {
+            cancelSuccess = false;
+            teardownError = err instanceof Error ? err.message : String(err);
+            console.warn('[Teardown] Excepción en drenaje seguro:', err);
+          } finally {
+            const result: TeardownResult = {
+              success: cancelSuccess,
+              cancelledPatientId: outgoingPatientId,
+              pendingNotificationsCount: pendingCount,
+              error: teardownError,
+            };
+
+            if (activeTeardownPromiseRef.current === teardownPromise) {
+              activeTeardownPromiseRef.current = null;
+            }
+            if (contextEpochRef.current === currentEpoch) {
+              closingRef.current = false;
+              setIsClosing(false);
+            }
+
+            resolveTeardown(result);
+          }
+        })();
+      });
+
+      return teardownPromise;
+    },
+    [coordinator],
+  );
+
+  const selectPatient = useCallback(
+    async (newPatientId: string): Promise<void> => {
+      // 1. Validar que la selección manual está autorizada en demo y el ID es conocido
+      if (!isDemoMode()) {
+        throw new Error(
+          'La selección manual de paciente solo está disponible en modo demostración.',
+        );
+      }
+      const isValidPatient = DEMO_PATIENTS.some((p) => p.id === newPatientId);
+      if (!isValidPatient) {
+        throw new Error(`Paciente '${newPatientId}' no válido para demostración.`);
+      }
+
+      // 2. Si ya hay un cierre en curso, esperar que concluya el drenaje
+      if (activeTeardownPromiseRef.current) {
+        await activeTeardownPromiseRef.current;
+      }
+
+      // 3. Si existe otro paciente activo, forzar y esperar su cierre de contexto antes de activar B
+      const currentActiveId = patientIdRef.current;
+      if (currentActiveId && currentActiveId !== newPatientId) {
+        await closeActiveContext('change_patient');
+      }
+
+      // 4. Activar el nuevo contexto
+      contextEpochRef.current += 1;
+      patientIdRef.current = newPatientId;
+      setPatientId(newPatientId);
+
+      // 5. Navegar hacia (tabs) una vez que la guarda del nuevo contexto está habilitada
+      router.replace('/(tabs)');
+    },
+    [closeActiveContext],
+  );
+
+  const changePatient = useCallback(() => {
+    void closeActiveContext('change_patient');
+  }, [closeActiveContext]);
 
   const inFlightNotificationsRef = useRef<Set<string>>(new Set());
   const completedNotificationsRef = useRef<Set<string>>(new Set());
@@ -420,25 +596,27 @@ export function LocalDataProvider({ children }: { children: ReactNode }) {
       formImportWarning,
       retryFormImport,
       reconcileReminders,
-      async runSave<T>(work: () => Promise<T>) {
-        if (!patientId || savingRef.current) throw new Error('Selecciona un paciente de prueba.');
-        savingRef.current = true;
-        setSaving(true);
-        try {
-          return await work();
-        } finally {
-          savingRef.current = false;
-          setSaving(false);
-        }
+      isClosing,
+      closeActiveContext,
+      selectPatient,
+      trackOperation,
+      activeTeardownPromise: activeTeardownPromiseRef.current,
+      async runSave<T>(work: () => Promise<T>): Promise<T> {
+        return trackOperation(async () => {
+          if (!patientIdRef.current || savingRef.current) {
+            throw new Error('Selecciona un paciente de prueba.');
+          }
+          savingRef.current = true;
+          setSaving(true);
+          try {
+            return await work();
+          } finally {
+            savingRef.current = false;
+            setSaving(false);
+          }
+        });
       },
-      changePatient() {
-        if (savingRef.current) return;
-        const previousPatientId = patientId;
-        setPatientId(null);
-        if (coordinator && previousPatientId) {
-          void coordinator.cancelPatientSchedule(previousPatientId);
-        }
-      },
+      changePatient,
     }),
     [
       database,
@@ -446,12 +624,17 @@ export function LocalDataProvider({ children }: { children: ReactNode }) {
       repository,
       coordinator,
       saving,
+      isClosing,
       formStorageReady,
       formImportStatus,
       formImportError,
       formImportWarning,
       retryFormImport,
       reconcileReminders,
+      closeActiveContext,
+      selectPatient,
+      trackOperation,
+      changePatient,
     ],
   );
 
@@ -475,40 +658,7 @@ export function LocalDataProvider({ children }: { children: ReactNode }) {
       </Screen>
     );
 
-  return (
-    <DataContext.Provider value={context}>
-      {isDemoMode() && !patientId ? (
-        <Screen title="Selecciona un paciente de prueba">
-          <InfoCard>
-            <Text>Solo se utilizarán datos sintéticos guardados en este dispositivo.</Text>
-            <BodyText>La selección no representa una sesión autenticada.</BodyText>
-          </InfoCard>
-          {DEMO_PATIENTS.map((patient) => (
-            <VisualButton
-              key={patient.id}
-              label={patient.label}
-              onPress={() => setPatientId(patient.id)}
-            />
-          ))}
-        </Screen>
-      ) : !isDemoMode() && !patientId ? (
-        <Screen title="Sesión requerida">
-          <InfoCard>
-            <BodyText>
-              Para utilizar la aplicación en modo estándar se requiere una sesión activa o vincular
-              una cuenta de paciente.
-            </BodyText>
-            <BodyText>
-              Los servicios de autenticación y sincronización con el servidor central se integrarán
-              en una etapa posterior tras la aprobación del contrato OpenAPI.
-            </BodyText>
-          </InfoCard>
-        </Screen>
-      ) : (
-        <>{children}</>
-      )}
-    </DataContext.Provider>
-  );
+  return <DataContext.Provider value={context}>{children}</DataContext.Provider>;
 }
 
 export function useLocalData(): DataContextValue {

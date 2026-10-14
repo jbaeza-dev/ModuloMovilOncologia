@@ -137,7 +137,12 @@ const mockUseLocalData = jest.fn().mockReturnValue({
   coordinator: mockCoordinator,
   reconcileReminders: (...args: unknown[]) => mockReconcileReminders(...args),
   runSave: (fn: () => Promise<unknown>) => fn(),
+  trackOperation: (fn: () => Promise<unknown>) => fn(),
   saving: false,
+  isClosing: false,
+  closeActiveContext: jest.fn().mockResolvedValue({ success: true }),
+  selectPatient: jest.fn().mockResolvedValue(undefined),
+  activeTeardownPromise: null,
 });
 
 jest.mock('../providers/LocalDataProvider', () => ({

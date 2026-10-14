@@ -26,6 +26,7 @@ import { useFocusedValue } from '../../hooks/use-local-query';
 import { useLocalData } from '../../providers/LocalDataProvider';
 import { useAppTheme } from '../../providers/ThemeProvider';
 import { PALETTE_OPTIONS, theme } from '../../theme';
+import { isDemoMode } from '../../utils/environment';
 
 export function ProfileScreen() {
   const styles = useStyles();
@@ -354,7 +355,8 @@ export function LinkCodeScreen() {
 
 export function PreferencesScreen() {
   const styles = useStyles();
-  const { repository, coordinator, patientId, reconcileReminders } = useLocalData();
+  const { repository, coordinator, patientId, reconcileReminders, closeActiveContext, isClosing } =
+    useLocalData();
   const { theme: appTheme, paletteId, selectPalette } = useAppTheme();
 
   const loadPrefs = useCallback(
@@ -456,7 +458,25 @@ export function PreferencesScreen() {
       />
       <InfoCard>
         <SectionTitle>Cuenta y seguridad</SectionTitle>
-        <BodyText>La gestión de la cuenta se incorporará con el flujo de identidad.</BodyText>
+        <BodyText>
+          {isDemoMode()
+            ? 'Sesión demostrativa local. Puedes conmutar de paciente o salir hacia el acceso público.'
+            : 'La gestión de la cuenta se integrará con el flujo de identidad.'}
+        </BodyText>
+        {isDemoMode() ? (
+          <VisualButton
+            label={isClosing ? 'Cerrando contexto…' : 'Cambiar paciente de prueba'}
+            secondary
+            disabled={isClosing}
+            onPress={() => void closeActiveContext('change_patient')}
+          />
+        ) : null}
+        <VisualButton
+          label={isClosing ? 'Cerrando sesión…' : 'Cerrar contexto activo'}
+          secondary
+          disabled={isClosing}
+          onPress={() => void closeActiveContext('manual_close')}
+        />
       </InfoCard>
     </Screen>
   );

@@ -15,6 +15,7 @@ import {
 } from '../../components/Visual';
 import { useAppTheme } from '../../providers/ThemeProvider';
 import { theme } from '../../theme';
+import { isDemoMode } from '../../utils/environment';
 
 function AccessIntro({ subtitle }: { subtitle: string }) {
   const { theme: appTheme } = useAppTheme();
@@ -35,6 +36,12 @@ export function LoginScreen() {
     <Screen backTo="/">
       <AccessIntro subtitle="Acompañamiento durante tu quimioterapia." />
       <DemoBadge />
+      {isDemoMode() ? (
+        <VisualButton
+          label="Seleccionar paciente de prueba"
+          onPress={() => router.navigate('/acceso/seleccionar-paciente')}
+        />
+      ) : null}
       <VisualField
         label="Correo electrónico"
         value={email}

@@ -27,7 +27,8 @@ const TIME_REGEX = /^([01]\d|2[0-3]):[0-5]\d$/;
 export function ReminderEditScreen() {
   const { theme: appTheme } = useAppTheme();
   const styles = useStyles();
-  const { database, repository, patientId, coordinator, reconcileReminders } = useLocalData();
+  const { database, repository, patientId, coordinator, reconcileReminders, trackOperation } =
+    useLocalData();
   const { id } = useLocalSearchParams<{ id?: string }>();
 
   const isEditing = Boolean(id);
@@ -128,26 +129,28 @@ export function ReminderEditScreen() {
 
     setSaving(true);
     try {
-      await repository.reminders.saveRule({
-        id,
-        tipo,
-        medicamentoId: tipo === 'medicacion' ? medicamentoId : null,
-        diasSemana: selectedDays,
-        horasMinutos: selectedHours,
-        zonaHoraria,
-        fechaInicio,
-        fechaFin,
-        habilitado,
+      await trackOperation(async () => {
+        await repository.reminders.saveRule({
+          id,
+          tipo,
+          medicamentoId: tipo === 'medicacion' ? medicamentoId : null,
+          diasSemana: selectedDays,
+          horasMinutos: selectedHours,
+          zonaHoraria,
+          fechaInicio,
+          fechaFin,
+          habilitado,
+        });
+
+        // Reconciliar con la agenda del SO usando la guarda de contexto activo
+        if (reconcileReminders) {
+          await reconcileReminders(patientId);
+        } else if (coordinator) {
+          await coordinator.reconcile(patientId, () => true);
+        }
+
+        router.back();
       });
-
-      // Reconciliar con la agenda del SO usando la guarda de contexto activo
-      if (reconcileReminders) {
-        await reconcileReminders(patientId);
-      } else if (coordinator) {
-        await coordinator.reconcile(patientId, () => true);
-      }
-
-      router.back();
     } catch (err) {
       setErrorMsg((err as Error).message);
     } finally {
@@ -159,13 +162,17 @@ export function ReminderEditScreen() {
     if (!repository || !database || !patientId || !id || saving) return;
     setSaving(true);
     try {
-      await repository.reminders.deleteRule(id);
-      if (reconcileReminders) {
-        await reconcileReminders(patientId);
-      } else if (coordinator) {
-        await coordinator.reconcile(patientId, () => true);
-      }
-      router.back();
+      await trackOperation(async () => {
+        await repository.reminders.deleteRule(id);
+        if (reconcileReminders) {
+          await reconcileReminders(patientId);
+        } else if (coordinator) {
+          await coordinator.reconcile(patientId, () => true);
+        }
+        router.back();
+      });
+    } catch (err) {
+      setErrorMsg((err as Error).message);
     } finally {
       setSaving(false);
     }

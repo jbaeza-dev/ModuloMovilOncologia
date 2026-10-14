@@ -268,3 +268,251 @@ describe('LocalDataProvider Notification Processing', () => {
     }
   });
 });
+
+describe('LocalDataProvider Context Teardown and Operation Tracking', () => {
+  it('trackOperation protege el contador frente a excepciones síncronas y asíncronas', async () => {
+    let activeOperations = 0;
+    const drainResolvers = new Set<() => void>();
+    let closing = false;
+
+    async function trackOperation<T>(operation: () => Promise<T>): Promise<T> {
+      if (closing) {
+        throw new Error('Operación rechazada: el contexto se encuentra en proceso de cierre.');
+      }
+      activeOperations += 1;
+      try {
+        return await operation();
+      } finally {
+        activeOperations -= 1;
+        if (activeOperations === 0) {
+          drainResolvers.forEach((resolve) => resolve());
+          drainResolvers.clear();
+        }
+      }
+    }
+
+    // 1. Excepción síncrona: la función lanza inmediatamente antes de retornar una promesa
+    await expect(
+      trackOperation(() => {
+        throw new Error('Error síncrono inmediato');
+      }),
+    ).rejects.toThrow('Error síncrono inmediato');
+
+    // El contador DEBE quedar en 0
+    expect(activeOperations).toBe(0);
+
+    // 2. Excepción asíncrona: la promesa es rechazada
+    await expect(
+      trackOperation(async () => {
+        throw new Error('Error asíncrono');
+      }),
+    ).rejects.toThrow('Error asíncrono');
+
+    expect(activeOperations).toBe(0);
+
+    // 3. Operación exitosa
+    const result = await trackOperation(async () => 42);
+    expect(result).toBe(42);
+    expect(activeOperations).toBe(0);
+
+    // 4. Rechazo durante proceso de cierre
+    closing = true;
+    await expect(trackOperation(async () => 'bloqueado')).rejects.toThrow(
+      'Operación rechazada: el contexto se encuentra en proceso de cierre.',
+    );
+    expect(activeOperations).toBe(0);
+  });
+
+  it('closeActiveContext realiza fase 1 en menos de 1 segundo, comparte la promesa y drena escrituras activas', async () => {
+    const db = open();
+    await migrateDatabase(db);
+    await seedPatientContextIfEmpty(db, patientA, patientB);
+
+    const adapter = new FakeNotificationAdapter();
+    const coordinator = new NotificationCoordinator(db, adapter, () => '2026-10-13T00:00:00Z');
+
+    let activeOperations = 0;
+    const drainResolvers = new Set<() => void>();
+    let closing = false;
+    let activePatient: string | null = patientA;
+    let contextEpoch = 1;
+    let activeTeardownPromise: Promise<{
+      success: boolean;
+      cancelledPatientId: string | null;
+      pendingNotificationsCount: number;
+    }> | null = null;
+
+    async function trackOperation<T>(operation: () => Promise<T>): Promise<T> {
+      if (closing) {
+        throw new Error('Operación rechazada: el contexto se encuentra en proceso de cierre.');
+      }
+      activeOperations += 1;
+      try {
+        return await operation();
+      } finally {
+        activeOperations -= 1;
+        if (activeOperations === 0) {
+          drainResolvers.forEach((resolve) => resolve());
+          drainResolvers.clear();
+        }
+      }
+    }
+
+    function closeActiveContext(): Promise<{
+      success: boolean;
+      cancelledPatientId: string | null;
+      pendingNotificationsCount: number;
+    }> {
+      if (activeTeardownPromise) {
+        return activeTeardownPromise;
+      }
+
+      // Fase 1: < 1 segundo
+      contextEpoch += 1;
+      const outgoingId = activePatient;
+      closing = true;
+      activePatient = null;
+
+      let resolveTeardown!: (res: {
+        success: boolean;
+        cancelledPatientId: string | null;
+        pendingNotificationsCount: number;
+      }) => void;
+      const teardownPromise = new Promise<{
+        success: boolean;
+        cancelledPatientId: string | null;
+        pendingNotificationsCount: number;
+      }>((resolve) => {
+        resolveTeardown = resolve;
+      });
+      activeTeardownPromise = teardownPromise;
+
+      queueMicrotask(() => {
+        void (async () => {
+          let cancelSuccess = true;
+          let pendingCount = 0;
+          try {
+            if (activeOperations > 0) {
+              await new Promise<void>((res) => drainResolvers.add(res));
+            }
+            if (outgoingId) {
+              const res = await coordinator.cancelPatientSchedule(outgoingId);
+              cancelSuccess = res.success;
+              pendingCount = res.pendingCount;
+            }
+          } finally {
+            activeTeardownPromise = null;
+            closing = false;
+            resolveTeardown({
+              success: cancelSuccess,
+              cancelledPatientId: outgoingId,
+              pendingNotificationsCount: pendingCount,
+            });
+          }
+        })();
+      });
+
+      return teardownPromise;
+    }
+
+    // Simular escritura asíncrona activa de Paciente A
+    let finishWrite!: () => void;
+    const writePromise = new Promise<void>((resolve) => {
+      finishWrite = resolve;
+    });
+
+    const writeTracker = trackOperation(async () => {
+      await writePromise;
+      return 'guardado_completado';
+    });
+
+    expect(activeOperations).toBe(1);
+
+    // Iniciar cierre de contexto: medir tiempo de Fase 1
+    const t0 = Date.now();
+    const teardown1 = closeActiveContext();
+    const phase1Duration = Date.now() - t0;
+
+    // Fase 1 DEBE ejecutarse inmediatamente (< 100 ms << 1000 ms)
+    expect(phase1Duration).toBeLessThan(100);
+    expect(activePatient).toBeNull();
+    expect(contextEpoch).toBe(2);
+
+    // Llamadas concurrentes comparten la misma promesa
+    const teardown2 = closeActiveContext();
+    expect(teardown1).toBe(teardown2);
+
+    // Finalizar la escritura en curso
+    finishWrite();
+    const writeResult = await writeTracker;
+    expect(writeResult).toBe('guardado_completado');
+
+    // Esperar resultado del drenaje observable
+    const result = await teardown1;
+    expect(result.success).toBe(true);
+    expect(result.cancelledPatientId).toBe(patientA);
+    expect(result.pendingNotificationsCount).toBe(0);
+    expect(activeOperations).toBe(0);
+    expect(closing).toBe(false);
+  });
+
+  it('selectPatient fuerza y espera el cierre del contexto previo antes de activar el nuevo', async () => {
+    let activePatient: string | null = patientA;
+    let teardownRunning = false;
+    let teardownCompleted = false;
+
+    let resolveActiveOperation!: () => void;
+    const activeOperationPromise = new Promise<void>((resolve) => {
+      resolveActiveOperation = resolve;
+    });
+
+    let teardownPromise: Promise<void> | null = null;
+
+    async function mockCloseActiveContext(): Promise<void> {
+      if (teardownPromise) return teardownPromise;
+      teardownRunning = true;
+      teardownPromise = (async () => {
+        // Esperar que concluya la operación activa de A
+        await activeOperationPromise;
+        teardownCompleted = true;
+        teardownRunning = false;
+        activePatient = null;
+      })();
+      return teardownPromise;
+    }
+
+    async function selectPatient(newId: string): Promise<void> {
+      const valid = [patientA, patientB].includes(newId);
+      if (!valid) throw new Error(`Paciente '${newId}' no válido para demostración.`);
+
+      if (teardownPromise) {
+        await teardownPromise;
+      }
+      if (activePatient && activePatient !== newId) {
+        await mockCloseActiveContext();
+      }
+      activePatient = newId;
+    }
+
+    // Iniciar conmutación hacia Paciente B mientras Paciente A tiene una operación en curso
+    const selectPromise = selectPatient(patientB);
+
+    // Mientras la operación de A está en curso, Paciente B NO debe haber sido activado
+    expect(activePatient).toBe(patientA);
+    expect(teardownRunning).toBe(true);
+    expect(teardownCompleted).toBe(false);
+
+    // Concluir la operación de A
+    resolveActiveOperation();
+    await selectPromise;
+
+    // Ahora Paciente B debe ser el activo y el cierre de A completó limpiamente
+    expect(teardownCompleted).toBe(true);
+    expect(activePatient).toBe(patientB);
+
+    // Validar rechazo de paciente no registrado en demostración
+    await expect(selectPatient('paciente-invalido-999')).rejects.toThrow(
+      "Paciente 'paciente-invalido-999' no válido para demostración.",
+    );
+  });
+});

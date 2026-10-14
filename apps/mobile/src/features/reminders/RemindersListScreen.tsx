@@ -59,7 +59,7 @@ function getStatusCoverageText(res: CoordinatorResult | null): string {
 export function RemindersListScreen() {
   const { theme: appTheme } = useAppTheme();
   const styles = useStyles();
-  const { database, repository, patientId, reconcileReminders } = useLocalData();
+  const { database, repository, patientId, reconcileReminders, trackOperation } = useLocalData();
   const adapter = useMemo(() => new ExpoNotificationAdapter(), []);
 
   const [toggling, setToggling] = useState(false);
@@ -116,25 +116,27 @@ export function RemindersListScreen() {
     if (!repository || !database || !patientId || toggling) return;
     setToggling(true);
     try {
-      const nextState = !prefs.enabled;
+      await trackOperation(async () => {
+        const nextState = !prefs.enabled;
 
-      if (nextState) {
-        // Solicitar permisos al SO si se va a activar
-        const reqPerms = await adapter.requestPermission();
-        setPermissionState(reqPerms);
+        if (nextState) {
+          // Solicitar permisos al SO si se va a activar
+          const reqPerms = await adapter.requestPermission();
+          setPermissionState(reqPerms);
 
-        if (reqPerms.status !== 'granted') {
-          await repository.reminders.setPreferences(false);
-          await refreshPrefs();
-          await checkAndReconcile();
-          return;
+          if (reqPerms.status !== 'granted') {
+            await repository.reminders.setPreferences(false);
+            await refreshPrefs();
+            await checkAndReconcile();
+            return;
+          }
         }
-      }
 
-      await repository.reminders.setPreferences(nextState);
-      await refreshPrefs();
-      await checkAndReconcile();
-      await refreshRules();
+        await repository.reminders.setPreferences(nextState);
+        await refreshPrefs();
+        await checkAndReconcile();
+        await refreshRules();
+      });
     } finally {
       setToggling(false);
     }

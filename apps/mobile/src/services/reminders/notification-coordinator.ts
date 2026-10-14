@@ -252,18 +252,52 @@ export class NotificationCoordinator {
 
       if (!isStillActive()) return abortResult;
 
-      // 1. Reintentar resolver cancelaciones pendientes en esta misma reconciliación
-      await this.retryPendingCancellations();
+      try {
+        // 1. Reintentar resolver cancelaciones pendientes conocidas en SQLite
+        await this.retryPendingCancellations();
+        if (!isStillActive()) return abortResult;
 
-      if (!isStillActive()) return abortResult;
+        // 2. Inspeccionar agenda nativa del SO mediante el contrato real listScheduled()
+        const scheduledNativeJobs: readonly ScheduledNotificationItem[] =
+          await this.adapter.listScheduled();
+        if (!isStillActive()) return abortResult;
 
-      // Verificar si persisten cancelaciones pendientes de OTRO paciente
-      const foreignPending = await this.database.first<{ count: number }>(
-        "SELECT count(*) as count FROM notificacion_local WHERE estado = 'cancelacion_pendiente' AND paciente_id != ?",
-        [patientId],
-      );
+        const foreignNativeJobs = scheduledNativeJobs.filter(
+          (job) => job.payload && job.payload.pacienteId !== patientId,
+        );
 
-      if ((foreignPending?.count ?? 0) > 0) {
+        // 3. Consultar SQLite por filas pendientes o programadas de otros pacientes
+        const foreignDbRows = await this.database.all<{ paciente_id: string }>(
+          "SELECT DISTINCT paciente_id FROM notificacion_local WHERE estado IN ('cancelacion_pendiente', 'programada') AND paciente_id != ?",
+          [patientId],
+        );
+
+        const foreignPatientIds = new Set<string>([
+          ...foreignNativeJobs.map((j) => j.payload!.pacienteId),
+          ...foreignDbRows.map((r) => r.paciente_id),
+        ]);
+
+        // 4. Si existen avisos ajenos en SO o SQLite, resolver su cancelación antes de programar
+        if (foreignPatientIds.size > 0) {
+          for (const foreignId of foreignPatientIds) {
+            const cancelRes = await this.cancelPatientScheduleInternal(foreignId);
+            if (!(cancelRes.success && cancelRes.pendingCount === 0)) {
+              return {
+                status: 'programacion_pendiente',
+                motivoPendiente: 'contexto_anterior',
+                totalDeseadas: 0,
+                programadasConfirmadas: 0,
+                cubiertoHastaIso: null,
+                truncadas: 0,
+                reglasAfectadas: [],
+                incidencias: [
+                  `La programación permanece pausada esperando resolver cancelaciones del contexto anterior (${foreignId}).`,
+                ],
+              };
+            }
+          }
+        }
+      } catch (err) {
         return {
           status: 'programacion_pendiente',
           motivoPendiente: 'contexto_anterior',
@@ -273,7 +307,7 @@ export class NotificationCoordinator {
           truncadas: 0,
           reglasAfectadas: [],
           incidencias: [
-            'La programación permanece pausada esperando resolver cancelaciones del contexto anterior.',
+            `La programación permanece pausada por fallo al verificar o cancelar avisos del contexto anterior: ${err instanceof Error ? err.message : String(err)}.`,
           ],
         };
       }

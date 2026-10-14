@@ -220,9 +220,10 @@ describe('NotificationCoordinator', () => {
     const coordinator = new NotificationCoordinator(db, adapter, () => '2026-10-13T00:00:00Z');
 
     const res = await coordinator.reconcile(patientA);
-    expect(res.status).toBe('error');
+    expect(res.status).toBe('programacion_pendiente');
+    expect(res.motivoPendiente).toBe('contexto_anterior');
     expect(res.incidencias.length).toBeGreaterThan(0);
-    expect(res.incidencias[0]).toContain('consulta');
+    expect(res.incidencias[0]).toContain('consultar notificaciones');
   });
 
   it('detecta agenda desaparecida en el SO y reprograma conservando UUIDs en lugar de confirmar falsamente', async () => {
@@ -713,5 +714,157 @@ describe('NotificationCoordinator', () => {
     expect(res.status).toBe('desactivada');
     expect(res.incidencias[0]).toContain('Operación omitida por cambio de contexto activo');
     expect(adapter.scheduled.size).toBe(0);
+  });
+
+  it('detecta trabajos nativos ajenos en el SO sin fila en SQLite y pausa a B si falla su cancelación', async () => {
+    const db = open();
+    await migrateDatabase(db);
+    await seedPatientContextIfEmpty(db, patientA, patientB);
+
+    // Preparar B con una regla activa
+    const repoB = createReminderRepository(db, patientB);
+    await repoB.setPreferences(true);
+    await repoB.saveRule({
+      tipo: 'registro_vitales',
+      diasSemana: [1, 2, 3, 4, 5, 6, 7],
+      horasMinutos: ['08:00'],
+      zonaHoraria: 'America/Santiago',
+      habilitado: true,
+    });
+
+    const adapter = new FakeNotificationAdapter();
+    // Inyectar un aviso nativo huérfano de A directamente en el SO, sin fila en SQLite
+    const orphanNativeId = 'native-orphan-a-1';
+    adapter.scheduled.set(orphanNativeId, {
+      nativeId: orphanNativeId,
+      triggerDateUtc: '2026-10-15T12:00:00.000Z',
+      payload: {
+        version: 1,
+        notificacionId: 'notif-orphan-a-1',
+        revision: 1,
+        pacienteId: patientA,
+        recordatorioId: 'rec-orphan-a-1',
+        tipo: 'registro_vitales',
+        destino: '/vitales/registrar',
+      },
+    });
+
+    // Forzar fallo al intentar cancelar ese aviso huérfano
+    adapter.failCancelForNativeIds = new Set([orphanNativeId]);
+
+    const coordinator = new NotificationCoordinator(db, adapter, () => '2026-10-13T00:00:00Z');
+
+    // Intentar reconciliar B
+    const resB = await coordinator.reconcile(patientB);
+    expect(resB.status).toBe('programacion_pendiente');
+    expect(resB.motivoPendiente).toBe('contexto_anterior');
+    expect(resB.programadasConfirmadas).toBe(0);
+    // B no debe tener programaciones
+    expect(
+      Array.from(adapter.scheduled.values()).some((j) => j.payload?.pacienteId === patientB),
+    ).toBe(false);
+
+    // Resolver el fallo en la cancelación nativa
+    adapter.failCancelForNativeIds.clear();
+
+    // Reconciliar B nuevamente: ahora debe limpiar el aviso de A y programar los de B
+    const retryResB = await coordinator.reconcile(patientB);
+    expect(retryResB.status).toBe('programada');
+    expect(retryResB.programadasConfirmadas).toBe(14);
+    // El aviso huérfano de A debe haber sido eliminado del SO
+    expect(adapter.scheduled.has(orphanNativeId)).toBe(false);
+  });
+
+  it('persiste la pausa de programación tras reinicio en frío si persisten avisos pendientes del contexto anterior', async () => {
+    const db = open();
+    await migrateDatabase(db);
+    await seedPatientContextIfEmpty(db, patientA, patientB);
+
+    // 1. Programar A con la primera instancia
+    const repoA = createReminderRepository(db, patientA);
+    await repoA.setPreferences(true);
+    await repoA.saveRule({
+      tipo: 'registro_vitales',
+      diasSemana: [1, 2, 3, 4, 5, 6, 7],
+      horasMinutos: ['09:00'],
+      zonaHoraria: 'America/Santiago',
+      habilitado: true,
+    });
+
+    const adapter1 = new FakeNotificationAdapter();
+    const coordinator1 = new NotificationCoordinator(db, adapter1, () => '2026-10-13T00:00:00Z');
+    await coordinator1.reconcile(patientA);
+    expect(adapter1.scheduled.size).toBe(14);
+
+    // Falla la cancelación de uno de los trabajos de A
+    const firstJobA = Array.from(adapter1.scheduled.values())[0];
+    adapter1.failCancelForNativeIds = new Set([firstJobA.nativeId]);
+    await coordinator1.cancelPatientSchedule(patientA);
+
+    // Preparar B en SQLite
+    const repoB = createReminderRepository(db, patientB);
+    await repoB.setPreferences(true);
+    await repoB.saveRule({
+      tipo: 'medicacion',
+      medicamentoId: 'med-b-1',
+      diasSemana: [1, 2, 3, 4, 5, 6, 7],
+      horasMinutos: ['14:00'],
+      zonaHoraria: 'America/Santiago',
+      habilitado: true,
+    });
+
+    // 2. SIMULAR REINICIO EN FRÍO (Cold Start):
+    // Se destruyen las instancias previas de coordinador y proveedor React.
+    // Se crea un nuevo adapter (conservando los trabajos en el SO) y una nueva instancia de coordinador.
+    const adapter2 = new FakeNotificationAdapter();
+    adapter2.scheduled = new Map(adapter1.scheduled);
+    adapter2.failCancelForNativeIds = new Set([firstJobA.nativeId]);
+
+    const coordinator2 = new NotificationCoordinator(db, adapter2, () => '2026-10-13T00:00:00Z');
+
+    // Al arrancar con paciente B, la reconciliación evalúa SQLite y SO
+    const coldResB = await coordinator2.reconcile(patientB);
+    expect(coldResB.status).toBe('programacion_pendiente');
+    expect(coldResB.motivoPendiente).toBe('contexto_anterior');
+    expect(coldResB.programadasConfirmadas).toBe(0);
+
+    // Una vez resuelto el fallo nativo en el SO:
+    adapter2.failCancelForNativeIds.clear();
+
+    const resumedResB = await coordinator2.reconcile(patientB);
+    expect(resumedResB.status).toBe('programada');
+    expect(resumedResB.programadasConfirmadas).toBe(14);
+    // Todos los trabajos en el SO deben ser ahora exclusivamente de B
+    for (const job of adapter2.scheduled.values()) {
+      expect(job.payload?.pacienteId).toBe(patientB);
+    }
+  });
+
+  it('pausa a B si ocurre una excepción al consultar listScheduled() durante la verificación de contexto anterior', async () => {
+    const db = open();
+    await migrateDatabase(db);
+    await seedPatientContextIfEmpty(db, patientA, patientB);
+
+    const repoB = createReminderRepository(db, patientB);
+    await repoB.setPreferences(true);
+    await repoB.saveRule({
+      tipo: 'registro_vitales',
+      diasSemana: [1, 2, 3, 4, 5, 6, 7],
+      horasMinutos: ['08:00'],
+      zonaHoraria: 'America/Santiago',
+      habilitado: true,
+    });
+
+    const adapter = new FakeNotificationAdapter();
+    adapter.shouldFailList = true; // Simular fallo crítico de API nativa
+
+    const coordinator = new NotificationCoordinator(db, adapter, () => '2026-10-13T00:00:00Z');
+    const resB = await coordinator.reconcile(patientB);
+
+    expect(resB.status).toBe('programacion_pendiente');
+    expect(resB.motivoPendiente).toBe('contexto_anterior');
+    expect(resB.incidencias[0]).toContain(
+      'Error simulado al consultar notificaciones en el sistema operativo',
+    );
   });
 });

@@ -1,10 +1,12 @@
 import Feather from '@expo/vector-icons/Feather';
 import { useFonts } from 'expo-font';
-import { Stack } from 'expo-router';
+import { router, Stack, useSegments } from 'expo-router';
+import { useEffect } from 'react';
 import { Platform, StatusBar } from 'react-native';
 
 import { ThemeProvider, useAppTheme } from '../providers/ThemeProvider';
-import { LocalDataProvider } from '../providers/LocalDataProvider';
+import { LocalDataProvider, useLocalData } from '../providers/LocalDataProvider';
+import { isDemoMode } from '../utils/environment';
 
 export { ErrorBoundary } from 'expo-router';
 
@@ -26,6 +28,21 @@ export default function RootLayout() {
 
 function AppNavigator() {
   const { theme } = useAppTheme();
+  const { patientId, isClosing } = useLocalData();
+  const segments = useSegments();
+
+  useEffect(() => {
+    if (!patientId && !isClosing) {
+      const inTabs = segments[0] === '(tabs)';
+      if (inTabs) {
+        if (isDemoMode()) {
+          router.replace('/acceso/seleccionar-paciente');
+        } else {
+          router.replace('/acceso');
+        }
+      }
+    }
+  }, [patientId, isClosing, segments]);
 
   return (
     <>
@@ -35,7 +52,9 @@ function AppNavigator() {
         translucent
       />
       <Stack screenOptions={{ headerShown: false }}>
-        <Stack.Screen name="(tabs)" />
+        <Stack.Protected guard={Boolean(patientId && !isClosing)}>
+          <Stack.Screen name="(tabs)" />
+        </Stack.Protected>
         <Stack.Screen name="acceso" />
         <Stack.Screen name="+not-found" />
       </Stack>
