@@ -3,24 +3,47 @@
 \section{Alcances y limitaciones}
 
 \subsection{Alcances}
+El presente proyecto abarca el diseño, desarrollo, verificación y empaquetado del módulo móvil de la plataforma \textbf{QuimioCare}, enfocado exclusivamente en el acompañamiento ambulatorio de pacientes adultos en tratamiento de \textbf{quimioterapia}. El alcance específico comprende:
 
+\begin{enumerate}
+    \item \textbf{Aplicación móvil Android nativa:} Desarrollo en React Native con Expo SDK 57 y TypeScript, generando una \textit{Development Build} y compilación \textit{Release} demostrativa independiente con identificador de paquete \texttt{cl.ubiobio.quimiocare}.
+    \item \textbf{Arquitectura Offline-First estricta:} Persistencia relacional en el dispositivo mediante SQLite (\texttt{expo-sqlite}) con migraciones versionadas (\texttt{001} a \texttt{008}), transacciones ACID y modo WAL, garantizando la captura y consulta ininterrumpida de signos vitales, síntomas libres, cuestionarios médicos asignados y contexto clínico sin requerir conexión a internet.
+    \item \textbf{Aislamiento de perfiles de prueba:} Soporte determinista para dos pacientes sintéticos de demostración (Paciente A y Paciente B), garantizando que las bases de datos, copias de archivos locales y recordatorios mantengan estricta separación de pertenencia.
+    \item \textbf{Gestión de copias educativas locales:} Descarga, almacenamiento atómico y lectura sin conexión de guías e infografías educativas en almacenamiento privado (\texttt{expo-file-system}), con reconciliación bidireccional de estados y visualización en línea de contenidos audiovisuales alojados en YouTube.
+    \item \textbf{Motor nativo de reportes clínicos:} Consolidación histórica de mediciones y síntomas en ventanas de 7, 30 y 90 días, con generación y exportación local de documentos PDF (mediante \texttt{expo-print} con plantillas sanitizadas) y planillas de cálculo Excel (\texttt{.xlsx} con SheetJS), incorporando el código único de vinculación del paciente para su presentación en controles médicos.
+    \item \textbf{Coordinador local de recordatorios:} Planificación nativa de notificaciones de medicamentos y controles mediante \texttt{expo-notifications} en una ventana móvil de 14 días (hasta 128 trabajos lógicos), operativa de forma autónoma sin la aplicación en ejecución.
+    \item \textbf{Frontera de integración diferida:} Registro atómico de cada evento clínico en una cola local de envío (\texttt{cola\_envio}) con UUID idempotente, preparada para su futura transmisión REST hacia la pasarela o el simulador central.
+\end{enumerate}
 
 \subsection{Limitaciones}
 
 \subsubsection{Limitaciones de Hardware y Software}
+\begin{enumerate}
+    \item \textbf{Plataforma de destino:} El desarrollo y la validación nativa se acotan a dispositivos móviles con sistema operativo Android versión 12 (API 31) o superior. El ecosistema iOS queda fuera del alcance de este ciclo.
+    \item \textbf{Dependencia de conectividad para video:} Los recursos audiovisuales alojados en YouTube requieren conexión a internet para su reproducción externa; la aplicación no descarga ni almacena localmente archivos de video para respetar derechos de autor y políticas de almacenamiento.
+    \item \textbf{Procesamiento de lenguaje natural y modelos generativos:} La aplicación no ejecuta modelos de lenguaje (LLM) ni motores RAG en el hardware del dispositivo. El asistente opera en el cliente mediante un controlador con estados deterministas y disclaimers visibles; la generación avanzada de respuestas queda delegada al servicio central.
+\end{enumerate}
 
+\subsubsection{Limitaciones Operativas y Clínicas}
+\begin{enumerate}
+    \item \textbf{Exclusión de radioterapia:} El módulo excluye flujos, tablas y contenidos de radioterapia, debido a que el Hospital Clínico Herminda Martín no dispone de equipamiento de radioterapia en Chillán (derivando pacientes a Concepción) y a que su dinámica asistencial difiere radicalmente de las toxicidades agudas de la quimioterapia sistémica.
+    \item \textbf{Principio de no intervención clínica autónoma:} La aplicación es una herramienta de registro, educación y acompañamiento; no emite diagnósticos, no sugiere cambios de dosis ni reemplaza la evaluación médica presencial de urgencias.
+    \item \textbf{Autoridad en la definición de cuestionarios:} Los formularios clínicos (tales como QLQ-C30 y ESAS) son diseñados y asignados exclusivamente por el equipo de salud en el backend central; el paciente responde las preguntas vigentes pero no edita plantillas clínicas.
+\end{enumerate}
 
-
-\subsubsection{Limitaciones Operativas:}
-
-
-\section{Planificación de reuniones con el cliente}
-
-
+\section{Planificación de reuniones con el cliente y levantamiento}
+El levantamiento de requerimientos se fundamentó en sesiones técnicas y entrevistas cualitativas con el personal clínico de la Unidad de Quimioterapia Ambulatoria del Hospital Clínico Herminda Martín (HCHM) de Chillán, junto con la revisión del Plan Nacional de Cáncer y la coordinación con el equipo del módulo web y de inteligencia clínica. Dichas interacciones permitieron identificar las siguientes directrices esenciales:
+\begin{itemize}
+    \item Priorizar la simpleza de uso y minimizar la sobrecarga cognitiva mediante la heurística de \textit{máximo 3 interacciones} para alcanzar cualquier función principal.
+    \item Asegurar funcionamiento completo sin señal móvil para dar cobertura a la alta ruralidad de la Región de Ñuble.
+    \item Incorporar de forma obligatoria avisos de responsabilidad clínica y la exportación de reportes físicos para el control médico presencial.
+\end{itemize}
 
 \section{Requerimientos funcionales}
 
-% --- TABLA REPARTIDOR ---
+A continuación se presentan los requerimientos funcionales del módulo móvil agrupados por subsistema:
+
+% --- TABLA REGISTRO CLÍNICO Y VITALES ---
 \begin{table}[H]
 \centering
 \renewcommand{\arraystretch}{1.3}
@@ -28,18 +51,16 @@
 \begin{tabularx}{\textwidth}{|c|p{3.5cm}|X|c|}
 \hline
 \textbf{ID} & \textbf{Nombre} & \textbf{Descripción} & \textbf{Prioridad} \\ \hline
-RF\_01 & Registrar entregas realizadas & El sistema debe permitir al repartidor registrar la entrega realizada a cada cliente asignado. & Alta \\ \hline
-RF\_02 & Ingresar comentarios de entrega & El sistema debe permitir al repartidor agregar observaciones o comentarios asociados a cada entrega. & Media \\ \hline
-RF\_03 & Visualizar listado de clientes & El sistema debe mostrar al repartidor los clientes que tiene asignados en su ruta diaria. & Alta \\ \hline
-RF\_04 & Registrar programación de pedido & El sistema debe permitir al repartidor registrar y programar la próxima entrega o pedido para cada cliente. & Alta \\ \hline
-RF\_05 & Visualizar ruta optimizada & El sistema debe mostrar al repartidor la ruta optimizada para las entregas del día. & Alta \\ \hline
-RF\_06 & Editar cantidad entrega & El sistema debe permitir al repartidor editar la cantidad de producto en caso de que el cliente lo solicite. & Media \\ \hline
+RF\_01 & Registrar signos vitales & El sistema debe permitir registrar mediciones de presión arterial (sistólica/diastólica), pulso cardíaco, temperatura axilar y saturación de oxígeno, admitiendo entradas parciales y guardándolas de forma atómica en SQLite. & Alta \\ \hline
+RF\_02 & Registrar síntomas diarios & El sistema debe permitir redactar una descripción libre de síntomas y malestares de hasta 2.000 caracteres, registrando la fecha y hora exacta sin requerir conexión a internet. & Alta \\ \hline
+RF\_03 & Responder cuestionarios médicos & El sistema debe presentar formularios y encuestas médicas asignadas (ej. QLQ-C30, ESAS), permitiendo guardar borradores locales editables y confirmar entregas inmutables. & Alta \\ \hline
+RF\_04 & Consultar historial clínico & El sistema debe mostrar el historial cronológico de mediciones y síntomas con filtros temporales de 7, 30 y 90 días y cálculo de estadísticas descriptivas. & Alta \\ \hline
 \end{tabularx}
-\caption{Requerimientos funcionales – vista del repartidor}
-\label{tab:repartidor}
+\caption{Requerimientos funcionales – Registro clínico y seguimiento}
+\label{tab:rf_clinico}
 \end{table}
 
-% --- TABLA GESTIÓN DE REPARTO Y RUTAS ---
+% --- TABLA EDUCACIÓN Y ASISTENCIA ---
 \begin{table}[H]
 \centering
 \renewcommand{\arraystretch}{1.3}
@@ -47,21 +68,16 @@ RF\_06 & Editar cantidad entrega & El sistema debe permitir al repartidor editar
 \begin{tabularx}{\textwidth}{|c|p{3.5cm}|X|c|}
 \hline
 \textbf{ID} & \textbf{Nombre} & \textbf{Descripción} & \textbf{Prioridad} \\ \hline
-RF\_07 & Gestionar pedidos & El sistema debe permitir al administrador registrar, modificar o eliminar pedidos realizados por los clientes. & Alta \\ \hline
-RF\_08 & Visualizar entregas por repartidor & El sistema debe permitir visualizar el historial de entregas realizadas por cada repartidor. & Media \\ \hline
-RF\_09 & Gestionar rutas & El sistema debe permitir asignar clientes registrados a rutas existentes o nuevas. & Alta \\ \hline
-RF\_10 & Asignar cliente a ruta & El sistema debe permitir asignar clientes registrados a rutas existentes. & Alta \\ \hline
-RF\_11 & Asignar conductor a ruta & El sistema debe permitir vincular repartidores a rutas de distribución específicas. & Alta \\ \hline
-RF\_12 & Programar entregas & El sistema debe permitir planificar fechas y horarios de entrega de pedidos. & Alta \\ \hline
-RF\_13 & Asignar productos a rutas & El sistema debe permitir asociar productos a las rutas o entregas correspondientes. & Alta \\ \hline
-RF\_14 & Visualizar rutas activas & El sistema debe permitir al administrador visualizar las rutas actualmente activas y su estado. & Media \\ \hline
-RF\_15 & Visualizar dashboard de rutas & El sistema debe mostrar un panel con métricas sobre pedidos, entregas, etc. & Media \\ \hline
+RF\_05 & Consultar catálogo educativo & El sistema debe organizar recursos educativos en categorías temáticas sobre quimioterapia, cuidados y nutrición. & Alta \\ \hline
+RF\_06 & Descarga y lectura de copias offline & El sistema debe permitir guardar copias locales de infografías y guías en almacenamiento persistente para lectura sin red, gestionando su eliminación y espacio utilizado. & Alta \\ \hline
+RF\_07 & Visualizar videos de YouTube & El sistema debe permitir abrir enlaces directos a videos informativos en la aplicación de YouTube o navegador externo cuando exista conexión a internet. & Media \\ \hline
+RF\_08 & Interacción con asistente conversacional & El sistema debe ofrecer una interfaz de chat asistivo con estados deterministas, cancelación de solicitudes y aviso permanente de responsabilidad médica. & Media \\ \hline
 \end{tabularx}
-\caption{R.F Gestión de reparto y rutas (Vista de Administrador)}
-\label{tab:gestion_rutas}
+\caption{Requerimientos funcionales – Educación y Asistencia}
+\label{tab:rf_educacion}
 \end{table}
 
-% --- TABLA GESTIÓN DE INVENTARIO ---
+% --- TABLA REPORTES Y RECORDATORIOS ---
 \begin{table}[H]
 \centering
 \renewcommand{\arraystretch}{1.3}
@@ -69,18 +85,17 @@ RF\_15 & Visualizar dashboard de rutas & El sistema debe mostrar un panel con m�
 \begin{tabularx}{\textwidth}{|c|p{3.5cm}|X|c|}
 \hline
 \textbf{ID} & \textbf{Nombre} & \textbf{Descripción} & \textbf{Prioridad} \\ \hline
-RF\_16 & Gestionar materias primas & El sistema debe permitir registrar, editar y eliminar materias primas utilizadas en la producción. & Alta \\ \hline
-RF\_17 & Registrar compras de materias primas & El sistema debe permitir registrar y visualizar las compras de materias primas para mantener trazabilidad. & Alta \\ \hline
-RF\_18 & Gestionar recetas & El sistema debe permitir crear, modificar o eliminar recetas que definan la composición de los productos. & Alta \\ \hline
-RF\_19 & Gestionar productos & El sistema debe permitir crear, editar y visualizar productos terminados a partir de recetas. & Alta \\ \hline
-RF\_20 & Gestionar lotes y producción & El sistema debe permitir registrar la producción, crear lotes y mantener control del stock de productos. & Alta \\ \hline
-RF\_21 & Visualizar dashboard de inventario & El sistema debe mostrar un panel con indicadores del inventario, stock disponible y alertas por bajo nivel. & Media \\ \hline
+RF\_09 & Generar reporte PDF local & El sistema debe construir un documento PDF imprimible con las mediciones y síntomas del período seleccionado, incluyendo identificación y código de vinculación. & Alta \\ \hline
+RF\_10 & Exportar reporte a Excel & El sistema debe generar una planilla de cálculo (.xlsx) estructurada con los registros clínicos del paciente para su procesamiento o auditoría médica. & Alta \\ \hline
+RF\_11 & Compartir reportes externamente & El sistema debe invocar la hoja de compartición nativa de Android para enviar o guardar los archivos PDF y Excel generados. & Alta \\ \hline
+RF\_12 & Gestionar recordatorios locales & El sistema debe permitir configurar horarios de medicación y controles, planificando notificaciones nativas en una ventana móvil de 14 días. & Alta \\ \hline
+RF\_13 & Bandeja de avisos del paciente & El sistema debe proveer una vista centralizada de los avisos programados y pasados con acceso directo a la acción asociada. & Media \\ \hline
 \end{tabularx}
-\caption{R.F Gestión de inventario (Administrador y Productor)}
-\label{tab:inventario}
+\caption{Requerimientos funcionales – Reportes y Recordatorios}
+\label{tab:rf_reportes_recordatorios}
 \end{table}
 
-% --- TABLA CLIENTES ---
+% --- TABLA IDENTIDAD Y CONFIGURACIÓN ---
 \begin{table}[H]
 \centering
 \renewcommand{\arraystretch}{1.3}
@@ -88,145 +103,57 @@ RF\_21 & Visualizar dashboard de inventario & El sistema debe mostrar un panel c
 \begin{tabularx}{\textwidth}{|c|p{3.5cm}|X|c|}
 \hline
 \textbf{ID} & \textbf{Nombre} & \textbf{Descripción} & \textbf{Prioridad} \\ \hline
-RF\_22 & Registrar clientes & El sistema debe permitir al administrador registrar nuevos clientes. & Alta \\ \hline
-RF\_23 & Editar o eliminar clientes & El sistema debe permitir modificar o eliminar la información de un cliente. & Alta \\ \hline
-RF\_24 & Visualizar historial de entregas por clientes & El sistema debe permitir consultar el historial de entregas asociadas a cada cliente. & Media \\ \hline
-RF\_25 & Visualizar rutas y sus clientes & El sistema debe mostrar las rutas existentes con sus respectivos clientes asignados. & Alta \\ \hline
+RF\_14 & Aislamiento de paciente (A/B) & El sistema debe permitir alternar entre pacientes sintéticos de demostración asegurando la separación estricta de sus registros y configuraciones. & Alta \\ \hline
+RF\_15 & Visualizar código de vinculación & El sistema debe mostrar en pantalla el código alfanumérico único para vincular el dispositivo con el equipo médico en controles presenciales. & Alta \\ \hline
+RF\_16 & Configurar apariencia accesible & El sistema debe permitir seleccionar entre cuatro paletas de color de alto contraste (Turquesa, Azul, Violeta, Ámbar) y modo claro/oscuro. & Media \\ \hline
+RF\_17 & Registrar consentimiento versionado & El sistema debe presentar la versión vigente de términos y registrar el otorgamiento o revocación como eventos con trazabilidad local. & Alta \\ \hline
 \end{tabularx}
-\caption{R.F Clientes (Administrador)}
-\label{tab:clientes}
+\caption{Requerimientos funcionales – Identidad y Configuración}
+\label{tab:rf_identidad}
 \end{table}
 
-% --- TABLA REPORTES ---
-\begin{table}[H]
-\centering
-\renewcommand{\arraystretch}{1.3}
-\setlength{\tabcolsep}{6pt}
-\begin{tabularx}{\textwidth}{|c|p{3.5cm}|X|c|}
-\hline
-\textbf{ID} & \textbf{Nombre} & \textbf{Descripción} & \textbf{Prioridad} \\ \hline
-RF\_26 & Generar reporte de entregas & Reporte de entregas programadas, realizadas, etc. & Media \\ \hline
-RF\_27 & Generar reporte de ventas & Reporte de ventas por período. & Media \\ \hline
-RF\_28 & Generar reporte de inventario & Reporte del estado de inventario y stock. & Media \\ \hline
-RF\_29 & Generar reporte de clientes & Reporte de clientes y su actividad. & Media \\ \hline
-RF\_30 & Exportar reportes a Excel & Exportar cualquier reporte a planilla Excel. & Baja \\ \hline
-\end{tabularx}
-\caption{R.F Reportes (Administrador)}
-\label{tab:reportes}
-\end{table}
+\section{Requerimientos no funcionales}
 
-% --- TABLA ADMINISTRACIÓN ---
-\begin{table}[H]
-\centering
-\renewcommand{\arraystretch}{1.3}
-\setlength{\tabcolsep}{6pt}
-\begin{tabularx}{\textwidth}{|c|p{3.5cm}|X|c|}
-\hline
-\textbf{ID} & \textbf{Nombre} & \textbf{Descripción} & \textbf{Prioridad} \\ \hline
-RF\_31 & Gestionar usuarios & El sistema debe permitir crear, editar y eliminar usuarios del sistema. & Alta \\ \hline
-\end{tabularx}
-\caption{R.F Administración (Administrador)}
-\label{tab:administracion}
-\end{table}
-
-
+Los requerimientos no funcionales definen los criterios de calidad, arquitectura, rendimiento y seguridad que rigen el sistema:
 
 \begin{table}[H]
 \centering
 \renewcommand{\arraystretch}{1.3}
 \setlength{\tabcolsep}{6pt}
-\begin{tabularx}{\textwidth}{|c|c|X|l|} % Se cambió la 'l' de Caso de Uso por 'X'
+\begin{tabularx}{\textwidth}{|c|p{3.2cm}|X|c|}
 \hline
-\textbf{Objetivo} & \textbf{RF} & \textbf{Caso de Uso} & \textbf{Módulo} \\ \hline
-
-OE1, OE2 & RF\_01 & CU\_07 Registrar entregas realizadas & Repartidor \\ \hline
-OE1, OE2 & RF\_02 & CU\_08 Ingresar comentarios de entrega & Repartidor \\ \hline
-OE1, OE4 & RF\_03 & CU\_09 Visualizar listado de clientes & Repartidor \\ \hline
-OE1, OE2 & RF\_04 & CU\_10 Programar próxima entrega & Repartidor \\ \hline
-OE3 & RF\_05 & CU\_11 Visualizar ruta optimizada & Repartidor \\ \hline
-OE1 & RF\_06 & CU\_12 Editar cantidad de entrega & Repartidor \\ \hline
-
-OE1, OE2 & RF\_07 & CU\_01 Gestionar pedidos & Pedidos y Rutas \\ \hline
-OE1 & RF\_08 & CU\_01 Gestionar pedidos & Pedidos y Rutas \\ \hline
-OE2, OE3 & RF\_09 & CU\_02 Gestionar rutas & Pedidos y Rutas \\ \hline
-OE4 & RF\_10 & CU\_03 Asignar clientes y productos a rutas & Pedidos y Rutas \\ \hline
-OE2 & RF\_11 & CU\_02 Gestionar rutas & Pedidos y Rutas \\ \hline
-OE1, OE2 & RF\_12 & CU\_01 Gestionar pedidos & Pedidos y Rutas \\ \hline
-OE4 & RF\_13 & CU\_03 Asignar clientes y productos a rutas & Pedidos y Rutas \\ \hline
-OE1 & RF\_14 & CU\_04 Visualizar dashboard de rutas & Pedidos y Rutas \\ \hline
-OE1 & RF\_15 & CU\_04 Visualizar dashboard de rutas & Pedidos y Rutas \\ \hline
-
+\textbf{ID} & \textbf{Criterio} & \textbf{Descripción y Métrica de Aceptación} & \textbf{Prioridad} \\ \hline
+RNF\_01 & Usabilidad y Carga Cognitiva & Interfaz optimizada con controles de $\ge 48$\,dp, tipografía legible con soporte para texto ampliado del sistema y máximo de 3 interacciones de navegación para alcanzar cualquier función principal. & Crítica \\ \hline
+RNF\_02 & Disponibilidad Offline-First & Todas las funciones de captura (vitales, síntomas, encuestas), lectura de historial y consulta de copias guardadas deben operar al 100\% sin conexión a internet. & Crítica \\ \hline
+RNF\_03 & Integridad y Persistencia ACID & Operaciones relacionales en SQLite bajo modo WAL y claves foráneas, asegurando atomicidad entre el guardado del dato clínico y la inserción del evento en la cola de salida. & Crítica \\ \hline
+RNF\_04 & Aislamiento Estricto de Datos & Prohibición absoluta de filtración o herencia de información entre perfiles; el Paciente A no puede leer, modificar ni eliminar datos pertenecientes al Paciente B. & Crítica \\ \hline
+RNF\_05 & Seguridad y Sanitización & Confinamiento en sandbox privado del dispositivo, sanitización estricta contra inyección de HTML en plantillas PDF y protección de datos sensibles. & Alta \\ \hline
+RNF\_06 & Rendimiento de Exportación & La generación y persistencia física de reportes PDF y Excel para hasta 90 días de historial debe completarse en menos de 3.000\,ms en hardware Android de referencia. & Alta \\ \hline
+RNF\_07 & Compatibilidad de Plataforma & Compilación como aplicación Android nativa compatible con Android 12 (API 31) en adelante, gestionando permisos en tiempo de ejecución. & Alta \\ \hline
+RNF\_08 & Responsabilidad Clínica & Exhibición permanente e ineludible de avisos que aclaren la naturaleza de acompañamiento de la app, instruyendo acudir a urgencias ante signos críticos. & Crítica \\ \hline
 \end{tabularx}
-\caption{Matriz de trazabilidad – Repartidor y Pedidos/Rutas}
-\label{tab:trazabilidad_rutas}
+\caption{Requerimientos no funcionales del sistema}
+\label{tab:rnf}
 \end{table}
 
-\subsection{Tablas de trazabilidad }
+\section{Matriz de trazabilidad}
 
-% --- TABLA 1: INVENTARIO Y PRODUCCIÓN ---
+La siguiente matriz vincula los Objetivos Específicos (OE) definidos en el Capítulo 3 con los requerimientos funcionales implementados:
+
 \begin{table}[H]
 \centering
 \renewcommand{\arraystretch}{1.3}
 \setlength{\tabcolsep}{6pt}
 \begin{tabularx}{\textwidth}{|c|c|X|l|}
 \hline
-\textbf{Objetivo} & \textbf{RF} & \textbf{Caso de Uso} & \textbf{Módulo} \\ \hline
-OE1, OE2 & RF\_12 & CU\_01 Gestionar materias primas & Inventario \\ \hline
-OE1, OE2 & RF\_13 & CU\_02 Registrar compras & Inventario \\ \hline
-OE1, OE2 & RF\_14 & CU\_03 Gestionar recetas & Producción \\ \hline
-OE1, OE2 & RF\_15 & CU\_04 Gestionar productos & Producción \\ \hline
-OE1, OE2 & RF\_16 & CU\_05 Gestionar lotes y producción & Producción \\ \hline
-OE4 & RF\_17 & CU\_06 Visualizar dashboard & Inventario \\ \hline
+\textbf{Objetivo} & \textbf{Requerimientos} & \textbf{Módulos Asociados} & \textbf{Ámbito de Solución} \\ \hline
+OE1 & RF\_01, RF\_02, RF\_05, RF\_08, RF\_16 & Interfaz, Vitales, Educación, Accesibilidad & Presentación accesible y captura en $\le 3$ toques \\ \hline
+OE2 & RF\_01, RF\_02, RF\_08 & Registro Clínico, Asistencia & Monitoreo y advertencia ante síntomas críticos \\ \hline
+OE3 & RF\_01, RF\_02, RF\_03, RF\_04, RF\_06, RF\_14 & SQLite Local, Repositorios, Sandboxing & Arquitectura offline-first y persistencia relacional \\ \hline
+OE4 & RF\_08, RF\_12, RF\_13 & Gateway, Notificaciones, Sesiones & Coordinación de avisos locales y pasarela \\ \hline
+OE5 & RF\_09, RF\_10, RF\_11, RF\_15 & Motor de Reportes (PDF/Excel), Vinculación & Exportación física de datos y vinculación médica \\ \hline
+OE6 & RNF\_01 a RNF\_08 & Infraestructura de Pruebas, Vitest, CI & Verificación de robustez, aislamiento y rendimiento \\ \hline
 \end{tabularx}
-\caption{Matriz de trazabilidad – Inventario y Producción}
-\label{tab:trazabilidad_inv_prod}
-\end{table}
-
-% --- TABLA 2: CLIENTES ---
-\begin{table}[H]
-\centering
-\renewcommand{\arraystretch}{1.3}
-\setlength{\tabcolsep}{6pt}
-\begin{tabularx}{\textwidth}{|c|c|X|l|}
-\hline
-\textbf{Objetivo} & \textbf{RF} & \textbf{Caso de Uso} & \textbf{Módulo} \\ \hline
-OE1, OE4 & RF\_22 & CU\_13 Registrar clientes & Clientes \\ \hline
-OE1, OE4 & RF\_23 & CU\_14 Editar o eliminar clientes & Clientes \\ \hline
-OE1, OE4 & RF\_24 & CU\_15 Visualizar historial de entregas por cliente & Clientes \\ \hline
-\end{tabularx}
-\caption{Matriz de trazabilidad – Clientes}
-\label{tab:trazabilidad_clientes}
-\end{table}
-
-% --- TABLA 3: REPORTES ---
-\begin{table}[H]
-\centering
-\renewcommand{\arraystretch}{1.3}
-\setlength{\tabcolsep}{6pt}
-\begin{tabularx}{\textwidth}{|c|c|X|l|}
-\hline
-\textbf{Objetivo} & \textbf{RF} & \textbf{Caso de Uso} & \textbf{Módulo} \\ \hline
-OE4 & RF\_25 & CU\_01 Generar reportes & Reportes \\ \hline
-OE4 & RF\_26 & CU\_01 Generar reportes & Reportes \\ \hline
-OE4 & RF\_27 & CU\_01 Generar reportes & Reportes \\ \hline
-OE4 & RF\_28 & CU\_01 Generar reportes & Reportes \\ \hline
-OE4 & RF\_29 & CU\_02 Exportar reportes a Excel & Reportes \\ \hline
-\end{tabularx}
-\caption{Matriz de trazabilidad – Reportes}
-\label{tab:trazabilidad_reportes}
-\end{table}
-
-% --- TABLA 4: ADMINISTRACIÓN ---
-\begin{table}[H]
-\centering
-\renewcommand{\arraystretch}{1.3}
-\setlength{\tabcolsep}{6pt}
-\begin{tabularx}{\textwidth}{|c|c|X|l|}
-\hline
-\textbf{Objetivo} & \textbf{RF} & \textbf{Caso de Uso} & \textbf{Módulo} \\ \hline
-OE2, OE4 & RF\_30 & CU\_01 Gestionar usuarios & Administración \\ \hline
-OE2, OE4 & RF\_31 & CU\_02 Configurar sistema & Administración \\ \hline
-\end{tabularx}
-\caption{Matriz de trazabilidad – Administración}
-\label{tab:trazabilidad_admin}
+\caption{Matriz de trazabilidad – Objetivos Específicos vs. Requerimientos}
+\label{tab:trazabilidad}
 \end{table}

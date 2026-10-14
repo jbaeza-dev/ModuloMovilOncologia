@@ -24,22 +24,47 @@ Se utilizó Scrum como marco de trabajo ágil, dada la necesidad de un desarroll
 
 \subsection*{Arquitectura del sistema}
 
+El módulo móvil de QuimioCare se concibió bajo una arquitectura en capas orientada al modelo \textit{offline-first}, donde el dispositivo móvil opera como la fuente primaria y autónoma de verdad para el paciente, desacoplando la captura de datos de la disponibilidad de red. La arquitectura se estructuró en los siguientes niveles funcionales:
+
+\begin{enumerate}
+    \item \textbf{Capa de Presentación e Interfaz de Usuario:} Desarrollada sobre React Native y Expo Router, organizada en rutas declarativas y componentes modulares. Implementa controles táctiles con áreas de interacción de al menos 48\,dp, tipografía accesible con soporte para escalado del sistema y cuatro paletas de color de alto contraste (Turquesa, Azul, Violeta y Ámbar) con conmutación claro/oscuro. La navegación se diseñó bajo la regla de un máximo de tres interacciones para alcanzar las funciones esenciales (registro de signos vitales, reporte de síntomas, consulta de guías y generación de reportes).
+    \item \textbf{Capa de Lógica y Gestión de Contexto:} Implementada mediante el Context API de React y controladores especializados (\texttt{LocalDataProvider}), asegurando el aislamiento estricto del contexto del paciente activo (soporte de pacientes de prueba A/B) y la inyección controlada de repositorios por dominio (\texttt{PatientRepository}).
+    \item \textbf{Capa de Persistencia Relacional Embebida:} Basada en SQLite nativo (\texttt{expo-sqlite}) operando bajo modo WAL (\textit{Write-Ahead Logging}) e integridad referencial de claves foráneas. El esquema evoluciona mediante migraciones transaccionales estrictas controladas por \texttt{PRAGMA user\_version}, abarcando signos vitales, síntomas, contexto clínico, consentimientos versionados, cuestionarios médicos asignados, descargas educativas y recordatorios locales.
+    \item \textbf{Capa de Almacenamiento de Archivos y Reconciliación:} Utiliza el sistema de archivos local en espacio aislado (\textit{sandbox}) del sistema operativo (\texttt{expo-file-system}) para gestionar guías e infografías educativas descargadas y reportes generados. Incorpora un mecanismo de reconciliación bidireccional que resuelve inconsistencias entre registros de base de datos y archivos físicos, además de operaciones de escritura atómica con respaldo y compensación ante fallos.
+    \item \textbf{Motor Nativo de Exportación y Reportes:} Consolida mediciones y síntomas en ventanas temporales de 7, 30 y 90 días, generando reportes clínicos en PDF mediante \texttt{expo-print} (con renderizado de plantillas HTML sanitizadas) y planillas de cálculo en formato Excel (\texttt{.xlsx}) con metadatos estructurados y código único de vinculación, permitiendo su compartición mediante la hoja de acción nativa (\texttt{expo-sharing}).
+    \item \textbf{Coordinador de Notificaciones y Recordatorios Locales:} Integra \texttt{expo-notifications} para gestionar recordatorios de toma de medicamentos y registro de controles en una ventana móvil determinista de 14 días (hasta 128 trabajos planificados), sincronizando las intenciones guardadas en SQLite con la agenda nativa del sistema operativo y garantizando su activación sin requerir la aplicación en primer plano ni conectividad a internet.
+    \item \textbf{Frontera de Comunicación y Cola de Envío:} Todos los eventos clínicos confirmados (signos vitales, síntomas, respuestas a cuestionarios y consentimientos) se registran de forma atómica en una cola local (\texttt{cola\_envio}) en estado pendiente con un UUID idempotente, quedando preparados para su transmisión asíncrona hacia el servidor central cuando se establezca el canal de red.
+\end{enumerate}
+
 \subsection*{Justificación de la arquitectura seleccionada}
 
 La arquitectura offline-first se justificó por la necesidad de garantizar disponibilidad del registro de síntomas y de la evaluación de triaje en zonas rurales de la región de Ñuble con conectividad intermitente. La separación entre el gateway del módulo móvil y la API clínica central permitió que el equipo de desarrollo del Módulo Móvil no dependiera de replicar lógica de autenticación ni el motor de inteligencia artificial RAG, responsabilidad del módulo de plataforma web (Jiménez \& Muñoz, 2026).
 
 \subsection*{Evaluación de Impacto y Compromisos}
 
+El desarrollo e implantación del módulo móvil genera un impacto multidimensional tanto en el ámbito clínico y asistencial como en el plano social, ético y tecnológico:
+
+\begin{enumerate}
+    \item \textbf{Impacto Clínico y Asistencial:} Proporciona continuidad al proceso asistencial durante la fase ambulatoria inter-ciclo, período en el cual el paciente abandona la supervisión directa del equipo de salud del hospital. Permite la detección temprana de complicaciones agudas potencialmente letales —particularmente la neutropenia febril en los días de nadir hematológico— facilitando que el paciente cuente con un historial fidedigno y consolidado de sus signos vitales para presentar en sus controles médicos programados o en la unidad de emergencias.
+    \item \textbf{Impacto Social y Territorial en la Región de Ñuble:} Reduce la brecha de atención provocada por la alta dispersión geográfica y la precaria cobertura de telecomunicaciones en las comunas rurales atendidas por el Hospital Clínico Herminda Martín. Al garantizar operatividad plena sin conexión a internet, la aplicación asegura que ningún paciente quede desprovisto de herramientas de registro y orientación debido a su ubicación geográfica o nivel socioeconómico.
+    \item \textbf{Impacto en la Calidad de Vida y Reducción de la Sobrecarga Cognitiva:} El diseño centrado en la accesibilidad y la heurística de tres toques mitiga el impacto de la fatiga oncológica y el deterioro cognitivo leve inducido por quimioterapia (\textit{chemo-brain}), permitiendo una interacción fluida y sin frustración para usuarios mayores o con baja alfabetización digital.
+    \item \textbf{Compromisos Éticos, de Privacidad y Seguridad:}
+    \begin{itemize}
+        \item \textit{Principio de no maleficencia:} La aplicación móvil no emite diagnósticos definitivos, no altera prescripciones médicas ni fabrica recomendaciones farmacológicas automatizadas. Incorpora un aviso de responsabilidad clínica explícito y visible en todo momento (RNF-08), instruyendo al paciente a acudir a un centro asistencial ante signos de alarma.
+        \item \textit{Aislamiento y confidencialidad de datos sensibles:} La información médica permanece confinada en el almacenamiento privado del dispositivo, con estricta separación de identidades en pruebas y sin filtración de datos clínicos hacia redes públicas o servicios no autorizados.
+        \item \textit{Integridad y no destructividad:} Las políticas de almacenamiento resguardan los registros ante cierres abruptos o fallos del sistema operativo; las operaciones de cierre de sesión o revocación de consentimientos preservan el historial clínico local sin borrados en cascada no consentidos.
+    \end{itemize}
+\end{enumerate}
 
 \section{Tecnologías Utilizadas}
 
 \subsection*{Aplicación móvil:}
 \begin{itemize}
-    \item \textbf{React Native + Expo:} Se utilizó como framework principal del cliente móvil, permitiendo compilar una aplicación nativa para Android a partir de una base de código tipada en TypeScript. Expo proporcionó acceso simplificado a funcionalidades del dispositivo como sistema de archivos, notificaciones locales y SQLite embebido.
+    \item \textbf{React Native + Expo (SDK 57):} Se utilizó como framework principal del cliente móvil, permitiendo compilar una aplicación nativa para Android a partir de una base de código tipada en TypeScript. Expo proporcionó acceso simplificado a funcionalidades del dispositivo como sistema de archivos, notificaciones locales y SQLite embebido.
     \item \textbf{TypeScript:} Se empleó en todo el stack (móvil, gateway) para añadir tipado estático, mejorando la detección de errores y la mantenibilidad del código.
-    \item \textbf{Expo Router:} Se utilizó para gestionar la navegación interna entre pantallas de la aplicación.
+    \item \textbf{Expo Router:} Se utilizó para gestionar la navegación interna entre pantallas de la aplicación mediante un esquema declarativo basado en sistema de archivos.
     \item \textbf{expo-sqlite:} Se integró como motor relacional embebido para garantizar la disponibilidad total del registro de síntomas sin conexión a internet (RNF-04).
-    \item \textbf{expo-file-system / expo-notifications:} Se utilizaron para la gestión de archivos de reportes generados en cliente y para las notificaciones push y recordatorios locales, respectivamente.
+    \item \textbf{expo-file-system / expo-notifications:} Se utilizaron para la gestión de archivos de reportes y copias educativas en almacenamiento local, y para la planificación de recordatorios nativos en el dispositivo, respectivamente.
 \end{itemize}
 
 \subsection*{Motor de triaje edge local:}
@@ -63,15 +88,15 @@ La arquitectura offline-first se justificó por la necesidad de garantizar dispo
 
 \subsection*{Gestión de estado, validación y exportación nativa:}
 \begin{itemize}
-    \item \textbf{Zustand:} Se utilizó para la gestión del estado global, garantizando reactividad liviana en el cliente móvil.
-    \item \textbf{Zod:} Se empleó para centralizar la validación de la estructura de los datos de entrada y salida.
-    \item \textbf{jsPDF:} Se utilizó para la exportación del historial de síntomas en formato PDF directamente en el cliente.
-    \item \textbf{SheetJS (XLSX):} Se empleó para la generación de hojas de cálculo, incorporando el código único de vinculación en el encabezado.
+    \item \textbf{React Context API y Hooks Personalizados:} Se utilizó para la gestión del estado global y el aislamiento del paciente activo (\texttt{LocalDataProvider}), garantizando reactividad liviana y desacoplamiento de repositorios sin dependencias pesadas de terceros.
+    \item \textbf{Validadores Tipados en TypeScript:} Se emplearon para centralizar la validación estructural de los datos de entrada, rangos fisiológicos y consistencia de esquemas.
+    \item \textbf{expo-print y expo-sharing:} Se utilizaron para la exportación del historial clínico en formato PDF directamente en el cliente mediante plantillas estructuradas y renderizado nativo.
+    \item \textbf{SheetJS (XLSX):} Se empleó para la generación de hojas de cálculo estructuradas con hojas independientes para signos vitales y síntomas, incorporando el código de vinculación en el encabezado.
 \end{itemize}
 
 \subsection*{Pruebas:}
 \begin{itemize}
-    \item \textbf{Vitest (TypeScript):} Se utilizó como framework de pruebas unitarias e integración para el motor de triaje edge, los formateadores de reportes y los middlewares de validación JWT en el gateway.
+    \item \textbf{Vitest (TypeScript):} Se utilizó como framework de pruebas unitarias e integración para el motor de triaje edge, los formateadores de reportes, repositorios SQLite nativos y los middlewares de validación JWT en el gateway.
 \end{itemize}
 
 \subsection*{Definiciones, Siglas y Abreviaciones:}
