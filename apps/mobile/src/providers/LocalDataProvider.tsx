@@ -33,6 +33,9 @@ import {
   NotificationCoordinator,
   type CoordinatorResult,
 } from '../services/reminders/notification-coordinator';
+import { AssistantController } from '../services/assistant/assistant-controller';
+import { FakeAssistantAdapter } from '../services/assistant/fake-assistant-adapter';
+import { UnconfiguredAssistantAdapter } from '../services/assistant/unconfigured-assistant-adapter';
 
 interface PendingNotificationIntent {
   payload: NotificationJobPayload;
@@ -92,6 +95,7 @@ type DataContextValue = {
   selectPatient: (newPatientId: string) => Promise<void>;
   changePatient: () => void;
   activeTeardownPromise: Promise<TeardownResult> | null;
+  assistantController?: AssistantController | null;
 };
 
 const DataContext = createContext<DataContextValue | null>(null);
@@ -217,6 +221,21 @@ export function LocalDataProvider({ children }: { children: ReactNode }) {
   const drainResolversRef = useRef<Set<() => void>>(new Set());
   const activeTeardownPromiseRef = useRef<Promise<TeardownResult> | null>(null);
 
+  const assistantAdapter = useMemo(() => {
+    return isDemoMode() ? new FakeAssistantAdapter() : new UnconfiguredAssistantAdapter();
+  }, []);
+
+  const assistantControllerRef = useRef<AssistantController | null>(null);
+  if (!assistantControllerRef.current) {
+    assistantControllerRef.current = new AssistantController(
+      assistantAdapter,
+      patientIdRef.current,
+      () => {
+        void closeActiveContext('session_required');
+      },
+    );
+  }
+
   const [isClosing, setIsClosing] = useState(false);
   const closingRef = useRef(false);
 
@@ -253,7 +272,11 @@ export function LocalDataProvider({ children }: { children: ReactNode }) {
       patientIdRef.current = null;
       setPatientId(null);
 
-      // 2. Limpiar intenciones de notificación pendientes y dedupe
+      // 2. Abortar solicitudes del asistente en vuelo y limpiar memoria
+      assistantControllerRef.current?.abort();
+      assistantControllerRef.current?.setContext(null, contextEpochRef.current);
+
+      // 3. Limpiar intenciones de notificación pendientes y dedupe
       pendingNotificationIntentRef.current = null;
       inFlightNotificationsRef.current.clear();
 
@@ -363,6 +386,7 @@ export function LocalDataProvider({ children }: { children: ReactNode }) {
       contextEpochRef.current += 1;
       patientIdRef.current = newPatientId;
       setPatientId(newPatientId);
+      assistantControllerRef.current?.setContext(newPatientId, contextEpochRef.current);
 
       // 5. Navegar hacia (tabs) una vez que la guarda del nuevo contexto está habilitada
       router.replace('/(tabs)');
@@ -601,6 +625,7 @@ export function LocalDataProvider({ children }: { children: ReactNode }) {
       selectPatient,
       trackOperation,
       activeTeardownPromise: activeTeardownPromiseRef.current,
+      assistantController: assistantControllerRef.current,
       async runSave<T>(work: () => Promise<T>): Promise<T> {
         return trackOperation(async () => {
           if (!patientIdRef.current || savingRef.current) {
