@@ -308,7 +308,7 @@ export function LinkCodeScreen() {
     <Screen title="Código de vinculación" backTo="/perfil">
       <DemoBadge />
       <BodyText>
-        Código de muestra sintético para demostración técnica del almacenamiento local.
+        Comparte este código con tu equipo de salud para vincular tu seguimiento clínico.
       </BodyText>
       {loading ? (
         <InfoCard>

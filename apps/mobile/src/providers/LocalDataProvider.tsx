@@ -17,7 +17,11 @@ import { BodyText, VisualButton } from '../components/Visual';
 import { createExpoConnection } from '../data/local/core/expo-connection';
 import { ExpoFileStorageAdapter } from '../data/local/files/file-storage-adapter';
 import { migrateDatabase } from '../data/local/migrations';
-import { createPatientRepository, seedPatientContextIfEmpty } from '../data/local/repository';
+import {
+  createPatientRepository,
+  seedDemoVitalsAndSymptoms,
+  seedPatientContextIfEmpty,
+} from '../data/local/repository';
 import type { SqlConnection } from '../data/local/core/sql';
 import { importLegacyDrafts } from '../features/medical-forms/form-legacy-import';
 import * as Notifications from 'expo-notifications';
@@ -126,6 +130,7 @@ export function LocalDataProvider({ children }: { children: ReactNode }) {
         await migrateDatabase(connection);
         if (isDemoMode()) {
           await seedPatientContextIfEmpty(connection, DEMO_PATIENTS[0].id, DEMO_PATIENTS[1].id);
+          await seedDemoVitalsAndSymptoms(connection, DEMO_PATIENTS[0].id, DEMO_PATIENTS[1].id);
         }
         if (active) setDatabase(connection);
         else await native.closeAsync();

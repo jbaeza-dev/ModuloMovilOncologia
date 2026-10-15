@@ -4,7 +4,6 @@ import { StyleSheet, Text, View } from 'react-native';
 import { NavigationCard } from '../../components/NavigationCard';
 import { Screen } from '../../components/Screen';
 import {
-  BodyText,
   DetailRow,
   InfoCard,
   SectionTitle,
@@ -43,15 +42,14 @@ export function HomeScreen() {
       </View>
       {isDemoMode() ? (
         <InfoCard>
-          <BodyText>
-            Datos sintéticos · {DEMO_PATIENTS.find((patient) => patient.id === patientId)?.label}
-          </BodyText>
-          <BodyText>
-            Datos de prueba locales guardados en este dispositivo. No representan una sesión
-            autenticada ni sustituyen una evaluación médica.
-          </BodyText>
+          <View style={styles.row}>
+            <Text style={styles.cardTitle}>Paciente activo</Text>
+            <StatusPill>
+              {DEMO_PATIENTS.find((patient) => patient.id === patientId)?.label ?? 'Paciente'}
+            </StatusPill>
+          </View>
           <VisualButton
-            label={isClosing ? 'Cerrando contexto…' : 'Cambiar paciente de prueba'}
+            label={isClosing ? 'Cerrando contexto…' : 'Cambiar paciente'}
             secondary
             disabled={saving || isClosing}
             onPress={() => void changePatient()}
@@ -80,14 +78,11 @@ export function HomeScreen() {
           <InfoCard>
             <View style={styles.row}>
               <Text style={styles.cardTitle}>Último registro</Text>
-              <StatusPill>Pendiente de envío</StatusPill>
+              <StatusPill>Registrado localmente</StatusPill>
             </View>
             <DetailRow label="Fecha" value={formatDate(latest.fecha_registro)} />
             <DetailRow label="Temperatura" value={formatVital(latest.temperatura, '°C')} />
             <DetailRow label="Pulso" value={formatVital(latest.pulso, 'lpm')} />
-            <Text style={styles.helper}>
-              Datos sintéticos locales; no representan una evaluación clínica.
-            </Text>
           </InfoCard>
         )}
         <NavigationCard

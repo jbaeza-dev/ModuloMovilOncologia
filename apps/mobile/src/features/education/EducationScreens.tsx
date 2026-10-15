@@ -1,6 +1,7 @@
 import Feather from '@expo/vector-icons/Feather';
 import { Asset } from 'expo-asset';
 import { File } from 'expo-file-system';
+import * as Linking from 'expo-linking';
 import * as Network from 'expo-network';
 import { router, useLocalSearchParams } from 'expo-router';
 import { useCallback, useEffect, useRef, useState } from 'react';
@@ -33,9 +34,9 @@ import {
 import { formatDate } from '../../data/local/repository';
 import { useFocusedList, useFocusedValue } from '../../hooks/use-local-query';
 import { useLocalData } from '../../providers/LocalDataProvider';
+import { isDemoMode } from '../../utils/environment';
 import { useAppTheme } from '../../providers/ThemeProvider';
 import { theme } from '../../theme';
-import { DiagnosticsDemoModal } from './DiagnosticsDemoModal';
 import {
   getEducationalCatalogReader,
   type EducationalCategory,
@@ -50,8 +51,6 @@ export function EducationScreen() {
   const { theme: appTheme } = useAppTheme();
   const { repository, patientId } = useLocalData();
   const styles = useStyles();
-
-  const [diagnosticsVisible, setDiagnosticsVisible] = useState(false);
 
   const loadCopies = useCallback(async (): Promise<EducationalLocalCopy[]> => {
     if (!repository || !patientId) return [];
@@ -110,26 +109,6 @@ export function EducationScreen() {
           <Feather name="chevron-right" size={22} color={appTheme.colors.text} />
         </Pressable>
       ))}
-
-      {/* Botón de diagnóstico demo release */}
-      <Pressable
-        accessibilityRole="button"
-        accessibilityLabel="Abrir diagnóstico demo de almacenamiento y red"
-        onPress={() => setDiagnosticsVisible(true)}
-        style={[styles.row, styles.diagnosticCard]}
-      >
-        <Feather name="activity" size={26} color={appTheme.colors.primary} />
-        <View style={styles.copy}>
-          <Text style={styles.heading}>Diagnóstico demo release</Text>
-          <BodyText>Inspección de SQLite v7, red y simulación de fallos</BodyText>
-        </View>
-        <Feather name="chevron-right" size={22} color={appTheme.colors.text} />
-      </Pressable>
-
-      <DiagnosticsDemoModal
-        visible={diagnosticsVisible}
-        onClose={() => setDiagnosticsVisible(false)}
-      />
     </Screen>
   );
 }
@@ -176,10 +155,7 @@ export function EducationCategoryScreen() {
   return (
     <Screen title={value?.currentCategory?.title ?? 'Categoría'} backTo="/educacion">
       <DemoBadge />
-      <BodyText>
-        Material de muestra neutro para demostración técnica del acompañamiento educativo
-        multimedia.
-      </BodyText>
+      <BodyText>Recursos y guías diseñadas para acompañarte en tu cuidado diario.</BodyText>
 
       {loadingData ? (
         <BodyText>Cargando materiales de la categoría…</BodyText>
@@ -403,9 +379,17 @@ export function EducationResourceScreen() {
         versionOrigen: effectiveResource.version,
       });
 
-      const launchResult = await launchYouTubeVideo(effectiveResource.youtubeVideoId);
-      if (!launchResult.success) {
-        setOpError(launchResult.error || 'No se pudo abrir YouTube en este dispositivo.');
+      if (isDemoMode()) {
+        try {
+          await Linking.openURL('https://www.youtube.com');
+        } catch {
+          setOpError('No se pudo abrir YouTube en este dispositivo.');
+        }
+      } else {
+        const launchResult = await launchYouTubeVideo(effectiveResource.youtubeVideoId);
+        if (!launchResult.success) {
+          setOpError(launchResult.error || 'No se pudo abrir YouTube en este dispositivo.');
+        }
       }
       refreshStatus();
     } catch {

@@ -511,6 +511,145 @@ export async function seedPatientContextIfEmpty(
   });
 }
 
+export async function seedDemoVitalsAndSymptoms(
+  database: SqlConnection,
+  patientAId: string,
+  patientBId: string,
+): Promise<void> {
+  await database.transaction(async (tx) => {
+    const hasVitalsTable = await tx.first<{ name: string }>(
+      "SELECT name FROM sqlite_master WHERE type = 'table' AND name = 'signos_vitales'",
+    );
+    if (!hasVitalsTable) return;
+
+    const existing = await tx.first<{ count: number }>(
+      "SELECT COUNT(*) as count FROM signos_vitales WHERE id LIKE 'vital-a-%' OR id LIKE 'vital-b-%'",
+    );
+    if (existing && existing.count > 0) return;
+
+    const nowMs = Date.now();
+    const isoHoursAgo = (hours: number) => new Date(nowMs - hours * 3600 * 1000).toISOString();
+
+    const vitalsA = [
+      { id: 'vital-a-1', hours: 2, sis: 120, dia: 80, pulso: 72, temp: 36.6, sat: 98 },
+      { id: 'vital-a-2', hours: 24, sis: 118, dia: 76, pulso: 75, temp: 36.8, sat: 98 },
+      { id: 'vital-a-3', hours: 72, sis: 122, dia: 82, pulso: 80, temp: 37.1, sat: 97 },
+      { id: 'vital-a-4', hours: 120, sis: 125, dia: 84, pulso: 78, temp: 36.7, sat: 99 },
+      { id: 'vital-a-5', hours: 168, sis: 119, dia: 78, pulso: 70, temp: 36.5, sat: 98 },
+      { id: 'vital-a-6', hours: 240, sis: 121, dia: 79, pulso: 74, temp: 36.6, sat: 98 },
+      { id: 'vital-a-7', hours: 336, sis: 117, dia: 75, pulso: 72, temp: 36.4, sat: 99 },
+      { id: 'vital-a-8', hours: 504, sis: 123, dia: 81, pulso: 76, temp: 36.7, sat: 98 },
+    ];
+
+    for (const v of vitalsA) {
+      const regDate = isoHoursAgo(v.hours);
+      await tx.run(
+        `INSERT OR IGNORE INTO signos_vitales (
+          id, paciente_id, fecha_registro, presion_sistolica, presion_diastolica,
+          pulso, temperatura, saturacion_o2, creado_localmente_en
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+        [v.id, patientAId, regDate, v.sis, v.dia, v.pulso, v.temp, v.sat, regDate],
+      );
+    }
+
+    const symptomsA = [
+      {
+        id: 'symp-a-1',
+        hours: 4,
+        desc: 'Náuseas leves después del desayuno, mejoraron con reposo y agua tibia.',
+      },
+      {
+        id: 'symp-a-2',
+        hours: 28,
+        desc: 'Sensación de fatiga al caminar distancias medias. Descanso adecuado por 30 minutos.',
+      },
+      {
+        id: 'symp-a-3',
+        hours: 76,
+        desc: 'Ligera molestia estomacal y poco apetito durante la tarde.',
+      },
+      {
+        id: 'symp-a-4',
+        hours: 124,
+        desc: 'Hipersensibilidad al frío en las manos al lavar platos. Se usaron guantes de protección.',
+      },
+      {
+        id: 'symp-a-5',
+        hours: 172,
+        desc: 'Dolor muscular leve en hombros y espalda. Buen descanso nocturno.',
+      },
+      {
+        id: 'symp-a-6',
+        hours: 244,
+        desc: 'Buen estado de ánimo general, caminata ligera de 20 minutos sin molestias.',
+      },
+    ];
+
+    for (const s of symptomsA) {
+      const regDate = isoHoursAgo(s.hours);
+      await tx.run(
+        `INSERT OR IGNORE INTO sintomas (
+          id, paciente_id, fecha_registro, descripcion, creado_localmente_en
+        ) VALUES (?, ?, ?, ?, ?)`,
+        [s.id, patientAId, regDate, s.desc, regDate],
+      );
+    }
+
+    const vitalsB = [
+      { id: 'vital-b-1', hours: 3, sis: 128, dia: 82, pulso: 68, temp: 36.5, sat: 99 },
+      { id: 'vital-b-2', hours: 26, sis: 130, dia: 85, pulso: 72, temp: 36.7, sat: 98 },
+      { id: 'vital-b-3', hours: 74, sis: 126, dia: 80, pulso: 70, temp: 36.6, sat: 98 },
+      { id: 'vital-b-4', hours: 146, sis: 124, dia: 82, pulso: 74, temp: 36.8, sat: 97 },
+      { id: 'vital-b-5', hours: 242, sis: 129, dia: 84, pulso: 69, temp: 36.5, sat: 99 },
+      { id: 'vital-b-6', hours: 360, sis: 127, dia: 81, pulso: 71, temp: 36.6, sat: 98 },
+    ];
+
+    for (const v of vitalsB) {
+      const regDate = isoHoursAgo(v.hours);
+      await tx.run(
+        `INSERT OR IGNORE INTO signos_vitales (
+          id, paciente_id, fecha_registro, presion_sistolica, presion_diastolica,
+          pulso, temperatura, saturacion_o2, creado_localmente_en
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+        [v.id, patientBId, regDate, v.sis, v.dia, v.pulso, v.temp, v.sat, regDate],
+      );
+    }
+
+    const symptomsB = [
+      {
+        id: 'symp-b-1',
+        hours: 5,
+        desc: 'Cansancio matutino leve, se recuperó adecuadamente tras el almuerzo.',
+      },
+      {
+        id: 'symp-b-2',
+        hours: 78,
+        desc: 'Sensación de pesadez en las extremidades inferiores tras actividad diaria.',
+      },
+      {
+        id: 'symp-b-3',
+        hours: 170,
+        desc: 'Cefalea leve vespertina que cedió con reposo e hidratación.',
+      },
+      {
+        id: 'symp-b-4',
+        hours: 260,
+        desc: 'Digestión lenta y sensación de saciedad temprana.',
+      },
+    ];
+
+    for (const s of symptomsB) {
+      const regDate = isoHoursAgo(s.hours);
+      await tx.run(
+        `INSERT OR IGNORE INTO sintomas (
+          id, paciente_id, fecha_registro, descripcion, creado_localmente_en
+        ) VALUES (?, ?, ?, ?, ?)`,
+        [s.id, patientBId, regDate, s.desc, regDate],
+      );
+    }
+  });
+}
+
 export function sinceDays(days: 7 | 30 | 90, now: Date = new Date()): string {
   return new Date(now.getTime() - days * 24 * 60 * 60 * 1000).toISOString();
 }
