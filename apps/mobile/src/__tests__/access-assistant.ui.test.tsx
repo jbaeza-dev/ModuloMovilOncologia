@@ -46,7 +46,14 @@ jest.mock('expo-router', () => {
   const { View } = require('react-native');
 
   function Protected({ guard, children }: { guard: boolean; children: React.ReactNode }) {
-    if (!guard) return null;
+    if (!guard) {
+      for (let i = mockRouteHistory.length - 1; i >= 0; i--) {
+        if (mockRouteHistory[i].startsWith('/(tabs)')) {
+          mockRouteHistory.splice(i, 1);
+        }
+      }
+      return null;
+    }
     return React.createElement(React.Fragment, null, children);
   }
 
@@ -71,6 +78,7 @@ jest.mock('expo-router', () => {
       back: () => mockRouter.back(),
       canGoBack: () => mockRouter.canGoBack(),
     },
+    useRouter: () => mockRouter,
     useSegments: () => {
       const current = mockRouteHistory[mockRouteHistory.length - 1] || '/';
       return current.split('/').filter(Boolean);
@@ -217,11 +225,13 @@ jest.mock('../providers/ThemeProvider', () => ({
 }));
 
 import { ContextGuard } from '../components/ContextGuard';
-import { LoginScreen, RegisterScreen } from '../features/access/AccessScreens';
+import { LoginScreen, RegisterScreen, AccessConsentScreen } from '../features/access/AccessScreens';
 import { AssistantScreen } from '../features/assistant/AssistantScreen';
 import { AppNavigator } from '../app/_layout';
 import { LocalDataProvider, DEMO_PATIENTS, useLocalData } from '../providers/LocalDataProvider';
 import { FakeAssistantAdapter } from '../services/assistant/fake-assistant-adapter';
+import { UnconfiguredSessionAdapter } from '../services/session/unconfigured-session-adapter';
+import { UnconfiguredAssistantAdapter } from '../services/assistant/unconfigured-assistant-adapter';
 
 type LocalDataContext = ReturnType<typeof useLocalData>;
 
@@ -321,14 +331,57 @@ describe('Incremento 6: UI de Acceso, Navegación Raíz, Sesión y Asistente', (
     });
 
     it('el historial de navegación y botón Atrás conservan la ruta previa', async () => {
+      mockRouteHistory.length = 0;
+      mockRouteHistory.push('/');
+
       mockRouter.navigate('/acceso');
-      expect(mockRouteHistory).toEqual(['/', '/acceso']);
+      expect([...mockRouteHistory]).toEqual(['/', '/acceso']);
 
       mockRouter.navigate('/acceso/consentimientos');
-      expect(mockRouteHistory).toEqual(['/', '/acceso', '/acceso/consentimientos']);
+      expect([...mockRouteHistory]).toEqual(['/', '/acceso', '/acceso/consentimientos']);
 
       mockRouter.back();
-      expect(mockRouteHistory).toEqual(['/', '/acceso']);
+      expect([...mockRouteHistory]).toEqual(['/', '/acceso']);
+    });
+
+    it('aislamiento completo de navegación: paciente A -> pantalla privada profunda -> cambio a B -> botón Atrás no restaura pantalla privada de A', async () => {
+      mockRouteHistory.length = 0;
+      mockRouteHistory.push('/');
+      const contextHolder = { current: null as LocalDataContext | null };
+
+      await render(
+        <LocalDataProvider>
+          <AppNavigator />
+          <ContextConsumer onReady={(ctx) => (contextHolder.current = ctx)} />
+        </LocalDataProvider>,
+      );
+
+      await screen.findByTestId('root-stack');
+
+      // 1. Activar Paciente A
+      await act(async () => {
+        await contextHolder.current?.selectPatient(DEMO_PATIENTS[0].id);
+      });
+      expect(contextHolder.current?.patientId).toBe(DEMO_PATIENTS[0].id);
+      expect(contextHolder.current?.sessionAdapter.getCurrentUser()?.id).toBe(DEMO_PATIENTS[0].id);
+
+      // 2. Navegar a una ruta privada profunda de Paciente A
+      mockRouter.navigate('/(tabs)/recordatorios');
+      expect(mockRouteHistory).toContain('/(tabs)/recordatorios');
+
+      // 3. Conmutar a Paciente B
+      await act(async () => {
+        await contextHolder.current?.selectPatient(DEMO_PATIENTS[1].id);
+      });
+
+      // 4. Verificar que ambas identidades coinciden en Paciente B y la sesión está activa
+      expect(contextHolder.current?.patientId).toBe(DEMO_PATIENTS[1].id);
+      expect(contextHolder.current?.sessionAdapter.getCurrentUser()?.id).toBe(DEMO_PATIENTS[1].id);
+      expect(contextHolder.current?.sessionAdapter.getState()).toBe('context_ready');
+
+      // 5. Presionar botón Atrás: el historial de A fue purgado y no restaura pantallas privadas previas de A
+      mockRouter.back();
+      expect(mockRouteHistory).not.toContain('/(tabs)/recordatorios');
     });
   });
 
@@ -554,6 +607,82 @@ describe('Incremento 6: UI de Acceso, Navegación Raíz, Sesión y Asistente', (
 
       // Comprobar que el coordinador activo canceló las notificaciones del paciente saliente
       expect(mockScheduledNotifications.size).toBe(0);
+    });
+  });
+
+  describe('Consentimientos Informados (S-03)', () => {
+    it('AccessConsentScreen monta en la jerarquía, muestra términos y estado demostrativo', async () => {
+      let contextRef: ReturnType<typeof useLocalData> | null = null;
+
+      await render(
+        <LocalDataProvider>
+          <AccessConsentScreen />
+          <ContextConsumer onReady={(ctx) => (contextRef = ctx)} />
+        </LocalDataProvider>,
+      );
+
+      // Verifica encabezados y distintivo demo
+      expect(await screen.findByText('Consentimientos')).toBeTruthy();
+      expect(await screen.findByText('VISTA DE DEMOSTRACIÓN · DATOS FICTICIOS')).toBeTruthy();
+      expect(
+        await screen.findByText(
+          'Revisión y gestión de consentimientos informados y términos versionados de QuimioCare. El contenido actual corresponde a muestras técnicas demostrativas con trazabilidad en el almacenamiento local.',
+        ),
+      ).toBeTruthy();
+
+      // Términos sembrados automáticamente durante migraciones
+      expect(
+        await screen.findByText(
+          'Consentimiento Informado para Seguimiento Sintomático y Reporte Clínico',
+        ),
+      ).toBeTruthy();
+      expect(await screen.findByText('Términos y Condiciones del Piloto QuimioCare')).toBeTruthy();
+
+      // Sembrar un término de consentimiento en la base de datos de prueba
+      await act(async () => {
+        await contextRef?.database?.run(
+          `INSERT OR REPLACE INTO definicion_terminos_cache (
+             termino_id, version, titulo, contenido_markdown,
+             requerido, vigente_desde, huella_sha256, obtenido_en
+           ) VALUES (
+             'term-synthetic-01', '1.0.0', 'Tratamiento de Datos Sintéticos',
+             'Texto de prueba técnica demostrativa',
+             1, '2026-01-01T00:00:00Z', 'checksum-synthetic', '2026-01-01T00:00:00Z'
+           )`,
+        );
+      });
+
+      // Activar un paciente de prueba para cargar estado de términos
+      await act(async () => {
+        await contextRef?.selectPatient(DEMO_PATIENTS[0].id);
+      });
+
+      // El término debe ser visible en pantalla
+      expect(await screen.findByText('Tratamiento de Datos Sintéticos')).toBeTruthy();
+      expect(await screen.findByText('term-synthetic-01')).toBeTruthy();
+    });
+  });
+
+  describe('Modo Estándar vs Modo Demostración', () => {
+    it('UnconfiguredSessionAdapter opera sin identidades fijas y no expone selección demostrativa', () => {
+      const standardSession = new UnconfiguredSessionAdapter();
+      expect(standardSession.getState()).toBe('unconfigured');
+      expect(standardSession.getCurrentUser()).toBeNull();
+      expect(
+        (standardSession as unknown as { selectDemoPatient?: unknown }).selectDemoPatient,
+      ).toBeUndefined();
+    });
+
+    it('UnconfiguredAssistantAdapter emite aviso de servicio no configurado ante mensajes', async () => {
+      const standardAssistant = new UnconfiguredAssistantAdapter();
+      expect(standardAssistant.isConfigured).toBe(false);
+      await expect(
+        standardAssistant.sendMessage('Consulta de prueba', {
+          requestId: 'req-test-123',
+          patientId: 'patient-test-123',
+          signal: new AbortController().signal,
+        }),
+      ).rejects.toThrow('El servicio del asistente no está configurado en este entorno.');
     });
   });
 });

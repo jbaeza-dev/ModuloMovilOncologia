@@ -40,8 +40,8 @@ export interface PatientContextManagerOptions {
 export class PatientContextManager {
   private database: SqlConnection | null = null;
   private coordinator: NotificationCoordinator | null = null;
-  private sessionAdapter: SessionAdapter;
-  private assistantAdapter: AssistantAdapter;
+  public readonly sessionAdapter: SessionAdapter;
+  public readonly assistantAdapter: AssistantAdapter;
   private router: RouterAdapter;
   private newId: () => string;
   private onStateChange?: () => void;
@@ -84,6 +84,14 @@ export class PatientContextManager {
 
   setCoordinator(coordinator: NotificationCoordinator | null): void {
     this.coordinator = coordinator;
+  }
+
+  setRouter(router: RouterAdapter): void {
+    this.router = router;
+  }
+
+  changePatient(): void {
+    void this.closeActiveContext('change_patient');
   }
 
   getPatientId(): string | null {

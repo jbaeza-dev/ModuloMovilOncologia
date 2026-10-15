@@ -11,6 +11,8 @@ import {
   useState,
 } from 'react';
 import { AppState } from 'react-native';
+import { router, type Href } from 'expo-router';
+import * as Notifications from 'expo-notifications';
 
 import { Screen } from '../components/Screen';
 import { BodyText, VisualButton } from '../components/Visual';
@@ -24,31 +26,28 @@ import {
 } from '../data/local/repository';
 import type { SqlConnection } from '../data/local/core/sql';
 import { importLegacyDrafts } from '../features/medical-forms/form-legacy-import';
-import * as Notifications from 'expo-notifications';
-import { router } from 'expo-router';
 import { isDemoMode } from '../utils/environment';
-import {
-  isValidNotificationPayload,
-  ALLOWED_NOTIFICATION_DESTINATIONS as ALLOWED_DESTINATIONS,
-  type NotificationJobPayload,
-} from '../data/local/reminders/reminder-types';
+import { isValidNotificationPayload } from '../data/local/reminders/reminder-types';
 import { ExpoNotificationAdapter } from '../services/notifications/expo-notification-adapter';
 import {
   NotificationCoordinator,
   type CoordinatorResult,
 } from '../services/reminders/notification-coordinator';
-import { AssistantController } from '../services/assistant/assistant-controller';
+import type { AssistantController } from '../services/assistant/assistant-controller';
 import { FakeAssistantAdapter } from '../services/assistant/fake-assistant-adapter';
 import { UnconfiguredAssistantAdapter } from '../services/assistant/unconfigured-assistant-adapter';
 
 import { DemoSessionAdapter, DEMO_USERS } from '../services/session/demo-session-adapter';
 import { UnconfiguredSessionAdapter } from '../services/session/unconfigured-session-adapter';
 import type { SessionAdapter } from '../services/session/session-adapter';
+import {
+  PatientContextManager,
+  type CloseReason,
+  type TeardownResult,
+  type RouterAdapter,
+} from './patient-context-manager';
 
-interface PendingNotificationIntent {
-  payload: NotificationJobPayload;
-  dedupeKey: string;
-}
+export type { CloseReason, TeardownResult };
 
 try {
   Notifications.setNotificationHandler({
@@ -72,15 +71,6 @@ export type PreparationStatus = 'idle' | 'importing' | 'ready' | 'error';
 export type FormImportWarning = {
   errors: number;
   pendingCleanups: number;
-};
-
-export type CloseReason = 'change_patient' | 'manual_close' | 'session_required';
-
-export type TeardownResult = {
-  success: boolean;
-  cancelledPatientId: string | null;
-  pendingNotificationsCount: number;
-  error?: string;
 };
 
 type Repository = ReturnType<typeof createPatientRepository>;
@@ -113,13 +103,51 @@ export function LocalDataProvider({ children }: { children: ReactNode }) {
   const [database, setDatabase] = useState<SqlConnection | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [attempt, setAttempt] = useState(0);
-  const [patientId, setPatientId] = useState<string | null>(null);
   const [saving, setSaving] = useState(false);
   const savingRef = useRef(false);
   const [formImportStatus, setFormImportStatus] = useState<PreparationStatus>('idle');
   const [formImportError, setFormImportError] = useState<string | null>(null);
   const [formImportWarning, setFormImportWarning] = useState<FormImportWarning | null>(null);
   const [importAttempt, setImportAttempt] = useState(0);
+
+  const routerAdapter = useMemo<RouterAdapter>(
+    () => ({
+      replace: (route: string) => router.replace(route as Href),
+      push: (route: string) => router.push(route as Href),
+    }),
+    [],
+  );
+
+  const sessionAdapter = useMemo<SessionAdapter>(() => {
+    return isDemoMode() ? new DemoSessionAdapter() : new UnconfiguredSessionAdapter();
+  }, []);
+
+  const assistantAdapter = useMemo(() => {
+    return isDemoMode() ? new FakeAssistantAdapter() : new UnconfiguredAssistantAdapter();
+  }, []);
+
+  const [, setVersion] = useState(0);
+
+  const manager = useMemo(() => {
+    return new PatientContextManager({
+      sessionAdapter,
+      assistantAdapter,
+      router: routerAdapter,
+      newId: () => Crypto.randomUUID(),
+      onStateChange: () => setVersion((v) => v + 1),
+    });
+  }, [sessionAdapter, assistantAdapter, routerAdapter]);
+
+  const patientId = manager.getPatientId();
+  const isClosing = manager.getIsClosing();
+
+  useEffect(() => {
+    manager.setDatabase(database);
+  }, [manager, database]);
+
+  useEffect(() => {
+    manager.setRouter(routerAdapter);
+  }, [manager, routerAdapter]);
 
   const retryFormImport = useCallback(async () => {
     setImportAttempt((a) => a + 1);
@@ -196,11 +224,6 @@ export function LocalDataProvider({ children }: { children: ReactNode }) {
     };
   }, [database, patientId, importAttempt]);
 
-  const patientIdRef = useRef<string | null>(patientId);
-  useEffect(() => {
-    patientIdRef.current = patientId;
-  }, [patientId]);
-
   const formStorageReady = formImportStatus === 'ready';
 
   const repository = useMemo(
@@ -215,342 +238,54 @@ export function LocalDataProvider({ children }: { children: ReactNode }) {
   const coordinator = useMemo(
     () =>
       database
-        ? new NotificationCoordinator(
-            database,
-            notificationAdapter,
-            undefined,
-            undefined,
-            () => patientIdRef.current,
+        ? new NotificationCoordinator(database, notificationAdapter, undefined, undefined, () =>
+            manager.getPatientId(),
           )
         : null,
-    [database, notificationAdapter],
+    [database, notificationAdapter, manager],
   );
 
-  const contextEpochRef = useRef<number>(0);
-  const activeOperationsRef = useRef<number>(0);
-  const drainResolversRef = useRef<Set<() => void>>(new Set());
-  const activeTeardownPromiseRef = useRef<Promise<TeardownResult> | null>(null);
+  useEffect(() => {
+    manager.setCoordinator(coordinator);
+  }, [manager, coordinator]);
 
-  const sessionAdapter = useMemo<SessionAdapter>(() => {
-    return isDemoMode() ? new DemoSessionAdapter() : new UnconfiguredSessionAdapter();
-  }, []);
-
-  const assistantAdapter = useMemo(() => {
-    return isDemoMode() ? new FakeAssistantAdapter() : new UnconfiguredAssistantAdapter();
-  }, []);
-
-  const closeActiveContextRef = useRef<(reason?: CloseReason) => Promise<TeardownResult>>(() =>
-    Promise.resolve({ success: true, cancelledPatientId: null, pendingNotificationsCount: 0 }),
+  const trackOperation = useCallback(
+    <T,>(operation: () => Promise<T>): Promise<T> => manager.trackOperation(operation),
+    [manager],
   );
-
-  const assistantControllerRef = useRef<AssistantController | null>(null);
-  if (!assistantControllerRef.current) {
-    assistantControllerRef.current = new AssistantController(
-      assistantAdapter,
-      patientIdRef.current,
-      () => {
-        void closeActiveContextRef.current('session_required');
-      },
-      () => Crypto.randomUUID(),
-    );
-  }
-
-  const [isClosing, setIsClosing] = useState(false);
-  const closingRef = useRef(false);
-
-  const trackOperation = useCallback(async <T,>(operation: () => Promise<T>): Promise<T> => {
-    if (closingRef.current) {
-      throw new Error('Operación rechazada: el contexto se encuentra en proceso de cierre.');
-    }
-    activeOperationsRef.current += 1;
-    try {
-      return await operation();
-    } finally {
-      activeOperationsRef.current -= 1;
-      if (activeOperationsRef.current === 0) {
-        drainResolversRef.current.forEach((resolve) => resolve());
-        drainResolversRef.current.clear();
-      }
-    }
-  }, []);
 
   const closeActiveContext = useCallback(
-    (reason: CloseReason = 'manual_close'): Promise<TeardownResult> => {
-      if (activeTeardownPromiseRef.current) {
-        return activeTeardownPromiseRef.current;
-      }
-
-      // --- FASE 1: TRANSICIÓN INMEDIATA (< 1 segundo, RNF-05 local) ---
-      contextEpochRef.current += 1;
-      const currentEpoch = contextEpochRef.current;
-      const outgoingPatientId = patientIdRef.current;
-      closingRef.current = true;
-      setIsClosing(true);
-
-      // 1. Invalidar identidad activa en ref y en React
-      patientIdRef.current = null;
-      setPatientId(null);
-
-      // 2. Abortar solicitudes del asistente en vuelo y limpiar memoria
-      assistantControllerRef.current?.abort();
-      assistantControllerRef.current?.setContext(null, contextEpochRef.current);
-
-      // 3. Limpiar intenciones de notificación pendientes y dedupe
-      pendingNotificationIntentRef.current = null;
-      inFlightNotificationsRef.current.clear();
-
-      // 4. Redirección inmediata según motivo de salida
-      if (reason === 'change_patient') {
-        router.replace('/acceso/seleccionar-paciente');
-      } else if (reason === 'session_required') {
-        router.replace('/acceso?motivo=sesion_requerida');
-      } else {
-        router.replace('/acceso');
-      }
-
-      // --- FASE 2: DRENAJE SEGURO OBSERVABLE ---
-      let resolveTeardown!: (res: TeardownResult) => void;
-      const teardownPromise = new Promise<TeardownResult>((resolve) => {
-        resolveTeardown = resolve;
-      });
-      activeTeardownPromiseRef.current = teardownPromise;
-
-      queueMicrotask(() => {
-        void (async () => {
-          let cancelSuccess = true;
-          let pendingCount = 0;
-          let teardownError: string | undefined;
-
-          try {
-            // 1. Aguardar que concluyan las operaciones atómicas en curso sin truncarlas
-            if (activeOperationsRef.current > 0) {
-              await new Promise<void>((resolveDrain) => {
-                drainResolversRef.current.add(resolveDrain);
-              });
-            }
-
-            // 2. Cancelar agenda nativa del paciente saliente y registrar resultado exacto
-            if (coordinator && outgoingPatientId) {
-              try {
-                const cancelResult = await coordinator.cancelPatientSchedule(outgoingPatientId);
-                cancelSuccess = cancelResult.success && cancelResult.pendingCount === 0;
-                pendingCount = cancelResult.pendingCount;
-                if (!cancelSuccess) {
-                  console.warn(
-                    `[Teardown] Quedan ${pendingCount} cancelaciones pendientes para paciente saliente.`,
-                  );
-                }
-              } catch (cancelErr) {
-                cancelSuccess = false;
-                pendingCount = -1;
-                teardownError = cancelErr instanceof Error ? cancelErr.message : String(cancelErr);
-                console.warn('[Teardown] Excepción en cancelación de agenda nativa:', cancelErr);
-              }
-            }
-
-            // 3. Limpiar identidad en el adaptador de sesión
-            try {
-              await sessionAdapter.logout();
-            } catch (sessionErr) {
-              console.warn('[Teardown] Excepción al cerrar sesión en adaptador:', sessionErr);
-            }
-          } catch (err) {
-            cancelSuccess = false;
-            teardownError = err instanceof Error ? err.message : String(err);
-            console.warn('[Teardown] Excepción en drenaje seguro:', err);
-          } finally {
-            const result: TeardownResult = {
-              success: cancelSuccess,
-              cancelledPatientId: outgoingPatientId,
-              pendingNotificationsCount: pendingCount,
-              error: teardownError,
-            };
-
-            if (activeTeardownPromiseRef.current === teardownPromise) {
-              activeTeardownPromiseRef.current = null;
-            }
-            if (contextEpochRef.current === currentEpoch) {
-              closingRef.current = false;
-              setIsClosing(false);
-            }
-
-            resolveTeardown(result);
-          }
-        })();
-      });
-
-      return teardownPromise;
-    },
-    [coordinator, sessionAdapter],
+    (reason?: CloseReason): Promise<TeardownResult> => manager.closeActiveContext(reason),
+    [manager],
   );
 
-  closeActiveContextRef.current = closeActiveContext;
-
   const selectPatient = useCallback(
-    async (newPatientId: string): Promise<void> => {
-      // 1. Validar que la selección manual está autorizada en el adaptador de sesión
-      if (!sessionAdapter.selectDemoPatient) {
-        throw new Error(
-          'La selección manual de paciente solo está disponible en modo demostración.',
-        );
-      }
-      const sessionResult = await sessionAdapter.selectDemoPatient(newPatientId);
-      if (!sessionResult.success) {
-        throw new Error(
-          sessionResult.error ?? `Paciente '${newPatientId}' no válido para demostración.`,
-        );
-      }
-
-      // 2. Si ya hay un cierre en curso, esperar que concluya el drenaje
-      if (activeTeardownPromiseRef.current) {
-        await activeTeardownPromiseRef.current;
-      }
-
-      // 3. Si existe otro paciente activo, forzar y esperar su cierre de contexto antes de activar B
-      const currentActiveId = patientIdRef.current;
-      if (currentActiveId && currentActiveId !== newPatientId) {
-        await closeActiveContext('change_patient');
-      }
-
-      // 4. Activar el nuevo contexto
-      contextEpochRef.current += 1;
-      patientIdRef.current = newPatientId;
-      setPatientId(newPatientId);
-      assistantControllerRef.current?.setContext(newPatientId, contextEpochRef.current);
-
-      // 5. Navegar hacia (tabs) una vez que la guarda del nuevo contexto está habilitada
-      router.replace('/(tabs)');
-    },
-    [closeActiveContext, sessionAdapter],
+    (newPatientId: string): Promise<void> => manager.selectPatient(newPatientId),
+    [manager],
   );
 
   const changePatient = useCallback(() => {
-    void closeActiveContext('change_patient');
-  }, [closeActiveContext]);
-
-  const inFlightNotificationsRef = useRef<Set<string>>(new Set());
-  const completedNotificationsRef = useRef<Set<string>>(new Set());
-  const pendingNotificationIntentRef = useRef<PendingNotificationIntent | null>(null);
-
-  const handleNotificationOpen = useCallback(
-    async (payload: NotificationJobPayload, dedupeKey?: string): Promise<boolean> => {
-      let navigatedSuccessfully = false;
-      try {
-        const startEpoch = contextEpochRef.current;
-        const currentId = patientIdRef.current;
-        if (closingRef.current || !currentId || currentId !== payload.pacienteId) {
-          // Si el paciente activo no coincide, conservar la intención solo si no estamos en cierre y la época coincide
-          if (dedupeKey && !closingRef.current && contextEpochRef.current === startEpoch) {
-            pendingNotificationIntentRef.current = { payload, dedupeKey };
-          }
-          return false;
-        }
-
-        if (!database) return false;
-
-        // Validar contra SQLite que la notificación existe para este paciente y coinciden los campos
-        const row = await database.first<{
-          id: string;
-          paciente_id: string;
-          recordatorio_id: string;
-          revision: number;
-          tipo: string;
-        }>(
-          'SELECT id, paciente_id, recordatorio_id, revision, tipo FROM notificacion_local WHERE id = ? AND paciente_id = ?',
-          [payload.notificacionId, currentId],
-        );
-
-        // Comprobar si el contexto cambió o está en cierre durante la consulta a SQLite
-        if (
-          patientIdRef.current !== currentId ||
-          contextEpochRef.current !== startEpoch ||
-          closingRef.current
-        ) {
-          return false;
-        }
-
-        if (!row) {
-          return false;
-        }
-
-        if (
-          row.recordatorio_id !== payload.recordatorioId ||
-          row.revision !== payload.revision ||
-          row.tipo !== payload.tipo
-        ) {
-          return false;
-        }
-
-        // Marcar como abierta en SQLite
-        await database.run(
-          'UPDATE notificacion_local SET abierta_en = ? WHERE id = ? AND paciente_id = ? AND abierta_en IS NULL',
-          [new Date().toISOString(), payload.notificacionId, currentId],
-        );
-
-        // Comprobar nuevamente tras la actualización en SQLite
-        if (
-          patientIdRef.current !== currentId ||
-          contextEpochRef.current !== startEpoch ||
-          closingRef.current
-        ) {
-          return false;
-        }
-
-        // Resolver destino mediante lista permitida y navegar
-        if (ALLOWED_DESTINATIONS.has(payload.destino)) {
-          router.push(payload.destino as Parameters<typeof router.push>[0]);
-          navigatedSuccessfully = true;
-          return true;
-        }
-        return false;
-      } catch (err) {
-        console.warn('Fallo transitorio al procesar apertura de notificación:', err);
-        return false;
-      } finally {
-        if (dedupeKey) {
-          inFlightNotificationsRef.current.delete(dedupeKey);
-          if (navigatedSuccessfully) {
-            completedNotificationsRef.current.add(dedupeKey);
-          }
-        }
-      }
-    },
-    [database],
-  );
+    manager.changePatient();
+  }, [manager]);
 
   // Procesar intención de navegación pendiente cuando el paciente coincida
   useEffect(() => {
-    if (patientId && pendingNotificationIntentRef.current) {
-      if (pendingNotificationIntentRef.current.payload.pacienteId === patientId) {
-        const { payload, dedupeKey } = pendingNotificationIntentRef.current;
-        if (
-          !completedNotificationsRef.current.has(dedupeKey) &&
-          !inFlightNotificationsRef.current.has(dedupeKey)
-        ) {
-          inFlightNotificationsRef.current.add(dedupeKey);
-          void handleNotificationOpen(payload, dedupeKey)
-            .then((success) => {
-              if (success) {
-                if (pendingNotificationIntentRef.current?.dedupeKey === dedupeKey) {
-                  pendingNotificationIntentRef.current = null;
-                }
-              }
-            })
-            .catch((err) => {
-              console.warn('Error en handleNotificationOpen pendiente:', err);
-            });
-        }
+    const pending = manager.getPendingNotificationIntent();
+    if (patientId && pending) {
+      if (pending.payload.pacienteId === patientId) {
+        manager.clearPendingNotificationIntent();
+        void manager.handleNotificationOpen(pending.payload, pending.dedupeKey);
       }
     }
-  }, [patientId, handleNotificationOpen]);
+  }, [patientId, manager]);
 
   const reconcileReminders = useCallback(
     async (targetPatientId?: string): Promise<CoordinatorResult | undefined> => {
-      const currentId = targetPatientId ?? patientIdRef.current;
+      const currentId = targetPatientId ?? manager.getPatientId();
       if (!coordinator || !currentId) return undefined;
-      return await coordinator.reconcile(currentId, () => patientIdRef.current === currentId);
+      return await coordinator.reconcile(currentId, () => manager.getPatientId() === currentId);
     },
-    [coordinator],
+    [coordinator, manager],
   );
 
   // Reconciliación al seleccionar paciente
@@ -563,14 +298,14 @@ export function LocalDataProvider({ children }: { children: ReactNode }) {
   // Reconciliación al volver a primer plano (AppState active)
   useEffect(() => {
     const subscription = AppState.addEventListener('change', (nextState) => {
-      if (nextState === 'active' && patientIdRef.current && coordinator) {
+      if (nextState === 'active' && manager.getPatientId() && coordinator) {
         void reconcileReminders();
       }
     });
     return () => {
       subscription.remove();
     };
-  }, [coordinator, reconcileReminders]);
+  }, [coordinator, reconcileReminders, manager]);
 
   // Manejo de eventos y toques de notificaciones locales
   useEffect(() => {
@@ -585,15 +320,9 @@ export function LocalDataProvider({ children }: { children: ReactNode }) {
         const identifier = last.notification.request.identifier;
         if (isValidNotificationPayload(data)) {
           const dedupeKey = `${data.notificacionId}:${identifier || 'cold'}`;
-          if (
-            !completedNotificationsRef.current.has(dedupeKey) &&
-            !inFlightNotificationsRef.current.has(dedupeKey)
-          ) {
-            inFlightNotificationsRef.current.add(dedupeKey);
-            void handleNotificationOpen(data, dedupeKey).catch((err) => {
-              console.warn('Error en handleNotificationOpen cold start:', err);
-            });
-          }
+          void manager.handleNotificationOpen(data, dedupeKey).catch((err) => {
+            console.warn('Error en handleNotificationOpen cold start:', err);
+          });
         }
       }
     } catch {
@@ -609,22 +338,16 @@ export function LocalDataProvider({ children }: { children: ReactNode }) {
         const identifier = response.notification.request.identifier;
         if (isValidNotificationPayload(data)) {
           const dedupeKey = `${data.notificacionId}:${identifier || 'listener'}`;
-          if (
-            !completedNotificationsRef.current.has(dedupeKey) &&
-            !inFlightNotificationsRef.current.has(dedupeKey)
-          ) {
-            inFlightNotificationsRef.current.add(dedupeKey);
-            void handleNotificationOpen(data, dedupeKey).catch((err) => {
-              console.warn('Error en handleNotificationOpen listener:', err);
-            });
-          }
+          void manager.handleNotificationOpen(data, dedupeKey).catch((err) => {
+            console.warn('Error en handleNotificationOpen listener:', err);
+          });
         }
       });
 
       receivedSub = Notifications.addNotificationReceivedListener((notification) => {
         const data = notification.request.content.data;
         if (isValidNotificationPayload(data)) {
-          const currentId = patientIdRef.current;
+          const currentId = manager.getPatientId();
           if (currentId && data.pacienteId === currentId && repository) {
             void repository.reminders.recordNotificationObserved(data.notificacionId);
           }
@@ -638,7 +361,26 @@ export function LocalDataProvider({ children }: { children: ReactNode }) {
       responseSub?.remove();
       receivedSub?.remove();
     };
-  }, [database, repository, handleNotificationOpen]);
+  }, [database, repository, manager]);
+
+  const runSave = useCallback(
+    async <T,>(work: () => Promise<T>): Promise<T> => {
+      return manager.trackOperation(async () => {
+        if (!manager.getPatientId() || savingRef.current) {
+          throw new Error('Selecciona un paciente de prueba.');
+        }
+        savingRef.current = true;
+        setSaving(true);
+        try {
+          return await work();
+        } finally {
+          savingRef.current = false;
+          setSaving(false);
+        }
+      });
+    },
+    [manager],
+  );
 
   const context = useMemo<DataContextValue>(
     () => ({
@@ -657,24 +399,10 @@ export function LocalDataProvider({ children }: { children: ReactNode }) {
       closeActiveContext,
       selectPatient,
       trackOperation,
-      activeTeardownPromise: activeTeardownPromiseRef.current,
-      assistantController: assistantControllerRef.current,
-      sessionAdapter,
-      async runSave<T>(work: () => Promise<T>): Promise<T> {
-        return trackOperation(async () => {
-          if (!patientIdRef.current || savingRef.current) {
-            throw new Error('Selecciona un paciente de prueba.');
-          }
-          savingRef.current = true;
-          setSaving(true);
-          try {
-            return await work();
-          } finally {
-            savingRef.current = false;
-            setSaving(false);
-          }
-        });
-      },
+      activeTeardownPromise: manager.getActiveTeardownPromise(),
+      assistantController: manager.assistantController,
+      sessionAdapter: manager.sessionAdapter,
+      runSave,
       changePatient,
     }),
     [
@@ -693,8 +421,9 @@ export function LocalDataProvider({ children }: { children: ReactNode }) {
       closeActiveContext,
       selectPatient,
       trackOperation,
+      runSave,
       changePatient,
-      sessionAdapter,
+      manager,
     ],
   );
 

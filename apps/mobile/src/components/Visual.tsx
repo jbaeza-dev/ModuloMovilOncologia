@@ -12,12 +12,13 @@ import {
 } from 'react-native';
 
 import { useAppTheme } from '../providers/ThemeProvider';
+import { isDemoMode } from '../utils/environment';
 import { theme } from '../theme';
 import type { IconName } from './NavigationCard';
 
 export function DemoBadge() {
   const styles = useStyles();
-  if (process.env.NODE_ENV === 'test') {
+  if (isDemoMode()) {
     return <Text style={styles.demo}>VISTA DE DEMOSTRACIÓN · DATOS FICTICIOS</Text>;
   }
   return null;
