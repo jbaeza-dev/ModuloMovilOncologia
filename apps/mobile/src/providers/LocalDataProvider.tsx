@@ -271,11 +271,8 @@ export function LocalDataProvider({ children }: { children: ReactNode }) {
   // Procesar intención de navegación pendiente cuando el paciente coincida
   useEffect(() => {
     const pending = manager.getPendingNotificationIntent();
-    if (patientId && pending) {
-      if (pending.payload.pacienteId === patientId) {
-        manager.clearPendingNotificationIntent();
-        void manager.handleNotificationOpen(pending.payload, pending.dedupeKey);
-      }
+    if (patientId && pending && pending.payload.pacienteId === patientId) {
+      void manager.processPendingNotificationIntent();
     }
   }, [patientId, manager]);
 

@@ -539,8 +539,151 @@ describe('LocalDataProvider Context Teardown and Operation Tracking', () => {
     const result = await manager.handleNotificationOpen(payloadA, 'dedupe-tardia');
 
     // La apertura debió ser rechazada
-    expect(result).toBe(false);
+    expect(result.navigated).toBe(false);
+    expect(result.status).toBe('discarded');
     // Y NO debe haber recreado ninguna intención pendiente
+    expect(manager.getPendingNotificationIntent()).toBeNull();
+  });
+
+  it('deduplicación previene aperturas duplicadas simultáneas y posteriores al éxito', async () => {
+    const db = open();
+    await migrateDatabase(db);
+    await seedPatientContextIfEmpty(db, patientA, patientB);
+
+    const repo = createReminderRepository(db, patientA);
+    await repo.setPreferences(true);
+    await repo.saveRule({
+      tipo: 'registro_vitales',
+      diasSemana: [1, 2, 3, 4, 5, 6, 7],
+      horasMinutos: ['08:00'],
+      zonaHoraria: 'America/Santiago',
+      habilitado: true,
+    });
+    const adapter = new FakeNotificationAdapter();
+    const coordinator = new NotificationCoordinator(db, adapter, () => '2026-10-13T00:00:00Z');
+    await coordinator.reconcile(patientA);
+    const scheduledJobs = Array.from(adapter.scheduled.values());
+    const payload = scheduledJobs[0].payload!;
+
+    const sessionAdapter = new DemoSessionAdapter();
+    const assistantAdapter = new FakeAssistantAdapter();
+    const pushedRoutes: string[] = [];
+    const router = {
+      replace: () => undefined,
+      push: (route: string) => {
+        pushedRoutes.push(route);
+      },
+    };
+
+    const manager = new PatientContextManager({
+      database: db,
+      coordinator,
+      sessionAdapter,
+      assistantAdapter,
+      router,
+    });
+
+    await manager.selectPatient(patientA);
+
+    const dedupeKey = `${payload.notificacionId}:test-channel`;
+
+    // 1. Dos llamadas simultáneas con la misma clave
+    const [res1, res2] = await Promise.all([
+      manager.handleNotificationOpen(payload, dedupeKey),
+      manager.handleNotificationOpen(payload, dedupeKey),
+    ]);
+
+    // Exactamente una debió navegar, la otra debió ser detectada como duplicado
+    const navigatedCount = [res1, res2].filter((r) => r.status === 'navigated').length;
+    const duplicateCount = [res1, res2].filter((r) => r.status === 'duplicate').length;
+    expect(navigatedCount).toBe(1);
+    expect(duplicateCount).toBe(1);
+    expect(pushedRoutes).toHaveLength(1);
+    expect(pushedRoutes[0]).toBe('/vitales/registrar');
+
+    // 2. Llamada posterior con la misma clave ya completada
+    const res3 = await manager.handleNotificationOpen(payload, dedupeKey);
+    expect(res3.status).toBe('duplicate');
+    expect(res3.navigated).toBe(false);
+    expect(pushedRoutes).toHaveLength(1); // Sigue siendo 1, no hubo segunda navegación
+  });
+
+  it('conserva la intención pendiente ante fallo transitorio de base de datos y la procesa en el reintento', async () => {
+    const db = open();
+    await migrateDatabase(db);
+    await seedPatientContextIfEmpty(db, patientA, patientB);
+
+    const repo = createReminderRepository(db, patientA);
+    await repo.setPreferences(true);
+    await repo.saveRule({
+      tipo: 'registro_vitales',
+      diasSemana: [1, 2, 3, 4, 5, 6, 7],
+      horasMinutos: ['08:00'],
+      zonaHoraria: 'America/Santiago',
+      habilitado: true,
+    });
+    const adapter = new FakeNotificationAdapter();
+    const coordinator = new NotificationCoordinator(db, adapter, () => '2026-10-13T00:00:00Z');
+    await coordinator.reconcile(patientA);
+    const scheduledJobs = Array.from(adapter.scheduled.values());
+    const payload = scheduledJobs[0].payload!;
+
+    const sessionAdapter = new DemoSessionAdapter();
+    const assistantAdapter = new FakeAssistantAdapter();
+    const pushedRoutes: string[] = [];
+    const router = {
+      replace: () => undefined,
+      push: (route: string) => {
+        pushedRoutes.push(route);
+      },
+    };
+
+    const manager = new PatientContextManager({
+      database: db,
+      coordinator,
+      sessionAdapter,
+      assistantAdapter,
+      router,
+    });
+
+    const dedupeKey = `${payload.notificacionId}:test-channel`;
+
+    // 1. Llega notificación antes de seleccionar paciente -> guardada como intención pendiente
+    const initialRes = await manager.handleNotificationOpen(payload, dedupeKey);
+    expect(initialRes.status).toBe('pending_saved');
+    expect(manager.getPendingNotificationIntent()).not.toBeNull();
+
+    // 2. Simular fallo temporal en SQLite
+    const originalFirst = db.first.bind(db);
+    let simulateFailure = true;
+    db.first = async <T>(sql: string, params?: SqlValue[]): Promise<T | null> => {
+      if (simulateFailure) {
+        throw new Error('SQLITE_BUSY: database is temporarily locked');
+      }
+      return originalFirst(sql, params);
+    };
+
+    // 3. Seleccionar paciente activa el contexto
+    await manager.selectPatient(patientA);
+
+    // 4. Intentar procesar la intención pendiente durante el fallo transitorio
+    const failedAttempt = await manager.processPendingNotificationIntent();
+    expect(failedAttempt.status).toBe('transient_failure');
+    expect(failedAttempt.navigated).toBe(false);
+    // CRÍTICO: La intención pendiente NO debe haber sido eliminada ante error transitorio
+    expect(manager.getPendingNotificationIntent()).not.toBeNull();
+    expect(pushedRoutes).toHaveLength(0);
+
+    // 5. Se resuelve el problema transitorio
+    simulateFailure = false;
+
+    // 6. El reintento procesa con éxito la intención conservada
+    const retryAttempt = await manager.processPendingNotificationIntent();
+    expect(retryAttempt.status).toBe('navigated');
+    expect(retryAttempt.navigated).toBe(true);
+    expect(pushedRoutes).toHaveLength(1);
+    expect(pushedRoutes[0]).toBe('/vitales/registrar');
+    // Ahora que navegó con éxito, la intención pendiente sí queda eliminada
     expect(manager.getPendingNotificationIntent()).toBeNull();
   });
 });

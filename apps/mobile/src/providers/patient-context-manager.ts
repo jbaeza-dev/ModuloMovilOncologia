@@ -17,6 +17,19 @@ export type TeardownResult = {
   error?: string;
 };
 
+export type NotificationOpenStatus =
+  | 'navigated'
+  | 'duplicate'
+  | 'pending_saved'
+  | 'discarded'
+  | 'transient_failure';
+
+export interface NotificationOpenResult {
+  status: NotificationOpenStatus;
+  navigated: boolean;
+  error?: unknown;
+}
+
 export interface PendingNotificationIntent {
   payload: NotificationJobPayload;
   dedupeKey: string;
@@ -169,6 +182,7 @@ export class PatientContextManager {
     // Limpiar intenciones de notificación pendientes y dedupe
     this.pendingNotificationIntent = null;
     this.inFlightNotifications.clear();
+    this.completedNotifications.clear();
 
     this.notify();
 
@@ -294,41 +308,87 @@ export class PatientContextManager {
     this.router.replace('/(tabs)');
   }
 
+  async processPendingNotificationIntent(): Promise<NotificationOpenResult> {
+    const pending = this.pendingNotificationIntent;
+    if (!pending) {
+      return { status: 'discarded', navigated: false };
+    }
+    if (!this.patientId || pending.payload.pacienteId !== this.patientId || this.isClosing) {
+      return { status: 'pending_saved', navigated: false };
+    }
+    return this.handleNotificationOpen(pending.payload, pending.dedupeKey);
+  }
+
   async handleNotificationOpen(
     payload: NotificationJobPayload,
     dedupeKey?: string,
-  ): Promise<boolean> {
+  ): Promise<NotificationOpenResult> {
+    // 1. Verificación centralizada de deduplicación
+    if (dedupeKey) {
+      if (this.completedNotifications.has(dedupeKey) || this.inFlightNotifications.has(dedupeKey)) {
+        return { status: 'duplicate', navigated: false };
+      }
+      // Registrar el procesamiento en vuelo ANTES de cualquier operación asíncrona / primer await
+      this.inFlightNotifications.add(dedupeKey);
+    }
+
     let navigatedSuccessfully = false;
+    let status: NotificationOpenStatus = 'discarded';
+
     try {
       const startEpoch = this.contextEpoch;
       const currentId = this.patientId;
+
+      // Si el contexto está en cierre, o no hay paciente activo, o no coincide con el payload
       if (this.isClosing || !currentId || currentId !== payload.pacienteId) {
         if (dedupeKey && !this.isClosing && this.contextEpoch === startEpoch) {
           this.pendingNotificationIntent = { payload, dedupeKey };
+          status = 'pending_saved';
+          return { status, navigated: false };
         }
-        return false;
+        status = 'discarded';
+        return { status, navigated: false };
       }
 
-      if (!this.database) return false;
+      if (!this.database) {
+        // Base de datos aún no disponible es una condición transitoria
+        status = 'transient_failure';
+        return { status, navigated: false };
+      }
 
-      const row = await this.database.first<{
+      let row: {
         id: string;
         paciente_id: string;
         recordatorio_id: string;
         revision: number;
         tipo: string;
-      }>(
-        'SELECT id, paciente_id, recordatorio_id, revision, tipo FROM notificacion_local WHERE id = ? AND paciente_id = ?',
-        [payload.notificacionId, currentId],
-      );
+      } | null = null;
 
-      // Comprobar si el contexto cambió o está en proceso de cierre
+      try {
+        row = await this.database.first<{
+          id: string;
+          paciente_id: string;
+          recordatorio_id: string;
+          revision: number;
+          tipo: string;
+        }>(
+          'SELECT id, paciente_id, recordatorio_id, revision, tipo FROM notificacion_local WHERE id = ? AND paciente_id = ?',
+          [payload.notificacionId, currentId],
+        );
+      } catch (dbErr) {
+        status = 'transient_failure';
+        return { status, navigated: false, error: dbErr };
+      }
+
+      // Comprobar si el contexto cambió o está en proceso de cierre durante la consulta
       if (this.patientId !== currentId || this.contextEpoch !== startEpoch || this.isClosing) {
-        return false;
+        status = 'discarded';
+        return { status, navigated: false };
       }
 
       if (!row) {
-        return false;
+        status = 'discarded';
+        return { status, navigated: false };
       }
 
       if (
@@ -336,34 +396,61 @@ export class PatientContextManager {
         row.revision !== payload.revision ||
         row.tipo !== payload.tipo
       ) {
-        return false;
+        status = 'discarded';
+        return { status, navigated: false };
       }
 
-      await this.database.run(
-        'UPDATE notificacion_local SET abierta_en = ? WHERE id = ? AND paciente_id = ? AND abierta_en IS NULL',
-        [new Date().toISOString(), payload.notificacionId, currentId],
-      );
+      try {
+        await this.database.run(
+          'UPDATE notificacion_local SET abierta_en = ? WHERE id = ? AND paciente_id = ? AND abierta_en IS NULL',
+          [new Date().toISOString(), payload.notificacionId, currentId],
+        );
+      } catch (dbErr) {
+        status = 'transient_failure';
+        return { status, navigated: false, error: dbErr };
+      }
 
       // Comprobar nuevamente tras la actualización en SQLite
       if (this.patientId !== currentId || this.contextEpoch !== startEpoch || this.isClosing) {
-        return false;
+        status = 'discarded';
+        return { status, navigated: false };
       }
 
       if (ALLOWED_NOTIFICATION_DESTINATIONS.has(payload.destino)) {
         this.router.push(payload.destino);
         navigatedSuccessfully = true;
-        return true;
+        status = 'navigated';
+        return { status, navigated: true };
       }
-      return false;
-    } catch (err) {
-      console.warn('Fallo transitorio al procesar apertura de notificación:', err);
-      return false;
+
+      status = 'discarded';
+      return { status, navigated: false };
+    } catch (unexpectedErr) {
+      console.warn('Fallo inesperado al procesar apertura de notificación:', unexpectedErr);
+      status = 'transient_failure';
+      return { status, navigated: false, error: unexpectedErr };
     } finally {
+      // 1. Liberar inFlight siempre en finally
       if (dedupeKey) {
         this.inFlightNotifications.delete(dedupeKey);
+        // 2. Marcar como completado ÚNICAMENTE tras navegación exitosa
         if (navigatedSuccessfully) {
           this.completedNotifications.add(dedupeKey);
         }
+      }
+
+      // 3. Gestión de intención pendiente:
+      // Si la intención pendiente coincide con la clave procesada:
+      // - Si navegó, fue descartada definitivamente o fue detectada como duplicado:
+      //   retirar la intención pendiente.
+      // - Si el resultado fue 'transient_failure' o 'pending_saved':
+      //   SE CONSERVA para permitir reintentos cuando el entorno/SQLite esté listo.
+      if (
+        dedupeKey &&
+        this.pendingNotificationIntent?.dedupeKey === dedupeKey &&
+        (status === 'navigated' || status === 'discarded')
+      ) {
+        this.pendingNotificationIntent = null;
       }
     }
   }
