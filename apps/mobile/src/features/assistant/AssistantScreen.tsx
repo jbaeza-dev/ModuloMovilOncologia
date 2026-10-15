@@ -1,3 +1,4 @@
+import * as Crypto from 'expo-crypto';
 import { useEffect, useMemo, useState } from 'react';
 import { StyleSheet, Text, View } from 'react-native';
 
@@ -27,9 +28,14 @@ export function AssistantScreen() {
   const controller = useMemo(() => {
     if (contextController) return contextController;
     const adapter = isDemoMode() ? new FakeAssistantAdapter() : new UnconfiguredAssistantAdapter();
-    return new AssistantController(adapter, patientId, () => {
-      void closeActiveContext?.('session_required');
-    });
+    return new AssistantController(
+      adapter,
+      patientId,
+      () => {
+        void closeActiveContext?.('session_required');
+      },
+      () => Crypto.randomUUID(),
+    );
   }, [contextController, patientId, closeActiveContext]);
 
   const [state, setState] = useState(controller.getState());
@@ -39,26 +45,40 @@ export function AssistantScreen() {
   useEffect(() => {
     setState(controller.getState());
     setMessages(controller.getMessages());
-    return controller.subscribe(() => {
+    const unsubscribe = controller.subscribe(() => {
       setState(controller.getState());
       setMessages(controller.getMessages());
     });
+    return () => {
+      unsubscribe();
+      if (controller.getState() === 'sending') {
+        controller.abort();
+      }
+    };
   }, [controller]);
 
   const isSending = state === 'sending';
   const canSend = !isSending && input.trim().length > 0 && input.length <= 2000;
 
-  const handleSend = async () => {
+  const handleSend = () => {
     if (!canSend) return;
     const textToSend = input;
     setInput('');
-    await controller.send(textToSend);
+    void controller.send(textToSend);
   };
 
-  const handleRetry = async () => {
+  const handleCancel = () => {
+    const lastText = controller.getLastSubmittedText();
+    controller.abort();
+    if (lastText) {
+      setInput(lastText);
+    }
+  };
+
+  const handleRetry = () => {
     const lastText = controller.getLastSubmittedText();
     if (lastText) {
-      await controller.send(lastText, true);
+      void controller.send(lastText, true);
     }
   };
 
@@ -105,7 +125,7 @@ export function AssistantScreen() {
             style={styles.sendingRow}
           >
             <Text style={styles.sendingText}>Procesando demostración…</Text>
-            <VisualButton label="Cancelar" secondary onPress={() => controller.abort()} />
+            <VisualButton label="Cancelar" secondary onPress={handleCancel} />
           </View>
         </InfoCard>
       ) : state === 'offline' ? (

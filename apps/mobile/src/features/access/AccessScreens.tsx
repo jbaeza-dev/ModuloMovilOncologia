@@ -61,18 +61,20 @@ export function LoginScreen() {
         />
       ) : null}
       <VisualField
-        label="Correo electrónico"
+        label="Correo electrónico (deshabilitado · sin servicio central)"
         value={email}
         onChangeText={setEmail}
         keyboardType="email-address"
-        placeholder="nombre@ejemplo.cl"
+        placeholder="Autenticación central no configurada"
+        editable={false}
       />
       <VisualField
-        label="Contraseña"
+        label="Contraseña (deshabilitado · sin servicio central)"
         value={password}
         onChangeText={setPassword}
         secureTextEntry
-        placeholder="Contraseña"
+        placeholder="Autenticación central no configurada"
+        editable={false}
       />
       <VisualButton label="Iniciar sesión · No configurado" disabled />
       <VisualButton
@@ -114,26 +116,34 @@ export function RegisterScreen() {
         />
       ) : null}
       <VisualField
-        label="Nombre"
+        label="Nombre (deshabilitado · sin servicio central)"
         value={values.name}
         onChangeText={(name) => setValues({ ...values, name })}
+        placeholder="No configurado"
+        editable={false}
       />
       <VisualField
-        label="Apellido"
+        label="Apellido (deshabilitado · sin servicio central)"
         value={values.surname}
         onChangeText={(surname) => setValues({ ...values, surname })}
+        placeholder="No configurado"
+        editable={false}
       />
       <VisualField
-        label="Correo electrónico"
+        label="Correo electrónico (deshabilitado · sin servicio central)"
         value={values.email}
         onChangeText={(email) => setValues({ ...values, email })}
         keyboardType="email-address"
+        placeholder="No configurado"
+        editable={false}
       />
       <VisualField
-        label="Contraseña"
+        label="Contraseña (deshabilitado · sin servicio central)"
         value={values.password}
         onChangeText={(password) => setValues({ ...values, password })}
         secureTextEntry
+        placeholder="No configurado"
+        editable={false}
       />
       <VisualButton
         label="Ver consentimientos"
@@ -370,10 +380,12 @@ export function RecoverScreen() {
         </BodyText>
       </InfoCard>
       <VisualField
-        label="Correo electrónico"
+        label="Correo electrónico (deshabilitado · sin servicio central)"
         value={email}
         onChangeText={setEmail}
         keyboardType="email-address"
+        placeholder="No configurado"
+        editable={false}
       />
       <VisualButton label="Enviar enlace · No configurado" disabled />
       <VisualButton
@@ -421,16 +433,20 @@ export function NewPasswordScreen() {
         </BodyText>
       </InfoCard>
       <VisualField
-        label="Nueva contraseña"
+        label="Nueva contraseña (deshabilitado · sin servicio central)"
         value={password}
         onChangeText={setPassword}
         secureTextEntry
+        placeholder="No configurado"
+        editable={false}
       />
       <VisualField
-        label="Confirmar contraseña"
+        label="Confirmar contraseña (deshabilitado · sin servicio central)"
         value={confirmation}
         onChangeText={setConfirmation}
         secureTextEntry
+        placeholder="No configurado"
+        editable={false}
       />
       <VisualButton label="Actualizar contraseña · No configurado" disabled />
     </Screen>

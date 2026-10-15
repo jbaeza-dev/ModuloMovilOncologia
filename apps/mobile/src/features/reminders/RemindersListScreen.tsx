@@ -145,19 +145,21 @@ export function RemindersListScreen() {
   // Alternar activación de una regla individual
   const handleToggleRule = async (rule: ReminderRule) => {
     if (!repository || !database || !patientId) return;
-    await repository.reminders.saveRule({
-      id: rule.id,
-      tipo: rule.tipo,
-      medicamentoId: rule.medicamentoId,
-      diasSemana: rule.diasSemana,
-      horasMinutos: rule.horasMinutos,
-      zonaHoraria: rule.zonaHoraria,
-      fechaInicio: rule.fechaInicio,
-      fechaFin: rule.fechaFin,
-      habilitado: !rule.habilitado,
+    await trackOperation(async () => {
+      await repository.reminders.saveRule({
+        id: rule.id,
+        tipo: rule.tipo,
+        medicamentoId: rule.medicamentoId,
+        diasSemana: rule.diasSemana,
+        horasMinutos: rule.horasMinutos,
+        zonaHoraria: rule.zonaHoraria,
+        fechaInicio: rule.fechaInicio,
+        fechaFin: rule.fechaFin,
+        habilitado: !rule.habilitado,
+      });
+      await checkAndReconcile();
     });
     await refreshRules();
-    await checkAndReconcile();
   };
 
   const isBlockedInSettings = permissionState?.status === 'denied' && !permissionState?.canAskAgain;

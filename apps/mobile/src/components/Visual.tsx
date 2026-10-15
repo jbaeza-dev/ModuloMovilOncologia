@@ -90,15 +90,16 @@ export function VisualButton({ label, onPress, secondary = false, disabled = fal
 type FieldProps = {
   label: string;
   value: string;
-  onChangeText: (value: string) => void;
+  onChangeText?: (value: string) => void;
   placeholder?: string;
   secureTextEntry?: boolean;
   keyboardType?: 'default' | 'email-address' | 'numeric' | 'phone-pad';
   multiline?: boolean;
   maxLength?: number;
+  editable?: boolean;
 };
 
-export function VisualField({ label, ...input }: FieldProps) {
+export function VisualField({ label, editable = true, ...input }: FieldProps) {
   const styles = useStyles();
   const { theme: appTheme } = useAppTheme();
   return (
@@ -106,10 +107,15 @@ export function VisualField({ label, ...input }: FieldProps) {
       <Text style={styles.fieldLabel}>{label}</Text>
       <TextInput
         {...input}
+        editable={editable}
         accessibilityLabel={label}
         autoCapitalize={input.keyboardType === 'email-address' ? 'none' : 'sentences'}
         placeholderTextColor={appTheme.colors.secondary}
-        style={[styles.input, input.multiline && styles.multilineInput]}
+        style={[
+          styles.input,
+          input.multiline && styles.multilineInput,
+          editable === false && styles.disabledInput,
+        ]}
       />
     </View>
   );
@@ -245,6 +251,11 @@ function useStyles() {
       backgroundColor: colors.surface,
       color: colors.text,
       fontSize: 16,
+    },
+    disabledInput: {
+      backgroundColor: colors.mutedSurface,
+      opacity: 0.6,
+      color: colors.secondary,
     },
     multilineInput: { minHeight: 112, textAlignVertical: 'top', paddingVertical: theme.spacing.md },
     row: {

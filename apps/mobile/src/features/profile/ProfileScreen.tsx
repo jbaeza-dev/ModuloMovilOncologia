@@ -355,8 +355,15 @@ export function LinkCodeScreen() {
 
 export function PreferencesScreen() {
   const styles = useStyles();
-  const { repository, coordinator, patientId, reconcileReminders, closeActiveContext, isClosing } =
-    useLocalData();
+  const {
+    repository,
+    coordinator,
+    patientId,
+    reconcileReminders,
+    trackOperation,
+    closeActiveContext,
+    isClosing,
+  } = useLocalData();
   const { theme: appTheme, paletteId, selectPalette } = useAppTheme();
 
   const loadPrefs = useCallback(
@@ -374,14 +381,16 @@ export function PreferencesScreen() {
   const toggleNotices = async () => {
     if (!repository) return;
     const nextVal = !prefs.enabled;
-    await repository.reminders.setPreferences(nextVal);
-    if (patientId) {
-      if (reconcileReminders) {
-        await reconcileReminders(patientId);
-      } else if (coordinator) {
-        await coordinator.reconcile(patientId, () => true);
+    await trackOperation(async () => {
+      await repository.reminders.setPreferences(nextVal);
+      if (patientId) {
+        if (reconcileReminders) {
+          await reconcileReminders(patientId);
+        } else if (coordinator) {
+          await coordinator.reconcile(patientId, () => true);
+        }
       }
-    }
+    });
     await refreshPrefs();
   };
 

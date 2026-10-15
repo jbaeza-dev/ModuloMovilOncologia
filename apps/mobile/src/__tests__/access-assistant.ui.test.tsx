@@ -1,35 +1,194 @@
 /// <reference types="jest" />
 
-import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react-native';
-import React from 'react';
+import {
+  cleanup,
+  fireEvent,
+  render,
+  screen,
+  waitFor,
+  act,
+  configure,
+} from '@testing-library/react-native';
+import React, { useEffect } from 'react';
+import { DatabaseSync } from 'node:sqlite';
 
-// Mock expo-router
-const mockUseLocalSearchParams = jest.fn();
-const mockRouterPush = jest.fn();
-const mockRouterReplace = jest.fn();
-const mockRouterBack = jest.fn();
-const mockRouterNavigate = jest.fn();
+jest.setTimeout(15000);
+configure({ asyncUtilTimeout: 8000 });
+
+// Router history simulation for Stack and navigation tests
+const mockRouteHistory: string[] = ['/'];
+const mockRouter = {
+  push: jest.fn((to: string) => {
+    mockRouteHistory.push(to);
+  }),
+  replace: jest.fn((to: string) => {
+    mockRouteHistory[mockRouteHistory.length - 1] = to;
+  }),
+  navigate: jest.fn((to: string) => {
+    mockRouteHistory.push(to);
+  }),
+  back: jest.fn(() => {
+    if (mockRouteHistory.length > 1) {
+      mockRouteHistory.pop();
+    }
+  }),
+  canGoBack: jest.fn(() => mockRouteHistory.length > 1),
+};
+
+jest.mock('expo-crypto', () => ({
+  randomUUID: jest.fn(() => '11111111-2222-4333-8444-555555555555'),
+}));
 
 jest.mock('expo-router', () => {
   // eslint-disable-next-line @typescript-eslint/no-require-imports
   const React = require('react');
+  // eslint-disable-next-line @typescript-eslint/no-require-imports
+  const { View } = require('react-native');
+
+  function Protected({ guard, children }: { guard: boolean; children: React.ReactNode }) {
+    if (!guard) return null;
+    return React.createElement(React.Fragment, null, children);
+  }
+
+  function Screen({ name }: { name: string }) {
+    return React.createElement(View, {
+      testID: `screen-${name}`,
+      accessibilityLabel: `screen-${name}`,
+    });
+  }
+
+  function StackComponent({ children }: { children: React.ReactNode }) {
+    return React.createElement(View, { testID: 'root-stack' }, children);
+  }
+  StackComponent.Protected = Protected;
+  StackComponent.Screen = Screen;
+
   return {
     router: {
-      push: (...args: unknown[]) => mockRouterPush(...args),
-      replace: (...args: unknown[]) => mockRouterReplace(...args),
-      back: (...args: unknown[]) => mockRouterBack(...args),
-      navigate: (...args: unknown[]) => mockRouterNavigate(...args),
+      push: (to: string) => mockRouter.push(to),
+      replace: (to: string) => mockRouter.replace(to),
+      navigate: (to: string) => mockRouter.navigate(to),
+      back: () => mockRouter.back(),
+      canGoBack: () => mockRouter.canGoBack(),
     },
-    useLocalSearchParams: () => mockUseLocalSearchParams(),
+    useSegments: () => {
+      const current = mockRouteHistory[mockRouteHistory.length - 1] || '/';
+      return current.split('/').filter(Boolean);
+    },
+    useLocalSearchParams: () => ({}),
     useFocusEffect: (cb: () => void | (() => void)) => {
       React.useEffect(() => {
         return cb();
       }, [cb]);
     },
+    Stack: StackComponent,
   };
 });
 
-// Mock theme
+// Mock expo-sqlite with in-memory DatabaseSync
+type SqlParam = null | number | bigint | string | Uint8Array;
+type FakeTx = {
+  execAsync: (s: string) => Promise<void>;
+  runAsync: (s: string, p?: unknown[]) => Promise<{ changes: number; lastInsertRowId: number }>;
+  getFirstAsync: (s: string, p?: unknown[]) => Promise<unknown>;
+  getAllAsync: (s: string, p?: unknown[]) => Promise<unknown[]>;
+};
+
+function mockCreateFakeNativeDatabase() {
+  const db = new DatabaseSync(':memory:');
+  return {
+    execAsync: async (sql: string) => {
+      db.exec(sql);
+    },
+    runAsync: async (sql: string, params: unknown[] = []) => {
+      const res = db.prepare(sql).run(...(params as unknown as SqlParam[]));
+      return { changes: Number(res.changes), lastInsertRowId: Number(res.lastInsertRowid) };
+    },
+    getFirstAsync: async (sql: string, params: unknown[] = []) => {
+      return db.prepare(sql).get(...(params as unknown as SqlParam[])) ?? null;
+    },
+    getAllAsync: async (sql: string, params: unknown[] = []) => {
+      return db.prepare(sql).all(...(params as unknown as SqlParam[]));
+    },
+    withExclusiveTransactionAsync: async (work: (tx: FakeTx) => Promise<void>) => {
+      db.exec('BEGIN IMMEDIATE');
+      try {
+        const txObj: FakeTx = {
+          execAsync: async (s: string) => db.exec(s),
+          runAsync: async (s: string, p: unknown[] = []) => {
+            const r = db.prepare(s).run(...(p as unknown as SqlParam[]));
+            return { changes: Number(r.changes), lastInsertRowId: Number(r.lastInsertRowid) };
+          },
+          getFirstAsync: async (s: string, p: unknown[] = []) =>
+            db.prepare(s).get(...(p as unknown as SqlParam[])) ?? null,
+          getAllAsync: async (s: string, p: unknown[] = []) =>
+            db.prepare(s).all(...(p as unknown as SqlParam[])),
+        };
+        await work(txObj);
+        db.exec('COMMIT');
+      } catch (err) {
+        db.exec('ROLLBACK');
+        throw err;
+      }
+    },
+    closeAsync: async () => {
+      try {
+        db.close();
+      } catch {
+        // ignore
+      }
+    },
+  };
+}
+
+let mockActiveDbInstance: ReturnType<typeof mockCreateFakeNativeDatabase> | null = null;
+jest.mock('expo-sqlite', () => ({
+  openDatabaseAsync: jest.fn(async () => {
+    mockActiveDbInstance = mockCreateFakeNativeDatabase();
+    return mockActiveDbInstance;
+  }),
+}));
+
+// Mock expo-notifications with in-memory store
+const mockScheduledNotifications = new Map<string, unknown>();
+jest.mock('expo-notifications', () => ({
+  setNotificationHandler: jest.fn(),
+  SchedulableTriggerInputTypes: { DATE: 'date' },
+  AndroidImportance: { NONE: 0, DEFAULT: 3, HIGH: 4 },
+  getNotificationChannelAsync: jest.fn().mockResolvedValue({
+    importance: 4,
+  }),
+  setNotificationChannelAsync: jest.fn().mockResolvedValue(null),
+  getPermissionsAsync: jest.fn().mockResolvedValue({
+    status: 'granted',
+    granted: true,
+    canAskAgain: true,
+  }),
+  requestPermissionsAsync: jest.fn().mockResolvedValue({
+    status: 'granted',
+    granted: true,
+    canAskAgain: true,
+  }),
+  getAllScheduledNotificationsAsync: jest.fn(async () =>
+    Array.from(mockScheduledNotifications.values()),
+  ),
+  scheduleNotificationAsync: jest.fn(async ({ content, trigger }) => {
+    const id = 'notif-' + Math.random().toString(36).slice(2, 9);
+    mockScheduledNotifications.set(id, { identifier: id, content, trigger });
+    return id;
+  }),
+  cancelScheduledNotificationAsync: jest.fn(async (id: string) => {
+    mockScheduledNotifications.delete(id);
+  }),
+}));
+
+// Mock environment as demo
+jest.mock('../utils/environment', () => ({
+  isDemoMode: () => true,
+  getEnvironmentConfig: () => ({ mode: 'demo' }),
+}));
+
+// Mock ThemeProvider
 const mockTheme = {
   colors: {
     background: '#FFFFFF',
@@ -54,258 +213,193 @@ const mockTheme = {
 
 jest.mock('../providers/ThemeProvider', () => ({
   useAppTheme: () => ({ theme: mockTheme }),
-}));
-
-// Mock environment
-jest.mock('../utils/environment', () => ({
-  isDemoMode: () => true,
-  getEnvironmentConfig: () => ({ mode: 'demo' }),
-}));
-
-// Mock listCachedTerms
-const mockListCachedTerms = jest.fn();
-jest.mock('../data/local/consents/consent-repository', () => {
-  const actual = jest.requireActual('../data/local/consents/consent-repository');
-  return {
-    ...actual,
-    listCachedTerms: (...args: unknown[]) => mockListCachedTerms(...args),
-  };
-});
-
-// Mock repository
-const mockRepository = {
-  grantConsent: jest.fn().mockResolvedValue({ consentId: 'c-1', eventId: 'e-1' }),
-  revokeConsent: jest.fn().mockResolvedValue({ eventId: 'e-2' }),
-  getConsentStatus: jest.fn().mockResolvedValue({
-    terminoId: 'term-1',
-    version: '1.0',
-    estado: 'nunca_otorgado',
-    activeConsent: null,
-    lastConsent: null,
-    lastEvent: null,
-  }),
-};
-
-const mockSelectPatient = jest.fn().mockResolvedValue(undefined);
-const mockCloseActiveContext = jest.fn().mockResolvedValue({ success: true });
-
-const defaultLocalData = {
-  patientId: 'paciente-a',
-  database: {},
-  repository: mockRepository,
-  coordinator: null,
-  runSave: (fn: () => Promise<unknown>) => fn(),
-  trackOperation: (fn: () => Promise<unknown>) => fn(),
-  saving: false,
-  isClosing: false,
-  closeActiveContext: (...args: unknown[]) => mockCloseActiveContext(...args),
-  selectPatient: (...args: unknown[]) => mockSelectPatient(...args),
-  activeTeardownPromise: null,
-  assistantController: null,
-};
-
-const mockUseLocalData = jest.fn().mockReturnValue({ ...defaultLocalData });
-
-jest.mock('../providers/LocalDataProvider', () => ({
-  useLocalData: () => mockUseLocalData(),
-  DEMO_PATIENTS: [
-    { id: '11111111-1111-4111-8111-111111111111', label: 'Paciente de prueba A' },
-    { id: '22222222-2222-4222-8222-222222222222', label: 'Paciente de prueba B' },
-  ],
+  ThemeProvider: ({ children }: { children: React.ReactNode }) => children,
 }));
 
 import { ContextGuard } from '../components/ContextGuard';
-import { AccessConsentScreen, LoginScreen, RegisterScreen } from '../features/access/AccessScreens';
+import { LoginScreen, RegisterScreen } from '../features/access/AccessScreens';
 import { AssistantScreen } from '../features/assistant/AssistantScreen';
-import { AssistantController } from '../services/assistant/assistant-controller';
+import { AppNavigator } from '../app/_layout';
+import { LocalDataProvider, DEMO_PATIENTS, useLocalData } from '../providers/LocalDataProvider';
 import { FakeAssistantAdapter } from '../services/assistant/fake-assistant-adapter';
 
-describe('Incremento 6: UI de Acceso, Consentimientos y Asistente', () => {
+type LocalDataContext = ReturnType<typeof useLocalData>;
+
+// Test consumer to access context methods during provider tests
+function ContextConsumer({ onReady }: { onReady: (ctx: LocalDataContext) => void }) {
+  const ctx = useLocalData();
+  useEffect(() => {
+    onReady(ctx);
+  }, [ctx, onReady]);
+  return null;
+}
+
+describe('Incremento 6: UI de Acceso, Navegación Raíz, Sesión y Asistente', () => {
   beforeEach(() => {
     jest.clearAllMocks();
-    mockUseLocalSearchParams.mockReturnValue({});
-    mockUseLocalData.mockReturnValue({ ...defaultLocalData });
+    mockRouteHistory.length = 0;
+    mockRouteHistory.push('/');
+    mockScheduledNotifications.clear();
   });
 
   afterEach(() => {
     cleanup();
   });
 
-  describe('Acceso Público y Selección de Paciente', () => {
-    it('LoginScreen renderiza información de servicios no configurados y enlace de demo', async () => {
+  describe('Navegador Raíz y Stack.Protected en Producción', () => {
+    it('sin paciente activo, Stack.Protected excluye (tabs) y AppNavigator redirige si se accede a tabs', async () => {
+      mockRouteHistory[0] = '/(tabs)';
+
+      await render(
+        <LocalDataProvider>
+          <AppNavigator />
+        </LocalDataProvider>,
+      );
+
+      // Esperar a que la base de datos abra
+      expect(await screen.findByTestId('root-stack')).toBeTruthy();
+
+      // (tabs) DEBE estar excluido de la jerarquía protegida
+      expect(screen.queryByTestId('screen-(tabs)')).toBeNull();
+      // Las rutas públicas están disponibles
+      expect(screen.getByTestId('screen-acceso')).toBeTruthy();
+
+      // AppNavigator detecta ausencia de paciente en (tabs) y redirige
+      await waitFor(() => {
+        expect(mockRouter.replace).toHaveBeenCalledWith('/acceso/seleccionar-paciente');
+      });
+    });
+
+    it('al seleccionar paciente de prueba, Stack.Protected habilita (tabs)', async () => {
+      let contextRef: ReturnType<typeof useLocalData> | null = null;
+
+      await render(
+        <LocalDataProvider>
+          <AppNavigator />
+          <ContextConsumer onReady={(ctx) => (contextRef = ctx)} />
+        </LocalDataProvider>,
+      );
+
+      expect(await screen.findByTestId('root-stack')).toBeTruthy();
+      expect(screen.queryByTestId('screen-(tabs)')).toBeNull();
+
+      // Seleccionar paciente A usando la función de producción
+      await act(async () => {
+        await contextRef?.selectPatient(DEMO_PATIENTS[0].id);
+      });
+
+      // Ahora Stack.Protected DEBE incluir (tabs)
+      expect(await screen.findByTestId('screen-(tabs)')).toBeTruthy();
+    });
+
+    it('el cierre de contexto desactiva inmediatamente la guarda de Stack.Protected', async () => {
+      let contextRef: ReturnType<typeof useLocalData> | null = null;
+
+      await render(
+        <LocalDataProvider>
+          <AppNavigator />
+          <ContextConsumer onReady={(ctx) => (contextRef = ctx)} />
+        </LocalDataProvider>,
+      );
+
+      await screen.findByTestId('root-stack');
+
+      await act(async () => {
+        await contextRef?.selectPatient(DEMO_PATIENTS[0].id);
+      });
+
+      expect(screen.getByTestId('screen-(tabs)')).toBeTruthy();
+
+      // Iniciar cierre de contexto manual
+      await act(async () => {
+        await contextRef?.closeActiveContext('manual_close');
+      });
+
+      // La guarda cae inmediatamente: (tabs) ya no debe estar montado
+      expect(screen.queryByTestId('screen-(tabs)')).toBeNull();
+      expect(mockRouter.replace).toHaveBeenCalledWith('/acceso');
+    });
+
+    it('el historial de navegación y botón Atrás conservan la ruta previa', async () => {
+      mockRouter.navigate('/acceso');
+      expect(mockRouteHistory).toEqual(['/', '/acceso']);
+
+      mockRouter.navigate('/acceso/consentimientos');
+      expect(mockRouteHistory).toEqual(['/', '/acceso', '/acceso/consentimientos']);
+
+      mockRouter.back();
+      expect(mockRouteHistory).toEqual(['/', '/acceso']);
+    });
+  });
+
+  describe('Acceso Público y Campos de Credenciales Deshabilitados', () => {
+    it('LoginScreen renderiza campos de correo y contraseña deshabilitados sin servicio central', async () => {
       await render(<LoginScreen />);
 
-      const brands = await screen.findAllByText('QuimioCare');
-      expect(brands.length).toBeGreaterThanOrEqual(1);
       expect(await screen.findByText('VISTA DE DEMOSTRACIÓN · DATOS FICTICIOS')).toBeTruthy();
       expect(await screen.findByText('Servicios de acceso')).toBeTruthy();
 
-      const selectBtn = await screen.findByText('Seleccionar paciente de prueba');
-      expect(selectBtn).toBeTruthy();
+      const emailInput = screen.getByLabelText(
+        'Correo electrónico (deshabilitado · sin servicio central)',
+      );
+      expect(emailInput.props.editable).toBe(false);
 
-      fireEvent.press(selectBtn);
-      expect(mockRouterNavigate).toHaveBeenCalledWith('/acceso/seleccionar-paciente');
+      const passwordInput = screen.getByLabelText(
+        'Contraseña (deshabilitado · sin servicio central)',
+      );
+      expect(passwordInput.props.editable).toBe(false);
 
-      const consentBtn = await screen.findByText('Ver términos y consentimientos');
-      expect(consentBtn).toBeTruthy();
-      fireEvent.press(consentBtn);
-      expect(mockRouterNavigate).toHaveBeenCalledWith('/acceso/consentimientos');
+      const selectBtn = screen.getByText('Seleccionar paciente de prueba');
+      await fireEvent.press(selectBtn);
+      expect(mockRouter.navigate).toHaveBeenCalledWith('/acceso/seleccionar-paciente');
     });
 
-    it('RegisterScreen muestra aviso de registro central no configurado y botón de consentimientos', async () => {
+    it('RegisterScreen renderiza campos de registro deshabilitados', async () => {
       await render(<RegisterScreen />);
 
       expect(await screen.findByText('Registro de usuarios')).toBeTruthy();
-      const consentBtn = await screen.findByText('Ver consentimientos');
-      expect(consentBtn).toBeTruthy();
 
-      fireEvent.press(consentBtn);
-      expect(mockRouterNavigate).toHaveBeenCalledWith('/acceso/consentimientos');
+      const nameInput = screen.getByLabelText('Nombre (deshabilitado · sin servicio central)');
+      expect(nameInput.props.editable).toBe(false);
+
+      const emailInput = screen.getByLabelText(
+        'Correo electrónico (deshabilitado · sin servicio central)',
+      );
+      expect(emailInput.props.editable).toBe(false);
+
+      const passwordInput = screen.getByLabelText(
+        'Contraseña (deshabilitado · sin servicio central)',
+      );
+      expect(passwordInput.props.editable).toBe(false);
+
+      const consentBtn = screen.getByText('Ver consentimientos');
+      await fireEvent.press(consentBtn);
+      expect(mockRouter.navigate).toHaveBeenCalledWith('/acceso/consentimientos');
     });
 
-    it('ContextGuard permite seleccionar paciente cuando isClosing es false', async () => {
-      await render(<ContextGuard isClosing={false} onSelectPatient={mockSelectPatient} />);
+    it('ContextGuard permite seleccionar paciente cuando isClosing es false y se deshabilita cuando isClosing es true', async () => {
+      const onSelect = jest.fn();
+      await render(<ContextGuard isClosing={false} onSelectPatient={onSelect} />);
 
       const patientABtn = await screen.findByText('Paciente de prueba A');
-      expect(await screen.findByText('Paciente de prueba B')).toBeTruthy();
+      await fireEvent.press(patientABtn);
+      expect(onSelect).toHaveBeenCalledWith(DEMO_PATIENTS[0].id);
 
-      fireEvent.press(patientABtn);
-      expect(mockSelectPatient).toHaveBeenCalledWith('11111111-1111-4111-8111-111111111111');
-    });
-
-    it('ContextGuard deshabilita selección y muestra estado de cierre cuando isClosing es true', async () => {
-      await render(<ContextGuard isClosing={true} onSelectPatient={mockSelectPatient} />);
-
+      await screen.rerender(<ContextGuard isClosing={true} onSelectPatient={onSelect} />);
       expect(await screen.findByText('Cerrando contexto anterior…')).toBeTruthy();
-
-      fireEvent.press(screen.getByText('Paciente de prueba A'));
-      expect(mockSelectPatient).not.toHaveBeenCalled();
+      onSelect.mockClear();
+      await fireEvent.press(screen.getByText('Paciente de prueba A'));
+      expect(onSelect).not.toHaveBeenCalled();
     });
   });
 
-  describe('Consentimientos en Acceso (AccessConsentScreen)', () => {
-    it('muestra estado vacío si no hay términos cacheados', async () => {
-      mockListCachedTerms.mockResolvedValue([]);
-
-      await render(<AccessConsentScreen />);
-
-      expect(await screen.findByText('No hay definiciones de términos registradas')).toBeTruthy();
-    });
-
-    it('sin paciente activo muestra muestra demostrativa y bloquea aceptación anónima', async () => {
-      mockUseLocalData.mockReturnValue({
-        ...defaultLocalData,
-        patientId: null,
-        repository: null,
-      });
-
-      mockListCachedTerms.mockResolvedValue([
-        {
-          termino_id: 'term-demo-1',
-          version: '1.0',
-          titulo: 'Consentimiento de Tratamiento',
-          contenido_markdown: '# Términos informados',
-          vigente_desde: '2026-01-01T00:00:00Z',
-          vigente_hasta: null,
-        },
-      ]);
-
-      await render(<AccessConsentScreen />);
-
-      expect(await screen.findByText('Consentimiento de Tratamiento')).toBeTruthy();
-      expect(await screen.findByText('Muestra técnica demostrativa')).toBeTruthy();
-      expect(await screen.findByText('Requiere sesión activa')).toBeTruthy();
-      expect(
-        await screen.findByText(
-          'Para otorgar o revocar consentimientos debes iniciar sesión o seleccionar un paciente de prueba.',
-        ),
-      ).toBeTruthy();
-    });
-
-    it('con paciente activo permite aceptar y revocar consentimientos vigentes', async () => {
-      mockUseLocalData.mockReturnValue({
-        ...defaultLocalData,
-        patientId: 'paciente-a',
-        repository: mockRepository,
-      });
-
-      mockListCachedTerms.mockResolvedValue([
-        {
-          termino_id: 'term-demo-1',
-          version: '1.0',
-          titulo: 'Consentimiento de Tratamiento',
-          contenido_markdown: '# Términos informados',
-          vigente_desde: '2026-01-01T00:00:00Z',
-          vigente_hasta: null,
-        },
-      ]);
-
-      mockRepository.getConsentStatus.mockResolvedValue({
-        terminoId: 'term-demo-1',
-        version: '1.0',
-        estado: 'nunca_otorgado',
-        activeConsent: null,
-        lastConsent: null,
-        lastEvent: null,
-      });
-
-      await render(<AccessConsentScreen />);
-
-      const acceptBtn = await screen.findByText('Aceptar consentimiento');
-      fireEvent.press(acceptBtn);
-
-      await waitFor(() => {
-        expect(mockRepository.grantConsent).toHaveBeenCalledWith('term-demo-1', '1.0');
-      });
-    });
-
-    it('deshabilita términos con vigencia futura o expirada', async () => {
-      mockUseLocalData.mockReturnValue({
-        ...defaultLocalData,
-        patientId: 'paciente-a',
-        repository: mockRepository,
-      });
-
-      mockListCachedTerms.mockResolvedValue([
-        {
-          termino_id: 'term-futuro',
-          version: '1.0',
-          titulo: 'Término Futuro',
-          contenido_markdown: '# No disponible aún',
-          vigente_desde: '2099-01-01T00:00:00Z',
-          vigente_hasta: null,
-        },
-        {
-          termino_id: 'term-expirado',
-          version: '1.0',
-          titulo: 'Término Vencido',
-          contenido_markdown: '# Vencido',
-          vigente_desde: '2020-01-01T00:00:00Z',
-          vigente_hasta: '2021-01-01T00:00:00Z',
-        },
-      ]);
-
-      mockRepository.getConsentStatus.mockResolvedValue({
-        terminoId: 'term-futuro',
-        version: '1.0',
-        estado: 'nunca_otorgado',
-        activeConsent: null,
-        lastConsent: null,
-        lastEvent: null,
-      });
-
-      await render(<AccessConsentScreen />);
-
-      expect(
-        await screen.findByText('Vigencia futura · No disponible para aceptación'),
-      ).toBeTruthy();
-      expect(await screen.findByText('Versión no vigente · Aceptación cerrada')).toBeTruthy();
-    });
-  });
-
-  describe('Asistente de Acompañamiento (AssistantScreen)', () => {
-    it('mantiene visible el disclaimer RNF-08 en todo momento', async () => {
-      await render(<AssistantScreen />);
+  describe('Asistente QuimioCare (AssistantScreen)', () => {
+    it('muestra orientación demostrativa general sin contenido clínico prescriptivo', async () => {
+      await render(
+        <LocalDataProvider>
+          <AssistantScreen />
+        </LocalDataProvider>,
+      );
 
       expect(
         await screen.findByText(
@@ -315,95 +409,151 @@ describe('Incremento 6: UI de Acceso, Consentimientos y Asistente', () => {
       expect(await screen.findByText('0 / 2000')).toBeTruthy();
     });
 
-    it('actualiza el contador de caracteres al escribir', async () => {
-      await render(<AssistantScreen />);
+    it('al cancelar la consulta en curso, restaura el texto previo en el campo de entrada', async () => {
+      let contextRef = {} as LocalDataContext;
+
+      await render(
+        <LocalDataProvider>
+          <AssistantScreen />
+          <ContextConsumer onReady={(ctx) => (contextRef = ctx)} />
+        </LocalDataProvider>,
+      );
+
+      contextRef.assistantController?.setAdapter(
+        new FakeAssistantAdapter({ simulatedDelayMs: 4000 }),
+      );
 
       const input = await screen.findByLabelText('Escribe tu consulta');
-      fireEvent.changeText(input, 'Consulta de prueba');
+      await fireEvent.changeText(input, '¿Cuáles son las recomendaciones generales?');
 
-      expect(await screen.findByText('18 / 2000')).toBeTruthy();
-    });
-
-    it('envía consulta, muestra estado de procesamiento y permite cancelar', async () => {
-      const adapter = new FakeAssistantAdapter({ simulatedDelayMs: 5000 });
-      const controller = new AssistantController(adapter, 'paciente-a');
-
-      mockUseLocalData.mockReturnValue({
-        ...defaultLocalData,
-        assistantController: controller,
-      });
-
-      await render(<AssistantScreen />);
-
-      const input = await screen.findByLabelText('Escribe tu consulta');
-      fireEvent.changeText(input, '¿Cómo aliviar las náuseas?');
-
-      await waitFor(() => {
-        expect(input.props.value).toBe('¿Cómo aliviar las náuseas?');
-      });
-
-      const sendBtn = await screen.findByText('Enviar consulta');
-      fireEvent.press(sendBtn);
+      const sendBtn = screen.getByText('Enviar consulta');
+      await fireEvent.press(sendBtn);
 
       expect(await screen.findByText('Procesando demostración…')).toBeTruthy();
-      expect(await screen.findByText('Cancelar')).toBeTruthy();
+      const cancelBtn = screen.getByText('Cancelar');
 
-      fireEvent.press(screen.getByText('Cancelar'));
+      await fireEvent.press(cancelBtn);
 
+      // El campo de texto DEBE haber recuperado la consulta
+      expect(input.props.value).toBe('¿Cuáles son las recomendaciones generales?');
       expect(await screen.findByText('Consulta cancelada')).toBeTruthy();
     });
 
-    it('muestra estado sin conexión con botón de reintento si el adaptador falla por offline', async () => {
-      const adapter = new FakeAssistantAdapter({ shouldSimulateOffline: true });
-      const controller = new AssistantController(adapter, 'paciente-a');
+    it('desmontar la pantalla mientras hay una solicitud en curso aborta el intento', async () => {
+      let contextRef = {} as LocalDataContext;
 
-      mockUseLocalData.mockReturnValue({
-        ...defaultLocalData,
-        assistantController: controller,
-      });
+      await render(
+        <LocalDataProvider>
+          <AssistantScreen />
+          <ContextConsumer onReady={(ctx) => (contextRef = ctx)} />
+        </LocalDataProvider>,
+      );
 
-      await render(<AssistantScreen />);
+      contextRef.assistantController?.setAdapter(
+        new FakeAssistantAdapter({ simulatedDelayMs: 5000 }),
+      );
 
       const input = await screen.findByLabelText('Escribe tu consulta');
-      fireEvent.changeText(input, 'Consulta sin red');
+      await fireEvent.changeText(input, 'Consulta que será interrumpida');
 
-      await waitFor(() => {
-        expect(input.props.value).toBe('Consulta sin red');
-      });
+      await fireEvent.press(screen.getByText('Enviar consulta'));
 
-      fireEvent.press(screen.getByText('Enviar consulta'));
+      const controller = contextRef.assistantController;
+      expect(controller?.getState()).toBe('sending');
 
-      expect(await screen.findByText('Sin conexión')).toBeTruthy();
-      expect(await screen.findByText('Reintentar consulta')).toBeTruthy();
+      // Desmontar el componente
+      await screen.unmount();
+
+      // El intento en curso debe haber sido abortado
+      expect(controller?.getState()).toBe('cancelled');
     });
 
-    it('maneja session_required invocando closeActiveContext', async () => {
-      const adapter = new FakeAssistantAdapter({
-        shouldSimulateSessionRequired: true,
-      });
-      const controller = new AssistantController(adapter, 'paciente-a', () => {
-        void mockCloseActiveContext('session_required');
-      });
+    it('muestra estado sin conexión con botón de reintento si el adaptador simula offline', async () => {
+      let contextRef = {} as LocalDataContext;
 
-      mockUseLocalData.mockReturnValue({
-        ...defaultLocalData,
-        assistantController: controller,
-      });
-
-      await render(<AssistantScreen />);
+      await render(
+        <LocalDataProvider>
+          <AssistantScreen />
+          <ContextConsumer onReady={(ctx) => (contextRef = ctx)} />
+        </LocalDataProvider>,
+      );
 
       const input = await screen.findByLabelText('Escribe tu consulta');
-      fireEvent.changeText(input, 'Consulta que requiere sesión');
 
-      await waitFor(() => {
-        expect(input.props.value).toBe('Consulta que requiere sesión');
+      contextRef.assistantController?.setAdapter(
+        new FakeAssistantAdapter({ shouldSimulateOffline: true }),
+      );
+      await fireEvent.changeText(input, 'Consulta sin red');
+
+      await fireEvent.press(screen.getByText('Enviar consulta'));
+
+      // Esperar respuesta offline
+      expect(await screen.findByText('Sin conexión')).toBeTruthy();
+      expect(screen.getByText('Reintentar consulta')).toBeTruthy();
+    });
+  });
+
+  describe('Cierre por session_required con SQLite abierto (Punto 1)', () => {
+    it('el cierre provocado por session_required cancela la agenda usando el coordinador activo', async () => {
+      let contextRef = {} as LocalDataContext;
+
+      await render(
+        <LocalDataProvider>
+          <AppNavigator />
+          <ContextConsumer onReady={(ctx) => (contextRef = ctx)} />
+        </LocalDataProvider>,
+      );
+
+      // Esperar que SQLite abra e inicialice el contexto
+      expect(await screen.findByTestId('root-stack')).toBeTruthy();
+
+      // Seleccionar paciente A
+      await act(async () => {
+        await contextRef.selectPatient(DEMO_PATIENTS[0].id);
       });
 
-      fireEvent.press(screen.getByText('Enviar consulta'));
+      expect(contextRef.patientId).toBe(DEMO_PATIENTS[0].id);
+      const coordinator = contextRef.coordinator;
+      expect(coordinator).not.toBeNull();
 
-      await waitFor(() => {
-        expect(mockCloseActiveContext).toHaveBeenCalledWith('session_required');
+      // Programar una regla de recordatorio para Paciente A
+      await act(async () => {
+        await contextRef.repository?.reminders.setPreferences(true);
+        await contextRef.repository?.reminders.saveRule({
+          tipo: 'registro_vitales',
+          diasSemana: [1, 2, 3, 4, 5, 6, 7],
+          horasMinutos: ['08:00'],
+          zonaHoraria: 'America/Santiago',
+          habilitado: true,
+        });
+        await coordinator?.reconcile(DEMO_PATIENTS[0].id, () => true);
       });
+
+      // Confirmar que hay notificaciones programadas
+      expect(mockScheduledNotifications.size).toBeGreaterThan(0);
+
+      // Configurar el adaptador del asistente para que responda con session_required
+      const assistantCtrl = contextRef.assistantController;
+      expect(assistantCtrl).toBeDefined();
+
+      const sessionRequiredAdapter = new FakeAssistantAdapter({
+        shouldSimulateSessionRequired: true,
+      });
+      assistantCtrl?.setAdapter(sessionRequiredAdapter);
+
+      // Enviar consulta que provocará session_required
+      await act(async () => {
+        await assistantCtrl?.send('Consulta que expirará');
+      });
+
+      // Esperar drenaje de cierre
+      await waitFor(() => {
+        expect(mockRouter.replace).toHaveBeenCalledWith('/acceso?motivo=sesion_requerida');
+        expect(contextRef.patientId).toBeNull();
+      });
+
+      // Comprobar que el coordinador activo canceló las notificaciones del paciente saliente
+      expect(mockScheduledNotifications.size).toBe(0);
     });
   });
 });

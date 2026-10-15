@@ -26,7 +26,7 @@ export default function RootLayout() {
   );
 }
 
-function AppNavigator() {
+export function AppNavigator() {
   const { theme } = useAppTheme();
   const { patientId, isClosing } = useLocalData();
   const segments = useSegments();

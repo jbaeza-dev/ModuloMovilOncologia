@@ -80,16 +80,7 @@ export class FakeAssistantAdapter implements AssistantAdapter {
   }
 
   private generateSyntheticResponse(query: string): string {
-    const lower = query.toLowerCase();
-    if (lower.includes('fiebre') || lower.includes('temperatura')) {
-      return 'La fiebre durante la quimioterapia (38 °C o más) es una señal que requiere comunicación inmediata con tu equipo médico o servicio de urgencia oncológica.';
-    }
-    if (lower.includes('nausea') || lower.includes('náusea') || lower.includes('vómito')) {
-      return 'Para el manejo de náuseas, es recomendable ingerir comidas pequeñas y frecuentes, evitar alimentos muy grasos o condimentados y tomar la medicación antiemética indicada por tu equipo.';
-    }
-    if (lower.includes('fatiga') || lower.includes('cansancio')) {
-      return 'La fatiga es uno de los síntomas más habituales en quimioterapia. Intenta intercalar periodos de descanso con caminatas breves y mantén una buena hidratación.';
-    }
-    return 'Comprendo tu consulta. Esta es una orientación general demostrativa del módulo móvil de QuimioCare. Ante cualquier duda o síntoma persistente, consulta directamente a tu equipo tratante.';
+    const clean = query.trim();
+    return `[Demostración técnica] He recibido tu consulta ("${clean}"). Esta es una respuesta sintética simulada del asistente para evaluar la interfaz y el flujo de mensajes en modo demostración. No constituye orientación clínica ni asesoramiento médico. Ante dudas sobre tu salud o síntomas persistentes, consulta directamente a tu equipo médico tratante.`;
   }
 }

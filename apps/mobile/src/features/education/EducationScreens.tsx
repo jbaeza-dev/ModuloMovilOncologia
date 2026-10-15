@@ -373,10 +373,12 @@ export function EducationResourceScreen() {
       }
 
       // Registrar interacción de apertura en SQLite
-      await repository.education.recordYouTubeInteraction({
-        contentId: effectiveResource.id,
-        youtubeVideoId: effectiveResource.youtubeVideoId,
-        versionOrigen: effectiveResource.version,
+      await runSave(async () => {
+        await repository.education.recordYouTubeInteraction({
+          contentId: effectiveResource.id,
+          youtubeVideoId: effectiveResource.youtubeVideoId!,
+          versionOrigen: effectiveResource.version,
+        });
       });
 
       if (isDemoMode()) {

@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest';
 
+import type { SqlValue } from '../data/local/core/sql';
 import { migrateDatabase } from '../data/local/migrations';
 import { createReminderRepository } from '../data/local/reminders/reminder-repository';
 import type { NotificationJobPayload } from '../data/local/reminders/reminder-types';
@@ -269,58 +270,52 @@ describe('LocalDataProvider Notification Processing', () => {
   });
 });
 
+import { PatientContextManager } from './patient-context-manager';
+import { DemoSessionAdapter } from '../services/session/demo-session-adapter';
+import { FakeAssistantAdapter } from '../services/assistant/fake-assistant-adapter';
+
 describe('LocalDataProvider Context Teardown and Operation Tracking', () => {
   it('trackOperation protege el contador frente a excepciones síncronas y asíncronas', async () => {
-    let activeOperations = 0;
-    const drainResolvers = new Set<() => void>();
-    let closing = false;
-
-    async function trackOperation<T>(operation: () => Promise<T>): Promise<T> {
-      if (closing) {
-        throw new Error('Operación rechazada: el contexto se encuentra en proceso de cierre.');
-      }
-      activeOperations += 1;
-      try {
-        return await operation();
-      } finally {
-        activeOperations -= 1;
-        if (activeOperations === 0) {
-          drainResolvers.forEach((resolve) => resolve());
-          drainResolvers.clear();
-        }
-      }
-    }
+    const sessionAdapter = new DemoSessionAdapter();
+    const assistantAdapter = new FakeAssistantAdapter();
+    const router = { replace: () => undefined, push: () => undefined };
+    const manager = new PatientContextManager({
+      sessionAdapter,
+      assistantAdapter,
+      router,
+    });
 
     // 1. Excepción síncrona: la función lanza inmediatamente antes de retornar una promesa
     await expect(
-      trackOperation(() => {
+      manager.trackOperation(() => {
         throw new Error('Error síncrono inmediato');
       }),
     ).rejects.toThrow('Error síncrono inmediato');
 
     // El contador DEBE quedar en 0
-    expect(activeOperations).toBe(0);
+    expect(manager.getActiveOperations()).toBe(0);
 
     // 2. Excepción asíncrona: la promesa es rechazada
     await expect(
-      trackOperation(async () => {
+      manager.trackOperation(async () => {
         throw new Error('Error asíncrono');
       }),
     ).rejects.toThrow('Error asíncrono');
 
-    expect(activeOperations).toBe(0);
+    expect(manager.getActiveOperations()).toBe(0);
 
     // 3. Operación exitosa
-    const result = await trackOperation(async () => 42);
+    const result = await manager.trackOperation(async () => 42);
     expect(result).toBe(42);
-    expect(activeOperations).toBe(0);
+    expect(manager.getActiveOperations()).toBe(0);
 
     // 4. Rechazo durante proceso de cierre
-    closing = true;
-    await expect(trackOperation(async () => 'bloqueado')).rejects.toThrow(
+    const teardownPromise = manager.closeActiveContext('manual_close');
+    await expect(manager.trackOperation(async () => 'bloqueado')).rejects.toThrow(
       'Operación rechazada: el contexto se encuentra en proceso de cierre.',
     );
-    expect(activeOperations).toBe(0);
+    expect(manager.getActiveOperations()).toBe(0);
+    await teardownPromise;
   });
 
   it('closeActiveContext realiza fase 1 en menos de 1 segundo, comparte la promesa y drena escrituras activas', async () => {
@@ -330,90 +325,20 @@ describe('LocalDataProvider Context Teardown and Operation Tracking', () => {
 
     const adapter = new FakeNotificationAdapter();
     const coordinator = new NotificationCoordinator(db, adapter, () => '2026-10-13T00:00:00Z');
+    const sessionAdapter = new DemoSessionAdapter();
+    const assistantAdapter = new FakeAssistantAdapter();
+    const router = { replace: () => undefined, push: () => undefined };
 
-    let activeOperations = 0;
-    const drainResolvers = new Set<() => void>();
-    let closing = false;
-    let activePatient: string | null = patientA;
-    let contextEpoch = 1;
-    let activeTeardownPromise: Promise<{
-      success: boolean;
-      cancelledPatientId: string | null;
-      pendingNotificationsCount: number;
-    }> | null = null;
+    const manager = new PatientContextManager({
+      database: db,
+      coordinator,
+      sessionAdapter,
+      assistantAdapter,
+      router,
+    });
 
-    async function trackOperation<T>(operation: () => Promise<T>): Promise<T> {
-      if (closing) {
-        throw new Error('Operación rechazada: el contexto se encuentra en proceso de cierre.');
-      }
-      activeOperations += 1;
-      try {
-        return await operation();
-      } finally {
-        activeOperations -= 1;
-        if (activeOperations === 0) {
-          drainResolvers.forEach((resolve) => resolve());
-          drainResolvers.clear();
-        }
-      }
-    }
-
-    function closeActiveContext(): Promise<{
-      success: boolean;
-      cancelledPatientId: string | null;
-      pendingNotificationsCount: number;
-    }> {
-      if (activeTeardownPromise) {
-        return activeTeardownPromise;
-      }
-
-      // Fase 1: < 1 segundo
-      contextEpoch += 1;
-      const outgoingId = activePatient;
-      closing = true;
-      activePatient = null;
-
-      let resolveTeardown!: (res: {
-        success: boolean;
-        cancelledPatientId: string | null;
-        pendingNotificationsCount: number;
-      }) => void;
-      const teardownPromise = new Promise<{
-        success: boolean;
-        cancelledPatientId: string | null;
-        pendingNotificationsCount: number;
-      }>((resolve) => {
-        resolveTeardown = resolve;
-      });
-      activeTeardownPromise = teardownPromise;
-
-      queueMicrotask(() => {
-        void (async () => {
-          let cancelSuccess = true;
-          let pendingCount = 0;
-          try {
-            if (activeOperations > 0) {
-              await new Promise<void>((res) => drainResolvers.add(res));
-            }
-            if (outgoingId) {
-              const res = await coordinator.cancelPatientSchedule(outgoingId);
-              cancelSuccess = res.success;
-              pendingCount = res.pendingCount;
-            }
-          } finally {
-            activeTeardownPromise = null;
-            closing = false;
-            resolveTeardown({
-              success: cancelSuccess,
-              cancelledPatientId: outgoingId,
-              pendingNotificationsCount: pendingCount,
-            });
-          }
-        })();
-      });
-
-      return teardownPromise;
-    }
+    await manager.selectPatient(patientA);
+    expect(manager.getPatientId()).toBe(patientA);
 
     // Simular escritura asíncrona activa de Paciente A
     let finishWrite!: () => void;
@@ -421,25 +346,25 @@ describe('LocalDataProvider Context Teardown and Operation Tracking', () => {
       finishWrite = resolve;
     });
 
-    const writeTracker = trackOperation(async () => {
+    const writeTracker = manager.trackOperation(async () => {
       await writePromise;
       return 'guardado_completado';
     });
 
-    expect(activeOperations).toBe(1);
+    expect(manager.getActiveOperations()).toBe(1);
 
     // Iniciar cierre de contexto: medir tiempo de Fase 1
     const t0 = Date.now();
-    const teardown1 = closeActiveContext();
+    const teardown1 = manager.closeActiveContext('manual_close');
     const phase1Duration = Date.now() - t0;
 
     // Fase 1 DEBE ejecutarse inmediatamente (< 100 ms << 1000 ms)
     expect(phase1Duration).toBeLessThan(100);
-    expect(activePatient).toBeNull();
-    expect(contextEpoch).toBe(2);
+    expect(manager.getPatientId()).toBeNull();
+    expect(manager.getContextEpoch()).toBe(2);
 
     // Llamadas concurrentes comparten la misma promesa
-    const teardown2 = closeActiveContext();
+    const teardown2 = manager.closeActiveContext('manual_close');
     expect(teardown1).toBe(teardown2);
 
     // Finalizar la escritura en curso
@@ -452,67 +377,170 @@ describe('LocalDataProvider Context Teardown and Operation Tracking', () => {
     expect(result.success).toBe(true);
     expect(result.cancelledPatientId).toBe(patientA);
     expect(result.pendingNotificationsCount).toBe(0);
-    expect(activeOperations).toBe(0);
-    expect(closing).toBe(false);
+    expect(manager.getActiveOperations()).toBe(0);
+    expect(manager.getIsClosing()).toBe(false);
+    expect(sessionAdapter.getCurrentUser()).toBeNull();
   });
 
   it('selectPatient fuerza y espera el cierre del contexto previo antes de activar el nuevo', async () => {
-    let activePatient: string | null = patientA;
-    let teardownRunning = false;
-    let teardownCompleted = false;
+    const db = open();
+    await migrateDatabase(db);
+    await seedPatientContextIfEmpty(db, patientA, patientB);
+
+    const adapter = new FakeNotificationAdapter();
+    const coordinator = new NotificationCoordinator(db, adapter, () => '2026-10-13T00:00:00Z');
+    const sessionAdapter = new DemoSessionAdapter();
+    const assistantAdapter = new FakeAssistantAdapter();
+    const router = { replace: () => undefined, push: () => undefined };
+
+    const manager = new PatientContextManager({
+      database: db,
+      coordinator,
+      sessionAdapter,
+      assistantAdapter,
+      router,
+    });
+
+    await manager.selectPatient(patientA);
+    expect(manager.getPatientId()).toBe(patientA);
 
     let resolveActiveOperation!: () => void;
     const activeOperationPromise = new Promise<void>((resolve) => {
       resolveActiveOperation = resolve;
     });
 
-    let teardownPromise: Promise<void> | null = null;
-
-    async function mockCloseActiveContext(): Promise<void> {
-      if (teardownPromise) return teardownPromise;
-      teardownRunning = true;
-      teardownPromise = (async () => {
-        // Esperar que concluya la operación activa de A
-        await activeOperationPromise;
-        teardownCompleted = true;
-        teardownRunning = false;
-        activePatient = null;
-      })();
-      return teardownPromise;
-    }
-
-    async function selectPatient(newId: string): Promise<void> {
-      const valid = [patientA, patientB].includes(newId);
-      if (!valid) throw new Error(`Paciente '${newId}' no válido para demostración.`);
-
-      if (teardownPromise) {
-        await teardownPromise;
-      }
-      if (activePatient && activePatient !== newId) {
-        await mockCloseActiveContext();
-      }
-      activePatient = newId;
-    }
+    const activeOp = manager.trackOperation(async () => {
+      await activeOperationPromise;
+    });
 
     // Iniciar conmutación hacia Paciente B mientras Paciente A tiene una operación en curso
-    const selectPromise = selectPatient(patientB);
+    const selectPromise = manager.selectPatient(patientB);
 
-    // Mientras la operación de A está en curso, Paciente B NO debe haber sido activado
-    expect(activePatient).toBe(patientA);
-    expect(teardownRunning).toBe(true);
-    expect(teardownCompleted).toBe(false);
+    // Mientras la operación de A está en curso, Paciente B NO debe haber sido activado aún
+    expect(manager.getPatientId()).toBeNull();
+    expect(manager.getIsClosing()).toBe(true);
 
     // Concluir la operación de A
     resolveActiveOperation();
+    await activeOp;
     await selectPromise;
 
     // Ahora Paciente B debe ser el activo y el cierre de A completó limpiamente
-    expect(teardownCompleted).toBe(true);
-    expect(activePatient).toBe(patientB);
+    expect(manager.getIsClosing()).toBe(false);
+    expect(manager.getPatientId()).toBe(patientB);
+    expect(sessionAdapter.getCurrentUser()?.id).toBe(patientB);
 
     // Validar rechazo de paciente no registrado en demostración
-    await expect(selectPatient('paciente-invalido-999')).rejects.toThrow(
-      "Paciente 'paciente-invalido-999' no válido para demostración.",
+    await expect(manager.selectPatient('paciente-invalido-999')).rejects.toThrow(
+      "Paciente de prueba 'paciente-invalido-999' no reconocido.",
     );
+  });
+
+  it('cierre provocado por session_required cancela la agenda nativa tras abrir SQLite', async () => {
+    const sessionAdapter = new DemoSessionAdapter();
+    const assistantAdapter = new FakeAssistantAdapter({ shouldSimulateSessionRequired: true });
+    let replacedRoute = '';
+    const router = {
+      replace: (r: string) => {
+        replacedRoute = r;
+      },
+      push: () => undefined,
+    };
+
+    // 1. Inicialmente coordinator es null (simulando primer render de la app antes de abrir SQLite)
+    const manager = new PatientContextManager({
+      database: null,
+      coordinator: null,
+      sessionAdapter,
+      assistantAdapter,
+      router,
+    });
+
+    // 2. Posteriormente abre SQLite y se configura el NotificationCoordinator
+    const db = open();
+    await migrateDatabase(db);
+    await seedPatientContextIfEmpty(db, patientA, patientB);
+
+    const adapter = new FakeNotificationAdapter();
+    const coordinator = new NotificationCoordinator(db, adapter, () => '2026-10-13T00:00:00Z');
+
+    manager.setDatabase(db);
+    manager.setCoordinator(coordinator);
+
+    // 3. Paciente A se activa y tiene recordatorios programados en SQLite y la agenda nativa
+    await manager.selectPatient(patientA);
+    const repo = createReminderRepository(db, patientA);
+    await repo.setPreferences(true);
+    await repo.saveRule({
+      tipo: 'registro_vitales',
+      diasSemana: [1, 2, 3, 4, 5, 6, 7],
+      horasMinutos: ['08:00'],
+      zonaHoraria: 'America/Santiago',
+      habilitado: true,
+    });
+    const reconcileResult = await coordinator.reconcile(patientA, () => true);
+    expect(reconcileResult.programadasConfirmadas).toBeGreaterThan(0);
+    expect(adapter.scheduled.size).toBeGreaterThan(0);
+
+    // 4. El asistente recibe un mensaje cuyo adaptador responde con session_required
+    await manager.assistantController.send('Consulta que expirará la sesión');
+
+    // Aguardar microtareas para que el callback de session_required complete el drenaje
+    await new Promise((r) => setTimeout(r, 60));
+
+    // 5. Verificar que el callback vigente invocó closeActiveContext con el coordinador activo:
+    // La agenda del paciente en el adaptador nativo DEBE quedar cancelada
+    expect(adapter.scheduled.size).toBe(0);
+    // El router fue redirigido a la vista de sesión requerida
+    expect(replacedRoute).toBe('/acceso?motivo=sesion_requerida');
+    // El contexto activo fue invalidado
+    expect(manager.getPatientId()).toBeNull();
+    // La sesión fue cerrada
+    expect(sessionAdapter.getCurrentUser()).toBeNull();
+  });
+
+  it('consulta tardía de handleNotificationOpen no recrea una intención si el contexto ya se cerró', async () => {
+    const db = open();
+    await migrateDatabase(db);
+    await seedPatientContextIfEmpty(db, patientA, patientB);
+
+    const sessionAdapter = new DemoSessionAdapter();
+    const assistantAdapter = new FakeAssistantAdapter();
+    const router = { replace: () => undefined, push: () => undefined };
+
+    const manager = new PatientContextManager({
+      database: db,
+      coordinator: null,
+      sessionAdapter,
+      assistantAdapter,
+      router,
+    });
+
+    await manager.selectPatient(patientA);
+
+    const payloadA: NotificationJobPayload = {
+      version: 1,
+      notificacionId: 'notif-tardia-1',
+      pacienteId: patientA,
+      recordatorioId: 'rec-1',
+      revision: 1,
+      tipo: 'registro_vitales',
+      destino: '/vitales/registrar',
+    };
+
+    // Interceptar temporalmente db.first para intercalar un cierre de contexto mientras la consulta SQLite está en vuelo
+    const originalFirst = db.first.bind(db);
+    db.first = async <T>(sql: string, params?: SqlValue[]): Promise<T | null> => {
+      // Simular latencia y ejecutar closeActiveContext durante la consulta SQLite
+      await manager.closeActiveContext('manual_close');
+      return originalFirst(sql, params);
+    };
+
+    const result = await manager.handleNotificationOpen(payloadA, 'dedupe-tardia');
+
+    // La apertura debió ser rechazada
+    expect(result).toBe(false);
+    // Y NO debe haber recreado ninguna intención pendiente
+    expect(manager.getPendingNotificationIntent()).toBeNull();
   });
 });
