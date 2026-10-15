@@ -97,6 +97,7 @@ type DataContextValue = {
   activeTeardownPromise: Promise<TeardownResult> | null;
   assistantController?: AssistantController | null;
   sessionAdapter: SessionAdapter;
+  manager: PatientContextManager;
 };
 
 const DataContext = createContext<DataContextValue | null>(null);
@@ -411,6 +412,7 @@ export function LocalDataProvider({ children }: { children: ReactNode }) {
       activeTeardownPromise: manager.getActiveTeardownPromise(),
       assistantController: manager.assistantController,
       sessionAdapter: manager.sessionAdapter,
+      manager,
       runSave,
       changePatient,
     }),

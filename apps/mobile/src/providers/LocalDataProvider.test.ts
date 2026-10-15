@@ -869,7 +869,51 @@ describe('LocalDataProvider Context Teardown and Operation Tracking', () => {
     expect(manager.getCompletedNotifications().has(dedupeKey)).toBe(true);
   });
 
-  it('el listener del proveedor recupera y procesa la apertura pendiente al volver a primer plano tras fallo transitorio sin llamar dos veces al gestor', async () => {
+  it('descarte definitivo por registro inexistente tras activar paciente elimina la intención conservada', async () => {
+    const db = open();
+    await migrateDatabase(db);
+    await seedPatientContextIfEmpty(db, patientA, patientB);
+
+    const sessionAdapter = new DemoSessionAdapter();
+    const assistantAdapter = new FakeAssistantAdapter();
+    const router = { replace: () => undefined, push: () => undefined };
+
+    const manager = new PatientContextManager({
+      database: db,
+      sessionAdapter,
+      assistantAdapter,
+      router,
+    });
+
+    const payloadA: NotificationJobPayload = {
+      version: 1,
+      notificacionId: 'notif-inexistente-1',
+      pacienteId: patientA,
+      recordatorioId: 'rec-inexistente',
+      revision: 1,
+      tipo: 'registro_vitales',
+      destino: '/vitales/registrar',
+    };
+    const dedupeKey = `${payloadA.notificacionId}:channel-1`;
+
+    // 1. Llega notificación antes de seleccionar paciente -> guardada como pending_saved
+    const resSave = await manager.handleNotificationOpen(payloadA, dedupeKey);
+    expect(resSave.status).toBe('pending_saved');
+    expect(manager.getPendingNotificationIntent()).not.toBeNull();
+
+    // 2. Seleccionar paciente activa el contexto
+    await manager.selectPatient(patientA);
+
+    // 3. Procesar la intención guardada: en SQLite la notificación no existe
+    const resProcess = await manager.processPendingNotificationIntent();
+    expect(resProcess.status).toBe('discarded');
+    expect(resProcess.navigated).toBe(false);
+
+    // CRÍTICO: La intención DEBE haber sido retirada tras el descarte definitivo
+    expect(manager.getPendingNotificationIntent()).toBeNull();
+  });
+
+  it('descarte definitivo por revisión incompatible durante el reintento elimina la intención conservada', async () => {
     const db = open();
     await migrateDatabase(db);
     await seedPatientContextIfEmpty(db, patientA, patientB);
@@ -892,6 +936,71 @@ describe('LocalDataProvider Context Teardown and Operation Tracking', () => {
 
     const sessionAdapter = new DemoSessionAdapter();
     const assistantAdapter = new FakeAssistantAdapter();
+    const router = { replace: () => undefined, push: () => undefined };
+
+    const manager = new PatientContextManager({
+      database: db,
+      coordinator,
+      sessionAdapter,
+      assistantAdapter,
+      router,
+    });
+
+    await manager.selectPatient(patientA);
+
+    // 1. Simular fallo transitorio en primer intento
+    let simulateFailure = true;
+    const originalFirst = db.first.bind(db);
+    db.first = async <T>(sql: string, params?: SqlValue[]): Promise<T | null> => {
+      if (simulateFailure) {
+        throw new Error('SQLITE_BUSY: locked');
+      }
+      return originalFirst(sql, params);
+    };
+
+    const firstRes = await manager.handleNotificationOpen(payloadA, dedupeKey);
+    expect(firstRes.status).toBe('transient_failure');
+    expect(manager.getPendingNotificationIntent()).not.toBeNull();
+
+    // 2. Se recupera SQLite, pero la revisión de la notificación en BD cambió a una incompatible (ej: regla editada)
+    simulateFailure = false;
+    await db.run('UPDATE notificacion_local SET revision = 99 WHERE id = ?', [
+      payloadA.notificacionId,
+    ]);
+
+    // 3. Reintento procesa la intención guardada: detecta revisión incompatible -> discarded
+    const retryRes = await manager.processPendingNotificationIntent();
+    expect(retryRes.status).toBe('discarded');
+    expect(retryRes.navigated).toBe(false);
+
+    // CRÍTICO: La intención DEBE haber sido retirada tras el descarte definitivo
+    expect(manager.getPendingNotificationIntent()).toBeNull();
+  });
+
+  it('un intento antiguo desfasado no elimina una intención nueva guardada en un contexto posterior', async () => {
+    const db = open();
+    await migrateDatabase(db);
+    await seedPatientContextIfEmpty(db, patientA, patientB);
+
+    const repo = createReminderRepository(db, patientA);
+    await repo.setPreferences(true);
+    await repo.saveRule({
+      tipo: 'registro_vitales',
+      diasSemana: [1, 2, 3, 4, 5, 6, 7],
+      horasMinutos: ['08:00'],
+      zonaHoraria: 'America/Santiago',
+      habilitado: true,
+    });
+    const adapter = new FakeNotificationAdapter();
+    const coordinator = new NotificationCoordinator(db, adapter, () => '2026-10-13T00:00:00Z');
+    await coordinator.reconcile(patientA);
+    const scheduledJobs = Array.from(adapter.scheduled.values());
+    const payloadA = scheduledJobs[0].payload!;
+    const dedupeKeyOld = `${payloadA.notificacionId}:channel-old`;
+    const dedupeKeyNew = `${payloadA.notificacionId}:channel-new`;
+
+    const sessionAdapter = new DemoSessionAdapter();
+    const assistantAdapter = new FakeAssistantAdapter();
     const pushedRoutes: string[] = [];
     const router = {
       replace: () => undefined,
@@ -910,52 +1019,61 @@ describe('LocalDataProvider Context Teardown and Operation Tracking', () => {
 
     await manager.selectPatient(patientA);
 
-    // Simular el registro de listeners que efectúa el proveedor en su ciclo de vida:
-    // 1) Listener de toque de notificación
-    const onNotificationResponse = (data: NotificationJobPayload, key: string) => {
-      void manager.handleNotificationOpen(data, key).catch(() => undefined);
-    };
+    // Pausar la consulta del intento 1 antiguo
+    let resolveFirstQuery!: () => void;
+    const firstQueryPromise = new Promise<void>((r) => {
+      resolveFirstQuery = r;
+    });
 
-    // 2) Listener de AppState (volver a primer plano / active)
-    const onAppStateChange = (state: string) => {
-      if (state === 'active' && manager.getPatientId()) {
-        void manager.processPendingNotificationIntent().catch(() => undefined);
-      }
-    };
-
-    // Configurar fallo transitorio en SQLite
-    let simulateFailure = true;
+    let isFirstCall = true;
     const originalFirst = db.first.bind(db);
     db.first = async <T>(sql: string, params?: SqlValue[]): Promise<T | null> => {
-      if (simulateFailure) {
+      if (isFirstCall) {
+        isFirstCall = false;
+        await firstQueryPromise;
+      }
+      return originalFirst(sql, params);
+    };
+
+    // 1. Intento 1 inicia en contexto A (epoch 1) y queda pausado
+    const promiseAttempt1 = manager.handleNotificationOpen(payloadA, dedupeKeyOld);
+
+    // 2. Conmutar contexto: cerrar A (epoch 2), abrir B (epoch 3), cerrar B (epoch 4), volver a A (epoch 5)
+    await manager.closeActiveContext('change_patient');
+    await manager.selectPatient(patientB);
+    await manager.closeActiveContext('change_patient');
+    await manager.selectPatient(patientA);
+
+    // 3. En contexto nuevo (epoch 5), simular fallo transitorio que guarda una nueva intención
+    let simulateTransientFailure = true;
+    db.first = async <T>(sql: string, params?: SqlValue[]): Promise<T | null> => {
+      if (simulateTransientFailure) {
         throw new Error('SQLITE_BUSY: locked');
       }
       return originalFirst(sql, params);
     };
 
-    // Toque de notificación recibido por el listener del proveedor
-    onNotificationResponse(payloadA, dedupeKey);
+    const newIntentRes = await manager.handleNotificationOpen(payloadA, dedupeKeyNew);
+    expect(newIntentRes.status).toBe('transient_failure');
+    const newPendingIntent = manager.getPendingNotificationIntent();
+    expect(newPendingIntent).not.toBeNull();
+    expect(newPendingIntent?.dedupeKey).toBe(dedupeKeyNew);
 
-    // Esperar a que concluya el intento fallido
-    await new Promise((r) => setTimeout(r, 20));
+    // 4. Despausar intento 1 antiguo: termina con discarded debido al cambio de época
+    resolveFirstQuery();
+    const oldRes = await promiseAttempt1;
+    expect(oldRes.status).toBe('discarded');
 
-    // Comprobar que no hubo navegación y que el gestor retuvo la intención
-    expect(pushedRoutes).toHaveLength(0);
+    // CRÍTICO: El descarte del intento 1 antiguo NO debe haber borrado la intención nueva guardada en epoch 5
     expect(manager.getPendingNotificationIntent()).not.toBeNull();
+    expect(manager.getPendingNotificationIntent()?.dedupeKey).toBe(dedupeKeyNew);
 
-    // Se resuelve el problema transitorio en SQLite
-    simulateFailure = false;
-
-    // La app vuelve al primer plano (evento 'active' de AppState)
-    // El test NO llama al gestor directamente; el listener del proveedor lo activa
-    onAppStateChange('active');
-
-    // Esperar a que concluya la recuperación disparada por el listener de primer plano
-    await new Promise((r) => setTimeout(r, 20));
-
-    // La apertura se recuperó y navegó automáticamente
+    // 5. Se resuelve el fallo transitorio en epoch 5 y el reintento navega exitosamente
+    simulateTransientFailure = false;
+    const retryRes = await manager.processPendingNotificationIntent();
+    expect(retryRes.status).toBe('navigated');
+    expect(retryRes.navigated).toBe(true);
     expect(pushedRoutes).toHaveLength(1);
-    expect(pushedRoutes[0]).toBe('/vitales/registrar');
     expect(manager.getPendingNotificationIntent()).toBeNull();
   });
 });

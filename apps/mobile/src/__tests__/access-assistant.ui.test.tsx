@@ -11,6 +11,8 @@ import {
 } from '@testing-library/react-native';
 import React, { useEffect } from 'react';
 import { DatabaseSync } from 'node:sqlite';
+import { AppState } from 'react-native';
+import type { SqlValue } from '../data/local/core/sql';
 
 jest.setTimeout(15000);
 configure({ asyncUtilTimeout: 8000 });
@@ -157,8 +159,32 @@ jest.mock('expo-sqlite', () => ({
   }),
 }));
 
-// Mock expo-notifications with in-memory store
+// Mock expo-notifications with in-memory store and real listener capture
 const mockScheduledNotifications = new Map<string, unknown>();
+const mockNotificationResponseListeners: Array<
+  (response: {
+    notification: {
+      request: {
+        identifier: string;
+        content: { data: unknown };
+      };
+    };
+  }) => void
+> = [];
+
+const mockAppStateListeners: Array<(state: string) => void> = [];
+jest.spyOn(AppState, 'addEventListener').mockImplementation((event: string, handler: unknown) => {
+  if (event === 'change') {
+    mockAppStateListeners.push(handler as (state: string) => void);
+  }
+  return {
+    remove: jest.fn(() => {
+      const idx = mockAppStateListeners.indexOf(handler as (state: string) => void);
+      if (idx !== -1) mockAppStateListeners.splice(idx, 1);
+    }),
+  } as unknown as ReturnType<typeof AppState.addEventListener>;
+});
+
 jest.mock('expo-notifications', () => ({
   setNotificationHandler: jest.fn(),
   SchedulableTriggerInputTypes: { DATE: 'date' },
@@ -188,6 +214,20 @@ jest.mock('expo-notifications', () => ({
   cancelScheduledNotificationAsync: jest.fn(async (id: string) => {
     mockScheduledNotifications.delete(id);
   }),
+  addNotificationResponseReceivedListener: jest.fn((listener) => {
+    mockNotificationResponseListeners.push(listener);
+    return {
+      remove: jest.fn(() => {
+        const idx = mockNotificationResponseListeners.indexOf(listener);
+        if (idx !== -1) mockNotificationResponseListeners.splice(idx, 1);
+      }),
+    };
+  }),
+  addNotificationReceivedListener: jest.fn(() => ({
+    remove: jest.fn(),
+  })),
+  getLastNotificationResponse: jest.fn(() => null),
+  clearLastNotificationResponse: jest.fn(),
 }));
 
 // Mock environment as demo
@@ -250,6 +290,8 @@ describe('Incremento 6: UI de Acceso, Navegación Raíz, Sesión y Asistente', (
     mockRouteHistory.length = 0;
     mockRouteHistory.push('/');
     mockScheduledNotifications.clear();
+    mockNotificationResponseListeners.length = 0;
+    mockAppStateListeners.length = 0;
   });
 
   afterEach(() => {
@@ -683,6 +725,125 @@ describe('Incremento 6: UI de Acceso, Navegación Raíz, Sesión y Asistente', (
           signal: new AbortController().signal,
         }),
       ).rejects.toThrow('El servicio del asistente no está configurado en este entorno.');
+    });
+  });
+
+  describe('Recuperación de Notificaciones en Primer Plano con Proveedor Real (S-04)', () => {
+    it('el proveedor real recupera y procesa la apertura pendiente al volver a primer plano tras fallo SQL transitorio', async () => {
+      let contextRef: ReturnType<typeof useLocalData> | null = null;
+
+      await render(
+        <LocalDataProvider>
+          <ContextConsumer onReady={(ctx) => (contextRef = ctx)} />
+        </LocalDataProvider>,
+      );
+
+      // Esperar a que la base de datos abra
+      await waitFor(() => {
+        expect(contextRef?.database).toBeTruthy();
+      });
+
+      // Seleccionar paciente activo
+      await act(async () => {
+        await contextRef?.selectPatient(DEMO_PATIENTS[0].id);
+      });
+
+      const notifId = 'notif-ui-foreground-1';
+      const payload = {
+        version: 1,
+        notificacionId: notifId,
+        pacienteId: DEMO_PATIENTS[0].id,
+        recordatorioId: 'rec-ui-1',
+        revision: 1,
+        tipo: 'registro_vitales',
+        destino: '/vitales/registrar',
+      };
+
+      // Insertar recordatorio y notificacion_local válida en la base de datos real del proveedor
+      await act(async () => {
+        const db = contextRef!.database!;
+        await db.run(
+          `INSERT OR REPLACE INTO recordatorio_local (
+             id, paciente_id, tipo, dias_semana, horas_minutos, zona_horaria, habilitado, revision, creado_el, actualizado_el
+           ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+          [
+            payload.recordatorioId,
+            DEMO_PATIENTS[0].id,
+            payload.tipo,
+            '1,2,3',
+            '08:00',
+            'America/Santiago',
+            1,
+            1,
+            new Date().toISOString(),
+            new Date().toISOString(),
+          ],
+        );
+        await db.run(
+          `INSERT OR REPLACE INTO notificacion_local (
+             id, paciente_id, recordatorio_id, revision, tipo, fecha_prevista_utc, estado, payload_minimo, creado_el, actualizado_el
+           ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+          [
+            notifId,
+            DEMO_PATIENTS[0].id,
+            payload.recordatorioId,
+            1,
+            payload.tipo,
+            new Date().toISOString(),
+            'programada',
+            JSON.stringify(payload),
+            new Date().toISOString(),
+            new Date().toISOString(),
+          ],
+        );
+      });
+
+      // Simular fallo transitorio en SQLite (db.first)
+      let simulateFailure = true;
+      const db = contextRef!.database!;
+      const originalFirst = db.first.bind(db);
+      db.first = async <T,>(sql: string, params?: SqlValue[]): Promise<T | null> => {
+        if (simulateFailure) {
+          throw new Error('SQLITE_BUSY: locked');
+        }
+        return originalFirst(sql, params);
+      };
+
+      // Disparar el evento de toque de notificación a través del listener real que registró LocalDataProvider
+      expect(mockNotificationResponseListeners.length).toBeGreaterThan(0);
+      await act(async () => {
+        mockNotificationResponseListeners.forEach((listener) =>
+          listener({
+            notification: {
+              request: {
+                identifier: 'channel-test',
+                content: { data: payload },
+              },
+            },
+          }),
+        );
+      });
+
+      // Esperar por condición verificable: la intención debe quedar retenida en el gestor y no haber navegado aún
+      await waitFor(() => {
+        expect(contextRef?.manager.getPendingNotificationIntent()).not.toBeNull();
+      });
+      expect(mockRouter.push).not.toHaveBeenCalled();
+
+      // Se resuelve el fallo transitorio en SQLite
+      simulateFailure = false;
+
+      // La app vuelve a primer plano (disparando el listener real de AppState suscrito por LocalDataProvider)
+      expect(mockAppStateListeners.length).toBeGreaterThan(0);
+      await act(async () => {
+        mockAppStateListeners.forEach((listener) => listener('active'));
+      });
+
+      // Esperar por condición verificable: LocalDataProvider reintenta y navega automáticamente
+      await waitFor(() => {
+        expect(mockRouter.push).toHaveBeenCalledWith('/vitales/registrar');
+        expect(contextRef?.manager.getPendingNotificationIntent()).toBeNull();
+      });
     });
   });
 });

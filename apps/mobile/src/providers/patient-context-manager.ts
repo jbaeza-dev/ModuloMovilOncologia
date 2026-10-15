@@ -31,10 +31,10 @@ export interface NotificationOpenResult {
 }
 
 export interface PendingNotificationIntent {
+  id: number;
   payload: NotificationJobPayload;
   dedupeKey: string;
-  token?: number;
-  epoch?: number;
+  epoch: number;
 }
 
 export interface RouterAdapter {
@@ -69,6 +69,7 @@ export class PatientContextManager {
   private isClosing = false;
 
   private nextNotificationAttemptToken = 0;
+  private nextNotificationIntentId = 0;
   private inFlightNotifications = new Map<string, number>();
   private completedNotifications = new Set<string>();
   private pendingNotificationIntent: PendingNotificationIntent | null = null;
@@ -319,12 +320,13 @@ export class PatientContextManager {
     if (!this.patientId || pending.payload.pacienteId !== this.patientId || this.isClosing) {
       return { status: 'pending_saved', navigated: false };
     }
-    return this.handleNotificationOpen(pending.payload, pending.dedupeKey);
+    return this.handleNotificationOpen(pending.payload, pending.dedupeKey, pending.id);
   }
 
   async handleNotificationOpen(
     payload: NotificationJobPayload,
     dedupeKey?: string,
+    targetIntentId?: number,
   ): Promise<NotificationOpenResult> {
     let attemptToken: number | null = null;
 
@@ -348,9 +350,9 @@ export class PatientContextManager {
       if (this.isClosing || !currentId || currentId !== payload.pacienteId) {
         if (dedupeKey && !this.isClosing && this.contextEpoch === startEpoch) {
           this.pendingNotificationIntent = {
+            id: ++this.nextNotificationIntentId,
             payload,
             dedupeKey,
-            token: attemptToken ?? undefined,
             epoch: startEpoch,
           };
           status = 'pending_saved';
@@ -465,10 +467,14 @@ export class PatientContextManager {
         if (status === 'transient_failure' && isContextStillValid) {
           // Si ocurrió un fallo transitorio y el contexto sigue vigente,
           // registrar o conservar la intención pendiente para permitir reintentos posteriores.
+          const existingId =
+            this.pendingNotificationIntent?.dedupeKey === dedupeKey
+              ? this.pendingNotificationIntent.id
+              : ++this.nextNotificationIntentId;
           this.pendingNotificationIntent = {
+            id: existingId,
             payload,
             dedupeKey,
-            token: attemptToken ?? undefined,
             epoch: startEpoch,
           };
         } else if (
@@ -480,16 +486,17 @@ export class PatientContextManager {
           this.pendingNotificationIntent = null;
         } else if (
           status === 'discarded' &&
+          isContextStillValid &&
           this.pendingNotificationIntent?.dedupeKey === dedupeKey
         ) {
-          // Solo retirar la intención pendiente ante descarte si pertenece a este mismo intento/época.
-          // Un descarte de un intento antiguo o desfasado NO debe eliminar una intención pendiente nueva.
-          const isOwnedByThisAttempt =
-            attemptToken !== null && this.pendingNotificationIntent.token !== undefined
-              ? this.pendingNotificationIntent.token === attemptToken
+          // Si el contexto sigue vigente y este intento descartó definitivamente la intención:
+          // Solo retirarla si la intención no ha sido reemplazada por una posterior.
+          const isTargetIntentStillActive =
+            targetIntentId !== undefined
+              ? this.pendingNotificationIntent.id === targetIntentId
               : this.pendingNotificationIntent.epoch === startEpoch;
 
-          if (isOwnedByThisAttempt) {
+          if (isTargetIntentStillActive) {
             this.pendingNotificationIntent = null;
           }
         }
