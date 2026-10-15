@@ -33,6 +33,8 @@ export interface NotificationOpenResult {
 export interface PendingNotificationIntent {
   payload: NotificationJobPayload;
   dedupeKey: string;
+  token?: number;
+  epoch?: number;
 }
 
 export interface RouterAdapter {
@@ -66,7 +68,8 @@ export class PatientContextManager {
   private activeTeardownPromise: Promise<TeardownResult> | null = null;
   private isClosing = false;
 
-  private inFlightNotifications = new Set<string>();
+  private nextNotificationAttemptToken = 0;
+  private inFlightNotifications = new Map<string, number>();
   private completedNotifications = new Set<string>();
   private pendingNotificationIntent: PendingNotificationIntent | null = null;
 
@@ -136,7 +139,7 @@ export class PatientContextManager {
   }
 
   getInFlightNotifications(): Set<string> {
-    return this.inFlightNotifications;
+    return new Set(this.inFlightNotifications.keys());
   }
 
   getCompletedNotifications(): Set<string> {
@@ -323,26 +326,33 @@ export class PatientContextManager {
     payload: NotificationJobPayload,
     dedupeKey?: string,
   ): Promise<NotificationOpenResult> {
+    let attemptToken: number | null = null;
+
     // 1. Verificación centralizada de deduplicación
     if (dedupeKey) {
       if (this.completedNotifications.has(dedupeKey) || this.inFlightNotifications.has(dedupeKey)) {
         return { status: 'duplicate', navigated: false };
       }
-      // Registrar el procesamiento en vuelo ANTES de cualquier operación asíncrona / primer await
-      this.inFlightNotifications.add(dedupeKey);
+      attemptToken = ++this.nextNotificationAttemptToken;
+      // Registrar el procesamiento en vuelo con su token único ANTES de cualquier await
+      this.inFlightNotifications.set(dedupeKey, attemptToken);
     }
 
     let navigatedSuccessfully = false;
     let status: NotificationOpenStatus = 'discarded';
+    const startEpoch = this.contextEpoch;
+    const currentId = this.patientId;
 
     try {
-      const startEpoch = this.contextEpoch;
-      const currentId = this.patientId;
-
       // Si el contexto está en cierre, o no hay paciente activo, o no coincide con el payload
       if (this.isClosing || !currentId || currentId !== payload.pacienteId) {
         if (dedupeKey && !this.isClosing && this.contextEpoch === startEpoch) {
-          this.pendingNotificationIntent = { payload, dedupeKey };
+          this.pendingNotificationIntent = {
+            payload,
+            dedupeKey,
+            token: attemptToken ?? undefined,
+            epoch: startEpoch,
+          };
           status = 'pending_saved';
           return { status, navigated: false };
         }
@@ -430,27 +440,59 @@ export class PatientContextManager {
       status = 'transient_failure';
       return { status, navigated: false, error: unexpectedErr };
     } finally {
-      // 1. Liberar inFlight siempre en finally
-      if (dedupeKey) {
-        this.inFlightNotifications.delete(dedupeKey);
-        // 2. Marcar como completado ÚNICAMENTE tras navegación exitosa
-        if (navigatedSuccessfully) {
+      // 1. Liberar inFlight ÚNICAMENTE si la reserva registrada sigue siendo la de este intento específico
+      if (dedupeKey && attemptToken !== null) {
+        if (this.inFlightNotifications.get(dedupeKey) === attemptToken) {
+          this.inFlightNotifications.delete(dedupeKey);
+        }
+        // 2. Marcar como completado ÚNICAMENTE tras navegación exitosa en el contexto vigente
+        if (
+          navigatedSuccessfully &&
+          this.contextEpoch === startEpoch &&
+          this.patientId === currentId
+        ) {
           this.completedNotifications.add(dedupeKey);
         }
       }
 
       // 3. Gestión de intención pendiente:
-      // Si la intención pendiente coincide con la clave procesada:
-      // - Si navegó, fue descartada definitivamente o fue detectada como duplicado:
-      //   retirar la intención pendiente.
-      // - Si el resultado fue 'transient_failure' o 'pending_saved':
-      //   SE CONSERVA para permitir reintentos cuando el entorno/SQLite esté listo.
-      if (
-        dedupeKey &&
-        this.pendingNotificationIntent?.dedupeKey === dedupeKey &&
-        (status === 'navigated' || status === 'discarded')
-      ) {
-        this.pendingNotificationIntent = null;
+      if (dedupeKey) {
+        const isContextStillValid =
+          !this.isClosing &&
+          this.contextEpoch === startEpoch &&
+          this.patientId === payload.pacienteId;
+
+        if (status === 'transient_failure' && isContextStillValid) {
+          // Si ocurrió un fallo transitorio y el contexto sigue vigente,
+          // registrar o conservar la intención pendiente para permitir reintentos posteriores.
+          this.pendingNotificationIntent = {
+            payload,
+            dedupeKey,
+            token: attemptToken ?? undefined,
+            epoch: startEpoch,
+          };
+        } else if (
+          status === 'navigated' &&
+          isContextStillValid &&
+          this.pendingNotificationIntent?.dedupeKey === dedupeKey
+        ) {
+          // Si la apertura navegó con éxito en el contexto actual, retirar la intención pendiente
+          this.pendingNotificationIntent = null;
+        } else if (
+          status === 'discarded' &&
+          this.pendingNotificationIntent?.dedupeKey === dedupeKey
+        ) {
+          // Solo retirar la intención pendiente ante descarte si pertenece a este mismo intento/época.
+          // Un descarte de un intento antiguo o desfasado NO debe eliminar una intención pendiente nueva.
+          const isOwnedByThisAttempt =
+            attemptToken !== null && this.pendingNotificationIntent.token !== undefined
+              ? this.pendingNotificationIntent.token === attemptToken
+              : this.pendingNotificationIntent.epoch === startEpoch;
+
+          if (isOwnedByThisAttempt) {
+            this.pendingNotificationIntent = null;
+          }
+        }
       }
     }
   }

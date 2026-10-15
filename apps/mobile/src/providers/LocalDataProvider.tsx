@@ -45,9 +45,10 @@ import {
   type CloseReason,
   type TeardownResult,
   type RouterAdapter,
+  type NotificationOpenResult,
 } from './patient-context-manager';
 
-export type { CloseReason, TeardownResult };
+export type { CloseReason, TeardownResult, NotificationOpenResult };
 
 try {
   Notifications.setNotificationHandler({
@@ -87,6 +88,7 @@ type DataContextValue = {
   formImportWarning: FormImportWarning | null;
   retryFormImport: () => Promise<void>;
   reconcileReminders: (targetPatientId?: string) => Promise<CoordinatorResult | undefined>;
+  retryPendingNotification: () => Promise<NotificationOpenResult>;
   runSave: <T>(work: () => Promise<T>) => Promise<T>;
   trackOperation: <T>(operation: () => Promise<T>) => Promise<T>;
   closeActiveContext: (reason?: CloseReason) => Promise<TeardownResult>;
@@ -292,11 +294,16 @@ export function LocalDataProvider({ children }: { children: ReactNode }) {
     }
   }, [patientId, coordinator, reconcileReminders]);
 
-  // Reconciliación al volver a primer plano (AppState active)
+  // Reconciliación y reintento de aperturas pendientes al volver a primer plano (AppState active)
   useEffect(() => {
     const subscription = AppState.addEventListener('change', (nextState) => {
-      if (nextState === 'active' && manager.getPatientId() && coordinator) {
-        void reconcileReminders();
+      if (nextState === 'active' && manager.getPatientId()) {
+        void manager.processPendingNotificationIntent().catch((err) => {
+          console.warn('Error al procesar notificación pendiente al volver a primer plano:', err);
+        });
+        if (coordinator) {
+          void reconcileReminders();
+        }
       }
     });
     return () => {
@@ -379,6 +386,10 @@ export function LocalDataProvider({ children }: { children: ReactNode }) {
     [manager],
   );
 
+  const retryPendingNotification = useCallback(async (): Promise<NotificationOpenResult> => {
+    return manager.processPendingNotificationIntent();
+  }, [manager]);
+
   const context = useMemo<DataContextValue>(
     () => ({
       database,
@@ -392,6 +403,7 @@ export function LocalDataProvider({ children }: { children: ReactNode }) {
       formImportWarning,
       retryFormImport,
       reconcileReminders,
+      retryPendingNotification,
       isClosing,
       closeActiveContext,
       selectPatient,
@@ -415,6 +427,7 @@ export function LocalDataProvider({ children }: { children: ReactNode }) {
       formImportWarning,
       retryFormImport,
       reconcileReminders,
+      retryPendingNotification,
       closeActiveContext,
       selectPatient,
       trackOperation,
