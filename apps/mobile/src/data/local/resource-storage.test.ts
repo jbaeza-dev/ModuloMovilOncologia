@@ -14,6 +14,7 @@ import {
   isPathInPatientResourceDirectory,
   isResourceFileForContent,
   readResourceFile,
+  reconcileResourceCopies,
   registerActiveWrite,
   resourceFileExists,
   saveResourceWithCompensation,
@@ -499,5 +500,364 @@ describe('guardado seguro con compensación y control de escrituras en curso', (
     // No debe borrarse el archivo recién confirmado
     expect(concilResult.cleanedOrphans).toBe(0);
     expect(await adapter.exists(newlySavedFile)).toBe(true);
+  });
+});
+
+describe('almacenamiento multimedia educativo y compensación de colisiones', () => {
+  it('guarda infografía PNG binaria calculando tamaño y SHA-256 sobre sus bytes reales', async () => {
+    const tempDir = createTempDir();
+    const resolver = (p: string) => join(tempDir, 'recursos_educativos', p);
+
+    // PNG mock de 8 bytes
+    const pngBytes = new Uint8Array([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a]);
+    const persistedMetaHolder: {
+      current?: {
+        tamanoBytes: number;
+        metadataLocal: { sha256?: string };
+        formato: string;
+      };
+    } = {};
+
+    const { saveEducationalMediaWithCompensation } = await import('./files/educational-storage');
+
+    const result = await saveEducationalMediaWithCompensation({
+      pacienteId: patientA,
+      contenidoId: 'edu-infografia-1',
+      formato: 'png',
+      content: pngBytes,
+      versionOrigen: '1.0.0',
+      mimeType: 'image/png',
+      persistCopyInTx: async (params) => {
+        persistedMetaHolder.current = params;
+      },
+      adapter,
+      baseDirResolver: resolver,
+    });
+
+    expect(result.tamanoBytes).toBe(8);
+    expect(result.sha256).toMatch(/^[a-f0-9]{64}$/);
+    expect(persistedMetaHolder.current?.tamanoBytes).toBe(8);
+    expect(persistedMetaHolder.current?.metadataLocal.sha256).toBe(result.sha256);
+    expect(persistedMetaHolder.current?.formato).toBe('png');
+    expect(adapter.exists(result.uri)).toBe(true);
+
+    const readBack = await adapter.readBinary!(result.uri);
+    expect(Array.from(readBack)).toEqual(Array.from(pngBytes));
+  });
+
+  it('elimina archivo creado si persistCopyInTx falla antes del commit', async () => {
+    const tempDir = createTempDir();
+    const resolver = (p: string) => join(tempDir, 'recursos_educativos', p);
+
+    const { saveEducationalMediaWithCompensation } = await import('./files/educational-storage');
+
+    let createdUri = '';
+
+    await expect(
+      saveEducationalMediaWithCompensation({
+        pacienteId: patientA,
+        contenidoId: 'edu-infografia-error',
+        formato: 'png',
+        content: new Uint8Array([1, 2, 3]),
+        persistCopyInTx: async (params) => {
+          createdUri = params.rutaLocal;
+          throw new Error('Fallo de base de datos antes del commit');
+        },
+        adapter,
+        baseDirResolver: resolver,
+      }),
+    ).rejects.toThrow('Fallo de base de datos');
+
+    expect(createdUri).toBeTruthy();
+    expect(adapter.exists(createdUri)).toBe(false);
+  });
+
+  it('colisión con adaptador real: si moveFile falla porque el destino ya existe, la compensación conserva el destino preexistente', async () => {
+    const tempDir = createTempDir();
+    const resolver = (p: string) => join(tempDir, 'recursos_educativos', p);
+    const patientDir = resolver(patientA);
+    await adapter.ensureDirectory(patientDir);
+
+    const { saveEducationalMediaWithCompensation } = await import('./files/educational-storage');
+
+    // Token determinista para forzar misma ruta destino
+    const fixedToken = 'edu-infografia-colision.fixed-token';
+    const initialBytes = new Uint8Array([7, 8, 9]);
+    const collidingBytes = new Uint8Array([1, 2, 3]);
+
+    // 1. Guardar primer archivo legítimo en el destino
+    const firstResult = await saveEducationalMediaWithCompensation({
+      pacienteId: patientA,
+      contenidoId: 'edu-infografia-colision',
+      formato: 'png',
+      content: initialBytes,
+      tokenGenerator: () => fixedToken,
+      persistCopyInTx: async () => {},
+      adapter,
+      baseDirResolver: resolver,
+    });
+
+    expect(adapter.exists(firstResult.uri)).toBe(true);
+    const readInitial = await adapter.readBinary!(firstResult.uri);
+    expect(Array.from(readInitial)).toEqual([7, 8, 9]);
+
+    // 2. Segundo intento sobre el mismo destino usando el adaptador real NodeFileStorageAdapter
+    // Dado que overwrite es false, moveFile rechazará con error al detectar el destino
+    await expect(
+      saveEducationalMediaWithCompensation({
+        pacienteId: patientA,
+        contenidoId: 'edu-infografia-colision',
+        formato: 'png',
+        content: collidingBytes,
+        tokenGenerator: () => fixedToken,
+        persistCopyInTx: async () => {},
+        adapter,
+        baseDirResolver: resolver,
+      }),
+    ).rejects.toThrow(/ya existe/i);
+
+    // 3. Comprobación de propiedad y preservación:
+    // - El temporal del segundo intento fue limpiado por compensación
+    const tmpUri = join(patientDir, `${fixedToken}.tmp`);
+    expect(adapter.exists(tmpUri)).toBe(false);
+
+    // - El destino original del primer intento se conservó intacto con sus bytes originales
+    expect(adapter.exists(firstResult.uri)).toBe(true);
+    const preservedBytes = await adapter.readBinary!(firstResult.uri);
+    expect(Array.from(preservedBytes)).toEqual([7, 8, 9]);
+  });
+
+  it('compensación parcial: limpia el archivo temporal si la escritura falla antes de completarse', async () => {
+    const tempDir = createTempDir();
+    const resolver = (p: string) => join(tempDir, 'recursos_educativos', p);
+    const patientDir = resolver(patientA);
+    await adapter.ensureDirectory(patientDir);
+
+    const { saveEducationalMediaWithCompensation } = await import('./files/educational-storage');
+
+    const fixedToken = 'edu-parcial.fixed-token';
+    const tmpUri = join(patientDir, `${fixedToken}.tmp`);
+
+    // Adaptador espía que escribe temporal pero luego lanza error simulando fallo de I/O parcial
+    const partialFailureAdapter: FileStorageAdapter = Object.assign(Object.create(adapter), {
+      async writeBinary(targetPath: string, content: Uint8Array) {
+        // Escribe físicamente bytes parciales en disco antes de fallar
+        await adapter.writeBinary!(targetPath, content.slice(0, 2));
+        throw new Error('FALLO_IO_PARCIAL: Espacio insuficiente en disco');
+      },
+    });
+
+    await expect(
+      saveEducationalMediaWithCompensation({
+        pacienteId: patientA,
+        contenidoId: 'edu-parcial',
+        formato: 'png',
+        content: new Uint8Array([1, 2, 3, 4]),
+        tokenGenerator: () => fixedToken,
+        persistCopyInTx: async () => {},
+        adapter: partialFailureAdapter,
+        baseDirResolver: resolver,
+      }),
+    ).rejects.toThrow('FALLO_IO_PARCIAL');
+
+    // La compensación debe haber limpiado el temporal parcial dejado en disco
+    expect(adapter.exists(tmpUri)).toBe(false);
+  });
+
+  it('deleteResourceFile verifica eliminación física y distingue ausencia confirmada de fallo', async () => {
+    const tempDir = createTempDir();
+    const resolver = (p: string) => join(tempDir, 'recursos_educativos', p);
+    const patientDir = resolver(patientA);
+    await adapter.ensureDirectory(patientDir);
+
+    const targetFile = join(patientDir, 'edu-prueba.png');
+    await adapter.writeBinary!(targetFile, new Uint8Array([1, 2, 3]));
+    expect(adapter.exists(targetFile)).toBe(true);
+
+    // 1. Eliminación física confirmada cuando el archivo existe
+    const deleted = await deleteResourceFile(patientA, 'edu-prueba', targetFile, adapter, resolver);
+    expect(deleted).toBe(true);
+    expect(adapter.exists(targetFile)).toBe(false);
+
+    // 2. Ausencia confirmada cuando el archivo ya no existe físicamente en disco -> retorna true
+    const alreadyAbsent = await deleteResourceFile(
+      patientA,
+      'edu-prueba',
+      targetFile,
+      adapter,
+      resolver,
+    );
+    expect(alreadyAbsent).toBe(true);
+
+    // 3. Fallo cuando el sistema de archivos no puede eliminar el archivo
+    await adapter.writeBinary!(targetFile, new Uint8Array([1, 2, 3]));
+    const lockedAdapter: FileStorageAdapter = Object.assign(Object.create(adapter), {
+      async deleteFile() {
+        return false; // Falla la eliminación
+      },
+    });
+    const failedDelete = await deleteResourceFile(
+      patientA,
+      'edu-prueba',
+      targetFile,
+      lockedAdapter,
+      resolver,
+    );
+    expect(failedDelete).toBe(false);
+    expect(adapter.exists(targetFile)).toBe(true);
+  });
+
+  it('deleteResourceFile propaga errores de acceso en exists() en lugar de tratarlos como ausencia', async () => {
+    const tempDir = createTempDir();
+    const resolver = (p: string) => join(tempDir, 'recursos_educativos', p);
+    const patientDir = resolver(patientA);
+    await adapter.ensureDirectory(patientDir);
+
+    const targetFile = join(patientDir, 'edu-prueba.png');
+    await adapter.writeBinary!(targetFile, new Uint8Array([1, 2, 3]));
+    expect(adapter.exists(targetFile)).toBe(true);
+
+    // Inyectar fallo de acceso / permisos en exists()
+    const errorAdapter: FileStorageAdapter = Object.assign(Object.create(adapter), {
+      exists(p: string) {
+        if (p === targetFile) {
+          throw new Error('EACCES: permission denied');
+        }
+        return adapter.exists(p);
+      },
+    });
+
+    // Debe propagar la excepción de consulta en lugar de retornar true (que causaría borrado de SQLite)
+    await expect(
+      deleteResourceFile(patientA, 'edu-prueba', targetFile, errorAdapter, resolver),
+    ).rejects.toThrow('EACCES: permission denied');
+
+    // El archivo físico sigue intacto en disco
+    expect(adapter.exists(targetFile)).toBe(true);
+  });
+
+  it('saveEducationalMediaWithCompensation limpia copia anterior tras confirmar la nueva', async () => {
+    const tempDir = createTempDir();
+    const resolver = (p: string) => join(tempDir, 'recursos_educativos', p);
+    const { saveEducationalMediaWithCompensation } = await import('./files/educational-storage');
+
+    // Guardado 1: Primera versión
+    const res1 = await saveEducationalMediaWithCompensation({
+      pacienteId: patientA,
+      contenidoId: 'edu-infografia',
+      formato: 'png',
+      content: new Uint8Array([1, 2, 3]),
+      adapter,
+      baseDirResolver: resolver,
+      persistCopyInTx: async () => {},
+    });
+    expect(adapter.exists(res1.uri)).toBe(true);
+
+    // Guardado 2: Reemplazo pasando previousRutaLocal
+    const res2 = await saveEducationalMediaWithCompensation({
+      pacienteId: patientA,
+      contenidoId: 'edu-infografia',
+      formato: 'png',
+      content: new Uint8Array([4, 5, 6]),
+      previousRutaLocal: res1.uri,
+      adapter,
+      baseDirResolver: resolver,
+      persistCopyInTx: async () => {},
+    });
+    expect(adapter.exists(res2.uri)).toBe(true);
+
+    // La copia anterior res1.uri debe haber sido limpiada del almacenamiento
+    expect(adapter.exists(res1.uri)).toBe(false);
+  });
+
+  it('reconcileResourceCopies contempla PNG/JPEG, limpia huérfanos y preserva archivos desconocidos', async () => {
+    const tempDir = createTempDir();
+    const resolver = (p: string) => join(tempDir, 'recursos_educativos', p);
+    const patientDir = resolver(patientA);
+    await adapter.ensureDirectory(patientDir);
+
+    // 1. Archivo PNG huérfano legítimo (antigua versión reemplazada)
+    const orphanPng = join(patientDir, 'edu-infografia.1700000000000.uuid1.png');
+    await adapter.writeBinary!(orphanPng, new Uint8Array([1, 2, 3]));
+
+    // 2. Archivo PNG activo en base de datos
+    const activePng = join(patientDir, 'edu-infografia.1700000001000.uuid2.png');
+    await adapter.writeBinary!(activePng, new Uint8Array([4, 5, 6]));
+
+    // 3. Archivos desconocidos que no son recursos educativos (deben preservarse)
+    const unknownFile = join(patientDir, 'mi_foto_personal.png');
+    await adapter.writeBinary!(unknownFile, new Uint8Array([9, 9, 9]));
+
+    const unknownDoc = join(patientDir, 'documento.pdf');
+    await adapter.writeBinary!(unknownDoc, new Uint8Array([8, 8, 8]));
+
+    const fakeRepo = {
+      async downloads() {
+        return [
+          {
+            contenido_id: 'edu-infografia',
+            ruta_local: activePng,
+            estado: 'descargado',
+          },
+        ];
+      },
+      async markDownloadUnavailable() {},
+    };
+
+    const result = await reconcileResourceCopies(patientA, fakeRepo, adapter, resolver);
+
+    // Debe limpiar el PNG huérfano
+    expect(result.cleanedOrphans).toBe(1);
+    expect(adapter.exists(orphanPng)).toBe(false);
+
+    // Debe conservar el PNG activo de SQLite
+    expect(adapter.exists(activePng)).toBe(true);
+
+    // Debe preservar intactos los archivos desconocidos
+    expect(adapter.exists(unknownFile)).toBe(true);
+    expect(adapter.exists(unknownDoc)).toBe(true);
+  });
+
+  it('reconcileResourceCopies conserva el estado previo y no marca como no disponible ante un error de acceso a disco', async () => {
+    const tempDir = createTempDir();
+    const resolver = (p: string) => join(tempDir, 'recursos_educativos', p);
+    const patientDir = resolver(patientA);
+    await adapter.ensureDirectory(patientDir);
+
+    const activeMd = join(patientDir, 'edu-guia.1700000000000.uuid.md');
+    await adapter.writeText(activeMd, '# Guia');
+
+    let markUnavailableCalled = false;
+    const fakeRepo = {
+      async downloads() {
+        return [
+          {
+            contenido_id: 'edu-guia',
+            ruta_local: activeMd,
+            estado: 'descargado',
+          },
+        ];
+      },
+      async markDownloadUnavailable() {
+        markUnavailableCalled = true;
+      },
+    };
+
+    class AccessErrorAdapter extends NodeFileStorageAdapter {
+      override exists(p: string): boolean {
+        if (p === activeMd) {
+          throw new Error('EACCES: permission denied, stat');
+        }
+        return super.exists(p);
+      }
+    }
+
+    const failingAdapter = new AccessErrorAdapter();
+    const result = await reconcileResourceCopies(patientA, fakeRepo, failingAdapter, resolver);
+
+    // Ante el fallo de acceso, no debe marcarse como ausente en SQLite ni eliminarse
+    expect(markUnavailableCalled).toBe(false);
+    expect(result.markedUnavailable).toBe(0);
+    expect(result.cleanedOrphans).toBe(0);
   });
 });

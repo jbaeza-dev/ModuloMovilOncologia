@@ -1,14 +1,27 @@
 import Feather from '@expo/vector-icons/Feather';
 import type { ReactNode } from 'react';
-import { type DimensionValue, Pressable, StyleSheet, Text, TextInput, View } from 'react-native';
+import {
+  type DimensionValue,
+  Pressable,
+  type StyleProp,
+  StyleSheet,
+  Text,
+  TextInput,
+  type TextStyle,
+  View,
+} from 'react-native';
 
 import { useAppTheme } from '../providers/ThemeProvider';
+import { isDemoMode } from '../utils/environment';
 import { theme } from '../theme';
 import type { IconName } from './NavigationCard';
 
 export function DemoBadge() {
   const styles = useStyles();
-  return <Text style={styles.demo}>VISTA DE DEMOSTRACIÓN · DATOS FICTICIOS</Text>;
+  if (isDemoMode()) {
+    return <Text style={styles.demo}>VISTA DE DEMOSTRACIÓN · DATOS FICTICIOS</Text>;
+  }
+  return null;
 }
 
 export function SectionTitle({ children }: { children: ReactNode }) {
@@ -25,14 +38,26 @@ export function InfoCard({ children }: { children: ReactNode }) {
   return <View style={styles.card}>{children}</View>;
 }
 
-export function BodyText({ children }: { children: ReactNode }) {
+export function BodyText({
+  children,
+  style,
+}: {
+  children: ReactNode;
+  style?: StyleProp<TextStyle>;
+}) {
   const styles = useStyles();
-  return <Text style={styles.body}>{children}</Text>;
+  return <Text style={[styles.body, style]}>{children}</Text>;
 }
 
-export function StatusPill({ children }: { children: ReactNode }) {
+export function StatusPill({
+  children,
+  variant,
+}: {
+  children: ReactNode;
+  variant?: 'default' | 'danger';
+}) {
   const styles = useStyles();
-  return <Text style={styles.pill}>{children}</Text>;
+  return <Text style={[styles.pill, variant === 'danger' && styles.dangerPill]}>{children}</Text>;
 }
 
 type ButtonProps = {
@@ -66,15 +91,16 @@ export function VisualButton({ label, onPress, secondary = false, disabled = fal
 type FieldProps = {
   label: string;
   value: string;
-  onChangeText: (value: string) => void;
+  onChangeText?: (value: string) => void;
   placeholder?: string;
   secureTextEntry?: boolean;
   keyboardType?: 'default' | 'email-address' | 'numeric' | 'phone-pad';
   multiline?: boolean;
   maxLength?: number;
+  editable?: boolean;
 };
 
-export function VisualField({ label, ...input }: FieldProps) {
+export function VisualField({ label, editable = true, ...input }: FieldProps) {
   const styles = useStyles();
   const { theme: appTheme } = useAppTheme();
   return (
@@ -82,10 +108,15 @@ export function VisualField({ label, ...input }: FieldProps) {
       <Text style={styles.fieldLabel}>{label}</Text>
       <TextInput
         {...input}
+        editable={editable}
         accessibilityLabel={label}
         autoCapitalize={input.keyboardType === 'email-address' ? 'none' : 'sentences'}
         placeholderTextColor={appTheme.colors.secondary}
-        style={[styles.input, input.multiline && styles.multilineInput]}
+        style={[
+          styles.input,
+          input.multiline && styles.multilineInput,
+          editable === false && styles.disabledInput,
+        ]}
       />
     </View>
   );
@@ -190,6 +221,10 @@ function useStyles() {
       fontSize: 13,
       fontWeight: '600',
     },
+    dangerPill: {
+      backgroundColor: colors.error,
+      color: '#FFFFFF',
+    },
     button: {
       minHeight: 52,
       paddingHorizontal: theme.spacing.md,
@@ -217,6 +252,11 @@ function useStyles() {
       backgroundColor: colors.surface,
       color: colors.text,
       fontSize: 16,
+    },
+    disabledInput: {
+      backgroundColor: colors.mutedSurface,
+      opacity: 0.6,
+      color: colors.secondary,
     },
     multilineInput: { minHeight: 112, textAlignVertical: 'top', paddingVertical: theme.spacing.md },
     row: {

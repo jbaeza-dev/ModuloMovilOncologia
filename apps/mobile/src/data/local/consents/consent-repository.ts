@@ -6,6 +6,12 @@ import type {
 } from './consent-types';
 import type { SqlConnection } from '../core/sql';
 
+export async function listCachedTerms(database: SqlConnection): Promise<TermDefinitionRecord[]> {
+  return database.all<TermDefinitionRecord>(
+    'SELECT * FROM definicion_terminos_cache ORDER BY titulo ASC, version ASC',
+  );
+}
+
 export function createConsentRepository(
   database: SqlConnection,
   patientId: string,
@@ -19,9 +25,7 @@ export function createConsentRepository(
 ) {
   return {
     async listTerms(): Promise<TermDefinitionRecord[]> {
-      return database.all<TermDefinitionRecord>(
-        'SELECT * FROM definicion_terminos_cache ORDER BY titulo ASC, version ASC',
-      );
+      return listCachedTerms(database);
     },
 
     async getTerm(terminoId: string, version: string): Promise<TermDefinitionRecord | null> {

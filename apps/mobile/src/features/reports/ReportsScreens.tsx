@@ -150,7 +150,7 @@ export function ReportsScreen() {
     setReportFeedback(null);
     setReportError(null);
     try {
-      const ok = await deletePatientReport(patientId, filename);
+      const ok = await runSave(() => deletePatientReport(patientId, filename));
       if (!isMountedRef.current || !isFocusedRef.current) return;
       if (ok) {
         setReportFeedback('Reporte eliminado del almacenamiento local.');

@@ -4,7 +4,6 @@ import { StyleSheet, Text, View } from 'react-native';
 import { NavigationCard } from '../../components/NavigationCard';
 import { Screen } from '../../components/Screen';
 import {
-  BodyText,
   DetailRow,
   InfoCard,
   SectionTitle,
@@ -21,7 +20,7 @@ import { isDemoMode } from '../../utils/environment';
 export function HomeScreen() {
   const { theme: appTheme } = useAppTheme();
   const styles = createStyles(appTheme.colors);
-  const { repository, patientId, changePatient, saving } = useLocalData();
+  const { repository, patientId, changePatient, saving, isClosing } = useLocalData();
   const load = useCallback(
     () => (repository ? repository.latestVital() : Promise.resolve(null)),
     [repository],
@@ -43,18 +42,17 @@ export function HomeScreen() {
       </View>
       {isDemoMode() ? (
         <InfoCard>
-          <BodyText>
-            Datos sintéticos · {DEMO_PATIENTS.find((patient) => patient.id === patientId)?.label}
-          </BodyText>
-          <BodyText>
-            Datos de prueba locales guardados en este dispositivo. No representan una sesión
-            autenticada ni sustituyen una evaluación médica.
-          </BodyText>
+          <View style={styles.row}>
+            <Text style={styles.cardTitle}>Paciente activo</Text>
+            <StatusPill>
+              {DEMO_PATIENTS.find((patient) => patient.id === patientId)?.label ?? 'Paciente'}
+            </StatusPill>
+          </View>
           <VisualButton
-            label="Cambiar paciente de prueba"
+            label={isClosing ? 'Cerrando contexto…' : 'Cambiar paciente'}
             secondary
-            disabled={saving}
-            onPress={changePatient}
+            disabled={saving || isClosing}
+            onPress={() => void changePatient()}
           />
         </InfoCard>
       ) : null}
@@ -80,14 +78,11 @@ export function HomeScreen() {
           <InfoCard>
             <View style={styles.row}>
               <Text style={styles.cardTitle}>Último registro</Text>
-              <StatusPill>Pendiente de envío</StatusPill>
+              <StatusPill>Registrado localmente</StatusPill>
             </View>
             <DetailRow label="Fecha" value={formatDate(latest.fecha_registro)} />
             <DetailRow label="Temperatura" value={formatVital(latest.temperatura, '°C')} />
             <DetailRow label="Pulso" value={formatVital(latest.pulso, 'lpm')} />
-            <Text style={styles.helper}>
-              Datos sintéticos locales; no representan una evaluación clínica.
-            </Text>
           </InfoCard>
         )}
         <NavigationCard
@@ -111,6 +106,18 @@ export function HomeScreen() {
           description="Espacio de orientación visual."
           icon="message-circle"
           href="/asistente"
+        />
+        <NavigationCard
+          title="Recordatorios locales"
+          description="Avisos configurados en este dispositivo para signos y medicación."
+          icon="clock"
+          href="/recordatorios"
+        />
+        <NavigationCard
+          title="Bandeja de avisos"
+          description="Historial y estado de los recordatorios planificados."
+          icon="bell"
+          href="/avisos"
         />
         {__DEV__ ? (
           <NavigationCard

@@ -72,6 +72,10 @@ class File {
     return fs.readFileSync(this.uri, 'utf-8');
   }
 
+  async bytes() {
+    return new Uint8Array(fs.readFileSync(this.uri));
+  }
+
   async write(content) {
     const parent = path.dirname(this.uri);
     if (!fs.existsSync(parent)) {

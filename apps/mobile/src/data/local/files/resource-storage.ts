@@ -105,27 +105,94 @@ export function getPatientResourceDirectory(pacienteId: string): Directory {
  * - Con options.allowLegacy = true, acepta también el formato anterior con guion bajo: `${contenidoId}_${timestamp}.md`
  *   (para dar soporte a rutas exactas ya registradas en SQLite sin reintroducir barridos ambiguos por prefijo).
  */
+const VALID_EDUCATIONAL_EXTS = new Set(['md', 'png', 'jpg', 'jpeg']);
+
 export function isResourceFileForContent(
   fileName: string,
   contenidoId: string,
-  options?: { allowLegacy?: boolean },
+  options?: { allowLegacy?: boolean; validExtensions?: string[] },
 ): boolean {
   assertSafeId(contenidoId, 'contenidoId');
-  if (fileName === `${contenidoId}.md`) return true;
+  const allowed = options?.validExtensions
+    ? new Set(options.validExtensions.map((e) => e.replace(/^\./, '').toLowerCase()))
+    : VALID_EDUCATIONAL_EXTS;
+
+  const dotIdx = fileName.lastIndexOf('.');
+  if (dotIdx <= 0) return false;
+  const ext = fileName.slice(dotIdx + 1).toLowerCase();
+  if (!allowed.has(ext)) return false;
+
+  const nameWithoutExt = fileName.slice(0, dotIdx);
+  if (nameWithoutExt === contenidoId) return true;
 
   // Formato estándar delimitado por punto
   const prefix = `${contenidoId}.`;
-  if (fileName.startsWith(prefix) && fileName.endsWith('.md')) {
-    const middle = fileName.slice(prefix.length, -3);
-    if (/^\d+$/.test(middle)) return true;
+  if (nameWithoutExt.startsWith(prefix)) {
+    const token = nameWithoutExt.slice(prefix.length);
+    if (/^[0-9a-zA-Z.-]+$/.test(token) && !token.includes('..')) {
+      return true;
+    }
   }
 
-  // Compatibilidad con formato anterior guardado con guion bajo
+  // Compatibilidad con formato anterior guardado con guion bajo (exclusivamente timestamp numérico)
   if (options?.allowLegacy) {
     const legacyPrefix = `${contenidoId}_`;
-    if (fileName.startsWith(legacyPrefix) && fileName.endsWith('.md')) {
-      const middle = fileName.slice(legacyPrefix.length, -3);
-      if (/^\d+$/.test(middle)) return true;
+    if (nameWithoutExt.startsWith(legacyPrefix)) {
+      const token = nameWithoutExt.slice(legacyPrefix.length);
+      if (/^\d+$/.test(token)) {
+        return true;
+      }
+    }
+  }
+
+  return false;
+}
+
+/**
+ * Reconoce si un nombre de archivo corresponde a un recurso educativo propio (.md, .png, .jpg, .jpeg)
+ * según IDs conocidos de base de datos / catálogo o formato estructurado con timestamp.
+ * Preserva intactos archivos desconocidos (otros formatos o nombres arbitrarios).
+ */
+export function isRecognizedEducationalFileName(
+  fileName: string,
+  knownContentIds?: Set<string>,
+): boolean {
+  const dotIdx = fileName.lastIndexOf('.');
+  if (dotIdx <= 0) return false;
+  const ext = fileName.slice(dotIdx + 1).toLowerCase();
+  if (!VALID_EDUCATIONAL_EXTS.has(ext)) return false;
+
+  // 1. Si coincide con alguno de los IDs registrados conocidos
+  if (knownContentIds && knownContentIds.size > 0) {
+    for (const cId of knownContentIds) {
+      if (isResourceFileForContent(fileName, cId, { allowLegacy: true })) {
+        return true;
+      }
+    }
+  }
+
+  // 2. Estructura estándar de token generado por el coordinador:
+  // <contentId>.<timestamp>.<uuid>.<ext> o <contentId>.<timestamp>.<ext>
+  const nameWithoutExt = fileName.slice(0, dotIdx);
+  const dotParts = nameWithoutExt.split('.');
+  if (dotParts.length >= 2) {
+    const possibleId = dotParts[0];
+    const timestampPart = dotParts[1];
+    if (
+      /^[a-zA-Z0-9_-]+$/.test(possibleId) &&
+      /^\d{10,}$/.test(timestampPart) &&
+      !nameWithoutExt.includes('..')
+    ) {
+      return true;
+    }
+  }
+
+  // Formato legado delimitado por guion bajo: <contentId>_<timestamp>.<ext>
+  const underscoreParts = nameWithoutExt.split('_');
+  if (underscoreParts.length === 2) {
+    const [possibleId, timestamp] = underscoreParts;
+    if (/^[a-zA-Z0-9_-]+$/.test(possibleId) && /^\d{10,}$/.test(timestamp)) {
+      return true;
     }
   }
 
@@ -276,7 +343,10 @@ export async function cleanDanglingTempFiles(
     ? baseDirResolver(pacienteId)
     : getPatientResourceDirectory(pacienteId).uri;
 
-  if (!(await adapter.exists(baseDir))) return 0;
+  const dirExists = adapter.directoryExists
+    ? await adapter.directoryExists(baseDir)
+    : await adapter.exists(baseDir);
+  if (!dirExists) return 0;
 
   let cleaned = 0;
   try {
@@ -333,14 +403,26 @@ export async function deleteResourceFile(
     ) {
       return false;
     }
-    return adapter.deleteFile(rutaLocal);
+    // Si el archivo físico ya no existe en disco, se confirma ausente: seguro para limpiar SQLite
+    if (!(await adapter.exists(rutaLocal))) {
+      return true;
+    }
+    const deleted = await adapter.deleteFile(rutaLocal);
+    // Verificar que el archivo realmente haya desaparecido de disco tras el intento
+    if (!deleted || (await adapter.exists(rutaLocal))) {
+      return false;
+    }
+    return true;
   }
 
   const baseDir = baseDirResolver
     ? baseDirResolver(pacienteId)
     : getPatientResourceDirectory(pacienteId).uri;
 
-  if (!(await adapter.exists(baseDir))) return true;
+  const dirExists = adapter.directoryExists
+    ? await adapter.directoryExists(baseDir)
+    : await adapter.exists(baseDir);
+  if (!dirExists) return true;
   let success = true;
   try {
     const files = await adapter.listDirectory(baseDir);
@@ -434,7 +516,10 @@ export async function readResourceFile(
   const baseDir = baseDirResolver
     ? baseDirResolver(pacienteId)
     : getPatientResourceDirectory(pacienteId).uri;
-  if (!(await adapter.exists(baseDir))) return null;
+  const dirExists = adapter.directoryExists
+    ? await adapter.directoryExists(baseDir)
+    : await adapter.exists(baseDir);
+  if (!dirExists) return null;
   try {
     const files = await adapter.listDirectory(baseDir);
     for (const fileUri of files) {
@@ -454,6 +539,8 @@ export async function readResourceFile(
  * y el directorio físico de recursos del paciente en `expo-file-system`.
  * Se coordina mediante withPatientResourceLock e incluye comprobación protegida
  * antes del borrado para evitar eliminar archivos confirmados durante lecturas concurrentes.
+ * Contempla extensiones .md, .png, .jpg, .jpeg y reconoce nombres propios de recursos,
+ * preservando intactos archivos desconocidos y escrituras activas en curso.
  */
 export async function reconcileResourceCopies(
   pacienteId: string,
@@ -463,21 +550,35 @@ export async function reconcileResourceCopies(
     >;
     markDownloadUnavailable: (contenidoId: string) => Promise<void>;
   },
+  adapter: FileStorageAdapter = defaultExpoAdapter,
+  baseDirResolver?: (pacienteId: string) => string,
 ): Promise<ReconciliationResult> {
   assertSafeId(pacienteId, 'pacienteId');
 
   return withPatientResourceLock(pacienteId, async () => {
     // Limpiar temporales abandonados en segundo plano
-    await cleanDanglingTempFiles(pacienteId).catch(() => 0);
+    await cleanDanglingTempFiles(pacienteId, adapter, baseDirResolver).catch(() => 0);
 
-    const dir = getPatientResourceDirectory(pacienteId);
+    const baseDir = baseDirResolver
+      ? baseDirResolver(pacienteId)
+      : getPatientResourceDirectory(pacienteId).uri;
     const diskUris: string[] = [];
-    if (dir.exists) {
+
+    const dirExists = adapter.directoryExists
+      ? await adapter.directoryExists(baseDir)
+      : await adapter.exists(baseDir);
+
+    const dbRecords = await repository.downloads();
+    const knownContentIds = new Set(dbRecords.map((r) => r.contenido_id));
+
+    if (dirExists) {
       try {
-        const entries = dir.list();
-        for (const entry of entries) {
-          if (entry instanceof File && entry.uri.endsWith('.md')) {
-            diskUris.push(entry.uri);
+        const entries = await adapter.listDirectory(baseDir);
+        for (const entryUri of entries) {
+          const fileName = entryUri.split(/[\\/]/).pop() || '';
+          // Reconocer nombres propios (.md, .png, .jpg, .jpeg) preservando archivos desconocidos
+          if (isRecognizedEducationalFileName(fileName, knownContentIds)) {
+            diskUris.push(entryUri);
           }
         }
       } catch {
@@ -485,21 +586,13 @@ export async function reconcileResourceCopies(
       }
     }
 
-    const dbRecords = await repository.downloads();
-
     return reconcileCopiesCore(
       dbRecords,
       diskUris,
       {
         markDbUnavailable: async (id) => repository.markDownloadUnavailable(id),
-        deleteDisk: async (uri) => deleteFileByUri(uri),
-        checkDiskExists: (uri) => {
-          try {
-            return new File(uri).exists;
-          } catch {
-            return false;
-          }
-        },
+        deleteDisk: async (uri) => adapter.deleteFile(uri),
+        checkDiskExists: async (uri) => adapter.exists(uri),
         isProtectedOrphan: async (uri) => {
           if (isFileWriteInFlight(uri)) return true;
           const fresh = await repository.downloads();

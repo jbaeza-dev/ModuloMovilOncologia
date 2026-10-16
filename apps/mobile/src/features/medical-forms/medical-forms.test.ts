@@ -1,4 +1,4 @@
-import { mkdtempSync, rmSync, writeFileSync } from 'node:fs';
+import { existsSync, mkdtempSync, rmSync, statSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { afterEach, describe, expect, it } from 'vitest';
@@ -1277,6 +1277,42 @@ describe('importación legacy de borradores y respuestas a SQLite', () => {
 
     await importLegacyDrafts(patientA, db, custom, resolver);
     expect(directoryExistsCalled).toBe(true);
+  });
+
+  it('recoverOrphanDraftBackups y listPatientDrafts utilizan directoryExists y no fallan ante el contrato estricto del adaptador Expo', async () => {
+    const dir = createTempDir();
+    const patientDir = join(dir, 'formularios_locales', patientA, 'borradores');
+    const resolver = () => patientDir;
+
+    let dirExistsCalls = 0;
+    class StrictContractAdapter extends NodeFileStorageAdapter {
+      override directoryExists(p: string): boolean {
+        dirExistsCalls++;
+        return super.directoryExists(p);
+      }
+      override exists(p: string): boolean {
+        // Simular el contrato estricto de ExpoFileStorageAdapter:
+        // si la ruta es un directorio, llamar a exists() lanza una excepción
+        if (existsSync(p) && statSync(p).isDirectory()) {
+          throw new Error(`EISDIR: illegal operation on a directory, read '${p}'`);
+        }
+        return super.exists(p);
+      }
+    }
+
+    const adapter = new StrictContractAdapter();
+    await adapter.ensureDirectory(patientDir);
+
+    // recoverOrphanDraftBackups no debe lanzar error de directorio
+    const recovered = await recoverOrphanDraftBackups(patientDir, adapter);
+    expect(recovered).toBe(0);
+    expect(dirExistsCalls).toBeGreaterThanOrEqual(1);
+
+    const prevCalls = dirExistsCalls;
+    // listPatientDrafts no debe lanzar error de directorio
+    const drafts = await listPatientDrafts(patientA, adapter, resolver);
+    expect(drafts).toEqual([]);
+    expect(dirExistsCalls).toBeGreaterThan(prevCalls);
   });
 
   it('garantiza aislamiento A/B en la importación legacy', async () => {

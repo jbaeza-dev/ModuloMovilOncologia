@@ -30,6 +30,8 @@ jobs:
         run: pnpm run check
       - name: Test SQLite and local data rules
         run: pnpm run test:local
+      - name: Test UI component interactions
+        run: pnpm run test:ui
       - name: Check Expo dependencies
         run: pnpm --filter @modulo-movil-oncologia/mobile run doctor
       - name: Export Android JavaScript bundle

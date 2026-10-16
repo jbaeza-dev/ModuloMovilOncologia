@@ -7,6 +7,7 @@ import { CONTEXTO_SQL } from './migrations/002_contexto';
 import { DESCARGAS_SQL } from './migrations/003_descargas';
 import { FORMULARIOS_SQL, FORMULARIOS_VERSION } from './migrations/004_formularios';
 import { CONTEXTO_CLINICO_SQL } from './migrations/005_contexto_clinico';
+import { CONSENTIMIENTOS_SQL } from './migrations/006_consentimientos';
 import { createPatientRepository, seedPatientContextIfEmpty } from './repository';
 import {
   createSqliteTestHarness,
@@ -38,7 +39,7 @@ describe('migraciones SQLite', () => {
     await migrateDatabase(second);
     expect(
       (await second.first<{ user_version: number }>('PRAGMA user_version'))?.user_version,
-    ).toBe(6);
+    ).toBe(8);
     expect(
       (await createPatientRepository(second, patientA, ids()).vitals('2026-01-01', 30, 0)).map(
         (row) => row.id,
@@ -277,10 +278,10 @@ describe('migraciones SQLite', () => {
       [patientA],
     );
 
-    // 2. Aplicar todas las migraciones (hasta v6)
+    // 2. Aplicar todas las migraciones (hasta v8)
     await migrateDatabase(database);
-    const v6 = await database.first<{ user_version: number }>('PRAGMA user_version');
-    expect(v6?.user_version).toBe(6);
+    const v7 = await database.first<{ user_version: number }>('PRAGMA user_version');
+    expect(v7?.user_version).toBe(8);
 
     // Verificar que los datos previos se conservaron intactos
     const vital = await database.first<{ id: string }>(
@@ -292,6 +293,69 @@ describe('migraciones SQLite', () => {
       'q-prev-1',
     ]);
     expect(queue).not.toBeNull();
+  });
+
+  it('migración 007 incorpora interaccion_educativa_local y amplía descarga preservando datos previos', async () => {
+    const database = open();
+    // 1. Migrar hasta v6
+    await migrateDatabase(database, [
+      { version: 1, sql: REGISTROS_SQL },
+      { version: 2, sql: CONTEXTO_SQL },
+      { version: 3, sql: DESCARGAS_SQL },
+      { version: 4, sql: FORMULARIOS_SQL },
+      { version: 5, sql: CONTEXTO_CLINICO_SQL },
+      { version: 6, sql: CONSENTIMIENTOS_SQL },
+    ]);
+
+    // Insertar paciente y descarga previa en v6
+    await database.run(
+      "INSERT INTO paciente_cache (paciente_id, nombre, email, rut, obtenido_en) VALUES (?, 'Paciente V6', 'v6@test.com', '1-9', '2026-10-01T00:00:00Z')",
+      [patientA],
+    );
+    await database.run(
+      `INSERT INTO descarga (paciente_id, contenido_id, ruta_local, estado, fecha_descarga, visualizada)
+       VALUES (?, 'edu-previo', '/data/prev.md', 'descargado', '2026-10-01T12:00:00Z', 1)`,
+      [patientA],
+    );
+
+    // 2. Aplicar todas las migraciones (hasta v8)
+    await migrateDatabase(database);
+    const v = await database.first<{ user_version: number }>('PRAGMA user_version');
+    expect(v?.user_version).toBe(8);
+
+    // 3. Comprobar que la descarga previa conserva sus valores y tiene los nuevos defaults
+    const prev = await database.first<{
+      paciente_id: string;
+      contenido_id: string;
+      ruta_local: string;
+      visualizada: number;
+      revision_declarada: number;
+      formato: string;
+      tamano_bytes: number;
+      metadata_local_json: string | null;
+    }>('SELECT * FROM descarga WHERE contenido_id = ?', ['edu-previo']);
+
+    expect(prev).not.toBeNull();
+    expect(prev?.ruta_local).toBe('/data/prev.md');
+    expect(prev?.visualizada).toBe(1);
+    expect(prev?.revision_declarada).toBe(0);
+    expect(prev?.formato).toBe('markdown');
+    expect(prev?.tamano_bytes).toBe(0);
+    expect(prev?.metadata_local_json).toBeNull();
+
+    // 4. Comprobar que interaccion_educativa_local admite inserción válida
+    await database.run(
+      `INSERT INTO interaccion_educativa_local (
+        paciente_id, contenido_id, youtube_video_id, version_origen, revision_declarada_en, creado_en, actualizado_en
+      ) VALUES (?, 'edu-vid-1', 'abc12345678', '1.0.0', '2026-10-12T10:00:00Z', '2026-10-12T10:00:00Z', '2026-10-12T10:00:00Z')`,
+      [patientA],
+    );
+
+    const inter = await database.first<{ contenido_id: string; youtube_video_id: string }>(
+      'SELECT * FROM interaccion_educativa_local WHERE contenido_id = ?',
+      ['edu-vid-1'],
+    );
+    expect(inter?.youtube_video_id).toBe('abc12345678');
   });
 
   it('rollback de migración 006 conserva versión 5 y sus datos de contexto intactos', async () => {
@@ -332,5 +396,104 @@ describe('migraciones SQLite', () => {
       ['prof-v5'],
     );
     expect(prof).not.toBeNull();
+  });
+
+  it('migración 008: valida integridad referencial, índices únicos y restricciones CHECK de recordatorios y avisos', async () => {
+    const database = open();
+    await migrateDatabase(database);
+    await seedPatientContextIfEmpty(database, patientA, patientB);
+
+    // Los medicamentos 'med-a-1' (pacienteA) y 'med-b-1' (pacienteB) ya están sembrados por seedPatientContextIfEmpty.
+    // 2. Inserción válida de regla de vitales y regla de medicación
+    await database.run(
+      `INSERT INTO recordatorio_local (
+        id, paciente_id, tipo, medicamento_id, dias_semana, horas_minutos, zona_horaria, fecha_inicio, fecha_fin, habilitado, revision, creado_el, actualizado_el
+      ) VALUES (?, ?, 'registro_vitales', NULL, '[1,2,3,4,5,6,7]', '["09:00"]', 'America/Santiago', NULL, NULL, 1, 1, '2026-10-13T10:00:00Z', '2026-10-13T10:00:00Z')`,
+      ['rule-vital-a', patientA],
+    );
+
+    await database.run(
+      `INSERT INTO recordatorio_local (
+        id, paciente_id, tipo, medicamento_id, dias_semana, horas_minutos, zona_horaria, fecha_inicio, fecha_fin, habilitado, revision, creado_el, actualizado_el
+      ) VALUES (?, ?, 'medicacion', 'med-a-1', '[1,3,5]', '["10:00"]', 'America/Santiago', '2026-10-01', '2026-12-31', 1, 1, '2026-10-13T10:00:00Z', '2026-10-13T10:00:00Z')`,
+      ['rule-med-a', patientA],
+    );
+
+    // 3. Inserción válida de notificación referenciando (paciente_id, recordatorio_id)
+    await database.run(
+      `INSERT INTO notificacion_local (
+        id, paciente_id, recordatorio_id, revision, tipo, fecha_prevista_utc, id_nativo, estado, payload_minimo, creado_el, actualizado_el
+      ) VALUES (?, ?, 'rule-med-a', 1, 'medicacion', '2026-10-14T13:00:00Z', 'notif-native-1', 'programada', '{}', '2026-10-13T10:00:00Z', '2026-10-13T10:00:00Z')`,
+      ['job-1', patientA],
+    );
+
+    // 4. Comprobación de PRAGMA foreign_key_check limpio
+    const fkErrors = await database.all<{
+      table: string;
+      rowid: number;
+      parent: string;
+      fkid: number;
+    }>('PRAGMA foreign_key_check');
+    expect(fkErrors).toEqual([]);
+
+    // 5. Rechazo de vinculación de regla de A con medicamento de B (FK compuesta)
+    await expect(
+      database.run(
+        `INSERT INTO recordatorio_local (
+          id, paciente_id, tipo, medicamento_id, dias_semana, horas_minutos, zona_horaria, creado_el, actualizado_el
+        ) VALUES (?, ?, 'medicacion', 'med-b-1', '[1]', '["08:00"]', 'America/Santiago', '2026-10-13T10:00:00Z', '2026-10-13T10:00:00Z')`,
+        ['rule-cross-med', patientA],
+      ),
+    ).rejects.toThrow();
+
+    // 6. Rechazo de vinculación de notificación de B con regla de A (FK compuesta)
+    await expect(
+      database.run(
+        `INSERT INTO notificacion_local (
+          id, paciente_id, recordatorio_id, revision, tipo, fecha_prevista_utc, estado, payload_minimo, creado_el, actualizado_el
+        ) VALUES (?, ?, 'rule-med-a', 1, 'medicacion', '2026-10-14T14:00:00Z', 'pendiente', '{}', '2026-10-13T10:00:00Z', '2026-10-13T10:00:00Z')`,
+        ['job-cross-patient', patientB],
+      ),
+    ).rejects.toThrow();
+
+    // 7. Rechazo de restricción CHECK de tipo: medicación sin medicamento
+    await expect(
+      database.run(
+        `INSERT INTO recordatorio_local (
+          id, paciente_id, tipo, medicamento_id, dias_semana, horas_minutos, zona_horaria, creado_el, actualizado_el
+        ) VALUES (?, ?, 'medicacion', NULL, '[1]', '["08:00"]', 'America/Santiago', '2026-10-13T10:00:00Z', '2026-10-13T10:00:00Z')`,
+        ['rule-invalid-med', patientA],
+      ),
+    ).rejects.toThrow();
+
+    // 8. Rechazo de restricción CHECK de tipo: vitales con medicamento
+    await expect(
+      database.run(
+        `INSERT INTO recordatorio_local (
+          id, paciente_id, tipo, medicamento_id, dias_semana, horas_minutos, zona_horaria, creado_el, actualizado_el
+        ) VALUES (?, ?, 'registro_vitales', 'med-a-1', '[1]', '["08:00"]', 'America/Santiago', '2026-10-13T10:00:00Z', '2026-10-13T10:00:00Z')`,
+        ['rule-invalid-vit', patientA],
+      ),
+    ).rejects.toThrow();
+
+    // 9. Rechazo de fechas invertidas: fecha_inicio > fecha_fin
+    await expect(
+      database.run(
+        `INSERT INTO recordatorio_local (
+          id, paciente_id, tipo, medicamento_id, dias_semana, horas_minutos, zona_horaria, fecha_inicio, fecha_fin, creado_el, actualizado_el
+        ) VALUES (?, ?, 'registro_vitales', NULL, '[1]', '["08:00"]', 'America/Santiago', '2026-12-31', '2026-01-01', '2026-10-13T10:00:00Z', '2026-10-13T10:00:00Z')`,
+        ['rule-invalid-dates', patientA],
+      ),
+    ).rejects.toThrow();
+
+    // 10. Rechazo de duplicado lógico en notificacion_local (UNIQUE paciente_id, recordatorio_id, revision, fecha_prevista_utc)
+    await expect(
+      database.run(
+        `INSERT INTO notificacion_local (
+          id, paciente_id, recordatorio_id, revision, tipo, fecha_prevista_utc, id_nativo, estado, payload_minimo, creado_el, actualizado_el
+        ) VALUES (?, ?, 'rule-med-a', 1, 'medicacion', '2026-10-14T13:00:00Z', 'notif-native-2', 'programada', '{}', '2026-10-13T10:00:00Z', '2026-10-13T10:00:00Z')`,
+        ['job-duplicate', patientA],
+      ),
+    ).rejects.toThrow();
   });
 });
