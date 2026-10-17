@@ -15,6 +15,7 @@ type Props = {
   href: Href;
   primary?: boolean;
   replace?: boolean;
+  navigationMethod?: 'navigate' | 'push';
 };
 
 export function NavigationCard({
@@ -24,6 +25,7 @@ export function NavigationCard({
   href,
   primary = false,
   replace = false,
+  navigationMethod = 'navigate',
 }: Props) {
   const { theme: appTheme } = useAppTheme();
   const styles = createStyles(appTheme.colors);
@@ -35,6 +37,7 @@ export function NavigationCard({
       accessibilityHint={description}
       onPress={() => {
         if (replace) router.replace(href);
+        else if (navigationMethod === 'push') router.push(href);
         else router.navigate(href, { withAnchor: true });
       }}
       style={({ pressed }) => [styles.card, primary && styles.primary, pressed && styles.pressed]}

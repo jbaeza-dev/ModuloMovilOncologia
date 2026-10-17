@@ -1,5 +1,6 @@
-import { useCallback } from 'react';
-import { StyleSheet, Text, View } from 'react-native';
+import { useFocusEffect } from 'expo-router';
+import { useCallback, useRef } from 'react';
+import { ScrollView, StyleSheet, Text, View } from 'react-native';
 
 import { NavigationCard } from '../../components/NavigationCard';
 import { Screen } from '../../components/Screen';
@@ -16,10 +17,12 @@ import { DEMO_PATIENTS, useLocalData } from '../../providers/LocalDataProvider';
 import { useAppTheme } from '../../providers/ThemeProvider';
 import { theme } from '../../theme';
 import { isDemoMode } from '../../utils/environment';
+import { consumeHomeScrollToTop, subscribeHomeScrollToTop } from './home-scroll-signal';
 
 export function HomeScreen() {
   const { theme: appTheme } = useAppTheme();
   const styles = createStyles(appTheme.colors);
+  const scrollRef = useRef<ScrollView | null>(null);
   const { repository, patientId, changePatient, saving, isClosing } = useLocalData();
   const load = useCallback(
     () => (repository ? repository.latestVital() : Promise.resolve(null)),
@@ -31,8 +34,22 @@ export function HomeScreen() {
     error,
     refresh,
   } = useFocusedValue(load, null as VitalRecord | null);
+
+  useFocusEffect(
+    useCallback(() => {
+      if (consumeHomeScrollToTop()) {
+        scrollRef.current?.scrollTo({ y: 0, animated: false });
+      }
+      return subscribeHomeScrollToTop(() => {
+        if (consumeHomeScrollToTop()) {
+          scrollRef.current?.scrollTo({ y: 0, animated: false });
+        }
+      });
+    }, []),
+  );
+
   return (
-    <Screen isRoot showProfile>
+    <Screen isRoot showProfile scrollRef={scrollRef}>
       <View style={styles.introduction}>
         <Text style={styles.eyebrow}>ACOMPAÑAMIENTO EN QUIMIOTERAPIA</Text>
         <Text accessibilityRole="header" style={styles.title}>
@@ -89,14 +106,16 @@ export function HomeScreen() {
           title="Registrar signos vitales"
           description="Guarda mediciones en este dispositivo."
           icon="activity"
-          href="/vitales/registrar"
+          href="/(tabs)/(inicio)/registrar-vitales"
+          navigationMethod="push"
           primary
         />
         <NavigationCard
-          title="Síntomas de hoy"
+          title="Registrar síntomas"
           description="Guarda una descripción de síntomas."
           icon="clipboard"
-          href="/formulario/sintomas-libres"
+          href="/(tabs)/(inicio)/registrar-sintomas"
+          navigationMethod="push"
         />
       </View>
       <View style={styles.section}>

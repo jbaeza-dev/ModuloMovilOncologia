@@ -11,19 +11,35 @@ const mockRouterNavigate = jest.fn();
 const mockRouterPush = jest.fn();
 const mockRouterCanGoBack = jest.fn(() => mockNavIndex > 0);
 
-jest.mock('expo-router', () => ({
-  router: {
-    back: (...args: unknown[]) => mockRouterBack(...args),
-    replace: (...args: unknown[]) => mockRouterReplace(...args),
-    navigate: (...args: unknown[]) => mockRouterNavigate(...args),
-    push: (...args: unknown[]) => mockRouterPush(...args),
-    canGoBack: () => mockRouterCanGoBack(),
-  },
-}));
+jest.mock('expo-router', () => {
+  // eslint-disable-next-line @typescript-eslint/no-require-imports
+  const React = require('react');
+  return {
+    router: {
+      back: (...args: unknown[]) => mockRouterBack(...args),
+      replace: (...args: unknown[]) => mockRouterReplace(...args),
+      navigate: (...args: unknown[]) => mockRouterNavigate(...args),
+      push: (...args: unknown[]) => mockRouterPush(...args),
+      canGoBack: () => mockRouterCanGoBack(),
+    },
+    useLocalSearchParams: () => ({}),
+    useFocusEffect: (cb: () => void | (() => void)) => {
+      React.useEffect(() => {
+        return cb();
+      }, [cb]);
+    },
+    Tabs: Object.assign(({ children }: { children: React.ReactNode }) => children, {
+      Screen: () => null,
+    }),
+  };
+});
 
 jest.mock('expo-router/react-navigation', () => ({
   useNavigationState: (selector: (state: { index: number }) => unknown) =>
     selector({ index: mockNavIndex }),
+  StackActions: {
+    popToTop: () => ({ type: 'POP_TO_TOP' }),
+  },
 }));
 
 const mockTheme = {
@@ -53,12 +69,42 @@ jest.mock('../providers/ThemeProvider', () => ({
   useAppTheme: () => ({ theme: mockTheme }),
 }));
 
-import { Screen } from '../components/Screen';
+jest.mock('../utils/environment', () => ({
+  isDemoMode: () => true,
+}));
 
-describe('Screen: navegación reactiva y pantallas raíz (Bloque 1)', () => {
+const mockUseLocalData = jest.fn().mockReturnValue({
+  patientId: 'paciente-demo-001',
+  repository: {
+    latestVital: jest.fn().mockResolvedValue(null),
+    createVitals: jest.fn().mockResolvedValue(undefined),
+  },
+  changePatient: jest.fn(),
+  runSave: jest.fn((fn: () => Promise<unknown>) => fn()),
+  saving: false,
+  isClosing: false,
+});
+
+jest.mock('../providers/LocalDataProvider', () => ({
+  DEMO_PATIENTS: [
+    { id: 'paciente-demo-001', label: 'Paciente de prueba A' },
+    { id: 'paciente-demo-002', label: 'Paciente de prueba B' },
+  ],
+  useLocalData: () => mockUseLocalData(),
+}));
+
+import { handleHomeTabPress } from '../app/(tabs)/_layout';
+import { NavigationCard } from '../components/NavigationCard';
+import { Screen } from '../components/Screen';
+import { HomeScreen } from '../features/home/HomeScreen';
+import { clearHomeScrollToTop, consumeHomeScrollToTop } from '../features/home/home-scroll-signal';
+import { RegisterVitalsDataScreen } from '../features/vitals/VitalsDataScreens';
+
+describe('Screen, NavigationCard, rutas de Inicio y reinicio dirigido (Bloque 1)', () => {
   beforeEach(() => {
     jest.clearAllMocks();
     mockNavIndex = 0;
+    clearHomeScrollToTop();
   });
 
   it('oculta la flecha Volver cuando no hay historial de retroceso (index === 0)', async () => {
@@ -98,5 +144,124 @@ describe('Screen: navegación reactiva y pantallas raíz (Bloque 1)', () => {
 
     expect(mockRouterBack).toHaveBeenCalledTimes(1);
     expect(mockRouterReplace).not.toHaveBeenCalled();
+  });
+
+  it('NavigationCard usa navigate por defecto, push cuando navigationMethod="push" y replace cuando replace=true', async () => {
+    await render(
+      <>
+        <NavigationCard title="Acceso navigate" icon="clock" href="/recordatorios" />
+        <NavigationCard
+          title="Acceso push"
+          icon="activity"
+          href="/(tabs)/(inicio)/registrar-vitales"
+          navigationMethod="push"
+        />
+        <NavigationCard title="Acceso replace" icon="home" href="/" replace />
+      </>,
+    );
+
+    await fireEvent.press(screen.getByLabelText('Acceso navigate'));
+    expect(mockRouterNavigate).toHaveBeenCalledWith('/recordatorios', { withAnchor: true });
+
+    await fireEvent.press(screen.getByLabelText('Acceso push'));
+    expect(mockRouterPush).toHaveBeenCalledWith('/(tabs)/(inicio)/registrar-vitales');
+
+    await fireEvent.press(screen.getByLabelText('Acceso replace'));
+    expect(mockRouterReplace).toHaveBeenCalledWith('/');
+  });
+
+  it('HomeScreen hace push a /(tabs)/(inicio)/registrar-vitales y /(tabs)/(inicio)/registrar-sintomas y oculta Volver por ser raíz', async () => {
+    mockNavIndex = 1;
+    await render(<HomeScreen />);
+
+    expect(screen.queryByLabelText('Volver')).toBeNull();
+
+    await fireEvent.press(screen.getByLabelText('Registrar signos vitales'));
+    expect(mockRouterPush).toHaveBeenCalledWith('/(tabs)/(inicio)/registrar-vitales');
+
+    await fireEvent.press(screen.getByLabelText('Registrar síntomas'));
+    expect(mockRouterPush).toHaveBeenCalledWith('/(tabs)/(inicio)/registrar-sintomas');
+  });
+
+  it('RegisterVitalsDataScreen distingue flecha Volver (router.back) de Ver historial de mediciones (router.navigate)', async () => {
+    mockNavIndex = 1;
+    await render(<RegisterVitalsDataScreen />);
+
+    await fireEvent.press(screen.getByLabelText('Volver'));
+    expect(mockRouterBack).toHaveBeenCalledTimes(1);
+    expect(mockRouterNavigate).not.toHaveBeenCalled();
+
+    await fireEvent.press(screen.getByText('Ver historial de mediciones'));
+    expect(mockRouterNavigate).toHaveBeenCalledWith('/vitales');
+  });
+
+  it('handleHomeTabPress despacha popToTop dirigido solo a la pila de (inicio) cuando index > 0 y solicita scroll a y=0', () => {
+    const dispatch = jest.fn();
+    handleHomeTabPress({
+      getState: () => ({
+        routes: [
+          {
+            name: '(inicio)',
+            state: {
+              key: 'stack-inicio-key-123',
+              index: 2,
+              routes: [
+                { name: 'index' },
+                { name: 'perfil/index' },
+                { name: 'perfil/preferencias' },
+              ],
+            },
+          },
+          {
+            name: 'vitales',
+            state: {
+              key: 'stack-vitales-key-456',
+              index: 1,
+              routes: [{ name: 'index' }, { name: 'detalle' }],
+            },
+          },
+        ],
+      }),
+      dispatch,
+    });
+
+    expect(dispatch).toHaveBeenCalledTimes(1);
+    expect(dispatch).toHaveBeenCalledWith({
+      type: 'POP_TO_TOP',
+      target: 'stack-inicio-key-123',
+    });
+    expect(consumeHomeScrollToTop()).toBe(true);
+  });
+
+  it('handleHomeTabPress no despacha popToTop cuando la pila de (inicio) está en su raíz o aún no existe', () => {
+    const dispatch = jest.fn();
+    handleHomeTabPress({
+      getState: () => ({
+        routes: [
+          {
+            name: '(inicio)',
+            state: {
+              key: 'stack-inicio-key-123',
+              index: 0,
+              routes: [{ name: 'index' }],
+            },
+          },
+        ],
+      }),
+      dispatch,
+    });
+
+    expect(dispatch).not.toHaveBeenCalled();
+    expect(consumeHomeScrollToTop()).toBe(true);
+
+    // Pila aún no creada por carga diferida
+    handleHomeTabPress({
+      getState: () => ({
+        routes: [{ name: '(inicio)' }],
+      }),
+      dispatch,
+    });
+    expect(dispatch).not.toHaveBeenCalled();
+    expect(consumeHomeScrollToTop()).toBe(true);
   });
 });
