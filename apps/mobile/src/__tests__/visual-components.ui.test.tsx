@@ -187,6 +187,12 @@ describe('Componentes Accesibles Visual.tsx y Screen.tsx (B1 - UX-03 a UX-07)', 
         scale: 2,
         fontScale: 1,
       });
+      jest.spyOn(ReactNative.Dimensions, 'get').mockReturnValue({
+        width: 360,
+        height: 800,
+        scale: 2,
+        fontScale: 1,
+      });
 
       await render(
         <Screen
@@ -203,6 +209,12 @@ describe('Componentes Accesibles Visual.tsx y Screen.tsx (B1 - UX-03 a UX-07)', 
 
     it('renderiza bottomAction inline dentro de ScrollView cuando fontScale > 1.3', async () => {
       jest.spyOn(ReactNative, 'useWindowDimensions').mockReturnValue({
+        width: 360,
+        height: 800,
+        scale: 2,
+        fontScale: 1.5,
+      });
+      jest.spyOn(ReactNative.Dimensions, 'get').mockReturnValue({
         width: 360,
         height: 800,
         scale: 2,
@@ -225,6 +237,12 @@ describe('Componentes Accesibles Visual.tsx y Screen.tsx (B1 - UX-03 a UX-07)', 
 
     it('renderiza bottomAction inline dentro de ScrollView cuando height < 550', async () => {
       jest.spyOn(ReactNative, 'useWindowDimensions').mockReturnValue({
+        width: 360,
+        height: 480,
+        scale: 2,
+        fontScale: 1,
+      });
+      jest.spyOn(ReactNative.Dimensions, 'get').mockReturnValue({
         width: 360,
         height: 480,
         scale: 2,
