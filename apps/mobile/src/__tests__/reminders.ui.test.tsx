@@ -165,19 +165,57 @@ describe('Incremento 5: UI de Recordatorios y Avisos Locales', () => {
   });
 
   describe('RemindersListScreen', () => {
-    it('muestra el estado vacío cuando el paciente no tiene recordatorios registrados', async () => {
+    it('separa Mediciones y Medicamentos y muestra sus estados iniciales cuando no hay horarios configurados', async () => {
       mockReminderRepo.listRules.mockResolvedValueOnce([]);
+      mockRepository.activeMedications.mockResolvedValueOnce([
+        {
+          id: 'med-1',
+          paciente_id: 'paciente-a',
+          nombre: 'Ciclofosfamida 500mg',
+          dosis: '500 mg',
+          frecuencia: 'Cada 12 horas',
+          via: 'Oral',
+          indicaciones: null,
+          fecha_inicio: '2026-10-01',
+          fecha_fin: '2026-10-20',
+          activo: 1,
+          obtenido_en: '2026-10-01T00:00:00Z',
+        },
+      ]);
 
       await render(<RemindersListScreen />);
 
       await waitFor(() => {
-        expect(screen.getByText('Sin recordatorios configurados')).toBeTruthy();
+        expect(screen.getByText('Mediciones')).toBeTruthy();
       });
-      expect(
-        screen.getByText(
-          'Crea recordatorios para el registro de signos vitales o la consulta de medicamentos.',
-        ),
-      ).toBeTruthy();
+      expect(screen.getByText('Medicamentos')).toBeTruthy();
+      expect(screen.getByText('Sin recordatorio configurado.')).toBeTruthy();
+      expect(screen.getByText('Configurar aviso')).toBeTruthy();
+      expect(screen.getByText('Ciclofosfamida 500mg')).toBeTruthy();
+      expect(screen.getByText('Sin horarios configurados')).toBeTruthy();
+      expect(screen.getByText('Configurar horarios')).toBeTruthy();
+    });
+
+    it('muestra mensaje específico cuando el catálogo de medicamentos está vacío', async () => {
+      mockReminderRepo.listRules.mockResolvedValueOnce([]);
+      mockRepository.activeMedications.mockResolvedValueOnce([]);
+
+      await render(<RemindersListScreen />);
+      await waitFor(() => {
+        expect(screen.getByText('Aún no hay medicamentos disponibles en tu perfil')).toBeTruthy();
+      });
+    });
+
+    it('distingue error de lectura SQL de medicamentos y ofrece botón Reintentar', async () => {
+      mockReminderRepo.listRules.mockResolvedValueOnce([]);
+      mockRepository.activeMedications.mockRejectedValueOnce(new Error('SQLite read error'));
+
+      await render(<RemindersListScreen />);
+
+      await waitFor(() => {
+        expect(screen.getByText('No se pudieron cargar tus medicamentos')).toBeTruthy();
+      });
+      expect(screen.getByText('Reintentar')).toBeTruthy();
     });
 
     it('muestra las reglas activas de signos vitales y medicación', async () => {
@@ -207,6 +245,74 @@ describe('Incremento 5: UI de Recordatorios y Avisos Locales', () => {
       });
       expect(screen.getByText(/09:00, 21:00/)).toBeTruthy();
       expect(screen.getByText(/Lun, Mar, Mié, Jue, Vie, Sáb, Dom/)).toBeTruthy();
+    });
+
+    it('T-18: conserva múltiples pautas existentes por medicamento con Ver horarios sin fusionarlas ni eliminarlas', async () => {
+      mockRepository.activeMedications.mockResolvedValueOnce([
+        {
+          id: 'med-1',
+          paciente_id: 'paciente-a',
+          nombre: 'Ciclofosfamida 500mg',
+          dosis: '500 mg',
+          frecuencia: 'Cada 12 horas',
+          via: 'Oral',
+          indicaciones: null,
+          fecha_inicio: null,
+          fecha_fin: null,
+          activo: 1,
+          obtenido_en: '2026-10-01T00:00:00Z',
+        },
+      ]);
+      mockReminderRepo.listRules.mockResolvedValueOnce([
+        {
+          id: 'rule-med-a',
+          pacienteId: 'paciente-a',
+          tipo: 'medicacion',
+          medicamentoId: 'med-1',
+          diasSemana: [1, 3, 5],
+          horasMinutos: ['08:00'],
+          zonaHoraria: 'America/Santiago',
+          fechaInicio: null,
+          fechaFin: null,
+          habilitado: true,
+          revision: 1,
+          creadoEl: '2026-10-13T10:00:00Z',
+          actualizadoEl: '2026-10-13T10:00:00Z',
+          eliminadoEl: null,
+        },
+        {
+          id: 'rule-med-b',
+          pacienteId: 'paciente-a',
+          tipo: 'medicacion',
+          medicamentoId: 'med-1',
+          diasSemana: [2, 4],
+          horasMinutos: ['20:00'],
+          zonaHoraria: 'America/Santiago',
+          fechaInicio: null,
+          fechaFin: null,
+          habilitado: true,
+          revision: 1,
+          creadoEl: '2026-10-13T10:00:00Z',
+          actualizadoEl: '2026-10-13T10:00:00Z',
+          eliminadoEl: null,
+        },
+      ]);
+
+      await render(<RemindersListScreen />);
+
+      await waitFor(() => {
+        expect(
+          screen.getByText('Tienes 2 horarios configurados para este medicamento.'),
+        ).toBeTruthy();
+      });
+
+      fireEvent.press(screen.getByText('Ver horarios'));
+
+      await waitFor(() => {
+        expect(screen.getByText(/08:00/)).toBeTruthy();
+        expect(screen.getByText(/20:00/)).toBeTruthy();
+      });
+      expect(mockReminderRepo.deleteRule).not.toHaveBeenCalled();
     });
 
     it('permite alternar el interruptor maestro de avisos', async () => {
@@ -262,7 +368,7 @@ describe('Incremento 5: UI de Recordatorios y Avisos Locales', () => {
       expect(screen.getByText('Abrir Ajustes de Android')).toBeTruthy();
     });
 
-    it('distingue visualmente la cobertura parcial cuando faltan ocurrencias por programar', async () => {
+    it('distingue visualmente la cobertura parcial y muestra «Avisos preparados hasta:»', async () => {
       mockReminderRepo.getPreferences.mockResolvedValueOnce({ enabled: true, updatedAt: null });
       mockAdapter.getPermissionState.mockResolvedValueOnce({
         status: 'granted',
@@ -286,7 +392,7 @@ describe('Incremento 5: UI de Recordatorios y Avisos Locales', () => {
       await waitFor(() => {
         expect(screen.getByText('Parcial: 7 de 14 confirmadas')).toBeTruthy();
       });
-      expect(screen.getByText(/Programados hasta:/)).toBeTruthy();
+      expect(screen.getByText(/Avisos preparados hasta:/)).toBeTruthy();
     });
 
     it('distingue visualmente el estado pausado cuando se resuelven cancelaciones del contexto anterior', async () => {
