@@ -31,6 +31,16 @@ jest.mock('expo-router/react-navigation', () => ({
   useNavigationState: (selector: (state: { index: number }) => unknown) => selector({ index: 1 }),
 }));
 
+jest.mock('@react-native-community/datetimepicker', () => {
+  // eslint-disable-next-line @typescript-eslint/no-require-imports
+  const React = require('react');
+  // eslint-disable-next-line @typescript-eslint/no-require-imports
+  const { View } = require('react-native');
+  return function MockDateTimePicker(props: Record<string, unknown>) {
+    return React.createElement(View, props);
+  };
+});
+
 // Mock theme
 const mockTheme = {
   colors: {
@@ -425,17 +435,79 @@ describe('Incremento 5: UI de Recordatorios y Avisos Locales', () => {
   });
 
   describe('ReminderEditScreen', () => {
-    it('muestra el formulario de creación para signos vitales por defecto', async () => {
+    it('muestra el formulario de creación para signos vitales con 07:00 y Todos los días por defecto', async () => {
       await render(<ReminderEditScreen />);
 
       await waitFor(() => {
         expect(screen.getByText('Nuevo recordatorio')).toBeTruthy();
       });
       expect(screen.getByLabelText('Registro de signos vitales')).toBeTruthy();
-      expect(screen.getByText('09:00')).toBeTruthy();
+      expect(screen.getByText('07:00')).toBeTruthy();
+      expect(screen.getByLabelText('Todos los días')).toBeTruthy();
+      expect(screen.getByLabelText('Personalizar')).toBeTruthy();
     });
 
-    it('muestra selector de medicamentos al cambiar el tipo a medicación', async () => {
+    it('T-18: conserva la hora previa cuando el selector nativo de hora se cancela con dismissed', async () => {
+      await render(<ReminderEditScreen />);
+
+      await waitFor(() => {
+        expect(screen.getByLabelText('Seleccionar hora del aviso de medición')).toBeTruthy();
+      });
+
+      fireEvent.press(screen.getByLabelText('Seleccionar hora del aviso de medición'));
+      await waitFor(() => {
+        expect(screen.getByTestId('native-time-picker')).toBeTruthy();
+      });
+      const picker = screen.getByTestId('native-time-picker');
+
+      // Simular cancelación del diálogo nativo (dismissed)
+      fireEvent(picker, 'onChange', { type: 'dismissed' }, undefined);
+
+      expect(screen.getByText('07:00')).toBeTruthy();
+    });
+
+    it('muestra encabezado clínico en solo lectura cuando medicamentoId válido viene por parámetro y plantillas desde las 07:00', async () => {
+      mockUseLocalSearchParams.mockReturnValue({
+        tipo: 'medicacion',
+        medicamentoId: 'med-1',
+      });
+      mockRepository.activeMedications.mockResolvedValueOnce([
+        {
+          id: 'med-1',
+          paciente_id: 'paciente-a',
+          nombre: 'Ciclofosfamida 500mg',
+          dosis: '500 mg',
+          frecuencia: 'Cada 12 horas',
+          via: 'Oral',
+          indicaciones: null,
+          fecha_inicio: '2026-10-10',
+          fecha_fin: '2026-10-30',
+          activo: 1,
+          obtenido_en: '2026-10-10T00:00:00Z',
+        },
+      ]);
+
+      await render(<ReminderEditScreen />);
+
+      await waitFor(() => {
+        expect(screen.getByText('Ciclofosfamida 500mg')).toBeTruthy();
+      });
+      expect(screen.getByLabelText('Horario de mañana')).toBeTruthy();
+      expect(screen.getByLabelText('Dos horarios diarios')).toBeTruthy();
+      expect(screen.getByLabelText('Tres horarios diarios')).toBeTruthy();
+
+      fireEvent.press(screen.getByLabelText('Dos horarios diarios'));
+
+      await waitFor(() => {
+        expect(screen.getByText('19:00')).toBeTruthy();
+      });
+    });
+
+    it('T-18: exige selección explícita cuando medicamentoId falta o no existe en el catálogo (sin auto-seleccionar el primero)', async () => {
+      mockUseLocalSearchParams.mockReturnValue({
+        tipo: 'medicacion',
+        medicamentoId: 'med-inexistente',
+      });
       mockRepository.activeMedications.mockResolvedValueOnce([
         { id: 'med-1', nombre: 'Ciclofosfamida 500mg' },
       ]);
@@ -443,84 +515,62 @@ describe('Incremento 5: UI de Recordatorios y Avisos Locales', () => {
       await render(<ReminderEditScreen />);
 
       await waitFor(() => {
-        expect(screen.getByLabelText('Consulta de medicación')).toBeTruthy();
-      });
-
-      fireEvent.press(screen.getByLabelText('Consulta de medicación'));
-
-      await waitFor(() => {
         expect(screen.getByText('Medicamento vinculado')).toBeTruthy();
       });
-      expect(screen.getByText('Ciclofosfamida 500mg')).toBeTruthy();
+
+      fireEvent.press(screen.getByText('Guardar y activar'));
+
+      await waitFor(() => {
+        expect(
+          screen.getByText(
+            'Debes seleccionar un medicamento explícitamente para este recordatorio.',
+          ),
+        ).toBeTruthy();
+      });
+      expect(mockReminderRepo.saveRule).not.toHaveBeenCalled();
     });
 
     it('guarda una regla válida y regresa a la pantalla anterior', async () => {
       await render(<ReminderEditScreen />);
 
       await waitFor(() => {
-        expect(screen.getByText('Guardar recordatorio')).toBeTruthy();
+        expect(screen.getByText('Guardar y activar')).toBeTruthy();
       });
 
-      // Seleccionar una hora de los preajustes y activar la regla
-      fireEvent.press(screen.getByLabelText('Hora preajuste 09:00'));
-      await waitFor(() => {
-        expect(screen.getByLabelText('Eliminar hora 09:00')).toBeTruthy();
-      });
-      fireEvent.press(screen.getByLabelText('Habilitar este recordatorio'));
-      await waitFor(() => {
-        expect(
-          screen.getByLabelText('Habilitar este recordatorio').props.accessibilityState.checked,
-        ).toBe(true);
-      });
-
-      fireEvent.press(screen.getByText('Guardar recordatorio'));
+      fireEvent.press(screen.getByText('Guardar y activar'));
 
       await waitFor(() => {
         expect(mockReminderRepo.saveRule).toHaveBeenCalledWith(
           expect.objectContaining({
             tipo: 'registro_vitales',
-            horasMinutos: ['09:00'],
+            horasMinutos: ['07:00'],
             habilitado: true,
           }),
         );
+        expect(mockRouterBack).toHaveBeenCalled();
       });
-      expect(mockRouterBack).toHaveBeenCalled();
     });
 
-    it('valida que existan horas seleccionadas antes de guardar', async () => {
+    it('permite cambiar la hora mediante la opción accesible por teclado disponible para cualquier usuario', async () => {
       await render(<ReminderEditScreen />);
 
       await waitFor(() => {
-        expect(screen.getByText('Guardar recordatorio')).toBeTruthy();
+        expect(screen.getByLabelText('Escribir hora con teclado para Hora del aviso')).toBeTruthy();
       });
 
-      // Intentar guardar sin haber seleccionado horas
-      fireEvent.press(screen.getByText('Guardar recordatorio'));
-
+      fireEvent.press(screen.getByLabelText('Escribir hora con teclado para Hora del aviso'));
       await waitFor(() => {
-        expect(
-          screen.getByText('Debes añadir al menos una hora para el recordatorio.'),
-        ).toBeTruthy();
+        expect(screen.getByLabelText('Campo de texto hora para Hora del aviso')).toBeTruthy();
       });
-      expect(mockReminderRepo.saveRule).not.toHaveBeenCalled();
-    });
-
-    it('permite añadir una hora personalizada en formato HH:mm', async () => {
-      await render(<ReminderEditScreen />);
-
-      await waitFor(() => {
-        expect(screen.getByLabelText('Hora personalizada formato HH:mm')).toBeTruthy();
-      });
-
-      const timeInput = screen.getByLabelText('Hora personalizada formato HH:mm');
+      const timeInput = screen.getByLabelText('Campo de texto hora para Hora del aviso');
       fireEvent.changeText(timeInput, '08:30');
       await waitFor(() => {
         expect(timeInput.props.value).toBe('08:30');
       });
-      fireEvent.press(screen.getByText('Añadir hora'));
+      fireEvent.press(screen.getByText('Aplicar hora'));
 
       await waitFor(() => {
-        expect(screen.getByLabelText('Eliminar hora 08:30')).toBeTruthy();
+        expect(screen.getByText('08:30')).toBeTruthy();
       });
     });
 
@@ -553,8 +603,8 @@ describe('Incremento 5: UI de Recordatorios y Avisos Locales', () => {
 
       await waitFor(() => {
         expect(mockReminderRepo.deleteRule).toHaveBeenCalledWith('rule-vitales');
+        expect(mockRouterBack).toHaveBeenCalled();
       });
-      expect(mockRouterBack).toHaveBeenCalled();
     });
   });
 
