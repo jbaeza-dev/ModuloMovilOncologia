@@ -1,4 +1,5 @@
 import { useCallback } from 'react';
+import { router } from 'expo-router';
 
 import { Screen } from '../../components/Screen';
 import {
@@ -15,6 +16,7 @@ import type { ActiveMedicationRecord } from '../../data/local/clinical-context/c
 import { formatDate } from '../../data/local/repository';
 import { useFocusedValue } from '../../hooks/use-local-query';
 import { useLocalData } from '../../providers/LocalDataProvider';
+import { formatCivilDateDisplay } from '../../services/reminders/reminder-status';
 
 export function MedicationScreen() {
   const { repository } = useLocalData();
@@ -58,11 +60,25 @@ export function MedicationScreen() {
             <SectionTitle>{med.nombre}</SectionTitle>
             <DetailRow label="Dosis" value={med.dosis} />
             <DetailRow label="Frecuencia" value={med.frecuencia} />
-            {med.fecha_inicio ? <DetailRow label="Fecha inicio" value={med.fecha_inicio} /> : null}
-            {med.fecha_fin ? <DetailRow label="Fecha fin" value={med.fecha_fin} /> : null}
+            {med.fecha_inicio ? (
+              <DetailRow label="Fecha inicio" value={formatCivilDateDisplay(med.fecha_inicio)} />
+            ) : null}
+            {med.fecha_fin ? (
+              <DetailRow label="Fecha fin" value={formatCivilDateDisplay(med.fecha_fin)} />
+            ) : null}
             <StatusPill>
               Información en caché · Obtenido el {formatDate(med.obtenido_en)}
             </StatusPill>
+            <VisualButton
+              label="Configurar aviso"
+              secondary
+              onPress={() =>
+                router.push({
+                  pathname: '/recordatorios/editar',
+                  params: { tipo: 'medicacion', medicamentoId: med.id },
+                })
+              }
+            />
           </InfoCard>
         ))
       )}

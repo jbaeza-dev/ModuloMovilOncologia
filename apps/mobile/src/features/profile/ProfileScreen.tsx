@@ -68,47 +68,27 @@ export function ProfileScreen() {
           <StatusPill>Disponible sin conexión</StatusPill>
         </InfoCard>
       )}
-      <NavigationCard
-        title="Datos personales"
-        description="Información y antecedentes del paciente."
-        icon="user"
-        href="/perfil/datos"
-      />
-      <NavigationCard
-        title="Perfil clínico"
-        description="Información de quimioterapia y ficha."
-        icon="file-text"
-        href="/perfil/clinico"
-      />
-      <NavigationCard
-        title="Medicación activa"
-        description="Fármacos y dosis en curso."
-        icon="activity"
-        href="/perfil/medicacion"
-      />
-      <NavigationCard
-        title="Equipo tratante"
-        description="Profesionales de salud vinculados."
-        icon="users"
-        href="/perfil/equipo"
-      />
+      <SectionTitle>Mi tratamiento</SectionTitle>
+      <NavigationCard title="Mi tratamiento" icon="file-text" href="/perfil/clinico" compact />
+      <NavigationCard title="Mis medicamentos" icon="activity" href="/perfil/medicacion" compact />
+      <NavigationCard title="Mi equipo de salud" icon="users" href="/perfil/equipo" compact />
+
+      <SectionTitle>Mis datos</SectionTitle>
+      <NavigationCard title="Datos personales" icon="user" href="/perfil/datos" compact />
       <NavigationCard
         title="Código de vinculación"
-        description="Código para compartir con tu equipo de salud."
         icon="link"
         href="/perfil/vinculacion"
+        compact
       />
+
+      <SectionTitle>Configuración y privacidad</SectionTitle>
+      <NavigationCard title="Preferencias" icon="settings" href="/perfil/preferencias" compact />
       <NavigationCard
         title="Consentimientos"
-        description="Gestión y trazabilidad de términos."
         icon="check-square"
         href="/perfil/consentimientos"
-      />
-      <NavigationCard
-        title="Preferencias"
-        description="Presentación de avisos y apariencia."
-        icon="settings"
-        href="/perfil/preferencias"
+        compact
       />
       <ConfirmLogoutButton />
     </Screen>

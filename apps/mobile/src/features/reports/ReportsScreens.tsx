@@ -2,7 +2,7 @@ import Feather from '@expo/vector-icons/Feather';
 import { File } from 'expo-file-system';
 import { router, useFocusEffect, useLocalSearchParams } from 'expo-router';
 import { useCallback, useEffect, useRef, useState } from 'react';
-import { StyleSheet, Text, View } from 'react-native';
+import { Alert, StyleSheet, Text, View } from 'react-native';
 
 import { Screen } from '../../components/Screen';
 import {
@@ -120,19 +120,10 @@ export function ReportsScreen() {
         if (!isMountedRef.current || !isFocusedRef.current) return;
         refreshReports();
 
-        const shareResult = await shareReportFile(res.persistentUri, targetFormat);
+        await shareReportFile(res.persistentUri, targetFormat);
         if (!isMountedRef.current || !isFocusedRef.current) return;
 
-        const formatLabel = targetFormat === 'pdf' ? 'PDF' : 'Excel (.xlsx)';
-        if (shareResult === 'shared_sheet_opened') {
-          setReportFeedback(
-            `Reporte ${formatLabel} guardado localmente y hoja de compartir abierta.`,
-          );
-        } else {
-          setReportFeedback(
-            `Reporte ${formatLabel} guardado localmente (hoja de compartir no disponible).`,
-          );
-        }
+        setReportFeedback('Archivo guardado. Puedes compartirlo cuando quieras.');
 
         router.navigate('/vitales/reporte-estado?archivo=' + encodeURIComponent(res.filename));
       });
@@ -162,6 +153,27 @@ export function ReportsScreen() {
       if (!isMountedRef.current || !isFocusedRef.current) return;
       setReportError('Error al eliminar el reporte del dispositivo.');
     }
+  }
+
+  function confirmDeleteReport(filename: string) {
+    Alert.alert(
+      '¿Eliminar este reporte?',
+      'Se eliminará el archivo de este dispositivo. Tus mediciones y síntomas se conservarán.',
+      [
+        {
+          text: 'Cancelar',
+          style: 'cancel',
+        },
+        {
+          text: 'Eliminar reporte',
+          style: 'destructive',
+          onPress: () => {
+            void handleDeleteReport(filename);
+          },
+        },
+      ],
+      { cancelable: true },
+    );
   }
 
   return (
@@ -233,11 +245,6 @@ export function ReportsScreen() {
         <>
           <InfoCard>
             <SectionTitle>Resumen de datos clínicos en el período</SectionTitle>
-            <DetailRow label="Período evaluado" value={`${days} días`} />
-            <DetailRow
-              label="Formato seleccionado"
-              value={selectedFormat === 'pdf' ? 'PDF (Documento)' : 'Excel (.xlsx)'}
-            />
             <DetailRow
               label="Signos vitales registrados"
               value={
@@ -363,7 +370,7 @@ export function ReportsScreen() {
 
               <View style={styles.reportActions}>
                 <VisualButton
-                  label="Ver o compartir"
+                  label={isPdf ? 'Compartir PDF' : 'Compartir Excel'}
                   onPress={() =>
                     router.navigate(
                       '/vitales/reporte-estado?archivo=' + encodeURIComponent(report.filename),
@@ -374,7 +381,7 @@ export function ReportsScreen() {
                   label="Eliminar reporte"
                   secondary
                   disabled={saving}
-                  onPress={() => handleDeleteReport(report.filename)}
+                  onPress={() => confirmDeleteReport(report.filename)}
                 />
               </View>
             </InfoCard>
@@ -452,7 +459,7 @@ export function ReportStatusScreen() {
       <DemoBadge />
       <InfoCard>
         <SectionTitle>Reporte generado y guardado</SectionTitle>
-        <StatusPill>Persistido en almacenamiento local</StatusPill>
+        <StatusPill>Archivo guardado. Puedes compartirlo cuando quieras.</StatusPill>
         <DetailRow label="Archivo" value={archivo} />
         <DetailRow
           label="Formato"
@@ -463,7 +470,10 @@ export function ReportStatusScreen() {
         {sharingFeedback ? <StatusPill>{sharingFeedback}</StatusPill> : null}
       </InfoCard>
 
-      <VisualButton label="Abrir hoja de compartir" onPress={handleReshare} />
+      <VisualButton
+        label={fileFormat === 'pdf' ? 'Compartir PDF' : 'Compartir Excel'}
+        onPress={handleReshare}
+      />
       <VisualButton
         label="Volver a reportes guardados"
         secondary

@@ -16,6 +16,7 @@ type Props = {
   primary?: boolean;
   replace?: boolean;
   navigationMethod?: 'navigate' | 'push';
+  compact?: boolean;
 };
 
 export function NavigationCard({
@@ -26,6 +27,7 @@ export function NavigationCard({
   primary = false,
   replace = false,
   navigationMethod = 'navigate',
+  compact = false,
 }: Props) {
   const { theme: appTheme } = useAppTheme();
   const styles = createStyles(appTheme.colors);
@@ -40,18 +42,25 @@ export function NavigationCard({
         else if (navigationMethod === 'push') router.push(href);
         else router.navigate(href, { withAnchor: true });
       }}
-      style={({ pressed }) => [styles.card, primary && styles.primary, pressed && styles.pressed]}
+      style={({ pressed }) => [
+        styles.card,
+        compact && styles.compactCard,
+        primary && styles.primary,
+        pressed && styles.pressed,
+      ]}
     >
-      <View style={[styles.icon, primary && styles.primaryIcon]}>
-        <Feather name={icon} size={24} color={color} accessible={false} />
+      <View style={[styles.icon, compact && styles.compactIcon, primary && styles.primaryIcon]}>
+        <Feather name={icon} size={compact ? 20 : 24} color={color} accessible={false} />
       </View>
       <View style={styles.copy}>
-        <Text style={[styles.title, primary && styles.inverse]}>{title}</Text>
+        <Text style={[styles.title, compact && styles.compactTitle, primary && styles.inverse]}>
+          {title}
+        </Text>
         {description ? (
           <Text style={[styles.description, primary && styles.inverse]}>{description}</Text>
         ) : null}
       </View>
-      <Feather name="chevron-right" size={20} color={color} accessible={false} />
+      <Feather name="chevron-right" size={compact ? 18 : 20} color={color} accessible={false} />
     </Pressable>
   );
 }
@@ -67,6 +76,16 @@ function createStyles(colors: ReturnType<typeof useAppTheme>['theme']['colors'])
       backgroundColor: colors.surface,
       borderRadius: theme.radius.md,
     },
+    compactCard: {
+      minHeight: 48,
+      paddingVertical: theme.spacing.sm,
+      paddingHorizontal: theme.spacing.md,
+      gap: theme.spacing.sm,
+      borderRadius: theme.radius.sm,
+      borderWidth: 1,
+      borderColor: colors.border,
+      marginVertical: 2,
+    },
     primary: { backgroundColor: colors.primary },
     pressed: { opacity: 0.7 },
     icon: {
@@ -77,9 +96,14 @@ function createStyles(colors: ReturnType<typeof useAppTheme>['theme']['colors'])
       alignItems: 'center',
       justifyContent: 'center',
     },
+    compactIcon: {
+      width: 36,
+      height: 36,
+    },
     primaryIcon: { backgroundColor: colors.onPrimaryContainer },
     copy: { flex: 1, gap: theme.spacing.xs },
     title: { fontSize: 17, fontWeight: '600', color: colors.text },
+    compactTitle: { fontSize: 16, fontWeight: '600', color: colors.text },
     description: { fontSize: 14, lineHeight: 21, color: colors.secondary },
     inverse: { color: colors.onPrimary },
   });
