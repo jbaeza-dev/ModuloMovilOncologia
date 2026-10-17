@@ -6,7 +6,14 @@ import { Alert, Linking, Pressable, StyleSheet, Text, View } from 'react-native'
 
 import { DateTimePickerField } from '../../components/DateTimePickerField';
 import { Screen } from '../../components/Screen';
-import { BodyText, DemoBadge, InfoCard, SectionTitle, VisualButton } from '../../components/Visual';
+import {
+  BodyText,
+  DemoBadge,
+  DetailRow,
+  InfoCard,
+  SectionTitle,
+  VisualButton,
+} from '../../components/Visual';
 import type { ActiveMedicationRecord } from '../../data/local/clinical-context/clinical-context-types';
 import type {
   ReminderActivationIntent,
@@ -207,6 +214,23 @@ export function ReminderEditScreen() {
     };
   }, [repository, paramId, paramMedicamentoId]);
 
+  const [prefs, setPrefs] = useState<{ enabled: boolean }>({ enabled: true });
+
+  useEffect(() => {
+    if (!repository?.reminders?.getPreferences) return;
+    let active = true;
+    void repository.reminders.getPreferences().then(
+      (p) => {
+        if (!active) return;
+        setPrefs(p);
+      },
+      () => {},
+    );
+    return () => {
+      active = false;
+    };
+  }, [repository]);
+
   const selectedMedication = useMemo(
     () => medications.find((m) => m.id === medicamentoId) ?? null,
     [medications, medicamentoId],
@@ -324,6 +348,39 @@ export function ReminderEditScreen() {
       }),
     [tipo, medicamentoId, selectedDays, selectedHours, effectiveStart, effectiveEnd, habilitado],
   );
+
+  const summaryDaysText = useMemo(() => {
+    if (selectedDays.length === 7) {
+      return 'Todos los días';
+    }
+    if (selectedDays.length === 0) {
+      return 'Ningún día seleccionado';
+    }
+    return [...selectedDays]
+      .sort((a, b) => a - b)
+      .map((d) => DAYS.find((day) => day.id === d)?.label ?? `Día ${d}`)
+      .join(', ');
+  }, [selectedDays]);
+
+  const summaryHoursText = useMemo(() => {
+    if (selectedHours.length === 0) {
+      return 'Sin horarios elegidos';
+    }
+    return [...selectedHours].sort().join(', ');
+  }, [selectedHours]);
+
+  const summaryVigenciaText = useMemo(() => {
+    if (effectiveStart && effectiveEnd) {
+      return `Desde ${formatCivilDateDisplay(effectiveStart)} hasta ${formatCivilDateDisplay(effectiveEnd)}`;
+    }
+    if (effectiveStart) {
+      return `Desde ${formatCivilDateDisplay(effectiveStart)}`;
+    }
+    if (effectiveEnd) {
+      return `Hasta ${formatCivilDateDisplay(effectiveEnd)}`;
+    }
+    return tipo === 'medicacion' ? 'Durante todo el tratamiento' : 'Sin límite de fechas';
+  }, [effectiveStart, effectiveEnd, tipo]);
 
   const isDirty =
     ruleLoadingState === 'ready' && !snapshotsEqual(currentSnapshot, confirmedSnapshot);
@@ -1312,6 +1369,67 @@ export function ReminderEditScreen() {
             onPress={() => void executeSave('save_disabled')}
             disabled={saving}
           />
+        </InfoCard>
+      ) : null}
+
+      {/* Resumen del recordatorio antes de guardar */}
+      {ruleLoadingState === 'ready' ? (
+        <InfoCard>
+          <SectionTitle>Resumen del recordatorio</SectionTitle>
+          {tipo === 'registro_vitales' ? (
+            <>
+              <DetailRow label="Días seleccionados" value={summaryDaysText} layout="vertical" />
+              <DetailRow
+                label="Horarios de aviso elegidos"
+                value={summaryHoursText}
+                layout="vertical"
+              />
+              {effectiveStart || effectiveEnd ? (
+                <DetailRow label="Vigencia" value={summaryVigenciaText} layout="vertical" />
+              ) : null}
+              <DetailRow
+                label="Estado individual"
+                value={habilitado ? 'Recordatorio activo' : 'Recordatorio en pausa'}
+                layout="vertical"
+              />
+              {!prefs.enabled ? (
+                <DetailRow
+                  label="Avisos generales"
+                  value="Avisos generales en pausa"
+                  layout="vertical"
+                />
+              ) : null}
+            </>
+          ) : (
+            <>
+              <DetailRow
+                label="Medicamento seleccionado"
+                value={selectedMedication?.nombre ?? 'Sin medicamento seleccionado'}
+                layout="vertical"
+              />
+              <DetailRow
+                label="Horarios de aviso elegidos"
+                value={summaryHoursText}
+                layout="vertical"
+              />
+              {selectedDays.length < 7 ? (
+                <DetailRow label="Días seleccionados" value={summaryDaysText} layout="vertical" />
+              ) : null}
+              <DetailRow label="Vigencia" value={summaryVigenciaText} layout="vertical" />
+              <DetailRow
+                label="Estado individual"
+                value={habilitado ? 'Recordatorio activo' : 'Recordatorio en pausa'}
+                layout="vertical"
+              />
+              {!prefs.enabled ? (
+                <DetailRow
+                  label="Avisos generales"
+                  value="Avisos generales en pausa"
+                  layout="vertical"
+                />
+              ) : null}
+            </>
+          )}
         </InfoCard>
       ) : null}
     </Screen>

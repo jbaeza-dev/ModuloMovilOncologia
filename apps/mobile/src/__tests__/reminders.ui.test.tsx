@@ -613,7 +613,7 @@ describe('Incremento 5: UI de Recordatorios y Avisos Locales', () => {
         expect(screen.getByText('Nuevo recordatorio')).toBeTruthy();
       });
       expect(screen.getByLabelText('Registro de signos vitales')).toBeTruthy();
-      expect(screen.getByText('07:00')).toBeTruthy();
+      expect(screen.getAllByText('07:00').length).toBeGreaterThanOrEqual(1);
       expect(screen.getByLabelText('Todos los días')).toBeTruthy();
       expect(screen.getByLabelText('Personalizar')).toBeTruthy();
     });
@@ -634,7 +634,7 @@ describe('Incremento 5: UI de Recordatorios y Avisos Locales', () => {
       // Simular cancelación del diálogo nativo (dismissed)
       fireEvent(picker, 'onChange', { type: 'dismissed' }, undefined);
 
-      expect(screen.getByText('07:00')).toBeTruthy();
+      expect(screen.getAllByText('07:00').length).toBeGreaterThanOrEqual(1);
     });
 
     it('muestra encabezado clínico en solo lectura cuando medicamentoId válido viene por parámetro y plantillas desde las 07:00', async () => {
@@ -661,7 +661,7 @@ describe('Incremento 5: UI de Recordatorios y Avisos Locales', () => {
       await render(<ReminderEditScreen />);
 
       await waitFor(() => {
-        expect(screen.getByText('Ciclofosfamida 500mg')).toBeTruthy();
+        expect(screen.getAllByText('Ciclofosfamida 500mg').length).toBeGreaterThanOrEqual(1);
       });
       expect(screen.getByLabelText('Horario de mañana')).toBeTruthy();
       expect(screen.getByLabelText('Dos horarios diarios')).toBeTruthy();
@@ -742,7 +742,7 @@ describe('Incremento 5: UI de Recordatorios y Avisos Locales', () => {
       fireEvent.press(screen.getByText('Aplicar hora'));
 
       await waitFor(() => {
-        expect(screen.getByText('08:30')).toBeTruthy();
+        expect(screen.getAllByText('08:30').length).toBeGreaterThanOrEqual(1);
       });
     });
 
@@ -1129,7 +1129,7 @@ describe('Incremento 5: UI de Recordatorios y Avisos Locales', () => {
 
       await waitFor(() => {
         expect(screen.getByText('Guardar cambios')).toBeTruthy();
-        expect(screen.getByText('Recordatorio en pausa')).toBeTruthy();
+        expect(screen.getAllByText('Recordatorio en pausa').length).toBeGreaterThanOrEqual(1);
       });
 
       fireEvent.press(screen.getByText('Guardar cambios'));
@@ -1146,6 +1146,105 @@ describe('Incremento 5: UI de Recordatorios y Avisos Locales', () => {
       });
 
       mockReminderRepo.saveRuleWithActivationIntent = originalSave;
+    });
+
+    it('muestra el resumen del recordatorio para signos vitales y actualiza automáticamente los horarios elegidos', async () => {
+      mockUseLocalSearchParams.mockReturnValue({});
+      await render(<ReminderEditScreen />);
+
+      await waitFor(() => {
+        expect(screen.getByText('Resumen del recordatorio')).toBeTruthy();
+      });
+
+      expect(screen.getByText('Días seleccionados')).toBeTruthy();
+      expect(screen.getAllByText('Todos los días').length).toBeGreaterThanOrEqual(1);
+      expect(screen.getByText('Horarios de aviso elegidos')).toBeTruthy();
+      expect(screen.getAllByText('07:00').length).toBeGreaterThanOrEqual(1);
+      expect(screen.getByText('Estado individual')).toBeTruthy();
+      expect(screen.getAllByText('Recordatorio activo').length).toBeGreaterThanOrEqual(1);
+
+      // Al cambiar la hora con el teclado, el resumen se actualiza automáticamente
+      fireEvent.press(screen.getByLabelText('Escribir hora con teclado para Hora del aviso'));
+      await waitFor(() => {
+        expect(screen.getByLabelText('Campo de texto hora para Hora del aviso')).toBeTruthy();
+      });
+      const timeInput = screen.getByLabelText('Campo de texto hora para Hora del aviso');
+      fireEvent.changeText(timeInput, '09:15');
+      await waitFor(() => {
+        expect(timeInput.props.value).toBe('09:15');
+      });
+      fireEvent.press(screen.getByText('Aplicar hora'));
+
+      await waitFor(() => {
+        expect(screen.getAllByText('09:15').length).toBeGreaterThanOrEqual(1);
+      });
+    });
+
+    it('muestra el resumen del recordatorio para medicamento con medicamento seleccionado, horarios, vigencia efectiva y pausa general', async () => {
+      mockUseLocalSearchParams.mockReturnValue({ id: 'rule-med-summary' });
+      mockReminderRepo.getPreferences.mockResolvedValueOnce({
+        enabled: false,
+        updatedAt: '2026-10-15T00:00:00Z',
+      });
+      mockRepository.activeMedications.mockResolvedValueOnce([
+        {
+          id: 'med-summary-1',
+          paciente_id: 'paciente-a',
+          nombre: 'Ciclofosfamida 500mg',
+          dosis: '500 mg',
+          frecuencia: 'Cada 12 horas',
+          via: 'Oral',
+          indicaciones: null,
+          fecha_inicio: '2026-10-10',
+          fecha_fin: '2026-10-25',
+          activo: 1,
+          obtenido_en: '2026-10-10T00:00:00Z',
+        },
+      ]);
+      mockReminderRepo.getRule.mockResolvedValueOnce({
+        ...mockDefaultRule,
+        id: 'rule-med-summary',
+        tipo: 'medicacion',
+        medicamentoId: 'med-summary-1',
+        habilitado: true,
+        horasMinutos: ['08:00', '20:00'],
+        fechaInicio: '2026-10-10',
+        fechaFin: '2026-10-25',
+      });
+
+      await render(<ReminderEditScreen />);
+
+      await waitFor(() => {
+        expect(screen.getByText('Resumen del recordatorio')).toBeTruthy();
+      });
+
+      // Medicamento seleccionado
+      expect(screen.getByText('Medicamento seleccionado')).toBeTruthy();
+      expect(screen.getAllByText('Ciclofosfamida 500mg').length).toBeGreaterThanOrEqual(1);
+
+      // Horas elegidas
+      expect(screen.getByText('Horarios de aviso elegidos')).toBeTruthy();
+      expect(screen.getByText('08:00, 20:00')).toBeTruthy();
+
+      // Vigencia con fechas civiles
+      expect(screen.getByText('Vigencia')).toBeTruthy();
+      expect(screen.getAllByText(/10\/10\/2026.*25\/10\/2026/).length).toBeGreaterThanOrEqual(1);
+
+      // Estado individual y pausa general presentes
+      expect(screen.getByText('Estado individual')).toBeTruthy();
+      expect(screen.getAllByText('Recordatorio activo').length).toBeGreaterThanOrEqual(1);
+      expect(screen.getByText('Avisos generales')).toBeTruthy();
+      expect(screen.getByText('Avisos generales en pausa')).toBeTruthy();
+
+      // Al alternar el interruptor individual, el resumen pasa a "Recordatorio en pausa"
+      const toggleSwitch = screen.getByRole('switch', {
+        name: 'Estado del recordatorio: activo',
+      });
+      fireEvent.press(toggleSwitch);
+
+      await waitFor(() => {
+        expect(screen.getAllByText('Recordatorio en pausa').length).toBeGreaterThanOrEqual(1);
+      });
     });
   });
 
