@@ -2,7 +2,7 @@ import Feather from '@expo/vector-icons/Feather';
 import { File } from 'expo-file-system';
 import { router, useFocusEffect, useLocalSearchParams } from 'expo-router';
 import { useCallback, useEffect, useRef, useState } from 'react';
-import { Alert, StyleSheet, Text, View } from 'react-native';
+import { AccessibilityInfo, Alert, Pressable, StyleSheet, Text, View } from 'react-native';
 
 import { Screen } from '../../components/Screen';
 import {
@@ -35,6 +35,83 @@ import { useAppTheme } from '../../providers/ThemeProvider';
 import { theme } from '../../theme';
 import { generateAndPersistReportPdf } from './report-pdf';
 import { generateAndPersistReportXlsx } from './report-xlsx';
+
+interface SavedReportCardProps {
+  report: PatientReportItem;
+  saving: boolean;
+  onShare: () => void;
+  onDelete: () => void;
+}
+
+function SavedReportCard({ report, saving, onShare, onDelete }: SavedReportCardProps) {
+  const { theme: appTheme } = useAppTheme();
+  const styles = createStyles(appTheme.colors);
+  const [expanded, setExpanded] = useState(false);
+
+  const sizeKb = report.sizeBytes ? (report.sizeBytes / 1024).toFixed(1) : null;
+  const formattedDate = report.generatedAt ? formatDate(report.generatedAt) : 'Reciente';
+  const isPdf = report.format === 'pdf';
+  const title = report.periodDays
+    ? `Reporte ${isPdf ? 'PDF' : 'Excel'} de ${report.periodDays} días`
+    : isPdf
+      ? 'Reporte PDF'
+      : 'Reporte Excel';
+
+  const handleToggleDetails = () => {
+    const next = !expanded;
+    setExpanded(next);
+    AccessibilityInfo.announceForAccessibility(
+      next ? 'Detalles del archivo mostrados' : 'Detalles del archivo ocultos',
+    );
+  };
+
+  return (
+    <InfoCard>
+      <View style={styles.cardHeader}>
+        <Feather
+          name={isPdf ? 'file-text' : 'grid'}
+          size={24}
+          color={appTheme.colors.primary}
+          accessible={false}
+        />
+        <View style={styles.cardHeaderCopy}>
+          <Text style={styles.cardTitle}>{title}</Text>
+          <BodyText>Generado el {formattedDate}</BodyText>
+        </View>
+        <StatusPill>{isPdf ? 'PDF' : 'Excel'}</StatusPill>
+      </View>
+
+      <Pressable
+        accessibilityRole="button"
+        accessibilityLabel={expanded ? 'Ocultar detalles del archivo' : 'Ver detalles del archivo'}
+        accessibilityState={{ expanded }}
+        onPress={handleToggleDetails}
+        style={styles.detailsToggle}
+      >
+        <Text style={styles.detailsToggleText}>Detalles del archivo</Text>
+        <Feather
+          name={expanded ? 'chevron-up' : 'chevron-down'}
+          size={18}
+          color={appTheme.colors.primary}
+          accessible={false}
+        />
+      </Pressable>
+
+      {expanded ? (
+        <View style={styles.techDetailsContainer}>
+          <DetailRow label="Archivo" value={report.filename} layout="vertical" />
+          <DetailRow label="Tamaño" value={sizeKb ? `${sizeKb} KB` : 'No disponible'} />
+          <DetailRow label="Formato" value={isPdf ? 'Documento PDF' : 'Planilla Excel (.xlsx)'} />
+        </View>
+      ) : null}
+
+      <View style={styles.reportActions}>
+        <VisualButton label={isPdf ? 'Compartir PDF' : 'Compartir Excel'} onPress={onShare} />
+        <VisualButton label="Eliminar reporte" secondary disabled={saving} onPress={onDelete} />
+      </View>
+    </InfoCard>
+  );
+}
 
 export function ReportsScreen() {
   const { theme: appTheme } = useAppTheme();
@@ -384,54 +461,19 @@ export function ReportsScreen() {
           <BodyText>No hay reportes generados previamente en este dispositivo.</BodyText>
         </InfoCard>
       ) : (
-        savedReports.map((report) => {
-          const sizeKb = report.sizeBytes ? (report.sizeBytes / 1024).toFixed(1) : null;
-          const formattedDate = report.generatedAt ? formatDate(report.generatedAt) : 'Reciente';
-          const isPdf = report.format === 'pdf';
-
-          return (
-            <InfoCard key={report.filename}>
-              <View style={styles.cardHeader}>
-                <Feather
-                  name={isPdf ? 'file-text' : 'grid'}
-                  size={24}
-                  color={appTheme.colors.primary}
-                />
-                <View style={styles.cardHeaderCopy}>
-                  <Text style={styles.cardTitle}>
-                    {report.periodDays ? `Reporte (${report.periodDays} días)` : 'Reporte clínico'}
-                  </Text>
-                  <BodyText>Generado el {formattedDate}</BodyText>
-                </View>
-                <StatusPill>{isPdf ? 'PDF' : 'Excel'}</StatusPill>
-              </View>
-
-              <DetailRow label="Archivo" value={report.filename} />
-              <DetailRow label="Tamaño" value={sizeKb ? `${sizeKb} KB` : 'No disponible'} />
-              <DetailRow
-                label="Formato"
-                value={isPdf ? 'Documento PDF' : 'Planilla Excel (.xlsx)'}
-              />
-
-              <View style={styles.reportActions}>
-                <VisualButton
-                  label={isPdf ? 'Compartir PDF' : 'Compartir Excel'}
-                  onPress={() =>
-                    router.navigate(
-                      '/vitales/reporte-estado?archivo=' + encodeURIComponent(report.filename),
-                    )
-                  }
-                />
-                <VisualButton
-                  label="Eliminar reporte"
-                  secondary
-                  disabled={saving}
-                  onPress={() => confirmDeleteReport(report.filename)}
-                />
-              </View>
-            </InfoCard>
-          );
-        })
+        savedReports.map((report) => (
+          <SavedReportCard
+            key={report.filename}
+            report={report}
+            saving={saving}
+            onShare={() =>
+              router.navigate(
+                '/vitales/reporte-estado?archivo=' + encodeURIComponent(report.filename),
+              )
+            }
+            onDelete={() => confirmDeleteReport(report.filename)}
+          />
+        ))
       )}
     </Screen>
   );
@@ -505,7 +547,7 @@ export function ReportStatusScreen() {
       <InfoCard>
         <SectionTitle>Reporte generado y guardado</SectionTitle>
         <StatusPill>Archivo guardado. Puedes compartirlo cuando quieras.</StatusPill>
-        <DetailRow label="Archivo" value={archivo} />
+        <DetailRow label="Archivo" value={archivo} layout="vertical" />
         <DetailRow
           label="Formato"
           value={fileFormat === 'pdf' ? 'Documento PDF' : 'Planilla Excel (.xlsx)'}
@@ -545,5 +587,22 @@ function createStyles(colors: ReturnType<typeof useAppTheme>['theme']['colors'])
     cardHeaderCopy: { flex: 1, gap: 2 },
     cardTitle: { fontSize: 16, fontWeight: '700', color: colors.text },
     reportActions: { gap: theme.spacing.sm, marginTop: theme.spacing.sm },
+    detailsToggle: {
+      minHeight: 48,
+      flexDirection: 'row',
+      alignItems: 'center',
+      justifyContent: 'space-between',
+      paddingVertical: theme.spacing.xs,
+    },
+    detailsToggleText: {
+      fontSize: 14,
+      fontWeight: '600',
+      color: colors.primary,
+    },
+    techDetailsContainer: {
+      gap: theme.spacing.xs,
+      marginTop: theme.spacing.xs,
+      marginBottom: theme.spacing.xs,
+    },
   });
 }

@@ -2,7 +2,7 @@
 
 import { fireEvent, render, screen, waitFor } from '@testing-library/react-native';
 import React from 'react';
-import { Alert } from 'react-native';
+import { AccessibilityInfo, Alert } from 'react-native';
 
 const mockRouterPush = jest.fn();
 const mockRouterNavigate = jest.fn();
@@ -237,6 +237,8 @@ describe('Profile y Reports UI (Bloque 5)', () => {
 
   describe('ReportsScreen', () => {
     it('presenta configuración breve con 30 días y PDF por defecto, y acción principal antes de archivos guardados', async () => {
+      const announceSpy = jest.spyOn(AccessibilityInfo, 'announceForAccessibility');
+
       await render(<ReportsScreen />);
 
       await waitFor(() => {
@@ -252,9 +254,34 @@ describe('Profile y Reports UI (Bloque 5)', () => {
       // Acción principal para generar o actualizar
       expect(screen.getByText('Actualizar y compartir PDF')).toBeTruthy();
 
-      // Archivo guardado con botón Compartir PDF
+      // Tarjeta simplificada de reporte guardado: título claro, fecha y acciones visibles
+      expect(screen.getByText('Reporte PDF de 30 días')).toBeTruthy();
+      expect(screen.getByText(/Generado el/)).toBeTruthy();
       expect(screen.getByText('Compartir PDF')).toBeTruthy();
       expect(screen.getByText('Eliminar reporte')).toBeTruthy();
+
+      // El nombre técnico del archivo está oculto por defecto
+      expect(screen.queryByText('reporte_paciente-a_30d_2026-10-16T12-00-00.pdf')).toBeNull();
+
+      // Desplegable accesible para ver detalles del archivo con minHeight 48
+      const toggleDetailsBtn = screen.getByRole('button', { name: 'Ver detalles del archivo' });
+      expect(toggleDetailsBtn).toBeTruthy();
+      fireEvent.press(toggleDetailsBtn);
+
+      // Al expandir, se anuncia a TalkBack y los detalles técnicos quedan visibles
+      await waitFor(() => {
+        expect(announceSpy).toHaveBeenCalledWith('Detalles del archivo mostrados');
+        expect(screen.getByText('reporte_paciente-a_30d_2026-10-16T12-00-00.pdf')).toBeTruthy();
+      });
+
+      // Al colapsar, se anuncia nuevamente
+      fireEvent.press(screen.getByRole('button', { name: 'Ocultar detalles del archivo' }));
+      await waitFor(() => {
+        expect(announceSpy).toHaveBeenCalledWith('Detalles del archivo ocultos');
+        expect(screen.queryByText('reporte_paciente-a_30d_2026-10-16T12-00-00.pdf')).toBeNull();
+      });
+
+      announceSpy.mockRestore();
     });
 
     it('solicita confirmación antes de eliminar un reporte y no realiza E/S si se cancela', async () => {
