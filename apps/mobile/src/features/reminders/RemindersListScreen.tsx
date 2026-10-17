@@ -620,10 +620,10 @@ export function RemindersListScreen() {
           {coordinatorResult && coordinatorResult.truncadas > 0 ? (
             <View style={styles.warningBox}>
               <Feather name="info" size={20} color={appTheme.colors.warning} />
-              <BodyText>
+              <Text style={styles.warningText}>
                 Se alcanzó el límite de avisos simultáneos del teléfono. Los avisos más próximos
                 quedaron programados y se renovarán automáticamente al abrir QuimioCare.
-              </BodyText>
+              </Text>
             </View>
           ) : null}
         </InfoCard>
@@ -682,10 +682,16 @@ function useStyles() {
       flexDirection: 'row',
       alignItems: 'center',
       gap: theme.spacing.sm,
-      backgroundColor: '#fef3c7',
+      backgroundColor: colors.warningContainer,
       padding: theme.spacing.sm,
       borderRadius: theme.radius.sm,
       marginVertical: theme.spacing.xs,
+    },
+    warningText: {
+      flex: 1,
+      fontSize: 14,
+      lineHeight: 20,
+      color: colors.onWarningContainer,
     },
     sectionHeader: {
       marginTop: theme.spacing.md,

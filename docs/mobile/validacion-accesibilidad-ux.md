@@ -10,7 +10,7 @@
 
 ## 1. Resumen Ejecutivo y Marco de Verificación
 
-El presente documento acredita la implementación y el estado técnico de verificación del plan de accesibilidad y experiencia de usuario (`.agents/plan_accesibilidad_ux_mobile_premerge.md`) para el módulo móvil Android de **QuimioCare** sobre Expo SDK 52 y React Native 0.86.3.
+El presente documento acredita la implementación y el estado técnico de verificación del plan de accesibilidad y experiencia de usuario (`.agents/plan_accesibilidad_ux_mobile_premerge.md`) para el módulo móvil Android de **QuimioCare** sobre Expo SDK 57 y React Native 0.86.3.
 
 Se implementaron de manera sistemática los 7 bloques acordados (**B1** a **B7**), cubriendo las 15 mejoras funcionales y ergonómicas (**UX-01** a **UX-15**). Las pruebas se ejecutaron exclusivamente con datos sintéticos y pacientes ficticios (Paciente A y Paciente B), garantizando aislamiento local en SQLite, retención determinista en memoria del asistente y compatibilidad estricta con los contratos de navegación de Expo Router.
 
@@ -28,8 +28,8 @@ Para mantener la máxima transparencia y honestidad técnica con respecto a las 
 | ------------------------------------- | ----------------------------------------------------------------- | ------------------------------------------ |
 | **Prettier & ESLint**                 | Estilo, formato e higiene de código en todo el monorepositorio    | **Aprobado** (0 advertencias, 0 errores)   |
 | **TypeScript (`tsc --noEmit`)**       | Verificación estricta de tipos en raíz y workspace móvil          | **Aprobado** (0 errores)                   |
-| **Vitest (Local)**                    | 26 suites unitarias y de integración sobre SQLite en memoria      | **338 pruebas aprobadas** (100 %)          |
-| **Jest & RNTL (UI)**                  | 8 suites de interacción, accesibilidad y componentes React Native | **112 pruebas aprobadas** (100 %)          |
+| **Vitest (Local)**                    | 26 suites unitarias y de integración sobre SQLite en memoria      | **346 pruebas aprobadas** (100 %)          |
+| **Jest & RNTL (UI)**                  | 8 suites de interacción, accesibilidad y componentes React Native | **113 pruebas aprobadas** (100 %)          |
 | **Expo Doctor**                       | Diagnóstico de configuración, plugins y dependencias nativas      | **21/21 reglas aprobadas**                 |
 | **Android Export (`bundle:android`)** | Compilación de bundle de producción Hermes y assets estáticos     | **Aprobado** (dist generado correctamente) |
 
@@ -37,23 +37,23 @@ Para mantener la máxima transparencia y honestidad técnica con respecto a las 
 
 ## 2. Matriz de Cobertura de Mejoras (UX-01 a UX-15)
 
-| ID        | Mejora                                                            | Estado de Implementación                                                     | Verificación Automática                                                        | Estado de Validación en Android                                         |
-| --------- | ----------------------------------------------------------------- | ---------------------------------------------------------------------------- | ------------------------------------------------------------------------------ | ----------------------------------------------------------------------- |
-| **UX-01** | Inicio sin duplicación y prioridad de tareas                      | **Implementado** (`HomeScreen.tsx`)                                          | 10 tests en `home.ui.test.tsx`                                                 | Verificado automáticamente (pendiente de validación nativa en hardware) |
-| **UX-02** | Acciones encontrables y navegación estable                        | **Implementado** (`(tabs)/_layout.tsx`, `Screen.tsx`, `NavigationCard.tsx`)  | `navigation-screen.ui.test.tsx`                                                | Verificado automáticamente (pendiente de validación nativa en hardware) |
-| **UX-03** | Lenguaje comprensible y mensajes veraces                          | **Implementado** (revisión transversal de copy)                              | Suites de vitals, reminders, reports                                           | Verificado automáticamente (pendiente de validación nativa en hardware) |
-| **UX-04** | Tipografía común y texto ampliado                                 | **Implementado** (`typography`, envoltura de texto)                          | `ui-theme-contrast.test.ts`                                                    | Verificado automáticamente (pendiente de validación nativa en hardware) |
-| **UX-05** | Áreas táctiles mínimas de 48 × 48 dp                              | **Implementado** (`VisualButton`, `NavigationCard`, `Screen`, header)        | `visual-components.ui.test.tsx`                                                | Verificado automáticamente (pendiente de validación nativa en hardware) |
-| **UX-06** | Contraste y estados semánticos                                    | **Implementado** (`resolveTheme`, pares semánticos)                          | 41 tests en `ui-theme-contrast.test.ts`                                        | Verificado automáticamente (pendiente de validación nativa en hardware) |
-| **UX-07** | TalkBack, foco y anuncios ordenados                               | **Implementado** (`accessibilityLiveRegion="polite"`, `accessibilityLabel`)  | Tests UI de vitals, reminders, assistant                                       | Verificado automáticamente (pendiente de validación nativa en hardware) |
-| **UX-08** | Captura de signos comprensible y errores identificables           | **Implementado** (`validateVitalInput`, `VisualField`)                       | 9 tests en `validation.test.ts`, 7 en `vitals.ui.test.tsx`                     | Verificado automáticamente (pendiente de validación nativa en hardware) |
-| **UX-09** | Confirmación, recuperación y protección de salida                 | **Implementado** (`usePreventRemove`, `FeedbackBanner`)                      | `vitals.ui.test.tsx`, `reminders.ui.test.tsx`                                  | Verificado automáticamente (pendiente de validación nativa en hardware) |
-| **UX-10** | Historial representativo y fechas civiles                         | **Implementado** (`vitals-formatters.ts`, `VitalsDataScreens.tsx`)           | 11 tests en `vitals-formatters.test.ts`, `vitals.ui.test.tsx`                  | Verificado automáticamente (pendiente de validación nativa en hardware) |
-| **UX-11** | Recordatorios simples sin reactivar pausas                        | **Implementado** (`reminder-actions.ts`, `ReminderEditScreen.tsx`)           | 10 tests en `reminder-actions.test.ts`, 11 en `reminders.ui.test.tsx`          | Verificado automáticamente (pendiente de validación nativa en hardware) |
-| **UX-12** | Bandeja orientada al paciente («Próximos» y «Actividad»)          | **Implementado** (`NoticesTrayScreen.tsx`, snapshot classifier)              | `reminders.ui.test.tsx` (incl. 98 ocurrencias) y `reminder-repository.test.ts` | Verificado automáticamente (pendiente de validación nativa en hardware) |
-| **UX-13** | Perfil compacto y consulta clínica directa                        | **Implementado** (`ProfileScreen.tsx`, `MedicationScreen.tsx`)               | 4 tests en `profile-reports.ui.test.tsx`                                       | Verificado automáticamente (pendiente de validación nativa en hardware) |
-| **UX-14** | Reportes con configuración breve y borrado seguro                 | **Implementado** (`ReportsScreens.tsx`, `ReportStatusScreen`)                | `profile-reports.ui.test.tsx`, `report-security.test.ts`                       | Verificado automáticamente (pendiente de validación nativa en hardware) |
-| **UX-15** | Asistente con escritura/lectura accesible y disponibilidad previa | **Implementado** (`AssistantScreen.tsx`, `AssistantController.isConfigured`) | `assistant-controller.test.ts`, `access-assistant.ui.test.tsx`                 | Verificado automáticamente (pendiente de validación nativa en hardware) |
+| ID        | Mejora                                                            | Estado de Implementación                                                     | Verificación Automática                                                                 | Estado de Validación en Android                                         |
+| --------- | ----------------------------------------------------------------- | ---------------------------------------------------------------------------- | --------------------------------------------------------------------------------------- | ----------------------------------------------------------------------- |
+| **UX-01** | Inicio sin duplicación y prioridad de tareas                      | **Implementado** (`HomeScreen.tsx`)                                          | 10 tests en `home.ui.test.tsx`                                                          | Verificado automáticamente (pendiente de validación nativa en hardware) |
+| **UX-02** | Acciones encontrables y navegación estable                        | **Implementado** (`(tabs)/_layout.tsx`, `Screen.tsx`, `NavigationCard.tsx`)  | `navigation-screen.ui.test.tsx`                                                         | Verificado automáticamente (pendiente de validación nativa en hardware) |
+| **UX-03** | Lenguaje comprensible y mensajes veraces                          | **Implementado** (revisión transversal de copy)                              | Suites de vitals, reminders, reports                                                    | Verificado automáticamente (pendiente de validación nativa en hardware) |
+| **UX-04** | Tipografía común y texto ampliado                                 | **Implementado** (`typography`, envoltura de texto)                          | `ui-theme-contrast.test.ts`                                                             | Verificado automáticamente (pendiente de validación nativa en hardware) |
+| **UX-05** | Áreas táctiles mínimas de 48 × 48 dp                              | **Implementado** (`VisualButton`, `NavigationCard`, `Screen`, header)        | `visual-components.ui.test.tsx`                                                         | Verificado automáticamente (pendiente de validación nativa en hardware) |
+| **UX-06** | Contraste y estados semánticos                                    | **Implementado** (`resolveTheme`, pares semánticos)                          | 49 tests en `ui-theme-contrast.test.ts`                                                 | Verificado automáticamente (pendiente de validación nativa en hardware) |
+| **UX-07** | TalkBack, foco y anuncios ordenados                               | **Implementado** (`accessibilityLiveRegion="polite"`, `accessibilityLabel`)  | Tests UI de vitals, reminders, assistant                                                | Verificado automáticamente (pendiente de validación nativa en hardware) |
+| **UX-08** | Captura de signos comprensible y errores identificables           | **Implementado** (`validateVitalInput`, `VisualField`)                       | 9 tests en `validation.test.ts`, 7 en `vitals.ui.test.tsx`                              | Verificado automáticamente (pendiente de validación nativa en hardware) |
+| **UX-09** | Confirmación, recuperación y protección de salida                 | **Implementado** (`usePreventRemove`, `FeedbackBanner`)                      | `vitals.ui.test.tsx`, `reminders.ui.test.tsx`                                           | Verificado automáticamente (pendiente de validación nativa en hardware) |
+| **UX-10** | Historial representativo y fechas civiles                         | **Implementado** (`vitals-formatters.ts`, `VitalsDataScreens.tsx`)           | 11 tests en `vitals-formatters.test.ts`, `vitals.ui.test.tsx`                           | Verificado automáticamente (pendiente de validación nativa en hardware) |
+| **UX-11** | Recordatorios simples sin reactivar pausas                        | **Implementado** (`reminder-actions.ts`, `ReminderEditScreen.tsx`)           | 10 tests en `reminder-actions.test.ts`, 11 en `reminders.ui.test.tsx`                   | Verificado automáticamente (pendiente de validación nativa en hardware) |
+| **UX-12** | Bandeja orientada al paciente («Próximos» y «Actividad»)          | **Implementado** (`NoticesTrayScreen.tsx`, snapshot classifier)              | `reminders.ui.test.tsx` (incl. 98 ocurrencias desordenadas y fallo nativo) y repo tests | Verificado automáticamente (pendiente de validación nativa en hardware) |
+| **UX-13** | Perfil compacto y consulta clínica directa                        | **Implementado** (`ProfileScreen.tsx`, `MedicationScreen.tsx`)               | 4 tests en `profile-reports.ui.test.tsx`                                                | Verificado automáticamente (pendiente de validación nativa en hardware) |
+| **UX-14** | Reportes con configuración breve y borrado seguro                 | **Implementado** (`ReportsScreens.tsx`, `ReportStatusScreen`)                | `profile-reports.ui.test.tsx`, `report-security.test.ts`                                | Verificado automáticamente (pendiente de validación nativa en hardware) |
+| **UX-15** | Asistente con escritura/lectura accesible y disponibilidad previa | **Implementado** (`AssistantScreen.tsx`, `AssistantController.isConfigured`) | `assistant-controller.test.ts`, `access-assistant.ui.test.tsx`                          | Verificado automáticamente (pendiente de validación nativa en hardware) |
 
 ---
 
@@ -61,28 +61,32 @@ Para mantener la máxima transparencia y honestidad técnica con respecto a las 
 
 La aplicación ofrece cuatro paletas seleccionables en Perfil → Preferencias, evaluadas en modo claro y oscuro. Todos los pares evaluados satisfacen el ratio mínimo de **4.5:1** para texto normal y **3.0:1** para componentes visuales y controles de interfaz. Las relaciones fueron calculadas mediante la fórmula estándar de luminancia relativa sRGB ($L = 0.2126 R + 0.7152 G + 0.0722 B$ con expansión de canales lineales):
 
-| Paleta                    | Modo   | Elemento Evaluado                                      | Color Fondo | Color Texto / Icono | Ratio Calculado | Estado WCAG         |
-| ------------------------- | ------ | ------------------------------------------------------ | ----------- | ------------------- | --------------- | ------------------- |
-| **Turquesa**              | Claro  | Botón Principal (`primary` / `onPrimary`)              | `#00695C`   | `#FFFFFF`           | **6.61:1**      | Aprobado (>= 4.5:1) |
-| **Turquesa**              | Claro  | Texto Principal (`background` / `text`)                | `#FFFFFF`   | `#202020`           | **16.29:1**     | Aprobado (>= 4.5:1) |
-| **Turquesa**              | Claro  | Texto Secundario (`background` / `secondary`)          | `#FFFFFF`   | `#595959`           | **7.00:1**      | Aprobado (>= 4.5:1) |
-| **Turquesa**              | Oscuro | Botón Principal (`primary` / `onPrimary`)              | `#80CBC4`   | `#202020`           | **8.73:1**      | Aprobado (>= 4.5:1) |
-| **Turquesa**              | Oscuro | Texto Principal (`background` / `text`)                | `#121212`   | `#F5F5F5`           | **17.18:1**     | Aprobado (>= 4.5:1) |
-| **Azul**                  | Claro  | Botón Principal (`primary` / `onPrimary`)              | `#0D47A1`   | `#FFFFFF`           | **8.63:1**      | Aprobado (>= 4.5:1) |
-| **Azul**                  | Oscuro | Botón Principal (`primary` / `onPrimary`)              | `#90CAF9`   | `#202020`           | **9.31:1**      | Aprobado (>= 4.5:1) |
-| **Violeta**               | Claro  | Botón Principal (`primary` / `onPrimary`)              | `#6A1B9A`   | `#FFFFFF`           | **9.39:1**      | Aprobado (>= 4.5:1) |
-| **Violeta**               | Oscuro | Botón Principal (`primary` / `onPrimary`)              | `#CE93D8`   | `#202020`           | **6.82:1**      | Aprobado (>= 4.5:1) |
-| **Ámbar**                 | Claro  | Botón Principal (`primary` / `onPrimary`)              | `#8D3B00`   | `#FFFFFF`           | **7.61:1**      | Aprobado (>= 4.5:1) |
-| **Ámbar**                 | Oscuro | Botón Principal (`primary` / `onPrimary`)              | `#FFB74D`   | `#202020`           | **9.41:1**      | Aprobado (>= 4.5:1) |
-| **Semántico Error**       | Claro  | Mensaje de Error (`error` / `onError`)                 | `#B3261E`   | `#FFFFFF`           | **6.54:1**      | Aprobado (>= 4.5:1) |
-| **Semántico Error**       | Oscuro | Mensaje de Error (`error` / `onError`)                 | `#EF9A9A`   | `#202020`           | **7.57:1**      | Aprobado (>= 4.5:1) |
-| **Contenedor Error**      | Oscuro | Contenedor de Error (`errorContainer` / `onErrorCont`) | `#3E1C1A`   | `#FFCDD2`           | **10.76:1**     | Aprobado (>= 4.5:1) |
-| **Semántico Advertencia** | Claro  | Mensaje Advertencia (`warning` / `#FFFFFF`)            | `#8D5700`   | `#FFFFFF`           | **6.01:1**      | Aprobado (>= 4.5:1) |
-| **Semántico Advertencia** | Oscuro | Mensaje Advertencia (`warning` / `#202020`)            | `#FFCC80`   | `#202020`           | **11.02:1**     | Aprobado (>= 4.5:1) |
-| **Borde Input Inactivo**  | Claro  | Contorno de Campo (`background` / `inputBorder`)       | `#FFFFFF`   | `#767676`           | **4.54:1**      | Aprobado (>= 3.0:1) |
-| **Borde Input Inactivo**  | Oscuro | Contorno de Campo (`background` / `inputBorder`)       | `#121212`   | `#757575`           | **4.07:1**      | Aprobado (>= 3.0:1) |
+| Paleta                     | Modo   | Elemento Evaluado                                        | Color Fondo | Color Texto / Icono | Ratio Calculado | Estado WCAG         |
+| -------------------------- | ------ | -------------------------------------------------------- | ----------- | ------------------- | --------------- | ------------------- |
+| **Turquesa**               | Claro  | Botón Principal (`primary` / `onPrimary`)                | `#00695C`   | `#FFFFFF`           | **6.61:1**      | Aprobado (>= 4.5:1) |
+| **Turquesa**               | Claro  | Texto Principal (`background` / `text`)                  | `#FFFFFF`   | `#202020`           | **16.29:1**     | Aprobado (>= 4.5:1) |
+| **Turquesa**               | Claro  | Texto Secundario (`background` / `secondary`)            | `#FFFFFF`   | `#595959`           | **7.00:1**      | Aprobado (>= 4.5:1) |
+| **Turquesa**               | Oscuro | Botón Principal (`primary` / `onPrimary`)                | `#80CBC4`   | `#202020`           | **8.73:1**      | Aprobado (>= 4.5:1) |
+| **Turquesa**               | Oscuro | Texto Principal (`background` / `text`)                  | `#121212`   | `#F5F5F5`           | **17.18:1**     | Aprobado (>= 4.5:1) |
+| **Azul**                   | Claro  | Botón Principal (`primary` / `onPrimary`)                | `#0D47A1`   | `#FFFFFF`           | **8.63:1**      | Aprobado (>= 4.5:1) |
+| **Azul**                   | Oscuro | Botón Principal (`primary` / `onPrimary`)                | `#90CAF9`   | `#202020`           | **9.31:1**      | Aprobado (>= 4.5:1) |
+| **Violeta**                | Claro  | Botón Principal (`primary` / `onPrimary`)                | `#6A1B9A`   | `#FFFFFF`           | **9.39:1**      | Aprobado (>= 4.5:1) |
+| **Violeta**                | Oscuro | Botón Principal (`primary` / `onPrimary`)                | `#CE93D8`   | `#202020`           | **6.82:1**      | Aprobado (>= 4.5:1) |
+| **Ámbar**                  | Claro  | Botón Principal (`primary` / `onPrimary`)                | `#8D3B00`   | `#FFFFFF`           | **7.61:1**      | Aprobado (>= 4.5:1) |
+| **Ámbar**                  | Oscuro | Botón Principal (`primary` / `onPrimary`)                | `#FFB74D`   | `#202020`           | **9.41:1**      | Aprobado (>= 4.5:1) |
+| **Semántico Error**        | Claro  | Mensaje de Error (`error` / `onError`)                   | `#B3261E`   | `#FFFFFF`           | **6.54:1**      | Aprobado (>= 4.5:1) |
+| **Semántico Error**        | Oscuro | Mensaje de Error (`error` / `onError`)                   | `#EF9A9A`   | `#202020`           | **7.57:1**      | Aprobado (>= 4.5:1) |
+| **Contenedor Error**       | Oscuro | Contenedor de Error (`errorContainer` / `onErrorCont`)   | `#3E1C1A`   | `#FFCDD2`           | **10.76:1**     | Aprobado (>= 4.5:1) |
+| **Semántico Advertencia**  | Claro  | Mensaje Advertencia (`warning` / `#FFFFFF`)              | `#8D5700`   | `#FFFFFF`           | **6.01:1**      | Aprobado (>= 4.5:1) |
+| **Semántico Advertencia**  | Oscuro | Mensaje Advertencia (`warning` / `#202020`)              | `#FFCC80`   | `#202020`           | **11.02:1**     | Aprobado (>= 4.5:1) |
+| **Contenedor Advertencia** | Claro  | Texto Alerta (`warningContainer` / `onWarningContainer`) | `#FEF3C7`   | `#5A3600`           | **9.61:1**      | Aprobado (>= 4.5:1) |
+| **Contenedor Advertencia** | Claro  | Icono Alerta (`warningContainer` / `warning`)            | `#FEF3C7`   | `#8D5700`           | **5.39:1**      | Aprobado (>= 3.0:1) |
+| **Contenedor Advertencia** | Oscuro | Texto Alerta (`warningContainer` / `onWarningContainer`) | `#3A2D1F`   | `#FFE2B8`           | **10.68:1**     | Aprobado (>= 4.5:1) |
+| **Contenedor Advertencia** | Oscuro | Icono Alerta (`warningContainer` / `warning`)            | `#3A2D1F`   | `#FFCC80`           | **9.02:1**      | Aprobado (>= 3.0:1) |
+| **Borde Input Inactivo**   | Claro  | Contorno de Campo (`background` / `inputBorder`)         | `#FFFFFF`   | `#767676`           | **4.54:1**      | Aprobado (>= 3.0:1) |
+| **Borde Input Inactivo**   | Oscuro | Contorno de Campo (`background` / `inputBorder`)         | `#121212`   | `#757575`           | **4.07:1**      | Aprobado (>= 3.0:1) |
 
-_Nota metodológica:_ Las relaciones de contraste fueron recalculadas con la formulación matemática exacta de luminancia relativa sRGB (WCAG 2.1) y comprobadas programáticamente en `apps/mobile/src/__tests__/ui-theme-contrast.test.ts` con 41 aserciones matemáticas.
+_Nota metodológica:_ Las relaciones de contraste fueron recalculadas con la formulación matemática exacta de luminancia relativa sRGB (WCAG 2.1) y comprobadas programáticamente en `apps/mobile/src/__tests__/ui-theme-contrast.test.ts` con 49 aserciones matemáticas.
 
 ---
 
@@ -242,7 +246,8 @@ Paciente y datos sintéticos utilizados: Paciente A (base de datos sembrada con 
 Resultado: Verificado automáticamente (pendiente de validación nativa en hardware)
 Observación o fallo reproducible:
 - La pestaña inicial «Próximos» ejecuta el algoritmo de 4 pasos: obtiene `getReminderStatusSnapshot()`, evalúa cada regla con `classifyReminderStatus()` y extrae la ocurrencia más próxima confirmada de cada regla activa, ordenadas de menor a mayor (`fechaPrevistaUtc ASC`).
-- En un escenario con 98 registros, Próximos selecciona exactamente el aviso del día 17/10 a las 07:00 (el más cercano) y no el del día 14 ni ocurrencias de reglas pausadas.
+- En un escenario con 98 registros entregados deliberadamente desordenados, Próximos selecciona exactamente dos ocurrencias correspondientes a las fechas más cercanas esperadas (17/10 a las 07:00 para signos vitales y 17/10 a las 12:00 para Ciclofosfamida 500mg), presentándolas en orden cronológico estricto y excluyendo fechas lejanas.
+- Ante fallos de consulta de permisos en el adaptador nativo, la bandeja propaga el error hacia la tarjeta de incidencia con opción «Reintentar», sin asumir disponibilidad espuria.
 - La pestaña «Actividad» lista eventos reales observados (`abierta_en` o `recibida_observada_en`), ordenados por la fecha del evento más reciente (`DESC`). Distingue claramente «Abierto en la aplicación» de «La aplicación detectó este aviso», sin afirmar que el paciente leyó la notificación ante una simple recepción.
 Referencia a captura o grabación, si corresponde: Verificado en reminders.ui.test.tsx y reminder-repository.test.ts
 Responsable y fecha: Equipo QuimioCare Mobile — 17/10/2026

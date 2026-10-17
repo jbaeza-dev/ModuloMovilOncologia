@@ -4,6 +4,7 @@ import { act, fireEvent, render, screen, waitFor } from '@testing-library/react-
 import React from 'react';
 import { Alert, Linking } from 'react-native';
 
+import { formatDate } from '../data/local/repository';
 import {
   consumeHomeScrollToTop,
   requestHomeScrollToTop,
@@ -86,6 +87,8 @@ const mockTheme = {
     onErrorContainer: '#B71C1C',
     success: '#388E3C',
     warning: '#F57C00',
+    warningContainer: '#FEF3C7',
+    onWarningContainer: '#5A3600',
   },
   spacing: { xs: 4, sm: 8, md: 16, lg: 24, xl: 32 },
   radius: { sm: 12, md: 18, full: 9999 },
@@ -1231,13 +1234,54 @@ describe('Incremento 5: UI de Recordatorios y Avisos Locales', () => {
       });
       expect(
         screen.getByText(
-          'Ocurrió un problema al leer los recordatorios guardados en este dispositivo.',
+          'Ocurrió un problema al leer el estado del sistema o los recordatorios en este dispositivo.',
         ),
       ).toBeTruthy();
       expect(screen.getByRole('button', { name: 'Reintentar' })).toBeTruthy();
       expect(screen.queryByText('Sin avisos en esta vista')).toBeNull();
 
       // Al pulsar reintentar se refresca
+      mockReminderRepo.getReminderStatusSnapshot.mockResolvedValueOnce({
+        patientId: 'paciente-a',
+        nowIso: '2026-10-16T00:00:00.000Z',
+        preferences: { enabled: true, updatedAt: null },
+        rules: [],
+        futureNotifications: [],
+        medications: [],
+        allEnabledRulesCount: 0,
+      });
+
+      fireEvent.press(screen.getByRole('button', { name: 'Reintentar' }));
+
+      await waitFor(() => {
+        expect(screen.getByText('Sin avisos en esta vista')).toBeTruthy();
+      });
+    });
+
+    it('muestra tarjeta de error con reintento si falla la consulta de permisos en el adaptador nativo', async () => {
+      mockAdapter.getPermissionState.mockRejectedValueOnce(
+        new Error('Fallo de comunicación con NotificationManager'),
+      );
+
+      await render(<NoticesTrayScreen />);
+
+      await waitFor(() => {
+        expect(screen.getByText('No se pudieron cargar los avisos')).toBeTruthy();
+      });
+      expect(
+        screen.getByText(
+          'Ocurrió un problema al leer el estado del sistema o los recordatorios en este dispositivo.',
+        ),
+      ).toBeTruthy();
+      expect(screen.getByRole('button', { name: 'Reintentar' })).toBeTruthy();
+      expect(screen.queryByText('Sin avisos en esta vista')).toBeNull();
+
+      // Al pulsar reintentar y resolver correctamente el adaptador, se recupera la vista
+      mockAdapter.getPermissionState.mockResolvedValueOnce({
+        status: 'granted',
+        canAskAgain: true,
+        channelStatus: 'granted',
+      });
       mockReminderRepo.getReminderStatusSnapshot.mockResolvedValueOnce({
         patientId: 'paciente-a',
         nowIso: '2026-10-16T00:00:00.000Z',
@@ -1419,6 +1463,13 @@ describe('Incremento 5: UI de Recordatorios y Avisos Locales', () => {
 
       expect(futureNotifications).toHaveLength(98);
 
+      // Entregar las 98 candidatas deliberadamente desordenadas (futuras lejanas primero y alternadas)
+      const disorderedNotifications = [
+        ...futureNotifications.slice(50).reverse(),
+        ...futureNotifications.slice(0, 50).reverse(),
+      ];
+      expect(disorderedNotifications).toHaveLength(98);
+
       mockReminderRepo.getReminderStatusSnapshot.mockResolvedValueOnce({
         patientId: 'paciente-a',
         nowIso,
@@ -1457,7 +1508,7 @@ describe('Incremento 5: UI de Recordatorios y Avisos Locales', () => {
             eliminadoEl: null,
           },
         ],
-        futureNotifications,
+        futureNotifications: disorderedNotifications,
         medications: [
           {
             id: 'med-1',
@@ -1476,9 +1527,31 @@ describe('Incremento 5: UI de Recordatorios y Avisos Locales', () => {
         expect(screen.getByText('Signos vitales')).toBeTruthy();
         expect(screen.getByText('Ciclofosfamida 500mg')).toBeTruthy();
       });
-      // Ambos con su acción correspondiente
-      expect(screen.getByText('Registrar signos vitales')).toBeTruthy();
-      expect(screen.getByText('Consultar medicación')).toBeTruthy();
+
+      // 1. Exactamente dos próximas ocurrencias (una por regla activa)
+      const badges = screen.getAllByText('Programada en el sistema');
+      expect(badges).toHaveLength(2);
+      expect(screen.getAllByText('Fecha y hora prevista')).toHaveLength(2);
+
+      // 2. Corresponden a las fechas más cercanas esperadas
+      const expectedVitalDate = formatDate('2026-10-17T10:00:00.000Z');
+      const expectedMedDate = formatDate('2026-10-17T15:00:00.000Z');
+      expect(screen.getByText(expectedVitalDate)).toBeTruthy();
+      expect(screen.getByText(expectedMedDate)).toBeTruthy();
+
+      // Fechas lejanas (ej. día 25) no deben aparecer seleccionadas
+      const farFutureDate = formatDate(new Date(Date.UTC(2026, 9, 25, 10, 0, 0)).toISOString());
+      expect(screen.queryByText(farFutureDate)).toBeNull();
+
+      // 3. Se presentan en orden cronológico estricto (10:00 UTC antes de 15:00 UTC)
+      const titles = screen.getAllByText(/Signos vitales|Ciclofosfamida 500mg/);
+      expect(titles).toHaveLength(2);
+      expect(titles[0].props.children).toBe('Signos vitales');
+      expect(titles[1].props.children).toBe('Ciclofosfamida 500mg');
+
+      // Acciones individuales presentes
+      expect(screen.getByRole('button', { name: 'Registrar signos vitales' })).toBeTruthy();
+      expect(screen.getByRole('button', { name: 'Consultar medicación' })).toBeTruthy();
     });
   });
 });

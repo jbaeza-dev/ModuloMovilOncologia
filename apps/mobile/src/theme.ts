@@ -80,6 +80,8 @@ export type AppTheme = typeof theme & {
     onPrimaryContainer: string;
     success: string;
     warning: string;
+    warningContainer: string;
+    onWarningContainer: string;
     error: string;
     onError: string;
     errorContainer: string;
@@ -116,6 +118,8 @@ export function resolveTheme(paletteId: PaletteId, colorScheme: ColorScheme): Ap
       onPrimaryContainer: isDark ? palette.onDarkContainer : palette.onLightContainer,
       success: isDark ? '#81C784' : '#2E7D32',
       warning: isDark ? '#FFCC80' : '#8D5700',
+      warningContainer: isDark ? '#3A2D1F' : '#FEF3C7',
+      onWarningContainer: isDark ? '#FFE2B8' : '#5A3600',
       error: isDark ? '#EF9A9A' : '#B3261E',
       onError: isDark ? '#202020' : '#FFFFFF',
       errorContainer: isDark ? '#3E1C1A' : '#FDE8E8',

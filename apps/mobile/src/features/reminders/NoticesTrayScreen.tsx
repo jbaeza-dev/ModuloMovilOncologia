@@ -65,11 +65,7 @@ export function NoticesTrayScreen() {
 
     let permissionState = null;
     if (notificationAdapter) {
-      try {
-        permissionState = await notificationAdapter.getPermissionState();
-      } catch {
-        // Ignorar fallo de permisos
-      }
+      permissionState = await notificationAdapter.getPermissionState();
     }
     const deviceAvailability = resolveDeviceAvailability(permissionState, null);
 
@@ -293,7 +289,8 @@ export function NoticesTrayScreen() {
                 </Text>
               </View>
               <BodyText>
-                Ocurrió un problema al leer los recordatorios guardados en este dispositivo.
+                Ocurrió un problema al leer el estado del sistema o los recordatorios en este
+                dispositivo.
               </BodyText>
               <VisualButton label="Reintentar" secondary onPress={refreshUpcoming} />
             </InfoCard>

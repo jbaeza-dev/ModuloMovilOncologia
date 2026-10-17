@@ -65,6 +65,27 @@ describe('Accesibilidad y Contraste Semántico (UX-04, UX-06)', () => {
         }
       });
 
+      it('cumple contraste semántico entre warningContainer y onWarningContainer (>= 4.5:1) e icono warning (>= 3:1)', () => {
+        const textRatio = contrastRatio(
+          theme.colors.onWarningContainer,
+          theme.colors.warningContainer,
+        );
+        expect(textRatio).toBeGreaterThanOrEqual(4.5);
+
+        const iconRatio = contrastRatio(theme.colors.warning, theme.colors.warningContainer);
+        expect(iconRatio).toBeGreaterThanOrEqual(3.0);
+
+        if (scheme === 'dark') {
+          // En oscuro: texto #FFE2B8 sobre #3A2D1F (~10.68:1) e icono #FFCC80 sobre #3A2D1F (~9.02:1)
+          expect(textRatio).toBeGreaterThan(9.0);
+          expect(iconRatio).toBeGreaterThan(7.0);
+        } else {
+          // En claro: texto #5A3600 sobre #FEF3C7 (~9.61:1) e icono #8D5700 sobre #FEF3C7 (~5.39:1)
+          expect(textRatio).toBeGreaterThan(8.0);
+          expect(iconRatio).toBeGreaterThan(4.5);
+        }
+      });
+
       it('cumple contraste no textual de controles (>= 3:1) para el borde de campo editable (inputBorder)', () => {
         const ratioVsSurface = contrastRatio(theme.colors.inputBorder, theme.colors.surface);
         const ratioVsBackground = contrastRatio(theme.colors.inputBorder, theme.colors.background);
