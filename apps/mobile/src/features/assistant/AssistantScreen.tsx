@@ -59,7 +59,19 @@ export function AssistantScreen() {
 
   const scrollRef = useRef<ScrollView | null>(null);
   const isNearBottomRef = useRef(true);
-  const prevMessagesLengthRef = useRef(messages.length);
+  const lastAssistantMsgIdRef = useRef<string | null>(
+    messages
+      .slice()
+      .reverse()
+      .find((m) => m.sender === 'assistant')?.id ?? null,
+  );
+  const lastUserMsgIdRef = useRef<string | null>(
+    messages
+      .slice()
+      .reverse()
+      .find((m) => m.sender === 'user')?.id ?? null,
+  );
+  const responseCounterRef = useRef(0);
 
   useEffect(() => {
     setState(controller.getState());
@@ -79,24 +91,30 @@ export function AssistantScreen() {
   }, [controller]);
 
   useEffect(() => {
-    if (messages.length > prevMessagesLengthRef.current) {
-      const lastMsg = messages[messages.length - 1];
-      if (lastMsg && lastMsg.sender === 'assistant') {
-        setLatestAnnouncement(`Nueva respuesta del asistente recibida.`);
-        if (isNearBottomRef.current) {
-          setTimeout(() => {
-            scrollRef.current?.scrollToEnd({ animated: true });
-          }, 100);
-        } else {
-          setHasNewUnreadResponse(true);
-        }
-      } else if (lastMsg && lastMsg.sender === 'user') {
+    if (messages.length === 0) return;
+    const lastMsg = messages[messages.length - 1];
+    if (!lastMsg) return;
+
+    if (lastMsg.sender === 'assistant' && lastMsg.id !== lastAssistantMsgIdRef.current) {
+      lastAssistantMsgIdRef.current = lastMsg.id;
+      responseCounterRef.current += 1;
+      const snippet = lastMsg.text.length > 50 ? `${lastMsg.text.slice(0, 50)}…` : lastMsg.text;
+      setLatestAnnouncement(
+        `Nueva respuesta del asistente (#${responseCounterRef.current}): ${snippet}`,
+      );
+      if (isNearBottomRef.current) {
         setTimeout(() => {
           scrollRef.current?.scrollToEnd({ animated: true });
         }, 100);
+      } else {
+        setHasNewUnreadResponse(true);
       }
+    } else if (lastMsg.sender === 'user' && lastMsg.id !== lastUserMsgIdRef.current) {
+      lastUserMsgIdRef.current = lastMsg.id;
+      setTimeout(() => {
+        scrollRef.current?.scrollToEnd({ animated: true });
+      }, 100);
     }
-    prevMessagesLengthRef.current = messages.length;
   }, [messages]);
 
   const handleScroll = (event: NativeSyntheticEvent<NativeScrollEvent>) => {

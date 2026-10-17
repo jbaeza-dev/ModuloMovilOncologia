@@ -37,8 +37,9 @@ const mockRouter = {
   canGoBack: jest.fn(() => mockRouteHistory.length > 1),
 };
 
+let mockUuidCounter = 0;
 jest.mock('expo-crypto', () => ({
-  randomUUID: jest.fn(() => '11111111-2222-4333-8444-555555555555'),
+  randomUUID: jest.fn(() => `mock-uuid-${++mockUuidCounter}`),
 }));
 
 jest.mock('expo-router', () => {
@@ -277,6 +278,7 @@ import { LocalDataProvider, DEMO_PATIENTS, useLocalData } from '../providers/Loc
 import { FakeAssistantAdapter } from '../services/assistant/fake-assistant-adapter';
 import { UnconfiguredSessionAdapter } from '../services/session/unconfigured-session-adapter';
 import { UnconfiguredAssistantAdapter } from '../services/assistant/unconfigured-assistant-adapter';
+import type { AssistantMessage } from '../services/assistant/assistant-types';
 
 type LocalDataContext = ReturnType<typeof useLocalData>;
 
@@ -663,8 +665,81 @@ describe('Incremento 6: UI de Acceso, Navegación Raíz, Sesión y Asistente', (
       // Esperar respuesta del asistente
       expect(await screen.findByLabelText('Asistente: Respuesta de prueba accesible')).toBeTruthy();
 
-      // Verificar anuncio en live region
-      expect(await screen.findByText('Nueva respuesta del asistente recibida.')).toBeTruthy();
+      // Verificar anuncio en live region con identificador único y texto preview
+      expect(
+        await screen.findByText(
+          /Nueva respuesta del asistente \(#\d+\): Respuesta de prueba accesible/,
+        ),
+      ).toBeTruthy();
+    });
+
+    it('detecta respuestas del asistente y genera anuncios vivos incluso cuando se alcanza el tope de 50 mensajes', async () => {
+      let contextRef = {} as LocalDataContext;
+
+      await render(
+        <LocalDataProvider>
+          <AssistantScreen />
+          <ContextConsumer onReady={(ctx) => (contextRef = ctx)} />
+        </LocalDataProvider>,
+      );
+
+      await waitFor(() => {
+        expect(contextRef.assistantController).toBeTruthy();
+      });
+
+      const ctrl = contextRef.assistantController!;
+      ctrl.setAdapter(
+        new FakeAssistantAdapter({
+          simulatedDelayMs: 10,
+          customReply: 'Respuesta número 51 detectada',
+        }),
+      );
+
+      // Pre-cargar 50 mensajes en el controlador
+      const preloadedMessages: AssistantMessage[] = [];
+      for (let i = 1; i <= 25; i++) {
+        preloadedMessages.push(
+          {
+            id: `user-msg-${i}`,
+            sender: 'user',
+            text: `Pregunta ${i}`,
+            timestamp: new Date().toISOString(),
+          },
+          {
+            id: `asst-msg-${i}`,
+            sender: 'assistant',
+            text: `Respuesta ${i}`,
+            timestamp: new Date().toISOString(),
+          },
+        );
+      }
+      expect(preloadedMessages).toHaveLength(50);
+      await act(async () => {
+        (ctrl as unknown as { messages: unknown[] }).messages = preloadedMessages;
+        (ctrl as unknown as { notify: () => void }).notify();
+      });
+
+      await waitFor(() => {
+        expect(screen.getByText('Pregunta 25')).toBeTruthy();
+      });
+
+      // Enviar una consulta adicional desde la interfaz
+      const input = await screen.findByLabelText('Escribe tu consulta');
+      await fireEvent.changeText(input, 'Consulta adicional en límite de 50');
+      await fireEvent.press(screen.getByText('Enviar consulta'));
+
+      // El tamaño total sigue siendo 50 debido al descarte FIFO
+      await waitFor(() => {
+        expect(ctrl.getMessages()).toHaveLength(50);
+        expect(screen.getByText('Respuesta número 51 detectada')).toBeTruthy();
+      });
+
+      // Se detectó correctamente la nueva respuesta y se anunció
+      expect(
+        await screen.findByText(
+          /Nueva respuesta del asistente \(#\d+\): Respuesta número 51 detectada/,
+        ),
+      ).toBeTruthy();
     });
   });
 
