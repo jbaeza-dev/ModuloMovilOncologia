@@ -12,7 +12,6 @@ import type {
   ReminderActivationIntent,
   ReminderType,
 } from '../../data/local/reminders/reminder-types';
-import { formatDate } from '../../data/local/repository';
 import { useLocalData } from '../../providers/LocalDataProvider';
 import { useAppTheme } from '../../providers/ThemeProvider';
 import { ExpoNotificationAdapter } from '../../services/notifications/expo-notification-adapter';
@@ -20,6 +19,8 @@ import {
   type ReminderActionOutcome,
   saveReminderWithActivation,
 } from '../../services/reminders/reminder-actions';
+import { formatCivilDateDisplay } from '../../services/reminders/reminder-status';
+import { clearHomeScrollToTop } from '../home/home-scroll-signal';
 import {
   ALL_WEEK_DAYS,
   applyInclusiveDurationWithBounds,
@@ -150,6 +151,9 @@ export function ReminderEditScreen() {
   const [selectedDurationDays, setSelectedDurationDays] = useState<number | null>(7);
   const [clampedNotice, setClampedNotice] = useState<string | null>(null);
 
+  const [ruleLoadingState, setRuleLoadingState] = useState<
+    'loading' | 'ready' | 'not_found' | 'error'
+  >(paramId ? 'loading' : 'ready');
   const [medications, setMedications] = useState<ActiveMedicationRecord[]>([]);
   const [medicationsLoaded, setMedicationsLoaded] = useState(false);
   const [errorMsg, setErrorMsg] = useState<string | null>(null);
@@ -220,60 +224,75 @@ export function ReminderEditScreen() {
 
   // Si es edición inicial, cargar la regla existente conservando todos sus metadatos
   useEffect(() => {
-    if (!repository || !paramId) return;
+    if (!repository || !paramId) {
+      setRuleLoadingState('ready');
+      return;
+    }
     let active = true;
-    void repository.reminders.getRule(paramId).then((rule) => {
-      if (!active || !rule) return;
-      const loadedHours = rule.horasMinutos.length > 0 ? rule.horasMinutos : [DEFAULT_VITAL_TIME];
-      setPersistedRuleId(rule.id);
-      setTipo(rule.tipo);
-      setMedicamentoId(rule.medicamentoId);
-      setSelectedDays(rule.diasSemana);
-      setSelectedHours(loadedHours);
-      setHabilitado(rule.habilitado);
-      setZonaHoraria(rule.zonaHoraria);
-      setFechaInicio(rule.fechaInicio);
-      setFechaFin(rule.fechaFin);
-
-      setConfirmedSnapshot(
-        buildSnapshot({
-          tipo: rule.tipo,
-          medicamentoId: rule.medicamentoId,
-          diasSemana: rule.diasSemana,
-          horasMinutos: loadedHours,
-          fechaInicio: rule.fechaInicio,
-          fechaFin: rule.fechaFin,
-          habilitado: rule.habilitado,
-        }),
-      );
-
-      const isAllDays =
-        rule.diasSemana.length === 7 &&
-        [...rule.diasSemana].sort((a, b) => a - b).every((d, idx) => d === idx + 1);
-      const hasMultipleHours = loadedHours.length > 1;
-      const hasDates = Boolean(rule.fechaInicio || rule.fechaFin);
-
-      if (rule.tipo === 'registro_vitales') {
-        setVitalCustomized(!isAllDays || hasMultipleHours || hasDates);
-      } else {
-        const detected = detectMedicationTemplate(loadedHours, rule.diasSemana, !isAllDays);
-        setMedTemplate(detected);
-        if (hasDates) {
-          const inclusiveDays = getInclusiveDaysBetween(rule.fechaInicio, rule.fechaFin);
-          if (
-            inclusiveDays &&
-            (INCLUSIVE_DURATION_PRESETS as readonly number[]).includes(inclusiveDays)
-          ) {
-            setDurationMode('days');
-            setSelectedDurationDays(inclusiveDays);
-          } else {
-            setDurationMode('custom_dates');
-          }
-        } else {
-          setDurationMode('treatment');
+    setRuleLoadingState('loading');
+    void repository.reminders.getRule(paramId).then(
+      (rule) => {
+        if (!active) return;
+        if (!rule || rule.eliminadoEl !== null) {
+          setRuleLoadingState('not_found');
+          return;
         }
-      }
-    });
+        const loadedHours = rule.horasMinutos.length > 0 ? rule.horasMinutos : [DEFAULT_VITAL_TIME];
+        setPersistedRuleId(rule.id);
+        setTipo(rule.tipo);
+        setMedicamentoId(rule.medicamentoId);
+        setSelectedDays(rule.diasSemana);
+        setSelectedHours(loadedHours);
+        setHabilitado(rule.habilitado);
+        setZonaHoraria(rule.zonaHoraria);
+        setFechaInicio(rule.fechaInicio);
+        setFechaFin(rule.fechaFin);
+
+        setConfirmedSnapshot(
+          buildSnapshot({
+            tipo: rule.tipo,
+            medicamentoId: rule.medicamentoId,
+            diasSemana: rule.diasSemana,
+            horasMinutos: loadedHours,
+            fechaInicio: rule.fechaInicio,
+            fechaFin: rule.fechaFin,
+            habilitado: rule.habilitado,
+          }),
+        );
+
+        const isAllDays =
+          rule.diasSemana.length === 7 &&
+          [...rule.diasSemana].sort((a, b) => a - b).every((d, idx) => d === idx + 1);
+        const hasMultipleHours = loadedHours.length > 1;
+        const hasDates = Boolean(rule.fechaInicio || rule.fechaFin);
+
+        if (rule.tipo === 'registro_vitales') {
+          setVitalCustomized(!isAllDays || hasMultipleHours || hasDates);
+        } else {
+          const detected = detectMedicationTemplate(loadedHours, rule.diasSemana, !isAllDays);
+          setMedTemplate(detected);
+          if (hasDates) {
+            const inclusiveDays = getInclusiveDaysBetween(rule.fechaInicio, rule.fechaFin);
+            if (
+              inclusiveDays &&
+              (INCLUSIVE_DURATION_PRESETS as readonly number[]).includes(inclusiveDays)
+            ) {
+              setDurationMode('days');
+              setSelectedDurationDays(inclusiveDays);
+            } else {
+              setDurationMode('custom_dates');
+            }
+          } else {
+            setDurationMode('treatment');
+          }
+        }
+        setRuleLoadingState('ready');
+      },
+      () => {
+        if (!active) return;
+        setRuleLoadingState('error');
+      },
+    );
     return () => {
       active = false;
     };
@@ -306,25 +325,44 @@ export function ReminderEditScreen() {
     [tipo, medicamentoId, selectedDays, selectedHours, effectiveStart, effectiveEnd, habilitado],
   );
 
-  const isDirty = !snapshotsEqual(currentSnapshot, confirmedSnapshot);
-  const shouldPreventRemove = isDirty && !isClosing && !bypassPreventRemoveRef.current;
+  const isDirty =
+    ruleLoadingState === 'ready' && !snapshotsEqual(currentSnapshot, confirmedSnapshot);
+  const shouldPreventRemove =
+    isDirty && !isClosing && !bypassPreventRemoveRef.current && ruleLoadingState === 'ready';
 
   usePreventRemove(shouldPreventRemove, ({ data }) => {
-    Alert.alert(UNSAVED_CHANGES_TITLE, UNSAVED_CHANGES_MESSAGE, [
-      { text: 'Seguir editando', style: 'cancel' },
+    Alert.alert(
+      UNSAVED_CHANGES_TITLE,
+      UNSAVED_CHANGES_MESSAGE,
+      [
+        {
+          text: 'Seguir editando',
+          style: 'cancel',
+          onPress: () => {
+            clearHomeScrollToTop();
+          },
+        },
+        {
+          text: 'Salir sin guardar',
+          style: 'destructive',
+          onPress: () => {
+            clearHomeScrollToTop();
+            bypassPreventRemoveRef.current = true;
+            if (data?.action && typeof navigation?.dispatch === 'function') {
+              navigation.dispatch(data.action);
+            } else {
+              router.back();
+            }
+          },
+        },
+      ],
       {
-        text: 'Salir sin guardar',
-        style: 'destructive',
-        onPress: () => {
-          bypassPreventRemoveRef.current = true;
-          if (data?.action && typeof navigation?.dispatch === 'function') {
-            navigation.dispatch(data.action);
-          } else {
-            router.back();
-          }
+        cancelable: true,
+        onDismiss: () => {
+          clearHomeScrollToTop();
         },
       },
-    ]);
+    );
   });
 
   const navigateBackAfterConfirmed = () => {
@@ -417,6 +455,7 @@ export function ReminderEditScreen() {
 
   const executeSave = async (explicitIntent?: ReminderActivationIntent) => {
     if (!repository || !database || !patientId || saving) return;
+    if (paramId && ruleLoadingState !== 'ready') return;
     setErrorMsg(null);
 
     if (selectedDays.length === 0) {
@@ -552,8 +591,51 @@ export function ReminderEditScreen() {
       ? 'Horario de medicamento'
       : 'Nuevo recordatorio';
 
+  if (isEditing && ruleLoadingState === 'loading') {
+    return (
+      <Screen title={screenTitle} isRoot={false}>
+        <DemoBadge />
+        <InfoCard>
+          <BodyText>Cargando recordatorio...</BodyText>
+        </InfoCard>
+      </Screen>
+    );
+  }
+
+  if (isEditing && ruleLoadingState === 'not_found') {
+    return (
+      <Screen title={screenTitle} isRoot={false}>
+        <DemoBadge />
+        <InfoCard>
+          <View style={styles.errorHeader}>
+            <Feather name="alert-circle" size={20} color="#dc2626" />
+            <Text style={[styles.heading, { color: '#dc2626' }]}>Recordatorio no encontrado</Text>
+          </View>
+          <BodyText>El recordatorio solicitado no existe o fue eliminado.</BodyText>
+          <VisualButton label="Volver a recordatorios" secondary onPress={() => router.back()} />
+        </InfoCard>
+      </Screen>
+    );
+  }
+
+  if (isEditing && ruleLoadingState === 'error') {
+    return (
+      <Screen title={screenTitle} isRoot={false}>
+        <DemoBadge />
+        <InfoCard>
+          <View style={styles.errorHeader}>
+            <Feather name="alert-circle" size={20} color="#dc2626" />
+            <Text style={[styles.heading, { color: '#dc2626' }]}>Error al cargar</Text>
+          </View>
+          <BodyText>No se pudo cargar la configuración de este recordatorio.</BodyText>
+          <VisualButton label="Volver a recordatorios" secondary onPress={() => router.back()} />
+        </InfoCard>
+      </Screen>
+    );
+  }
+
   return (
-    <Screen title={screenTitle}>
+    <Screen title={screenTitle} isRoot={false}>
       <DemoBadge />
 
       {errorMsg ? (
@@ -730,8 +812,10 @@ export function ReminderEditScreen() {
             {medBounds.minDate || medBounds.maxDate ? (
               <BodyText style={{ fontSize: 13 }}>
                 Vigencia indicada:{' '}
-                {medBounds.minDate ? `Desde ${formatDate(medBounds.minDate)}` : 'Activo'}
-                {medBounds.maxDate ? ` hasta ${formatDate(medBounds.maxDate)}` : ''}
+                {medBounds.minDate
+                  ? `Desde ${formatCivilDateDisplay(medBounds.minDate)}`
+                  : 'Activo'}
+                {medBounds.maxDate ? ` hasta ${formatCivilDateDisplay(medBounds.maxDate)}` : ''}
               </BodyText>
             ) : null}
           </InfoCard>
@@ -1012,7 +1096,7 @@ export function ReminderEditScreen() {
                   <Text style={styles.optionTitle}>Durante todo el tratamiento</Text>
                   <Text style={styles.optionSubtitle}>
                     {medBounds.maxDate
-                      ? `Hasta el ${formatDate(medBounds.maxDate)}`
+                      ? `Hasta el ${formatCivilDateDisplay(medBounds.maxDate)}`
                       : 'Mientras el medicamento permanezca activo'}
                   </Text>
                 </View>
@@ -1090,7 +1174,8 @@ export function ReminderEditScreen() {
                 </View>
                 {fechaInicio && fechaFin ? (
                   <BodyText style={{ fontWeight: '600', color: appTheme.colors.primary }}>
-                    Vigencia resultante: Desde {fechaInicio} hasta {fechaFin}
+                    Vigencia resultante: Desde {formatCivilDateDisplay(fechaInicio)} hasta{' '}
+                    {formatCivilDateDisplay(fechaFin)}
                   </BodyText>
                 ) : null}
                 {clampedNotice ? (
@@ -1130,36 +1215,77 @@ export function ReminderEditScreen() {
         </>
       ) : null}
 
-      {/* Opción para guardar pausado */}
-      <InfoCard>
-        <Pressable
-          accessibilityRole="switch"
-          accessibilityLabel="Habilitar este recordatorio"
-          accessibilityState={{ checked: habilitado }}
-          onPress={() => setHabilitado((prev) => !prev)}
-          style={styles.toggleRow}
-        >
-          <View style={{ flex: 1, paddingRight: theme.spacing.sm }}>
-            <Text style={styles.heading}>Activar al guardar</Text>
-            <BodyText>
-              {habilitado
-                ? 'Se activará y programará los próximos avisos al guardar.'
-                : 'Se guardará pausado sin emitir avisos por ahora.'}
-            </BodyText>
-          </View>
-          <Feather
-            name={habilitado ? 'toggle-right' : 'toggle-left'}
-            size={32}
-            color={habilitado ? appTheme.colors.primary : appTheme.colors.secondary}
-          />
-        </Pressable>
-      </InfoCard>
+      {/* Opción para guardar pausado en creación rápida o estado explícito en edición */}
+      {!isEditing ? (
+        <InfoCard>
+          <Pressable
+            accessibilityRole="switch"
+            accessibilityLabel="Activar este recordatorio al guardar"
+            accessibilityState={{ checked: habilitado }}
+            onPress={() => setHabilitado((prev) => !prev)}
+            style={styles.toggleRow}
+          >
+            <View style={{ flex: 1, paddingRight: theme.spacing.sm }}>
+              <Text style={styles.heading}>Activar al guardar</Text>
+              <BodyText>
+                {habilitado
+                  ? 'Se activará y programará los próximos avisos al guardar.'
+                  : 'Se guardará pausado sin emitir avisos por ahora.'}
+              </BodyText>
+            </View>
+            <Feather
+              name={habilitado ? 'toggle-right' : 'toggle-left'}
+              size={32}
+              color={habilitado ? appTheme.colors.primary : appTheme.colors.secondary}
+            />
+          </Pressable>
+        </InfoCard>
+      ) : (
+        <InfoCard>
+          <SectionTitle>Estado del recordatorio</SectionTitle>
+          <Pressable
+            accessibilityRole="switch"
+            accessibilityLabel={`Estado del recordatorio: ${habilitado ? 'activo' : 'en pausa'}`}
+            accessibilityState={{ checked: habilitado }}
+            onPress={() => setHabilitado((prev) => !prev)}
+            style={styles.toggleRow}
+          >
+            <View style={{ flex: 1, paddingRight: theme.spacing.sm }}>
+              <Text style={styles.heading}>
+                {habilitado ? 'Recordatorio activo' : 'Recordatorio en pausa'}
+              </Text>
+              <BodyText>
+                {habilitado
+                  ? 'Este horario genera avisos según tu configuración.'
+                  : 'Este horario está en pausa. Actívalo para volver a recibir avisos.'}
+              </BodyText>
+            </View>
+            <Feather
+              name={habilitado ? 'toggle-right' : 'toggle-left'}
+              size={32}
+              color={habilitado ? appTheme.colors.primary : appTheme.colors.secondary}
+            />
+          </Pressable>
+        </InfoCard>
+      )}
 
       {/* Botones de acción */}
       <View style={styles.actions}>
         <VisualButton
-          label={saving ? 'Guardando...' : habilitado ? 'Guardar y activar' : 'Guardar sin activar'}
-          onPress={() => void executeSave()}
+          label={
+            saving
+              ? 'Guardando...'
+              : isEditing
+                ? 'Guardar cambios'
+                : habilitado
+                  ? 'Guardar y activar'
+                  : 'Guardar sin activar'
+          }
+          onPress={() =>
+            void executeSave(
+              isEditing ? (habilitado ? 'save_and_activate' : 'save_disabled') : undefined,
+            )
+          }
           disabled={saving}
         />
         {isEditing ? (

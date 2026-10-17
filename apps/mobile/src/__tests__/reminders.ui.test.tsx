@@ -1,8 +1,13 @@
 /// <reference types="jest" />
 
-import { fireEvent, render, screen, waitFor } from '@testing-library/react-native';
+import { act, fireEvent, render, screen, waitFor } from '@testing-library/react-native';
 import React from 'react';
 import { Alert } from 'react-native';
+
+import {
+  consumeHomeScrollToTop,
+  requestHomeScrollToTop,
+} from '../features/home/home-scroll-signal';
 
 // Mock expo-router
 const mockUseLocalSearchParams = jest.fn();
@@ -130,12 +135,104 @@ jest.mock('../services/reminders/notification-coordinator', () => ({
 }));
 
 // Mock repository
+const mockDefaultRule = {
+  id: 'rule-1',
+  pacienteId: 'paciente-a',
+  tipo: 'registro_vitales',
+  medicamentoId: null,
+  diasSemana: [1, 2, 3, 4, 5, 6, 7],
+  horasMinutos: ['07:00'],
+  zonaHoraria: 'America/Santiago',
+  fechaInicio: null,
+  fechaFin: null,
+  habilitado: true,
+  revision: 1,
+  creadoEl: '2026-10-13T10:00:00Z',
+  actualizadoEl: '2026-10-13T10:00:00Z',
+  eliminadoEl: null,
+};
+
 const mockReminderRepo = {
   getPreferences: jest.fn().mockResolvedValue({ enabled: true, updatedAt: '2026-10-13T10:00:00Z' }),
   setPreferences: jest.fn().mockResolvedValue(undefined),
   listRules: jest.fn().mockResolvedValue([]),
   getRule: jest.fn().mockResolvedValue(null),
-  saveRule: jest.fn().mockResolvedValue({ id: 'rule-1' }),
+  saveRule: jest
+    .fn()
+    .mockImplementation(
+      async (input: {
+        id?: string;
+        tipo: string;
+        horasMinutos: string[];
+        diasSemana: number[];
+        habilitado?: boolean;
+      }) => ({
+        ...mockDefaultRule,
+        ...input,
+        id: input.id ?? 'rule-1',
+        habilitado: input.habilitado ?? true,
+      }),
+    ),
+  saveRuleWithActivationIntent: jest.fn().mockImplementation(
+    async (
+      input: {
+        id?: string;
+        tipo: string;
+        horasMinutos: string[];
+        diasSemana: number[];
+        habilitado?: boolean;
+      },
+      intent = 'keep_existing',
+    ) => {
+      const saved = {
+        ...mockDefaultRule,
+        ...input,
+        id: input.id ?? 'rule-1',
+        habilitado: intent === 'save_disabled' ? false : (input.habilitado ?? true),
+      };
+      return {
+        rule: saved,
+        preferencesEnabled: intent !== 'save_disabled',
+        resumedGeneralPreference: false,
+        pausedByGeneralPreference: false,
+        otherEnabledRulesCount: 0,
+      };
+    },
+  ),
+  getReminderStatusSnapshot: jest.fn().mockImplementation(async (nowIso?: string) => ({
+    patientId: 'paciente-a',
+    nowIso: nowIso ?? '2026-10-16T10:00:00.000Z',
+    preferences: { enabled: true, updatedAt: '2026-10-13T10:00:00Z' },
+    rules: [mockDefaultRule],
+    futureNotifications: [
+      {
+        id: 'notif-1',
+        pacienteId: 'paciente-a',
+        recordatorioId: 'rule-1',
+        revision: 1,
+        tipo: 'registro_vitales',
+        fechaPrevistaUtc: '2026-10-17T10:00:00.000Z',
+        idNativo: 'mock-native-1',
+        estado: 'programada',
+        payloadMinimo: {
+          version: 1,
+          notificacionId: 'notif-1',
+          revision: 1,
+          pacienteId: 'paciente-a',
+          recordatorioId: 'rule-1',
+          tipo: 'registro_vitales',
+          destino: '/vitales/registrar',
+        },
+        error: null,
+        recibidaObservadaEn: null,
+        abiertaEn: null,
+        creadoEl: '2026-10-16T00:00:00.000Z',
+        actualizadoEl: '2026-10-16T00:00:00.000Z',
+      },
+    ],
+    medications: [],
+    allEnabledRulesCount: 1,
+  })),
   toggleRuleEnabled: jest.fn().mockResolvedValue({ id: 'rule-1', habilitado: false }),
   deleteRule: jest.fn().mockResolvedValue(undefined),
   listNotifications: jest.fn().mockResolvedValue([]),
@@ -549,7 +646,7 @@ describe('Incremento 5: UI de Recordatorios y Avisos Locales', () => {
           ),
         ).toBeTruthy();
       });
-      expect(mockReminderRepo.saveRule).not.toHaveBeenCalled();
+      expect(mockReminderRepo.saveRuleWithActivationIntent).not.toHaveBeenCalled();
     });
 
     it('guarda una regla válida y regresa a la pantalla anterior', async () => {
@@ -562,12 +659,13 @@ describe('Incremento 5: UI de Recordatorios y Avisos Locales', () => {
       fireEvent.press(screen.getByText('Guardar y activar'));
 
       await waitFor(() => {
-        expect(mockReminderRepo.saveRule).toHaveBeenCalledWith(
+        expect(mockReminderRepo.saveRuleWithActivationIntent).toHaveBeenCalledWith(
           expect.objectContaining({
             tipo: 'registro_vitales',
             horasMinutos: ['07:00'],
             habilitado: true,
           }),
+          'save_and_activate',
         );
         expect(mockRouterBack).toHaveBeenCalled();
       });
@@ -684,6 +782,7 @@ describe('Incremento 5: UI de Recordatorios y Avisos Locales', () => {
         '¿Salir sin guardar los cambios?',
         'Tienes modificaciones sin guardar en este recordatorio.',
         expect.any(Array),
+        expect.anything(),
       );
       expect(mockRouterBack).not.toHaveBeenCalled();
 
@@ -695,24 +794,24 @@ describe('Incremento 5: UI de Recordatorios y Avisos Locales', () => {
         enabled: false,
         updatedAt: '2026-10-16T00:00:00.000Z',
       });
+      const originalSaveWithIntent = mockReminderRepo.saveRuleWithActivationIntent;
       const saveWithIntentMock = jest
         .fn()
         .mockResolvedValueOnce({
-          rule: { id: 'rule-1' },
-          preferences: { enabled: false, updatedAt: '2026-10-16T00:00:00.000Z' },
+          rule: { ...mockDefaultRule, id: 'rule-1' },
+          preferencesEnabled: false,
           otherEnabledRulesCount: 2,
           resumedGeneralPreference: false,
           pausedByGeneralPreference: true,
         })
         .mockResolvedValueOnce({
-          rule: { id: 'rule-1' },
-          preferences: { enabled: true, updatedAt: '2026-10-16T12:00:00.000Z' },
+          rule: { ...mockDefaultRule, id: 'rule-1' },
+          preferencesEnabled: true,
           otherEnabledRulesCount: 2,
           resumedGeneralPreference: true,
           pausedByGeneralPreference: false,
         });
-      (mockReminderRepo as Record<string, unknown>).saveRuleWithActivationIntent =
-        saveWithIntentMock;
+      mockReminderRepo.saveRuleWithActivationIntent = saveWithIntentMock;
 
       await render(<ReminderEditScreen />);
 
@@ -737,7 +836,129 @@ describe('Incremento 5: UI de Recordatorios y Avisos Locales', () => {
         expect(mockRouterBack).toHaveBeenCalled();
       });
 
-      delete (mockReminderRepo as Record<string, unknown>).saveRuleWithActivationIntent;
+      mockReminderRepo.saveRuleWithActivationIntent = originalSaveWithIntent;
+    });
+
+    it('bloquea la edición y el guardado mientras getRule está cargando', async () => {
+      let resolveGetRule: (rule: unknown) => void;
+      const getRulePromise = new Promise((resolve) => {
+        resolveGetRule = resolve;
+      });
+      mockUseLocalSearchParams.mockReturnValue({ id: 'rule-delayed' });
+      mockReminderRepo.getRule.mockImplementationOnce(() => getRulePromise);
+
+      await render(<ReminderEditScreen />);
+
+      // Muestra estado explícito de carga y no permite guardar
+      expect(screen.getByText('Cargando recordatorio...')).toBeTruthy();
+      expect(screen.queryByText('Guardar cambios')).toBeNull();
+      expect(screen.queryByText('Guardar y activar')).toBeNull();
+      expect(mockReminderRepo.saveRuleWithActivationIntent).not.toHaveBeenCalled();
+
+      // Cuando termina la carga con una regla válida, pasa a disponible y muestra "Guardar cambios"
+      await act(async () => {
+        resolveGetRule!({
+          ...mockDefaultRule,
+          id: 'rule-delayed',
+          horasMinutos: ['08:00'],
+        });
+      });
+
+      await waitFor(() => {
+        expect(screen.getByText('Editar recordatorio')).toBeTruthy();
+        expect(screen.getByText('Guardar cambios')).toBeTruthy();
+      });
+    });
+
+    it('rechaza registros eliminados y muestra recordatorio no encontrado', async () => {
+      mockUseLocalSearchParams.mockReturnValue({ id: 'rule-deleted' });
+      mockReminderRepo.getRule.mockResolvedValueOnce({
+        ...mockDefaultRule,
+        id: 'rule-deleted',
+        eliminadoEl: '2026-10-15T00:00:00.000Z',
+      });
+
+      await render(<ReminderEditScreen />);
+
+      await waitFor(() => {
+        expect(screen.getByText('Recordatorio no encontrado')).toBeTruthy();
+      });
+      expect(mockReminderRepo.saveRuleWithActivationIntent).not.toHaveBeenCalled();
+    });
+
+    it('al cancelar la salida con "Seguir editando", limpia la solicitud de desplazamiento a Inicio', async () => {
+      let alertButtons: { text: string; onPress?: () => void }[] = [];
+      const alertSpy = jest.spyOn(Alert, 'alert').mockImplementation((_title, _msg, buttons) => {
+        alertButtons = (buttons as { text: string; onPress?: () => void }[]) || [];
+      });
+
+      requestHomeScrollToTop();
+      expect(consumeHomeScrollToTop()).toBe(true);
+
+      // Ahora solicitamos de nuevo scroll hacia Inicio
+      requestHomeScrollToTop();
+
+      mockUseLocalSearchParams.mockReturnValue({});
+      await render(<ReminderEditScreen />);
+
+      await waitFor(() => {
+        expect(screen.getByLabelText('Personalizar')).toBeTruthy();
+      });
+
+      // Modificamos un campo para ensuciar el formulario
+      fireEvent.press(screen.getByLabelText('Personalizar'));
+      await waitFor(() => {
+        expect(screen.getByLabelText('Lunes')).toBeTruthy();
+      });
+      fireEvent.press(screen.getByLabelText('Lunes'));
+
+      await waitFor(() => {
+        expect(mockPreventRemoveEnabled).toBe(true);
+      });
+
+      // Intentamos salir pulsando Volver
+      fireEvent.press(screen.getByLabelText('Volver'));
+      expect(alertSpy).toHaveBeenCalled();
+
+      // El usuario elige "Seguir editando"
+      const seguirEditandoBtn = alertButtons.find((b) => b.text === 'Seguir editando');
+      expect(seguirEditandoBtn).toBeDefined();
+      seguirEditandoBtn?.onPress?.();
+
+      // Debe haber limpiado pendingScrollToTop
+      expect(consumeHomeScrollToTop()).toBe(false);
+
+      alertSpy.mockRestore();
+    });
+
+    it('muestra controles específicos de creación (Activar al guardar) en modo creación', async () => {
+      mockUseLocalSearchParams.mockReturnValue({});
+      await render(<ReminderEditScreen />);
+
+      await waitFor(() => {
+        expect(screen.getByText('Activar al guardar')).toBeTruthy();
+        expect(screen.getByText('Guardar y activar')).toBeTruthy();
+      });
+      expect(screen.queryByText('Estado del recordatorio')).toBeNull();
+      expect(screen.queryByText('Guardar cambios')).toBeNull();
+    });
+
+    it('muestra controles específicos de edición (Estado del recordatorio y Guardar cambios) en modo edición', async () => {
+      mockUseLocalSearchParams.mockReturnValue({ id: 'rule-edit-mode' });
+      mockReminderRepo.getRule.mockResolvedValueOnce({
+        ...mockDefaultRule,
+        id: 'rule-edit-mode',
+        habilitado: true,
+      });
+
+      await render(<ReminderEditScreen />);
+
+      await waitFor(() => {
+        expect(screen.getByText('Estado del recordatorio')).toBeTruthy();
+        expect(screen.getByText('Guardar cambios')).toBeTruthy();
+      });
+      expect(screen.queryByText('Activar al guardar')).toBeNull();
+      expect(screen.queryByText('Guardar y activar')).toBeNull();
     });
   });
 

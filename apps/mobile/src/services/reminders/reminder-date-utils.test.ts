@@ -13,6 +13,7 @@ import {
   resolveMedicationDateBounds,
   validateReminderDateRange,
 } from './reminder-date-utils';
+import { formatCivilDateDisplay, formatCoverageDateDisplay } from './reminder-status';
 
 describe('reminder-date-utils (fechas civiles, duración inclusiva y plantillas desde 07:00)', () => {
   it('T-14: valida fechas civiles reales incluyendo años bisiestos y rechaza fechas inexistentes', () => {
@@ -82,5 +83,26 @@ describe('reminder-date-utils (fechas civiles, duración inclusiva y plantillas 
     expect(detectMedicationTemplate(['08:00'], [1, 2, 3, 4, 5, 6, 7], false)).toBe('custom');
     expect(isValidTimeHhMm('07:00')).toBe(true);
     expect(isValidTimeHhMm('24:00')).toBe(false);
+  });
+
+  it('formatea fechas civiles de inicio y fin sin desplazar días en zona horaria de Chile (America/Santiago)', () => {
+    // 2026-10-17 en America/Santiago (UTC-3) no debe convertirse a 16-10-2026, 21:00
+    expect(formatCivilDateDisplay('2026-10-17')).toBe('17/10/2026');
+    expect(formatCivilDateDisplay('2026-10-01')).toBe('01/10/2026');
+    expect(formatCivilDateDisplay('2026-12-31')).toBe('31/12/2026');
+    expect(formatCivilDateDisplay('2027-01-01')).toBe('01/01/2027');
+
+    // Fechas no estándar se retornan intactas
+    expect(formatCivilDateDisplay('no-es-fecha')).toBe('no-es-fecha');
+
+    // formatCoverageDateDisplay formatea el instante UTC al día civil en America/Santiago
+    // 2026-10-17T03:00:00.000Z es medianoche en Chile (UTC-3 -> 00:00 del 17 de octubre)
+    expect(formatCoverageDateDisplay('2026-10-17T03:00:00.000Z', 'America/Santiago')).toBe(
+      '17/10/2026',
+    );
+    // 2026-10-17T02:59:59.000Z es 23:59:59 del 16 de octubre en Chile
+    expect(formatCoverageDateDisplay('2026-10-17T02:59:59.000Z', 'America/Santiago')).toBe(
+      '16/10/2026',
+    );
   });
 });

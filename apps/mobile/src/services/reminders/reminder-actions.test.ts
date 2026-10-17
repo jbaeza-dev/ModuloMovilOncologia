@@ -71,10 +71,9 @@ describe('saveReminderWithActivation (reminder-actions)', () => {
       },
       intent: 'save_and_activate',
       remindersRepository: {
-        saveRule: vi.fn(),
         saveRuleWithActivationIntent: vi.fn().mockResolvedValue({
           rule: baseRule,
-          preferences: { enabled: true, updatedAt: '2026-10-16T12:00:00.000Z' },
+          preferencesEnabled: true,
           otherEnabledRulesCount: 0,
           resumedGeneralPreference: true,
           pausedByGeneralPreference: false,
@@ -132,10 +131,9 @@ describe('saveReminderWithActivation (reminder-actions)', () => {
       },
       intent: 'save_and_activate',
       remindersRepository: {
-        saveRule: vi.fn(),
         saveRuleWithActivationIntent: vi.fn().mockResolvedValue({
           rule: futureRule,
-          preferences: { enabled: true, updatedAt: '2026-10-16T12:00:00.000Z' },
+          preferencesEnabled: true,
           otherEnabledRulesCount: 1,
           resumedGeneralPreference: false,
           pausedByGeneralPreference: false,
@@ -182,13 +180,21 @@ describe('saveReminderWithActivation (reminder-actions)', () => {
       },
       intent: 'save_and_activate',
       remindersRepository: {
-        saveRule: vi.fn(),
         saveRuleWithActivationIntent: vi.fn().mockResolvedValue({
           rule: baseRule,
-          preferences: { enabled: true, updatedAt: '2026-10-16T12:00:00.000Z' },
+          preferencesEnabled: true,
           otherEnabledRulesCount: 0,
           resumedGeneralPreference: false,
           pausedByGeneralPreference: false,
+        }),
+        getReminderStatusSnapshot: vi.fn().mockResolvedValue({
+          patientId: 'patient-a',
+          nowIso: '2026-10-16T12:00:00.000Z',
+          preferences: { enabled: true, updatedAt: '2026-10-16T12:00:00.000Z' },
+          rules: [baseRule],
+          futureNotifications: [],
+          medications: [],
+          allEnabledRulesCount: 1,
         }),
       },
       notificationAdapter: {
@@ -231,14 +237,14 @@ describe('saveReminderWithActivation (reminder-actions)', () => {
       },
       intent: 'save_and_activate',
       remindersRepository: {
-        saveRule: vi.fn(),
         saveRuleWithActivationIntent: vi.fn().mockResolvedValue({
           rule: baseRule,
-          preferences: { enabled: false, updatedAt: '2026-10-16T10:00:00.000Z' },
+          preferencesEnabled: false,
           otherEnabledRulesCount: 2,
           resumedGeneralPreference: false,
           pausedByGeneralPreference: true,
         }),
+        getReminderStatusSnapshot: vi.fn(),
       },
       notificationAdapter: {
         getPermissionState: vi.fn().mockResolvedValue({
@@ -262,7 +268,7 @@ describe('saveReminderWithActivation (reminder-actions)', () => {
   it('T-16: retorna saved_permission_denied sin levantar la pausa general cuando el permiso nativo es rechazado', async () => {
     const saveWithIntentSpy = vi.fn().mockResolvedValue({
       rule: baseRule,
-      preferences: { enabled: false, updatedAt: null },
+      preferencesEnabled: false,
       otherEnabledRulesCount: 0,
       resumedGeneralPreference: false,
       pausedByGeneralPreference: true,
@@ -279,8 +285,8 @@ describe('saveReminderWithActivation (reminder-actions)', () => {
       },
       intent: 'save_and_activate',
       remindersRepository: {
-        saveRule: vi.fn(),
         saveRuleWithActivationIntent: saveWithIntentSpy,
+        getReminderStatusSnapshot: vi.fn(),
       },
       notificationAdapter: {
         getPermissionState: vi.fn().mockResolvedValue({
@@ -297,7 +303,7 @@ describe('saveReminderWithActivation (reminder-actions)', () => {
       reconcileReminders: reconcileSpy,
     });
 
-    expect(saveWithIntentSpy).toHaveBeenCalledWith(expect.any(Object), 'save_keep_general_pause');
+    expect(saveWithIntentSpy).toHaveBeenCalledWith(expect.any(Object), 'keep_existing');
     expect(outcome).toEqual({
       kind: 'saved_permission_denied',
       rule: baseRule,
@@ -326,8 +332,8 @@ describe('saveReminderWithActivation (reminder-actions)', () => {
       },
       intent: 'save_and_activate',
       remindersRepository: {
-        saveRule: vi.fn(),
         saveRuleWithActivationIntent: saveWithIntentSpy,
+        getReminderStatusSnapshot: vi.fn(),
       },
       notificationAdapter: {
         getPermissionState: vi.fn().mockResolvedValue({
@@ -351,5 +357,72 @@ describe('saveReminderWithActivation (reminder-actions)', () => {
     expect(outcome).toEqual({ kind: 'context_changed' });
     expect(saveWithIntentSpy).not.toHaveBeenCalled();
     expect(reconcileSpy).not.toHaveBeenCalled();
+  });
+
+  it('comprobación de persistencia real: al rechazar permisos conserva preferencia general desactivada y no reconcilia', async () => {
+    const { createSqliteTestHarness, patientA, patientB } =
+      await import('../../data/local/testing/sqlite-test-harness');
+    const { migrateDatabase } = await import('../../data/local/migrations');
+    const { seedPatientContextIfEmpty } = await import('../../data/local/repository');
+    const { createReminderRepository } =
+      await import('../../data/local/reminders/reminder-repository');
+
+    const harness = createSqliteTestHarness();
+    try {
+      const db = harness.open();
+      await migrateDatabase(db);
+      await seedPatientContextIfEmpty(db, patientA, patientB);
+
+      const realRepo = createReminderRepository(db, patientA);
+      const initialPrefs = await realRepo.getPreferences();
+      expect(initialPrefs.enabled).toBe(false);
+
+      const reconcileSpy = vi.fn();
+      const outcome = await saveReminderWithActivation({
+        patientId: patientA,
+        contextEpoch: 1,
+        input: {
+          tipo: 'registro_vitales',
+          diasSemana: [1, 2, 3, 4, 5, 6, 7],
+          horasMinutos: ['08:00'],
+        },
+        intent: 'save_and_activate',
+        remindersRepository: realRepo,
+        notificationAdapter: {
+          getPermissionState: vi.fn().mockResolvedValue({
+            status: 'undetermined',
+            canAskAgain: true,
+            channelStatus: 'ok',
+          }),
+          requestPermission: vi.fn().mockResolvedValue({
+            status: 'denied',
+            canAskAgain: false,
+            channelStatus: 'ok',
+          }),
+        },
+        reconcileReminders: reconcileSpy,
+      });
+
+      expect(outcome.kind).toBe('saved_permission_denied');
+      if (outcome.kind === 'saved_permission_denied') {
+        expect(outcome.rule.habilitado).toBe(true);
+        expect(outcome.rule.horasMinutos).toEqual(['08:00']);
+      }
+
+      // Verificación en SQLite real: preferencia general continúa desactivada
+      const prefsAfter = await realRepo.getPreferences();
+      expect(prefsAfter.enabled).toBe(false);
+
+      // Verificación en SQLite real: la regla está guardada con habilitado = 1
+      const rulesInDb = await realRepo.listRules();
+      const savedInDb = rulesInDb.find((r) => r.horasMinutos.includes('08:00'));
+      expect(savedInDb).toBeDefined();
+      expect(savedInDb?.habilitado).toBe(true);
+
+      // No se ejecuta la reconciliación cuando los permisos fueron denegados
+      expect(reconcileSpy).not.toHaveBeenCalled();
+    } finally {
+      harness.cleanup();
+    }
   });
 });

@@ -13,15 +13,23 @@ import {
   VisualButton,
 } from '../../components/Visual';
 import type { ActiveMedicationRecord } from '../../data/local/clinical-context/clinical-context-types';
-import type { NotificationItem, ReminderRule } from '../../data/local/reminders/reminder-types';
-import { formatDate } from '../../data/local/repository';
+import type {
+  ReminderRule,
+  ReminderStatusSnapshot,
+} from '../../data/local/reminders/reminder-types';
 import { useFocusedList, useFocusedValue } from '../../hooks/use-local-query';
 import { useLocalData } from '../../providers/LocalDataProvider';
 import { useAppTheme } from '../../providers/ThemeProvider';
 import { ExpoNotificationAdapter } from '../../services/notifications/expo-notification-adapter';
 import type { NotificationPermissionState } from '../../services/notifications/notification-adapter';
 import type { CoordinatorResult } from '../../services/reminders/notification-coordinator';
-import { formatNextReminderLabel } from '../../services/reminders/reminder-status';
+import {
+  classifyMeasurementReminderStatus,
+  classifyReminderStatus,
+  formatCivilDateDisplay,
+  formatCoverageDateDisplay,
+  formatNextReminderLabel,
+} from '../../services/reminders/reminder-status';
 import { theme } from '../../theme';
 
 const DAYS_MAP: Record<number, string> = {
@@ -55,43 +63,6 @@ function getStatusCoverageText(res: CoordinatorResult | null): string {
     return 'No se pudieron programar todos los avisos';
   }
   return 'Preparando avisos...';
-}
-
-function getNextConfirmedLabelForRules(
-  rules: ReminderRule[],
-  futureNotifications: NotificationItem[],
-  nowIso: string,
-): string | null {
-  const enabledRulesById = new Map<string, ReminderRule>();
-  for (const r of rules) {
-    if (r.habilitado && r.eliminadoEl === null) {
-      enabledRulesById.set(r.id, r);
-    }
-  }
-  if (enabledRulesById.size === 0) return null;
-
-  const confirmed = futureNotifications
-    .filter((n) => {
-      const rule = enabledRulesById.get(n.recordatorioId);
-      if (!rule) return false;
-      return (
-        n.revision === rule.revision &&
-        n.estado === 'programada' &&
-        typeof n.idNativo === 'string' &&
-        n.idNativo.trim().length > 0 &&
-        n.fechaPrevistaUtc > nowIso
-      );
-    })
-    .sort((a, b) => a.fechaPrevistaUtc.localeCompare(b.fechaPrevistaUtc));
-
-  const nextNotif = confirmed[0];
-  if (!nextNotif) return null;
-  const nextRule = enabledRulesById.get(nextNotif.recordatorioId);
-  return formatNextReminderLabel(
-    nextNotif.fechaPrevistaUtc,
-    nowIso,
-    nextRule?.zonaHoraria ?? 'America/Santiago',
-  );
 }
 
 export function RemindersListScreen() {
@@ -154,7 +125,7 @@ export function RemindersListScreen() {
     refresh: refreshMedications,
   } = useFocusedList<ActiveMedicationRecord>(loadMedications);
 
-  const [scheduledNotifications, setScheduledNotifications] = useState<NotificationItem[]>([]);
+  const [reminderSnapshot, setReminderSnapshot] = useState<ReminderStatusSnapshot | null>(null);
 
   // Consultar permisos y reconciliar agenda
   const checkAndReconcile = useCallback(async () => {
@@ -167,9 +138,9 @@ export function RemindersListScreen() {
       if (result) {
         setCoordinatorResult(result);
       }
-      if (repository && typeof repository.reminders.listNotifications === 'function') {
-        const notifs = await repository.reminders.listNotifications({ estado: 'programada' });
-        setScheduledNotifications(notifs);
+      if (repository && typeof repository.reminders.getReminderStatusSnapshot === 'function') {
+        const snap = await repository.reminders.getReminderStatusSnapshot(new Date().toISOString());
+        setReminderSnapshot(snap);
       }
     } catch {
       // Reconciliación silente para no bloquear interfaz
@@ -238,7 +209,6 @@ export function RemindersListScreen() {
 
   const isBlockedInSettings = permissionState?.status === 'denied' && !permissionState?.canAskAgain;
   const isChannelBlocked = permissionState?.channelStatus === 'blocked';
-  const nowIso = new Date().toISOString();
 
   const vitalRules = useMemo(
     () => rules.filter((r) => r.tipo === 'registro_vitales' && r.eliminadoEl === null),
@@ -261,13 +231,66 @@ export function RemindersListScreen() {
     [medicationRules, medicationIdsInCatalog],
   );
 
+  const getRuleNextSlot = (rule: ReminderRule): string | null => {
+    if (!prefs.enabled || !rule.habilitado || !reminderSnapshot) return null;
+    const evalRes = classifyReminderStatus(reminderSnapshot, {
+      ruleId: rule.id,
+      permissionState,
+      coordinatorResult,
+    });
+    if (evalRes.status === 'scheduled' && evalRes.fechaPrevistaUtc) {
+      return formatNextReminderLabel(
+        evalRes.fechaPrevistaUtc,
+        reminderSnapshot.nowIso,
+        evalRes.zonaHoraria ?? undefined,
+      );
+    }
+    return null;
+  };
+
+  const getVitalGroupNextSlot = (): string | null => {
+    if (!prefs.enabled || !reminderSnapshot) return null;
+    const evalRes = classifyMeasurementReminderStatus(reminderSnapshot, {
+      permissionState,
+      coordinatorResult,
+    });
+    if (evalRes.status === 'scheduled' && evalRes.fechaPrevistaUtc) {
+      return formatNextReminderLabel(
+        evalRes.fechaPrevistaUtc,
+        reminderSnapshot.nowIso,
+        evalRes.zonaHoraria ?? undefined,
+      );
+    }
+    return null;
+  };
+
+  const getMedicationGroupNextSlot = (medicationId: string): string | null => {
+    if (!prefs.enabled || !reminderSnapshot) return null;
+    const evalRes = classifyReminderStatus(reminderSnapshot, {
+      tipo: 'medicacion',
+      medicamentoId: medicationId,
+      permissionState,
+      coordinatorResult,
+    });
+    if (evalRes.status === 'scheduled' && evalRes.fechaPrevistaUtc) {
+      return formatNextReminderLabel(
+        evalRes.fechaPrevistaUtc,
+        reminderSnapshot.nowIso,
+        evalRes.zonaHoraria ?? undefined,
+      );
+    }
+    return null;
+  };
+
   const renderRuleRow = (rule: ReminderRule, actionLabel: string) => {
     const daysText = rule.diasSemana.map((d) => DAYS_MAP[d] ?? d).join(', ');
     const hoursText = rule.horasMinutos.join(', ');
-    const nextSlot =
-      prefs.enabled && rule.habilitado
-        ? getNextConfirmedLabelForRules([rule], scheduledNotifications, nowIso)
-        : null;
+    const nextSlot = getRuleNextSlot(rule);
+
+    const ruleTargetName =
+      rule.tipo === 'registro_vitales'
+        ? 'signos vitales'
+        : (medications.find((m) => m.id === rule.medicamentoId)?.nombre ?? 'medicamento');
 
     return (
       <View key={rule.id} style={styles.ruleItemBox}>
@@ -283,8 +306,9 @@ export function RemindersListScreen() {
             </Text>
             {rule.fechaInicio || rule.fechaFin ? (
               <Text style={styles.ruleSubtitle}>
-                Vigencia: {rule.fechaInicio ? formatDate(rule.fechaInicio) : 'Desde hoy'}
-                {rule.fechaFin ? ` hasta ${formatDate(rule.fechaFin)}` : ''}
+                Vigencia:{' '}
+                {rule.fechaInicio ? formatCivilDateDisplay(rule.fechaInicio) : 'Desde hoy'}
+                {rule.fechaFin ? ` hasta ${formatCivilDateDisplay(rule.fechaFin)}` : ''}
               </Text>
             ) : null}
             <Text style={styles.ruleStatusLine}>
@@ -299,10 +323,10 @@ export function RemindersListScreen() {
           </View>
           <Pressable
             accessibilityRole="switch"
-            accessibilityLabel={`Activar ${rule.tipo}`}
+            accessibilityLabel={`Alternar recordatorio para ${ruleTargetName}`}
             accessibilityState={{ checked: rule.habilitado }}
             onPress={() => void handleToggleRule(rule)}
-            style={{ padding: theme.spacing.xs }}
+            style={styles.ruleSwitchPressable}
           >
             <Feather
               name={rule.habilitado ? 'check-circle' : 'circle'}
@@ -416,7 +440,7 @@ export function RemindersListScreen() {
             <BodyText>
               Avisos preparados hasta:{' '}
               <Text style={{ fontWeight: '700' }}>
-                {formatDate(coordinatorResult.cubiertoHastaIso)}
+                {formatCoverageDateDisplay(coordinatorResult.cubiertoHastaIso)}
               </Text>{' '}
               (se renuevan al abrir la aplicación).
             </BodyText>
@@ -467,9 +491,7 @@ export function RemindersListScreen() {
             Tienes {vitalRules.length} horarios configurados. Se conservan todos tus horarios.
           </BodyText>
           {(() => {
-            const nextVitalSlot = prefs.enabled
-              ? getNextConfirmedLabelForRules(vitalRules, scheduledNotifications, nowIso)
-              : null;
+            const nextVitalSlot = getVitalGroupNextSlot();
             return nextVitalSlot ? (
               <Text style={styles.ruleStatusLine}>Próximo aviso: {nextVitalSlot}</Text>
             ) : null;
@@ -528,9 +550,7 @@ export function RemindersListScreen() {
             const medRules = medicationRules.filter((r) => r.medicamentoId === med.id);
             const groupKey = `med-${med.id}`;
             const isExpanded = Boolean(expandedGroups[groupKey]);
-            const nextMedSlot = prefs.enabled
-              ? getNextConfirmedLabelForRules(medRules, scheduledNotifications, nowIso)
-              : null;
+            const nextMedSlot = getMedicationGroupNextSlot(med.id);
 
             return (
               <InfoCard key={med.id}>
@@ -549,8 +569,10 @@ export function RemindersListScreen() {
                   {med.fecha_inicio || med.fecha_fin ? (
                     <Text style={styles.ruleSubtitle}>
                       Indicaciones:{' '}
-                      {med.fecha_inicio ? `Desde ${formatDate(med.fecha_inicio)}` : 'Activo'}
-                      {med.fecha_fin ? ` hasta ${formatDate(med.fecha_fin)}` : ''}
+                      {med.fecha_inicio
+                        ? `Desde ${formatCivilDateDisplay(med.fecha_inicio)}`
+                        : 'Activo'}
+                      {med.fecha_fin ? ` hasta ${formatCivilDateDisplay(med.fecha_fin)}` : ''}
                     </Text>
                   ) : null}
                 </View>
@@ -711,6 +733,12 @@ function useStyles() {
       flexDirection: 'row',
       justifyContent: 'flex-end',
       marginTop: theme.spacing.sm,
+    },
+    ruleSwitchPressable: {
+      minWidth: 48,
+      minHeight: 48,
+      alignItems: 'center',
+      justifyContent: 'center',
     },
   });
 }

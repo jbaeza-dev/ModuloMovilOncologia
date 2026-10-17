@@ -55,14 +55,11 @@ export type ReminderActionOutcome =
     };
 
 export interface ReminderActionsRepositoryPort {
-  saveRule: (input: SaveReminderInput) => Promise<ReminderRule>;
-  saveRuleWithActivationIntent?: (
+  saveRuleWithActivationIntent: (
     input: SaveReminderInput,
     intent: ReminderActivationIntent,
   ) => Promise<SaveRuleWithActivationResult>;
-  getReminderStatusSnapshot?: (nowIso?: string) => Promise<ReminderStatusSnapshot>;
-  getPreferences?: () => Promise<{ enabled: boolean; updatedAt: string | null }>;
-  setPreferences?: (enabled: boolean) => Promise<void>;
+  getReminderStatusSnapshot: (nowIso?: string) => Promise<ReminderStatusSnapshot>;
 }
 
 export interface SaveReminderWithActivationParams {
@@ -76,67 +73,6 @@ export interface SaveReminderWithActivationParams {
   reconcileReminders: (patientId: string) => Promise<CoordinatorResult | null>;
   bumpRemindersRevision?: () => void;
   nowIso?: () => string;
-}
-
-async function persistRuleTransactionalOrFallback(
-  repo: ReminderActionsRepositoryPort,
-  input: SaveReminderInput,
-  intent: ReminderActivationIntent,
-): Promise<SaveRuleWithActivationResult> {
-  if (typeof repo.saveRuleWithActivationIntent === 'function') {
-    return repo.saveRuleWithActivationIntent(input, intent);
-  }
-
-  // Respaldo compatible para dobles de prueba que solo implementan saveRule/getPreferences/setPreferences
-  const shouldEnableRule = intent !== 'save_disabled';
-  const currentPrefs =
-    typeof repo.getPreferences === 'function'
-      ? await repo.getPreferences()
-      : { enabled: true, updatedAt: null };
-
-  const rule = await repo.saveRule({
-    ...input,
-    habilitado: shouldEnableRule,
-  });
-
-  if (!shouldEnableRule) {
-    return {
-      rule,
-      preferencesEnabled: currentPrefs.enabled,
-      otherEnabledRulesCount: 0,
-      resumedGeneralPreference: false,
-      pausedByGeneralPreference: false,
-    };
-  }
-
-  if (intent === 'keep_existing') {
-    return {
-      rule,
-      preferencesEnabled: currentPrefs.enabled,
-      otherEnabledRulesCount: 0,
-      resumedGeneralPreference: false,
-      pausedByGeneralPreference: !currentPrefs.enabled,
-    };
-  }
-
-  if (!currentPrefs.enabled && typeof repo.setPreferences === 'function') {
-    await repo.setPreferences(true);
-    return {
-      rule,
-      preferencesEnabled: true,
-      otherEnabledRulesCount: 0,
-      resumedGeneralPreference: true,
-      pausedByGeneralPreference: false,
-    };
-  }
-
-  return {
-    rule,
-    preferencesEnabled: currentPrefs.enabled,
-    otherEnabledRulesCount: 0,
-    resumedGeneralPreference: false,
-    pausedByGeneralPreference: !currentPrefs.enabled,
-  };
 }
 
 /**
@@ -198,8 +134,7 @@ export async function saveReminderWithActivation(
   const effectiveIntent: ReminderActivationIntent =
     wantsActivation && !permissionGranted ? 'keep_existing' : intent;
 
-  const saveResult = await persistRuleTransactionalOrFallback(
-    remindersRepository,
+  const saveResult = await remindersRepository.saveRuleWithActivationIntent(
     {
       ...input,
       habilitado: wantsActivation,
@@ -267,58 +202,23 @@ export async function saveReminderWithActivation(
     };
   }
 
-  // Ajuste 1: evaluar específicamente la regla recién guardada (rule.id y rule.revision)
+  // Evaluar específicamente la regla recién guardada (rule.id y rule.revision)
   // para distinguir `scheduled` (con ocurrencia futura confirmada de esta regla) de
   // `saved_no_upcoming`, `saved_pending_scheduling` o `saved_scheduling_failed`.
-  if (typeof remindersRepository.getReminderStatusSnapshot === 'function') {
-    const currentNow = nowIso();
-    const snapshot = await remindersRepository.getReminderStatusSnapshot(currentNow);
-    if (!checkContext()) {
-      return { kind: 'context_changed' };
-    }
-
-    const evaluation = classifyReminderStatus(snapshot, {
-      ruleId: saveResult.rule.id,
-      permissionState,
-      coordinatorResult,
-      coordinatorInFlight: false,
-    });
-
-    if (evaluation.status === 'scheduled') {
-      return {
-        kind: 'scheduled',
-        rule: saveResult.rule,
-        coordinatorResult,
-      };
-    }
-
-    if (evaluation.status === 'no_upcoming') {
-      return {
-        kind: 'saved_no_upcoming',
-        rule: saveResult.rule,
-        reason: evaluation.noUpcomingReason ?? 'starts_after_window',
-        coordinatorResult,
-      };
-    }
-
-    if (evaluation.status === 'pending_scheduling') {
-      return {
-        kind: 'saved_pending_scheduling',
-        rule: saveResult.rule,
-        reason: coordinatorResult.motivoPendiente ?? 'programacion_parcial',
-        coordinatorResult,
-      };
-    }
-
-    return {
-      kind: 'saved_scheduling_failed',
-      rule: saveResult.rule,
-      coordinatorResult,
-    };
+  const currentNow = nowIso();
+  const snapshot = await remindersRepository.getReminderStatusSnapshot(currentNow);
+  if (!checkContext()) {
+    return { kind: 'context_changed' };
   }
 
-  // Si no hay getReminderStatusSnapshot (en un mock mínimo), verificar que al menos haya 1 confirmada
-  if (coordinatorResult.programadasConfirmadas > 0) {
+  const evaluation = classifyReminderStatus(snapshot, {
+    ruleId: saveResult.rule.id,
+    permissionState,
+    coordinatorResult,
+    coordinatorInFlight: false,
+  });
+
+  if (evaluation.status === 'scheduled') {
     return {
       kind: 'scheduled',
       rule: saveResult.rule,
@@ -326,11 +226,20 @@ export async function saveReminderWithActivation(
     };
   }
 
-  if (coordinatorResult.totalDeseadas === 0) {
+  if (evaluation.status === 'no_upcoming') {
     return {
       kind: 'saved_no_upcoming',
       rule: saveResult.rule,
-      reason: 'starts_after_window',
+      reason: evaluation.noUpcomingReason ?? 'starts_after_window',
+      coordinatorResult,
+    };
+  }
+
+  if (evaluation.status === 'pending_scheduling') {
+    return {
+      kind: 'saved_pending_scheduling',
+      rule: saveResult.rule,
+      reason: coordinatorResult.motivoPendiente ?? 'programacion_parcial',
       coordinatorResult,
     };
   }

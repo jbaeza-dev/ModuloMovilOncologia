@@ -3,9 +3,9 @@ import DateTimePicker, { type DateTimePickerEvent } from '@react-native-communit
 import { useRef, useState } from 'react';
 import { Platform, Pressable, StyleSheet, Text, TextInput, View } from 'react-native';
 
-import { formatDate } from '../data/local/repository';
 import { useAppTheme } from '../providers/ThemeProvider';
 import { isValidCivilDate, isValidTimeHhMm } from '../services/reminders/reminder-date-utils';
+import { formatCivilDateDisplay } from '../services/reminders/reminder-status';
 import { theme } from '../theme';
 import { BodyText, VisualButton } from './Visual';
 
@@ -131,7 +131,7 @@ export function DateTimePickerField(props: DateTimePickerFieldProps) {
     props.mode === 'time'
       ? props.value || '07:00'
       : props.value
-        ? `${formatDate(props.value)} (${props.value})`
+        ? `${formatCivilDateDisplay(props.value)} (${props.value})`
         : (props.placeholder ?? 'Seleccionar fecha');
 
   const pickerValue =
