@@ -161,15 +161,7 @@ export function HomeScreen() {
 
   const renderReminderCardContent = () => {
     if (reminderLoading) {
-      return (
-        <>
-          <Text style={styles.description}>Consultando tu próximo recordatorio…</Text>
-          <VisualButton
-            label="Registrar signos vitales"
-            onPress={() => router.push('/(tabs)/(inicio)/registrar-vitales')}
-          />
-        </>
-      );
+      return <Text style={styles.description}>Consultando tu próximo recordatorio…</Text>;
     }
 
     if (evaluation.status === 'query_error') {
@@ -201,7 +193,7 @@ export function HomeScreen() {
     if (evaluation.status === 'rule_disabled') {
       return (
         <>
-          <Text style={styles.description}>Tu recordatorio de medición está pausado.</Text>
+          <Text style={styles.description}>Este horario está en pausa.</Text>
           <VisualButton
             label="Activar o revisar horarios"
             secondary
@@ -237,10 +229,15 @@ export function HomeScreen() {
     }
 
     if (evaluation.deviceAvailability !== 'available') {
+      const isBlocked =
+        evaluation.deviceAvailability === 'permission_blocked' ||
+        evaluation.deviceAvailability === 'channel_blocked';
       return (
         <>
           <Text style={styles.description}>
-            Tus horarios están guardados. Activa las notificaciones para recibir avisos.
+            {isBlocked
+              ? 'Android no permite mostrar notificaciones.'
+              : 'Tus horarios están guardados. Activa las notificaciones para recibir avisos.'}
           </Text>
           {evaluation.deviceAvailability === 'permission_required' ? (
             <VisualButton
@@ -270,10 +267,6 @@ export function HomeScreen() {
         <>
           <Text style={styles.nextReminderHighlight}>{nextLabel}</Text>
           <VisualButton
-            label="Registrar signos vitales"
-            onPress={() => router.push('/(tabs)/(inicio)/registrar-vitales')}
-          />
-          <VisualButton
             label="Cambiar horario"
             secondary
             onPress={() => openEditForRule(evaluation.ruleId)}
@@ -286,9 +279,7 @@ export function HomeScreen() {
       return (
         <>
           <StatusPill>Preparando avisos</StatusPill>
-          <Text style={styles.description}>
-            Estamos preparando tus próximos avisos en este dispositivo.
-          </Text>
+          <Text style={styles.description}>Preparando tus próximos avisos…</Text>
           <VisualButton
             label="Cambiar horario"
             secondary
@@ -301,9 +292,7 @@ export function HomeScreen() {
     if (evaluation.status === 'scheduling_failed') {
       return (
         <>
-          <Text style={styles.description}>
-            El horario está guardado, pero no pudimos programar el aviso.
-          </Text>
+          <Text style={styles.description}>No se pudo preparar este aviso.</Text>
           <VisualButton
             label={retryingScheduling ? 'Reintentando…' : 'Reintentar programación'}
             secondary
@@ -337,16 +326,15 @@ export function HomeScreen() {
   return (
     <Screen isRoot showProfile scrollRef={scrollRef}>
       <View style={styles.introduction}>
-        <Text style={styles.eyebrow}>ACOMPAÑAMIENTO EN QUIMIOTERAPIA</Text>
         <Text accessibilityRole="header" style={styles.title}>
           {greetingText}
         </Text>
-        <Text style={styles.description}>Un espacio para tu seguimiento y cuidado diario.</Text>
+        <Text style={styles.description}>Tu seguimiento diario</Text>
       </View>
       <View style={styles.section}>
         <SectionTitle>Tu seguimiento</SectionTitle>
         <InfoCard>
-          <Text style={styles.cardTitle}>Próximo recordatorio de medición</Text>
+          <Text style={styles.cardTitle}>Tu próxima medición</Text>
           {renderReminderCardContent()}
         </InfoCard>
         <NavigationCard
@@ -368,10 +356,10 @@ export function HomeScreen() {
       <View style={styles.section}>
         <SectionTitle>Acompañamiento</SectionTitle>
         <NavigationCard
-          title="Asistente QuimioCare"
-          description="Espacio de orientación visual."
-          icon="message-circle"
-          href="/asistente"
+          title="Mis medicamentos"
+          description="Revisa tus pautas farmacológicas indicadas."
+          icon="shield"
+          href="/perfil/medicacion"
         />
         <NavigationCard
           title="Recordatorios locales"
@@ -384,6 +372,12 @@ export function HomeScreen() {
           description="Historial y estado de los recordatorios planificados."
           icon="bell"
           href="/avisos"
+        />
+        <NavigationCard
+          title="Asistente QuimioCare"
+          description="Espacio de orientación visual."
+          icon="message-circle"
+          href="/asistente"
         />
         {__DEV__ ? (
           <NavigationCard
@@ -422,7 +416,6 @@ export function HomeScreen() {
 function createStyles(colors: ReturnType<typeof useAppTheme>['theme']['colors']) {
   return StyleSheet.create({
     introduction: { gap: theme.spacing.sm },
-    eyebrow: { fontSize: 12, fontWeight: '600', letterSpacing: 1, color: colors.secondary },
     title: { fontSize: 30, fontWeight: '700', color: colors.text },
     description: { fontSize: 16, lineHeight: 24, color: colors.secondary },
     nextReminderHighlight: { fontSize: 22, fontWeight: '700', color: colors.text },

@@ -75,9 +75,12 @@ export function Screen({
             accessibilityRole="button"
             accessibilityLabel="Abrir mi perfil"
             onPress={() => router.navigate('/perfil', { withAnchor: true })}
-            style={({ pressed }) => [styles.headerAction, styles.avatar, pressed && styles.pressed]}
+            style={({ pressed }) => [styles.profileButton, pressed && styles.pressed]}
           >
-            <Feather name="user" size={24} color={appTheme.colors.primary} accessible={false} />
+            <View style={styles.avatar}>
+              <Feather name="user" size={18} color={appTheme.colors.primary} accessible={false} />
+            </View>
+            <Text style={styles.profileText}>Mi perfil</Text>
           </Pressable>
         ) : (
           <View style={styles.headerAction} />
@@ -123,7 +126,28 @@ function createStyles(colors: ReturnType<typeof useAppTheme>['theme']['colors'])
       justifyContent: 'center',
       borderRadius: 24,
     },
-    avatar: { backgroundColor: colors.primaryContainer },
+    profileButton: {
+      flexDirection: 'row',
+      alignItems: 'center',
+      minWidth: 48,
+      minHeight: 48,
+      paddingHorizontal: theme.spacing.sm,
+      gap: theme.spacing.xs,
+      borderRadius: 24,
+    },
+    avatar: {
+      width: 32,
+      height: 32,
+      borderRadius: 16,
+      alignItems: 'center',
+      justifyContent: 'center',
+      backgroundColor: colors.primaryContainer,
+    },
+    profileText: {
+      fontSize: 14,
+      fontWeight: '600',
+      color: colors.text,
+    },
     brand: {
       flex: 1,
       textAlign: 'center',

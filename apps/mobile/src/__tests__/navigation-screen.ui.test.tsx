@@ -237,7 +237,7 @@ describe('Screen, NavigationCard, rutas de Inicio y reinicio dirigido (Bloque 1 
 
     expect(screen.queryByLabelText('Volver')).toBeNull();
     expect(await screen.findByText('Hola, María Elena Morales')).toBeTruthy();
-    expect(screen.getByText('Próximo recordatorio de medición')).toBeTruthy();
+    expect(screen.getByText('Tu próxima medición')).toBeTruthy();
     expect(screen.getByText('Configurar aviso')).toBeTruthy();
     expect(screen.getByText('Guarda una descripción de síntomas y malestares.')).toBeTruthy();
 

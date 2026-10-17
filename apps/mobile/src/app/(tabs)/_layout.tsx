@@ -102,7 +102,7 @@ export default function TabsLayout() {
       <Tabs.Screen
         name="vitales"
         options={{
-          title: 'Vitales',
+          title: 'Mediciones',
           tabBarIcon: ({ color }) => <Feather name="activity" size={24} color={color} />,
         }}
       />
