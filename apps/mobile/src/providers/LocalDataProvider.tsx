@@ -28,6 +28,7 @@ import type { SqlConnection } from '../data/local/core/sql';
 import { importLegacyDrafts } from '../features/medical-forms/form-legacy-import';
 import { isDemoMode } from '../utils/environment';
 import { isValidNotificationPayload } from '../data/local/reminders/reminder-types';
+import type { LocalNotificationAdapter } from '../services/notifications/notification-adapter';
 import { ExpoNotificationAdapter } from '../services/notifications/expo-notification-adapter';
 import {
   NotificationCoordinator,
@@ -49,6 +50,13 @@ import {
 } from './patient-context-manager';
 
 export type { CloseReason, TeardownResult, NotificationOpenResult };
+
+export type ScopedCoordinatorState = {
+  patientId: string;
+  contextEpoch: number;
+  inFlight: boolean;
+  result: CoordinatorResult | null;
+};
 
 try {
   Notifications.setNotificationHandler({
@@ -80,6 +88,10 @@ type DataContextValue = {
   patientId: string | null;
   repository: Repository | null;
   coordinator: NotificationCoordinator | null;
+  notificationAdapter: LocalNotificationAdapter;
+  remindersRevision: number;
+  scopedCoordinatorState: ScopedCoordinatorState | null;
+  bumpRemindersRevision: () => void;
   saving: boolean;
   isClosing: boolean;
   formStorageReady: boolean;
@@ -112,6 +124,13 @@ export function LocalDataProvider({ children }: { children: ReactNode }) {
   const [formImportError, setFormImportError] = useState<string | null>(null);
   const [formImportWarning, setFormImportWarning] = useState<FormImportWarning | null>(null);
   const [importAttempt, setImportAttempt] = useState(0);
+  const [remindersRevision, setRemindersRevision] = useState(0);
+  const [scopedCoordinatorState, setScopedCoordinatorState] =
+    useState<ScopedCoordinatorState | null>(null);
+
+  const bumpRemindersRevision = useCallback(() => {
+    setRemindersRevision((r) => r + 1);
+  }, []);
 
   const routerAdapter = useMemo<RouterAdapter>(
     () => ({
@@ -282,8 +301,34 @@ export function LocalDataProvider({ children }: { children: ReactNode }) {
   const reconcileReminders = useCallback(
     async (targetPatientId?: string): Promise<CoordinatorResult | undefined> => {
       const currentId = targetPatientId ?? manager.getPatientId();
+      const epoch = manager.getContextEpoch();
       if (!coordinator || !currentId) return undefined;
-      return await coordinator.reconcile(currentId, () => manager.getPatientId() === currentId);
+
+      if (manager.getPatientId() === currentId && manager.getContextEpoch() === epoch) {
+        setScopedCoordinatorState({
+          patientId: currentId,
+          contextEpoch: epoch,
+          inFlight: true,
+          result: null,
+        });
+      }
+
+      const result = await coordinator.reconcile(
+        currentId,
+        () => manager.getPatientId() === currentId && manager.getContextEpoch() === epoch,
+      );
+
+      if (manager.getPatientId() === currentId && manager.getContextEpoch() === epoch) {
+        setScopedCoordinatorState({
+          patientId: currentId,
+          contextEpoch: epoch,
+          inFlight: false,
+          result,
+        });
+        setRemindersRevision((r) => r + 1);
+      }
+
+      return result;
     },
     [coordinator, manager],
   );
@@ -353,8 +398,19 @@ export function LocalDataProvider({ children }: { children: ReactNode }) {
         const data = notification.request.content.data;
         if (isValidNotificationPayload(data)) {
           const currentId = manager.getPatientId();
+          const currentEpoch = manager.getContextEpoch();
           if (currentId && data.pacienteId === currentId && repository) {
-            void repository.reminders.recordNotificationObserved(data.notificacionId);
+            void repository.reminders
+              .recordNotificationObserved(data.notificacionId)
+              .then(() => {
+                if (
+                  manager.getPatientId() === currentId &&
+                  manager.getContextEpoch() === currentEpoch
+                ) {
+                  setRemindersRevision((r) => r + 1);
+                }
+              })
+              .catch(() => undefined);
           }
         }
       });
@@ -391,12 +447,24 @@ export function LocalDataProvider({ children }: { children: ReactNode }) {
     return manager.processPendingNotificationIntent();
   }, [manager]);
 
+  const activeContextEpoch = manager.getContextEpoch();
+  const validScopedCoordinatorState =
+    scopedCoordinatorState &&
+    scopedCoordinatorState.patientId === patientId &&
+    scopedCoordinatorState.contextEpoch === activeContextEpoch
+      ? scopedCoordinatorState
+      : null;
+
   const context = useMemo<DataContextValue>(
     () => ({
       database,
       patientId,
       repository,
       coordinator,
+      notificationAdapter,
+      remindersRevision,
+      scopedCoordinatorState: validScopedCoordinatorState,
+      bumpRemindersRevision,
       saving,
       formStorageReady,
       formImportStatus,
@@ -421,6 +489,10 @@ export function LocalDataProvider({ children }: { children: ReactNode }) {
       patientId,
       repository,
       coordinator,
+      notificationAdapter,
+      remindersRevision,
+      validScopedCoordinatorState,
+      bumpRemindersRevision,
       saving,
       isClosing,
       formStorageReady,
