@@ -32,7 +32,7 @@ export function MedicationScreen() {
   } = useFocusedValue(load, [] as ActiveMedicationRecord[]);
 
   return (
-    <Screen title="Medicación activa">
+    <Screen title="Mis medicamentos">
       <DemoBadge />
       <BodyText>
         Información de consulta local provista por tu centro de salud. No modifiques ni suspendas tu
@@ -52,22 +52,31 @@ export function MedicationScreen() {
         <EmptyState
           icon="file-text"
           title="Sin medicamentos registrados"
-          description="No se encontraron registros de medicación activa en el almacenamiento local para este paciente."
+          description="No se encontraron registros de medicamentos para este paciente en el almacenamiento local."
         />
       ) : (
         medications.map((med) => (
           <InfoCard key={med.id}>
             <SectionTitle>{med.nombre}</SectionTitle>
-            <DetailRow label="Dosis" value={med.dosis} />
-            <DetailRow label="Frecuencia" value={med.frecuencia} />
+            <DetailRow label="Dosis" value={med.dosis} layout="vertical" />
+            <DetailRow label="Frecuencia" value={med.frecuencia} layout="vertical" />
             {med.fecha_inicio ? (
-              <DetailRow label="Fecha inicio" value={formatCivilDateDisplay(med.fecha_inicio)} />
+              <DetailRow
+                label="Fecha de inicio"
+                value={formatCivilDateDisplay(med.fecha_inicio)}
+                layout="vertical"
+              />
             ) : null}
             {med.fecha_fin ? (
-              <DetailRow label="Fecha fin" value={formatCivilDateDisplay(med.fecha_fin)} />
+              <DetailRow
+                label="Fecha de término"
+                value={formatCivilDateDisplay(med.fecha_fin)}
+                layout="vertical"
+              />
             ) : null}
             <StatusPill>
-              Información en caché · Obtenido el {formatDate(med.obtenido_en)}
+              Información guardada en este dispositivo · Información recibida el{' '}
+              {formatDate(med.obtenido_en)}
             </StatusPill>
             <VisualButton
               label="Configurar aviso"
@@ -83,9 +92,7 @@ export function MedicationScreen() {
         ))
       )}
 
-      <BodyText>
-        Información en caché guardada en este dispositivo para consulta sin conexión.
-      </BodyText>
+      <BodyText>Información guardada en este dispositivo para consulta sin conexión.</BodyText>
     </Screen>
   );
 }

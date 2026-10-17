@@ -211,11 +211,17 @@ describe('Profile y Reports UI (Bloque 5)', () => {
         expect(screen.getByText('Ciclofosfamida 500mg')).toBeTruthy();
       });
 
+      expect(screen.getByRole('header', { name: 'Mis medicamentos' })).toBeTruthy();
       expect(screen.getByText('Dosis')).toBeTruthy();
       expect(screen.getByText('500 mg')).toBeTruthy();
+      expect(screen.getByText('Frecuencia')).toBeTruthy();
+      expect(screen.getByText('Cada 12 horas')).toBeTruthy();
+      expect(screen.getByText('Fecha de inicio')).toBeTruthy();
+      expect(screen.getByText('Fecha de término')).toBeTruthy();
       // Fechas civiles en formato DD/MM/AAAA
       expect(screen.getByText('01/10/2026')).toBeTruthy();
       expect(screen.getByText('20/10/2026')).toBeTruthy();
+      expect(screen.getByText(/Información recibida el/)).toBeTruthy();
 
       const configButton = screen.getByText('Configurar aviso');
       expect(configButton).toBeTruthy();
