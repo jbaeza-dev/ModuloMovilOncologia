@@ -32,7 +32,7 @@ export function HomeScreen() {
     refresh,
   } = useFocusedValue(load, null as VitalRecord | null);
   return (
-    <Screen showProfile>
+    <Screen isRoot showProfile>
       <View style={styles.introduction}>
         <Text style={styles.eyebrow}>ACOMPAÑAMIENTO EN QUIMIOTERAPIA</Text>
         <Text accessibilityRole="header" style={styles.title}>

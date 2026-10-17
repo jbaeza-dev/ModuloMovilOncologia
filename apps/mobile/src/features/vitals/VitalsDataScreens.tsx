@@ -73,7 +73,7 @@ export function VitalsDataScreen() {
   );
   const list = useFocusedList(load);
   return (
-    <Screen title="Historial de signos vitales" scroll={false}>
+    <Screen isRoot title="Historial de signos vitales" scroll={false}>
       <FlatList
         data={list.items}
         keyExtractor={(item) => item.id}
@@ -169,7 +169,7 @@ export function RegisterVitalsDataScreen() {
     }
   }
   return (
-    <Screen title="Registrar signos vitales" backTo="/vitales">
+    <Screen title="Registrar signos vitales">
       <BodyText>Registra tus mediciones de prueba. No se realiza evaluación clínica.</BodyText>
       <VisualField
         label="Temperatura corporal (°C)"
@@ -210,7 +210,11 @@ export function RegisterVitalsDataScreen() {
         disabled={busy || !repository}
         onPress={() => void save()}
       />
-      <VisualButton label="Ver historial" secondary onPress={() => router.navigate('/vitales')} />
+      <VisualButton
+        label="Ver historial de mediciones"
+        secondary
+        onPress={() => router.navigate('/vitales')}
+      />
     </Screen>
   );
 }
@@ -229,7 +233,7 @@ export function VitalDataDetailScreen() {
     refresh,
   } = useFocusedValue(load, null as VitalWithSyncRecord | null);
   return (
-    <Screen title="Detalle del registro" backTo="/vitales">
+    <Screen title="Detalle del registro">
       {loading ? (
         <BodyText>Cargando registro…</BodyText>
       ) : error ? (

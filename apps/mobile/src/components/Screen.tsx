@@ -1,6 +1,7 @@
 import Feather from '@expo/vector-icons/Feather';
-import { router, type Href } from 'expo-router';
-import type { ReactNode } from 'react';
+import { router } from 'expo-router';
+import { useNavigationState } from 'expo-router/react-navigation';
+import type { ReactNode, RefObject } from 'react';
 import {
   KeyboardAvoidingView,
   Platform,
@@ -18,14 +19,25 @@ import { theme } from '../theme';
 type Props = {
   children: ReactNode;
   title?: string;
-  backTo?: Href;
+  isRoot?: boolean;
   showProfile?: boolean;
   scroll?: boolean;
+  scrollRef?: RefObject<ScrollView | null>;
 };
 
-export function Screen({ children, title, backTo, showProfile = false, scroll = true }: Props) {
+export function Screen({
+  children,
+  title,
+  isRoot = false,
+  showProfile = false,
+  scroll = true,
+  scrollRef,
+}: Props) {
   const { theme: appTheme } = useAppTheme();
   const styles = createStyles(appTheme.colors);
+  const hasBackHistory = useNavigationState((state) => (state ? state.index > 0 : false));
+  const canGoBack = !isRoot && hasBackHistory;
+
   const content = (
     <>
       {title ? (
@@ -39,13 +51,14 @@ export function Screen({ children, title, backTo, showProfile = false, scroll = 
   return (
     <SafeAreaView style={styles.safeArea} edges={['top', 'left', 'right']}>
       <View style={styles.header}>
-        {backTo ? (
+        {canGoBack ? (
           <Pressable
             accessibilityRole="button"
             accessibilityLabel="Volver"
             onPress={() => {
-              if (router.canGoBack()) router.back();
-              else router.replace(backTo);
+              if (router.canGoBack()) {
+                router.back();
+              }
             }}
             style={({ pressed }) => [styles.headerAction, pressed && styles.pressed]}
           >
@@ -73,7 +86,11 @@ export function Screen({ children, title, backTo, showProfile = false, scroll = 
         behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
       >
         {scroll ? (
-          <ScrollView keyboardShouldPersistTaps="handled" contentContainerStyle={styles.content}>
+          <ScrollView
+            ref={scrollRef}
+            keyboardShouldPersistTaps="handled"
+            contentContainerStyle={styles.content}
+          >
             {content}
           </ScrollView>
         ) : (

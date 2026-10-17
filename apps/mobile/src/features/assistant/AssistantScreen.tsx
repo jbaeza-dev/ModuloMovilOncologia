@@ -83,7 +83,7 @@ export function AssistantScreen() {
   };
 
   return (
-    <Screen title="Asistente QuimioCare" backTo="/">
+    <Screen title="Asistente QuimioCare">
       <DemoBadge />
       <InfoCard>
         <SectionTitle>Orientación general</SectionTitle>

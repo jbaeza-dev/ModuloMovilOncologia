@@ -24,7 +24,7 @@ export default function SeleccionarPacienteScreen() {
   };
 
   return (
-    <Screen title="Seleccionar paciente" backTo="/acceso">
+    <Screen title="Seleccionar paciente">
       <DemoBadge />
 
       {errorMsg ? (

@@ -43,7 +43,7 @@ export function ProfileScreen() {
   } = useFocusedValue(load, null as PatientProfileRecord | null);
 
   return (
-    <Screen title="Mi perfil" backTo="/">
+    <Screen title="Mi perfil">
       <DemoBadge />
       {loading ? (
         <InfoCard>
@@ -127,7 +127,7 @@ export function PersonalDataScreen() {
   } = useFocusedValue(load, null as PatientProfileRecord | null);
 
   return (
-    <Screen title="Datos personales" backTo="/perfil">
+    <Screen title="Datos personales">
       <DemoBadge />
       {loading ? (
         <InfoCard>
@@ -204,7 +204,7 @@ export function ClinicalProfileScreen() {
   }
 
   return (
-    <Screen title="Perfil clínico" backTo="/perfil">
+    <Screen title="Perfil clínico">
       <DemoBadge />
       {loading ? (
         <InfoCard>
@@ -305,7 +305,7 @@ export function LinkCodeScreen() {
   const isValid = Boolean(linkCode && !isExpired && isPending);
 
   return (
-    <Screen title="Código de vinculación" backTo="/perfil">
+    <Screen title="Código de vinculación">
       <DemoBadge />
       <BodyText>
         Comparte este código con tu equipo de salud para vincular tu seguimiento clínico.
@@ -395,7 +395,7 @@ export function PreferencesScreen() {
   };
 
   return (
-    <Screen title="Preferencias" backTo="/perfil">
+    <Screen title="Preferencias">
       <DemoBadge />
       <InfoCard>
         <SectionTitle>Accesibilidad y apariencia</SectionTitle>

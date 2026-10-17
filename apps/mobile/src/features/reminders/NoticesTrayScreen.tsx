@@ -81,7 +81,7 @@ export function NoticesTrayScreen() {
   };
 
   return (
-    <Screen title="Bandeja de avisos" backTo="/">
+    <Screen title="Bandeja de avisos">
       <DemoBadge />
 
       <InfoCard>

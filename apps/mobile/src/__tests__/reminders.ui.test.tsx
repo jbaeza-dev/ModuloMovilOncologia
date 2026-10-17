@@ -16,6 +16,7 @@ jest.mock('expo-router', () => {
       push: (...args: unknown[]) => mockRouterPush(...args),
       replace: jest.fn(),
       back: (...args: unknown[]) => mockRouterBack(...args),
+      canGoBack: jest.fn().mockReturnValue(true),
     },
     useLocalSearchParams: () => mockUseLocalSearchParams(),
     useFocusEffect: (cb: () => void | (() => void)) => {
@@ -25,6 +26,10 @@ jest.mock('expo-router', () => {
     },
   };
 });
+
+jest.mock('expo-router/react-navigation', () => ({
+  useNavigationState: (selector: (state: { index: number }) => unknown) => selector({ index: 1 }),
+}));
 
 // Mock theme
 const mockTheme = {

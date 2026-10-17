@@ -67,7 +67,7 @@ export function FormScreen() {
 }
 export function FormSummaryScreen() {
   return (
-    <Screen title="Resumen de síntomas" backTo="/formulario">
+    <Screen title="Resumen de síntomas">
       <DemoBadge />
       <BodyText>Resumen ficticio independiente de las selecciones anteriores.</BodyText>
       <InfoCard>
@@ -80,7 +80,7 @@ export function FormSummaryScreen() {
 }
 export function FormResultScreen() {
   return (
-    <Screen title="Registro de síntomas" backTo="/formulario">
+    <Screen title="Registro de síntomas">
       <DemoBadge />
       <InfoCard>
         <SectionTitle>Presentación de confirmación</SectionTitle>

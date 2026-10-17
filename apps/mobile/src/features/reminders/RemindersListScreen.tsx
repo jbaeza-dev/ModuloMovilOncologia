@@ -166,7 +166,7 @@ export function RemindersListScreen() {
   const isChannelBlocked = permissionState?.channelStatus === 'blocked';
 
   return (
-    <Screen title="Recordatorios y avisos" backTo="/">
+    <Screen title="Recordatorios y avisos">
       <DemoBadge />
 
       {/* Switch Maestro */}

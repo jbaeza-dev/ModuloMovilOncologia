@@ -95,6 +95,11 @@ jest.mock('expo-router', () => {
   };
 });
 
+jest.mock('expo-router/react-navigation', () => ({
+  useNavigationState: (selector: (state: { index: number }) => unknown) =>
+    selector({ index: Math.max(0, mockRouteHistory.length - 1) }),
+}));
+
 // Mock expo-sqlite with in-memory DatabaseSync
 type SqlParam = null | number | bigint | string | Uint8Array;
 type FakeTx = {

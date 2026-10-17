@@ -179,10 +179,7 @@ export function ReminderEditScreen() {
   };
 
   return (
-    <Screen
-      title={isEditing ? 'Editar recordatorio' : 'Nuevo recordatorio'}
-      backTo="/recordatorios"
-    >
+    <Screen title={isEditing ? 'Editar recordatorio' : 'Nuevo recordatorio'}>
       <DemoBadge />
 
       {errorMsg ? (

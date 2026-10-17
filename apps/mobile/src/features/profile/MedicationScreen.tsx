@@ -30,7 +30,7 @@ export function MedicationScreen() {
   } = useFocusedValue(load, [] as ActiveMedicationRecord[]);
 
   return (
-    <Screen title="Medicación activa" backTo="/perfil">
+    <Screen title="Medicación activa">
       <DemoBadge />
       <BodyText>
         Información de consulta local provista por tu centro de salud. No modifiques ni suspendas tu

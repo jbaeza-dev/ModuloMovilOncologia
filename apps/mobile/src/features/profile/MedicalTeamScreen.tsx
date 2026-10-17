@@ -30,7 +30,7 @@ export function MedicalTeamScreen() {
   } = useFocusedValue(load, [] as AssignedProfessional[]);
 
   return (
-    <Screen title="Equipo tratante" backTo="/perfil">
+    <Screen title="Equipo tratante">
       <DemoBadge />
       <BodyText>
         Profesionales de salud vinculados a tu atención oncológica disponibles para consulta sin

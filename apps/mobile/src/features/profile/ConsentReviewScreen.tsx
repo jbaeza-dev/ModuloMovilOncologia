@@ -89,7 +89,7 @@ export function ConsentReviewScreen() {
   }
 
   return (
-    <Screen title="Consentimientos" backTo="/perfil">
+    <Screen title="Consentimientos">
       <DemoBadge />
       <BodyText>
         Revisión y gestión de consentimientos informados y términos versionados de QuimioCare. Toda

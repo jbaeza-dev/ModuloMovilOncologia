@@ -165,7 +165,7 @@ export function ReportsScreen() {
   }
 
   return (
-    <Screen title="Reportes" backTo="/vitales">
+    <Screen title="Reportes">
       <BodyText>
         Resumen de evolución clínica generado localmente a partir de signos vitales y síntomas en
         este dispositivo.
@@ -422,7 +422,7 @@ export function ReportStatusScreen() {
 
   if (!isValidFormat || !fileExists || !targetFile || !archivo) {
     return (
-      <Screen title="Estado del reporte" backTo="/vitales/reportes">
+      <Screen title="Estado del reporte">
         <DemoBadge />
         <EmptyState
           icon="alert-circle"
@@ -448,7 +448,7 @@ export function ReportStatusScreen() {
   const formattedDate = timestampIso ? formatDate(timestampIso) : 'Reciente';
 
   return (
-    <Screen title="Estado del reporte" backTo="/vitales/reportes">
+    <Screen title="Estado del reporte">
       <DemoBadge />
       <InfoCard>
         <SectionTitle>Reporte generado y guardado</SectionTitle>
