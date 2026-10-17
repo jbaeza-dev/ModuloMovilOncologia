@@ -63,7 +63,7 @@ export function ReportsScreen() {
     }, []),
   );
 
-  const { repository, patientId, runSave, saving } = useLocalData();
+  const { repository, patientId, runSave, saving, manager } = useLocalData();
 
   const loadData = useCallback(async () => {
     if (!repository) return null;
@@ -136,13 +136,46 @@ export function ReportsScreen() {
     }
   }
 
-  async function handleDeleteReport(filename: string) {
-    if (!patientId || saving) return;
+  async function handleDeleteReport(
+    filename: string,
+    expectedPatientId?: string,
+    expectedEpoch?: number,
+  ) {
+    const activePatient = manager?.getPatientId?.() ?? patientId;
+    const activeEpoch = manager?.getContextEpoch?.() ?? 0;
+
+    if (
+      !activePatient ||
+      saving ||
+      !isMountedRef.current ||
+      !isFocusedRef.current ||
+      (expectedPatientId && activePatient !== expectedPatientId) ||
+      (expectedEpoch !== undefined && activeEpoch !== expectedEpoch)
+    ) {
+      return;
+    }
+
     setReportFeedback(null);
     setReportError(null);
     try {
-      const ok = await runSave(() => deletePatientReport(patientId, filename));
-      if (!isMountedRef.current || !isFocusedRef.current) return;
+      const ok = await runSave(async () => {
+        const checkPatient = manager?.getPatientId?.() ?? patientId;
+        const checkEpoch = manager?.getContextEpoch?.() ?? 0;
+        if (
+          checkPatient !== activePatient ||
+          (expectedEpoch !== undefined && checkEpoch !== expectedEpoch)
+        ) {
+          return false;
+        }
+        return deletePatientReport(activePatient, filename);
+      });
+      if (
+        !isMountedRef.current ||
+        !isFocusedRef.current ||
+        (manager?.getContextEpoch?.() ?? 0) !== activeEpoch
+      ) {
+        return;
+      }
       if (ok) {
         setReportFeedback('Reporte eliminado del almacenamiento local.');
       } else {
@@ -156,6 +189,9 @@ export function ReportsScreen() {
   }
 
   function confirmDeleteReport(filename: string) {
+    const dialogPatientId = manager?.getPatientId?.() ?? patientId;
+    const dialogEpoch = manager?.getContextEpoch?.() ?? 0;
+
     Alert.alert(
       '¿Eliminar este reporte?',
       'Se eliminará el archivo de este dispositivo. Tus mediciones y síntomas se conservarán.',
@@ -168,7 +204,19 @@ export function ReportsScreen() {
           text: 'Eliminar reporte',
           style: 'destructive',
           onPress: () => {
-            void handleDeleteReport(filename);
+            const currentPatientId = manager?.getPatientId?.() ?? patientId;
+            const currentEpoch = manager?.getContextEpoch?.() ?? 0;
+            // Si el paciente o la época cambiaron mientras el diálogo estaba abierto, abortar
+            if (
+              !isMountedRef.current ||
+              !isFocusedRef.current ||
+              currentPatientId !== dialogPatientId ||
+              currentEpoch !== dialogEpoch ||
+              !dialogPatientId
+            ) {
+              return;
+            }
+            void handleDeleteReport(filename, dialogPatientId, dialogEpoch);
           },
         },
       ],

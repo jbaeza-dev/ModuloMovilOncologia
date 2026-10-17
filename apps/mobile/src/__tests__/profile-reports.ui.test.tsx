@@ -154,6 +154,11 @@ const mockLocalDataContext = {
   reconcileReminders: jest.fn(),
   bumpRemindersRevision: jest.fn(),
   trackOperation: jest.fn().mockImplementation((cb: () => Promise<unknown>) => cb()),
+  manager: {
+    getPatientId: () => mockLocalDataContext.patientId,
+    getContextEpoch: () => (mockLocalDataContext as { epoch?: number }).epoch ?? 0,
+  },
+  epoch: 0,
 };
 
 jest.mock('../providers/LocalDataProvider', () => ({
@@ -285,6 +290,42 @@ describe('Profile y Reports UI (Bloque 5)', () => {
         'reporte_paciente-a_30d_2026-10-16T12-00-00.pdf',
       );
 
+      alertSpy.mockRestore();
+    });
+
+    it('no elimina ningún archivo si cambia de paciente o época antes de confirmar el diálogo', async () => {
+      const alertSpy = jest.spyOn(Alert, 'alert');
+      mockDeletePatientReport.mockClear();
+
+      await render(<ReportsScreen />);
+
+      await waitFor(() => {
+        expect(screen.getByText('Eliminar reporte')).toBeTruthy();
+      });
+
+      fireEvent.press(screen.getByText('Eliminar reporte'));
+
+      expect(alertSpy).toHaveBeenCalled();
+      const alertButtons = alertSpy.mock.calls[0]?.[2] as {
+        text: string;
+        onPress?: () => void;
+      }[];
+      const deleteBtn = alertButtons.find((b) => b.text === 'Eliminar reporte');
+      expect(deleteBtn).toBeDefined();
+
+      // Simular cambio de paciente y época en el contexto antes de pulsar confirmar
+      mockLocalDataContext.patientId = 'paciente-b';
+      mockLocalDataContext.epoch = 1;
+
+      // Presionar confirmación tardía
+      deleteBtn?.onPress?.();
+
+      // No se debe ejecutar ninguna llamada a deletePatientReport
+      expect(mockDeletePatientReport).not.toHaveBeenCalled();
+
+      // Restaurar contexto de prueba
+      mockLocalDataContext.patientId = 'paciente-a';
+      mockLocalDataContext.epoch = 0;
       alertSpy.mockRestore();
     });
   });
