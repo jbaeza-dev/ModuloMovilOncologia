@@ -13,7 +13,7 @@ import {
   VisualButton,
 } from '../../components/Visual';
 import type { ActiveMedicationRecord } from '../../data/local/clinical-context/clinical-context-types';
-import type { NotificationRecord, ReminderRule } from '../../data/local/reminders/reminder-types';
+import type { NotificationItem, ReminderRule } from '../../data/local/reminders/reminder-types';
 import { formatDate } from '../../data/local/repository';
 import { useFocusedList, useFocusedValue } from '../../hooks/use-local-query';
 import { useLocalData } from '../../providers/LocalDataProvider';
@@ -59,7 +59,7 @@ function getStatusCoverageText(res: CoordinatorResult | null): string {
 
 function getNextConfirmedLabelForRules(
   rules: ReminderRule[],
-  futureNotifications: NotificationRecord[],
+  futureNotifications: NotificationItem[],
   nowIso: string,
 ): string | null {
   const enabledRulesById = new Map<string, ReminderRule>();
@@ -154,7 +154,7 @@ export function RemindersListScreen() {
     refresh: refreshMedications,
   } = useFocusedList<ActiveMedicationRecord>(loadMedications);
 
-  const [scheduledNotifications, setScheduledNotifications] = useState<NotificationRecord[]>([]);
+  const [scheduledNotifications, setScheduledNotifications] = useState<NotificationItem[]>([]);
 
   // Consultar permisos y reconciliar agenda
   const checkAndReconcile = useCallback(async () => {

@@ -50,7 +50,7 @@ const TIME_HH_MM_REGEX = /^([01]\d|2[0-3]):([0-5]\d)$/;
 /**
  * Valida que una cadena sea una fecha civil real YYYY-MM-DD (incluyendo años bisiestos).
  */
-export function isValidCivilDate(value: string | null | undefined): value is string {
+export function isValidCivilDate(value: string | null | undefined): boolean {
   if (typeof value !== 'string') return false;
   const match = CIVIL_DATE_REGEX.exec(value.trim());
   if (!match) return false;
@@ -70,7 +70,7 @@ export function isValidCivilDate(value: string | null | undefined): value is str
 /**
  * Valida formato de hora 24h HH:mm (00:00 a 23:59).
  */
-export function isValidTimeHhMm(value: string | null | undefined): value is string {
+export function isValidTimeHhMm(value: string | null | undefined): boolean {
   if (typeof value !== 'string') return false;
   return TIME_HH_MM_REGEX.test(value.trim());
 }
@@ -134,7 +134,9 @@ export function getInclusiveDaysBetween(
   fechaInicio: string | null | undefined,
   fechaFin: string | null | undefined,
 ): number | null {
-  if (!isValidCivilDate(fechaInicio) || !isValidCivilDate(fechaFin)) return null;
+  if (!fechaInicio || !fechaFin || !isValidCivilDate(fechaInicio) || !isValidCivilDate(fechaFin)) {
+    return null;
+  }
   if (fechaFin < fechaInicio) return null;
 
   const [y1, m1, d1] = fechaInicio.split('-').map(Number);

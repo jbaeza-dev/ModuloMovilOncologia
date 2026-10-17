@@ -2,11 +2,17 @@
 
 import { fireEvent, render, screen, waitFor } from '@testing-library/react-native';
 import React from 'react';
+import { Alert } from 'react-native';
 
 // Mock expo-router
 const mockUseLocalSearchParams = jest.fn();
 const mockRouterPush = jest.fn();
 const mockRouterBack = jest.fn();
+const mockNavigationDispatch = jest.fn();
+
+let mockPreventRemoveEnabled = false;
+let mockPreventRemoveCallback: ((event: { data: { action: { type: string } } }) => void) | null =
+  null;
 
 jest.mock('expo-router', () => {
   // eslint-disable-next-line @typescript-eslint/no-require-imports
@@ -15,9 +21,18 @@ jest.mock('expo-router', () => {
     router: {
       push: (...args: unknown[]) => mockRouterPush(...args),
       replace: jest.fn(),
-      back: (...args: unknown[]) => mockRouterBack(...args),
+      back: (...args: unknown[]) => {
+        if (mockPreventRemoveEnabled && mockPreventRemoveCallback) {
+          mockPreventRemoveCallback({ data: { action: { type: 'GO_BACK' } } });
+          return;
+        }
+        mockRouterBack(...args);
+      },
       canGoBack: jest.fn().mockReturnValue(true),
     },
+    useNavigation: () => ({
+      dispatch: (...args: unknown[]) => mockNavigationDispatch(...args),
+    }),
     useLocalSearchParams: () => mockUseLocalSearchParams(),
     useFocusEffect: (cb: () => void | (() => void)) => {
       React.useEffect(() => {
@@ -29,6 +44,13 @@ jest.mock('expo-router', () => {
 
 jest.mock('expo-router/react-navigation', () => ({
   useNavigationState: (selector: (state: { index: number }) => unknown) => selector({ index: 1 }),
+  usePreventRemove: (
+    preventRemove: boolean,
+    callback: (event: { data: { action: { type: string } } }) => void,
+  ) => {
+    mockPreventRemoveEnabled = preventRemove;
+    mockPreventRemoveCallback = callback;
+  },
 }));
 
 jest.mock('@react-native-community/datetimepicker', () => {
@@ -605,6 +627,117 @@ describe('Incremento 5: UI de Recordatorios y Avisos Locales', () => {
         expect(mockReminderRepo.deleteRule).toHaveBeenCalledWith('rule-vitales');
         expect(mockRouterBack).toHaveBeenCalled();
       });
+    });
+
+    it('Ajuste 4 (T-18): guardar -> permanecer por una incidencia nativa -> modificar nuevamente -> pulsar Atrás -> aparece confirmación', async () => {
+      const alertSpy = jest.spyOn(Alert, 'alert').mockImplementation(() => {});
+
+      // 1. El primer guardado persiste en SQLite pero falla la confirmación nativa -> permanece en pantalla
+      mockCoordinatorReconcile.mockResolvedValueOnce({
+        status: 'error',
+        totalDeseadas: 14,
+        programadasConfirmadas: 0,
+        cubiertoHastaIso: null,
+        truncadas: 0,
+        reglasAfectadas: ['rule-1'],
+        incidencias: ['Fallo del programador nativo'],
+      });
+
+      await render(<ReminderEditScreen />);
+
+      await waitFor(() => {
+        expect(screen.getByText('Guardar y activar')).toBeTruthy();
+      });
+
+      // Cambiar días (Personalizar -> desmarcar Lunes) y guardar
+      fireEvent.press(screen.getByLabelText('Personalizar'));
+      await waitFor(() => {
+        expect(screen.getByLabelText('Lunes')).toBeTruthy();
+      });
+      fireEvent.press(screen.getByLabelText('Lunes'));
+      await waitFor(() => {
+        expect(screen.getByLabelText('Lunes').props.accessibilityState.selected).toBe(false);
+      });
+
+      fireEvent.press(screen.getByText('Guardar y activar'));
+
+      // Permanece en pantalla mostrando la tarjeta de incidencia nativa
+      await waitFor(() => {
+        expect(screen.getByText('Horario guardado en este teléfono')).toBeTruthy();
+      });
+      expect(mockRouterBack).not.toHaveBeenCalled();
+
+      // 2. Sin cambios posteriores, confirmedSnapshot coincide con el estado guardado (isDirty === false)
+      expect(mockPreventRemoveEnabled).toBe(false);
+
+      // 3. Modificar nuevamente un campo (desmarcar Martes) -> vuelve a estar sucio respecto a confirmedSnapshot
+      fireEvent.press(screen.getByLabelText('Martes'));
+      await waitFor(() => {
+        expect(screen.getByLabelText('Martes').props.accessibilityState.selected).toBe(false);
+      });
+      expect(mockPreventRemoveEnabled).toBe(true);
+
+      // 4. Pulsar Atrás (Volver) -> aparece la confirmación "¿Salir sin guardar los cambios?"
+      fireEvent.press(screen.getByLabelText('Volver'));
+
+      expect(alertSpy).toHaveBeenCalledWith(
+        '¿Salir sin guardar los cambios?',
+        'Tienes modificaciones sin guardar en este recordatorio.',
+        expect.any(Array),
+      );
+      expect(mockRouterBack).not.toHaveBeenCalled();
+
+      alertSpy.mockRestore();
+    });
+
+    it('T-17: cuando la pausa general está activa y existen otros horarios, ofrece reanudar todos o mantener la pausa', async () => {
+      mockReminderRepo.getPreferences.mockResolvedValueOnce({
+        enabled: false,
+        updatedAt: '2026-10-16T00:00:00.000Z',
+      });
+      const saveWithIntentMock = jest
+        .fn()
+        .mockResolvedValueOnce({
+          rule: { id: 'rule-1' },
+          preferences: { enabled: false, updatedAt: '2026-10-16T00:00:00.000Z' },
+          otherEnabledRulesCount: 2,
+          resumedGeneralPreference: false,
+          pausedByGeneralPreference: true,
+        })
+        .mockResolvedValueOnce({
+          rule: { id: 'rule-1' },
+          preferences: { enabled: true, updatedAt: '2026-10-16T12:00:00.000Z' },
+          otherEnabledRulesCount: 2,
+          resumedGeneralPreference: true,
+          pausedByGeneralPreference: false,
+        });
+      (mockReminderRepo as Record<string, unknown>).saveRuleWithActivationIntent =
+        saveWithIntentMock;
+
+      await render(<ReminderEditScreen />);
+
+      await waitFor(() => {
+        expect(screen.getByText('Guardar y activar')).toBeTruthy();
+      });
+
+      fireEvent.press(screen.getByText('Guardar y activar'));
+
+      await waitFor(() => {
+        expect(screen.getByText('Tus avisos generales están en pausa')).toBeTruthy();
+      });
+      expect(screen.getByText(/2 otros horarios activos/)).toBeTruthy();
+
+      fireEvent.press(screen.getByText('Activar avisos y este horario'));
+
+      await waitFor(() => {
+        expect(saveWithIntentMock).toHaveBeenLastCalledWith(
+          expect.objectContaining({ id: 'rule-1' }),
+          'save_and_resume_all',
+        );
+        expect(mockRouterBack).toHaveBeenCalled();
+      });
+
+      delete (mockReminderRepo as Record<string, unknown>).saveRuleWithActivationIntent;
     });
   });
 

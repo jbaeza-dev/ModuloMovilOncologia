@@ -1,16 +1,25 @@
 import Feather from '@expo/vector-icons/Feather';
-import { router, useLocalSearchParams } from 'expo-router';
-import { useEffect, useMemo, useState } from 'react';
-import { Pressable, StyleSheet, Text, View } from 'react-native';
+import { router, useLocalSearchParams, useNavigation } from 'expo-router';
+import { usePreventRemove } from 'expo-router/react-navigation';
+import { useEffect, useMemo, useRef, useState } from 'react';
+import { Alert, Linking, Pressable, StyleSheet, Text, View } from 'react-native';
 
 import { DateTimePickerField } from '../../components/DateTimePickerField';
 import { Screen } from '../../components/Screen';
 import { BodyText, DemoBadge, InfoCard, SectionTitle, VisualButton } from '../../components/Visual';
 import type { ActiveMedicationRecord } from '../../data/local/clinical-context/clinical-context-types';
-import type { ReminderType } from '../../data/local/reminders/reminder-types';
+import type {
+  ReminderActivationIntent,
+  ReminderType,
+} from '../../data/local/reminders/reminder-types';
 import { formatDate } from '../../data/local/repository';
 import { useLocalData } from '../../providers/LocalDataProvider';
 import { useAppTheme } from '../../providers/ThemeProvider';
+import { ExpoNotificationAdapter } from '../../services/notifications/expo-notification-adapter';
+import {
+  type ReminderActionOutcome,
+  saveReminderWithActivation,
+} from '../../services/reminders/reminder-actions';
 import {
   ALL_WEEK_DAYS,
   applyInclusiveDurationWithBounds,
@@ -38,34 +47,87 @@ const DAYS = [
 
 type DurationMode = 'treatment' | 'days' | 'custom_dates';
 
+interface FormSnapshot {
+  tipo: ReminderType;
+  medicamentoId: string | null;
+  diasSemana: string;
+  horasMinutos: string;
+  fechaInicio: string | null;
+  fechaFin: string | null;
+  habilitado: boolean;
+}
+
+function buildSnapshot(params: {
+  tipo: ReminderType;
+  medicamentoId: string | null;
+  diasSemana: number[];
+  horasMinutos: string[];
+  fechaInicio: string | null;
+  fechaFin: string | null;
+  habilitado: boolean;
+}): FormSnapshot {
+  return {
+    tipo: params.tipo,
+    medicamentoId: params.tipo === 'medicacion' ? params.medicamentoId : null,
+    diasSemana: [...params.diasSemana].sort((a, b) => a - b).join(','),
+    horasMinutos: [...params.horasMinutos].sort().join(','),
+    fechaInicio: params.fechaInicio ?? null,
+    fechaFin: params.fechaFin ?? null,
+    habilitado: params.habilitado,
+  };
+}
+
+function snapshotsEqual(a: FormSnapshot, b: FormSnapshot): boolean {
+  return (
+    a.tipo === b.tipo &&
+    a.medicamentoId === b.medicamentoId &&
+    a.diasSemana === b.diasSemana &&
+    a.horasMinutos === b.horasMinutos &&
+    a.fechaInicio === b.fechaInicio &&
+    a.fechaFin === b.fechaFin &&
+    a.habilitado === b.habilitado
+  );
+}
+
 function normalizeParam(value: string | string[] | undefined): string | undefined {
   if (Array.isArray(value)) return value[0];
   return value;
 }
 
+export const UNSAVED_CHANGES_TITLE = '¿Salir sin guardar los cambios?';
+export const UNSAVED_CHANGES_MESSAGE = 'Tienes modificaciones sin guardar en este recordatorio.';
+
 export function ReminderEditScreen() {
   const { theme: appTheme } = useAppTheme();
   const styles = useStyles();
+  const navigation = useNavigation();
   const {
     database,
     repository,
     patientId,
+    manager,
     coordinator,
+    notificationAdapter,
     reconcileReminders,
     bumpRemindersRevision,
     trackOperation,
+    isClosing,
   } = useLocalData();
+  const fallbackAdapter = useMemo(() => new ExpoNotificationAdapter(), []);
+  const adapter = notificationAdapter ?? fallbackAdapter;
+
   const rawParams = useLocalSearchParams<{
     id?: string | string[];
     tipo?: string | string[];
     medicamentoId?: string | string[];
   }>();
 
-  const id = normalizeParam(rawParams.id);
+  const paramId = normalizeParam(rawParams.id);
   const paramTipo = normalizeParam(rawParams.tipo);
   const paramMedicamentoId = normalizeParam(rawParams.medicamentoId);
 
-  const isEditing = Boolean(id);
+  const [persistedRuleId, setPersistedRuleId] = useState<string | undefined>(paramId);
+  const isEditing = Boolean(persistedRuleId);
   const initialTipo: ReminderType = paramTipo === 'medicacion' ? 'medicacion' : 'registro_vitales';
 
   const [tipo, setTipo] = useState<ReminderType>(initialTipo);
@@ -92,6 +154,21 @@ export function ReminderEditScreen() {
   const [medicationsLoaded, setMedicationsLoaded] = useState(false);
   const [errorMsg, setErrorMsg] = useState<string | null>(null);
   const [saving, setSaving] = useState(false);
+  const [lastOutcome, setLastOutcome] = useState<ReminderActionOutcome | null>(null);
+
+  // Último estado confirmado en SQLite para calcular isDirty (Ajuste 4)
+  const [confirmedSnapshot, setConfirmedSnapshot] = useState<FormSnapshot>(() =>
+    buildSnapshot({
+      tipo: initialTipo,
+      medicamentoId: initialTipo === 'medicacion' && paramMedicamentoId ? paramMedicamentoId : null,
+      diasSemana: [...ALL_WEEK_DAYS],
+      horasMinutos: [DEFAULT_VITAL_TIME],
+      fechaInicio: null,
+      fechaFin: null,
+      habilitado: true,
+    }),
+  );
+  const bypassPreventRemoveRef = useRef(false);
 
   const todayCivilDate = useMemo(
     () => getCivilDateInTimeZone(new Date(), zonaHoraria ?? 'America/Santiago'),
@@ -110,9 +187,9 @@ export function ReminderEditScreen() {
         if (!active) return;
         setMedications(meds);
         setMedicationsLoaded(true);
-        // Si paramMedicamentoId vino por ruta pero no existe en el catálogo y no es edición, limpiar para exigir elección explícita
-        if (!isEditing && paramMedicamentoId && !meds.some((m) => m.id === paramMedicamentoId)) {
+        if (!paramId && paramMedicamentoId && !meds.some((m) => m.id === paramMedicamentoId)) {
           setMedicamentoId(null);
+          setConfirmedSnapshot((prev) => ({ ...prev, medicamentoId: null }));
         }
       },
       () => {
@@ -124,7 +201,7 @@ export function ReminderEditScreen() {
     return () => {
       active = false;
     };
-  }, [repository, isEditing, paramMedicamentoId]);
+  }, [repository, paramId, paramMedicamentoId]);
 
   const selectedMedication = useMemo(
     () => medications.find((m) => m.id === medicamentoId) ?? null,
@@ -141,31 +218,45 @@ export function ReminderEditScreen() {
     [selectedMedication, todayCivilDate, zonaHoraria],
   );
 
-  // Si es edición, cargar la regla existente conservando todos sus metadatos
+  // Si es edición inicial, cargar la regla existente conservando todos sus metadatos
   useEffect(() => {
-    if (!repository || !id) return;
+    if (!repository || !paramId) return;
     let active = true;
-    repository.reminders.getRule(id).then((rule) => {
+    void repository.reminders.getRule(paramId).then((rule) => {
       if (!active || !rule) return;
+      const loadedHours = rule.horasMinutos.length > 0 ? rule.horasMinutos : [DEFAULT_VITAL_TIME];
+      setPersistedRuleId(rule.id);
       setTipo(rule.tipo);
       setMedicamentoId(rule.medicamentoId);
       setSelectedDays(rule.diasSemana);
-      setSelectedHours(rule.horasMinutos.length > 0 ? rule.horasMinutos : [DEFAULT_VITAL_TIME]);
+      setSelectedHours(loadedHours);
       setHabilitado(rule.habilitado);
       setZonaHoraria(rule.zonaHoraria);
       setFechaInicio(rule.fechaInicio);
       setFechaFin(rule.fechaFin);
 
+      setConfirmedSnapshot(
+        buildSnapshot({
+          tipo: rule.tipo,
+          medicamentoId: rule.medicamentoId,
+          diasSemana: rule.diasSemana,
+          horasMinutos: loadedHours,
+          fechaInicio: rule.fechaInicio,
+          fechaFin: rule.fechaFin,
+          habilitado: rule.habilitado,
+        }),
+      );
+
       const isAllDays =
         rule.diasSemana.length === 7 &&
         [...rule.diasSemana].sort((a, b) => a - b).every((d, idx) => d === idx + 1);
-      const hasMultipleHours = rule.horasMinutos.length > 1;
+      const hasMultipleHours = loadedHours.length > 1;
       const hasDates = Boolean(rule.fechaInicio || rule.fechaFin);
 
       if (rule.tipo === 'registro_vitales') {
         setVitalCustomized(!isAllDays || hasMultipleHours || hasDates);
       } else {
-        const detected = detectMedicationTemplate(rule.horasMinutos, rule.diasSemana, !isAllDays);
+        const detected = detectMedicationTemplate(loadedHours, rule.diasSemana, !isAllDays);
         setMedTemplate(detected);
         if (hasDates) {
           const inclusiveDays = getInclusiveDaysBetween(rule.fechaInicio, rule.fechaFin);
@@ -186,7 +277,60 @@ export function ReminderEditScreen() {
     return () => {
       active = false;
     };
-  }, [repository, id]);
+  }, [repository, paramId]);
+
+  const effectiveStart =
+    tipo === 'medicacion'
+      ? durationMode === 'treatment'
+        ? medBounds.minDate
+        : fechaInicio
+      : fechaInicio;
+  const effectiveEnd =
+    tipo === 'medicacion'
+      ? durationMode === 'treatment'
+        ? medBounds.maxDate
+        : fechaFin
+      : fechaFin;
+
+  const currentSnapshot = useMemo(
+    () =>
+      buildSnapshot({
+        tipo,
+        medicamentoId,
+        diasSemana: selectedDays,
+        horasMinutos: selectedHours,
+        fechaInicio: effectiveStart,
+        fechaFin: effectiveEnd,
+        habilitado,
+      }),
+    [tipo, medicamentoId, selectedDays, selectedHours, effectiveStart, effectiveEnd, habilitado],
+  );
+
+  const isDirty = !snapshotsEqual(currentSnapshot, confirmedSnapshot);
+  const shouldPreventRemove = isDirty && !isClosing && !bypassPreventRemoveRef.current;
+
+  usePreventRemove(shouldPreventRemove, ({ data }) => {
+    Alert.alert(UNSAVED_CHANGES_TITLE, UNSAVED_CHANGES_MESSAGE, [
+      { text: 'Seguir editando', style: 'cancel' },
+      {
+        text: 'Salir sin guardar',
+        style: 'destructive',
+        onPress: () => {
+          bypassPreventRemoveRef.current = true;
+          if (data?.action && typeof navigation?.dispatch === 'function') {
+            navigation.dispatch(data.action);
+          } else {
+            router.back();
+          }
+        },
+      },
+    ]);
+  });
+
+  const navigateBackAfterConfirmed = () => {
+    bypassPreventRemoveRef.current = true;
+    router.back();
+  };
 
   const toggleDay = (dayId: number) => {
     setSelectedDays((prev) => {
@@ -271,7 +415,7 @@ export function ReminderEditScreen() {
     }
   };
 
-  const handleSave = async () => {
+  const executeSave = async (explicitIntent?: ReminderActivationIntent) => {
     if (!repository || !database || !patientId || saving) return;
     setErrorMsg(null);
 
@@ -288,19 +432,6 @@ export function ReminderEditScreen() {
       return;
     }
 
-    const effectiveStart =
-      tipo === 'medicacion'
-        ? durationMode === 'treatment'
-          ? medBounds.minDate
-          : fechaInicio
-        : fechaInicio;
-    const effectiveEnd =
-      tipo === 'medicacion'
-        ? durationMode === 'treatment'
-          ? medBounds.maxDate
-          : fechaFin
-        : fechaFin;
-
     const dateError = validateReminderDateRange(
       effectiveStart,
       effectiveEnd,
@@ -311,31 +442,78 @@ export function ReminderEditScreen() {
       return;
     }
 
+    const intent: ReminderActivationIntent =
+      explicitIntent ?? (habilitado ? 'save_and_activate' : 'save_disabled');
+
+    const capturedPatientId = patientId;
+    const capturedEpoch = manager?.getContextEpoch?.() ?? 1;
+    const isContextActive = (pid: string, epoch: number) => {
+      if (!manager) return true;
+      return manager.getPatientId() === pid && manager.getContextEpoch() === epoch;
+    };
+
     setSaving(true);
     try {
-      await trackOperation(async () => {
-        await repository.reminders.saveRule({
-          id,
+      const outcome = await trackOperation(async () =>
+        saveReminderWithActivation({
+          patientId: capturedPatientId,
+          contextEpoch: capturedEpoch,
+          isContextActive,
+          input: {
+            id: persistedRuleId,
+            tipo,
+            medicamentoId: tipo === 'medicacion' ? medicamentoId : null,
+            diasSemana: selectedDays,
+            horasMinutos: selectedHours,
+            zonaHoraria,
+            fechaInicio: effectiveStart,
+            fechaFin: effectiveEnd,
+            habilitado: intent !== 'save_disabled',
+          },
+          intent,
+          remindersRepository: repository.reminders,
+          notificationAdapter: adapter,
+          reconcileReminders: async (pid) => {
+            if (reconcileReminders) {
+              return (await reconcileReminders(pid)) ?? null;
+            }
+            if (coordinator) {
+              return coordinator.reconcile(pid, () => isContextActive(pid, capturedEpoch));
+            }
+            return null;
+          },
+          bumpRemindersRevision,
+        }),
+      );
+
+      if (outcome.kind === 'context_changed') {
+        setSaving(false);
+        return;
+      }
+
+      // Actualizar la referencia confirmada tras el commit local en SQLite (Ajuste 4)
+      setPersistedRuleId(outcome.rule.id);
+      setConfirmedSnapshot(
+        buildSnapshot({
           tipo,
-          medicamentoId: tipo === 'medicacion' ? medicamentoId : null,
+          medicamentoId,
           diasSemana: selectedDays,
           horasMinutos: selectedHours,
-          zonaHoraria,
           fechaInicio: effectiveStart,
           fechaFin: effectiveEnd,
-          habilitado,
-        });
-
-        bumpRemindersRevision?.();
-
-        if (reconcileReminders) {
-          await reconcileReminders(patientId);
-        } else if (coordinator) {
-          await coordinator.reconcile(patientId, () => true);
-        }
-      });
+          habilitado: intent !== 'save_disabled',
+        }),
+      );
+      setLastOutcome(outcome);
       setSaving(false);
-      router.back();
+
+      if (
+        outcome.kind === 'scheduled' ||
+        outcome.kind === 'saved_disabled' ||
+        outcome.kind === 'saved_no_upcoming'
+      ) {
+        navigateBackAfterConfirmed();
+      }
     } catch (err) {
       setSaving(false);
       setErrorMsg((err as Error).message);
@@ -343,11 +521,11 @@ export function ReminderEditScreen() {
   };
 
   const handleDelete = async () => {
-    if (!repository || !database || !patientId || !id || saving) return;
+    if (!repository || !database || !patientId || !persistedRuleId || saving) return;
     setSaving(true);
     try {
       await trackOperation(async () => {
-        await repository.reminders.deleteRule(id);
+        await repository.reminders.deleteRule(persistedRuleId);
         bumpRemindersRevision?.();
         if (reconcileReminders) {
           await reconcileReminders(patientId);
@@ -356,7 +534,7 @@ export function ReminderEditScreen() {
         }
       });
       setSaving(false);
-      router.back();
+      navigateBackAfterConfirmed();
     } catch (err) {
       setSaving(false);
       setErrorMsg((err as Error).message);
@@ -385,6 +563,99 @@ export function ReminderEditScreen() {
             <Text style={[styles.heading, { color: '#dc2626' }]}>Revisa la configuración</Text>
           </View>
           <BodyText style={{ color: '#dc2626' }}>{errorMsg}</BodyText>
+        </InfoCard>
+      ) : null}
+
+      {/* Tarjeta de decisión cuando la pausa general está activa y existen otras reglas habilitadas (T-17) */}
+      {lastOutcome?.kind === 'saved_preferences_paused' ? (
+        <InfoCard>
+          <View style={styles.errorHeader}>
+            <Feather name="bell-off" size={20} color="#b45309" />
+            <Text style={[styles.heading, { color: '#b45309' }]}>
+              Tus avisos generales están en pausa
+            </Text>
+          </View>
+          <BodyText>
+            Tu horario ya quedó guardado. Además de este recordatorio, tienes{' '}
+            {lastOutcome.otherEnabledRulesCount}{' '}
+            {lastOutcome.otherEnabledRulesCount === 1
+              ? 'otro horario activo'
+              : 'otros horarios activos'}{' '}
+            en pausa. ¿Deseas reanudar todos tus avisos ahora?
+          </BodyText>
+          <View style={styles.outcomeActions}>
+            <VisualButton
+              label="Activar avisos y este horario"
+              onPress={() => void executeSave('save_and_resume_all')}
+              disabled={saving}
+            />
+            <VisualButton
+              label="Mantener avisos en pausa"
+              secondary
+              onPress={navigateBackAfterConfirmed}
+              disabled={saving}
+            />
+          </View>
+        </InfoCard>
+      ) : null}
+
+      {/* Tarjeta cuando el horario se guardó pero el permiso nativo o canal está bloqueado (T-16) */}
+      {lastOutcome?.kind === 'saved_permission_denied' ? (
+        <InfoCard>
+          <View style={styles.errorHeader}>
+            <Feather name="alert-triangle" size={20} color="#dc2626" />
+            <Text style={[styles.heading, { color: '#dc2626' }]}>
+              Horario guardado, pero faltan permisos de notificación
+            </Text>
+          </View>
+          <BodyText>
+            Tu horario quedó guardado en el teléfono, pero Android tiene bloqueadas las
+            notificaciones para QuimioCare. Habilita los permisos para recibir los avisos.
+          </BodyText>
+          <View style={styles.outcomeActions}>
+            <VisualButton
+              label="Abrir Ajustes de Android"
+              onPress={() => {
+                void Linking.openSettings();
+              }}
+            />
+            <VisualButton
+              label="Volver a recordatorios"
+              secondary
+              onPress={navigateBackAfterConfirmed}
+            />
+          </View>
+        </InfoCard>
+      ) : null}
+
+      {/* Tarjeta cuando el horario se guardó pero la programación nativa quedó pendiente o falló */}
+      {lastOutcome?.kind === 'saved_scheduling_failed' ||
+      lastOutcome?.kind === 'saved_pending_scheduling' ? (
+        <InfoCard>
+          <View style={styles.errorHeader}>
+            <Feather name="info" size={20} color="#b45309" />
+            <Text style={[styles.heading, { color: '#b45309' }]}>
+              Horario guardado en este teléfono
+            </Text>
+          </View>
+          <BodyText>
+            {lastOutcome.kind === 'saved_pending_scheduling'
+              ? 'Tu horario quedó guardado y los avisos están terminando de prepararse en el teléfono.'
+              : 'Tu horario quedó guardado, pero no se pudieron confirmar los avisos en Android en este momento.'}
+          </BodyText>
+          <View style={styles.outcomeActions}>
+            <VisualButton
+              label="Reintentar programación"
+              onPress={() => void executeSave()}
+              disabled={saving}
+            />
+            <VisualButton
+              label="Volver a recordatorios"
+              secondary
+              onPress={navigateBackAfterConfirmed}
+              disabled={saving}
+            />
+          </View>
         </InfoCard>
       ) : null}
 
@@ -859,7 +1130,7 @@ export function ReminderEditScreen() {
         </>
       ) : null}
 
-      {/* Opción para guardar pausado cuando se edita o en opciones avanzadas */}
+      {/* Opción para guardar pausado */}
       <InfoCard>
         <Pressable
           accessibilityRole="switch"
@@ -888,7 +1159,7 @@ export function ReminderEditScreen() {
       <View style={styles.actions}>
         <VisualButton
           label={saving ? 'Guardando...' : habilitado ? 'Guardar y activar' : 'Guardar sin activar'}
-          onPress={() => void handleSave()}
+          onPress={() => void executeSave()}
           disabled={saving}
         />
         {isEditing ? (
@@ -931,6 +1202,10 @@ function useStyles() {
       alignItems: 'center',
       gap: theme.spacing.sm,
       marginBottom: 4,
+    },
+    outcomeActions: {
+      gap: theme.spacing.sm,
+      marginTop: theme.spacing.xs,
     },
     optionsGroup: {
       gap: theme.spacing.sm,

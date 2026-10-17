@@ -45,7 +45,7 @@ function timeStringToDate(hhMm: string): Date {
 }
 
 function civilDateToLocalDate(civilDate: string | null | undefined): Date {
-  if (isValidCivilDate(civilDate)) {
+  if (civilDate && isValidCivilDate(civilDate)) {
     const [year, month, day] = civilDate.split('-').map(Number);
     return new Date(year, month - 1, day, 12, 0, 0, 0);
   }
