@@ -34,9 +34,13 @@ export function SectionTitle({ children }: { children: ReactNode }) {
   );
 }
 
-export function InfoCard({ children }: { children: ReactNode }) {
+export function InfoCard({ children, testID }: { children: ReactNode; testID?: string }) {
   const styles = useStyles();
-  return <View style={styles.card}>{children}</View>;
+  return (
+    <View testID={testID} style={styles.card}>
+      {children}
+    </View>
+  );
 }
 
 export function BodyText({

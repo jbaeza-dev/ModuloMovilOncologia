@@ -214,22 +214,37 @@ export function ReminderEditScreen() {
     };
   }, [repository, paramId, paramMedicamentoId]);
 
-  const [prefs, setPrefs] = useState<{ enabled: boolean }>({ enabled: true });
+  const [prefsState, setPrefsState] = useState<'loading' | 'ready' | 'error'>('loading');
+  const [prefsEnabled, setPrefsEnabled] = useState<boolean | null>(null);
+  const [prefsRevision, setPrefsRevision] = useState(0);
 
   useEffect(() => {
-    if (!repository?.reminders?.getPreferences) return;
+    if (!repository?.reminders?.getPreferences) {
+      setPrefsState('ready');
+      setPrefsEnabled(true);
+      return;
+    }
     let active = true;
+    setPrefsState('loading');
     void repository.reminders.getPreferences().then(
       (p) => {
         if (!active) return;
-        setPrefs(p);
+        setPrefsEnabled(p.enabled);
+        setPrefsState('ready');
       },
-      () => {},
+      () => {
+        if (!active) return;
+        setPrefsState('error');
+      },
     );
     return () => {
       active = false;
     };
-  }, [repository]);
+  }, [repository, prefsRevision]);
+
+  const handleRetryPrefs = () => {
+    setPrefsRevision((r) => r + 1);
+  };
 
   const selectedMedication = useMemo(
     () => medications.find((m) => m.id === medicamentoId) ?? null,
@@ -1374,7 +1389,7 @@ export function ReminderEditScreen() {
 
       {/* Resumen del recordatorio antes de guardar */}
       {ruleLoadingState === 'ready' ? (
-        <InfoCard>
+        <InfoCard testID="reminder-summary">
           <SectionTitle>Resumen del recordatorio</SectionTitle>
           {tipo === 'registro_vitales' ? (
             <>
@@ -1392,7 +1407,27 @@ export function ReminderEditScreen() {
                 value={habilitado ? 'Recordatorio activo' : 'Recordatorio en pausa'}
                 layout="vertical"
               />
-              {!prefs.enabled ? (
+              {prefsState === 'loading' ? (
+                <DetailRow
+                  label="Avisos generales"
+                  value="Comprobando avisos generales…"
+                  layout="vertical"
+                />
+              ) : prefsState === 'error' ? (
+                <>
+                  <DetailRow
+                    label="Avisos generales"
+                    value="No pudimos comprobar el estado de los avisos generales"
+                    layout="vertical"
+                  />
+                  <VisualButton
+                    label="Reintentar comprobación"
+                    secondary
+                    onPress={handleRetryPrefs}
+                    disabled={saving}
+                  />
+                </>
+              ) : prefsState === 'ready' && !prefsEnabled ? (
                 <DetailRow
                   label="Avisos generales"
                   value="Avisos generales en pausa"
@@ -1421,7 +1456,27 @@ export function ReminderEditScreen() {
                 value={habilitado ? 'Recordatorio activo' : 'Recordatorio en pausa'}
                 layout="vertical"
               />
-              {!prefs.enabled ? (
+              {prefsState === 'loading' ? (
+                <DetailRow
+                  label="Avisos generales"
+                  value="Comprobando avisos generales…"
+                  layout="vertical"
+                />
+              ) : prefsState === 'error' ? (
+                <>
+                  <DetailRow
+                    label="Avisos generales"
+                    value="No pudimos comprobar el estado de los avisos generales"
+                    layout="vertical"
+                  />
+                  <VisualButton
+                    label="Reintentar comprobación"
+                    secondary
+                    onPress={handleRetryPrefs}
+                    disabled={saving}
+                  />
+                </>
+              ) : prefsState === 'ready' && !prefsEnabled ? (
                 <DetailRow
                   label="Avisos generales"
                   value="Avisos generales en pausa"

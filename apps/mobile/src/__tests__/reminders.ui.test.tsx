@@ -1,6 +1,6 @@
 /// <reference types="jest" />
 
-import { act, fireEvent, render, screen, waitFor } from '@testing-library/react-native';
+import { act, fireEvent, render, screen, waitFor, within } from '@testing-library/react-native';
 import React from 'react';
 import { Alert, Linking } from 'react-native';
 
@@ -1153,15 +1153,17 @@ describe('Incremento 5: UI de Recordatorios y Avisos Locales', () => {
       await render(<ReminderEditScreen />);
 
       await waitFor(() => {
-        expect(screen.getByText('Resumen del recordatorio')).toBeTruthy();
+        expect(screen.getByTestId('reminder-summary')).toBeTruthy();
       });
 
-      expect(screen.getByText('Días seleccionados')).toBeTruthy();
-      expect(screen.getAllByText('Todos los días').length).toBeGreaterThanOrEqual(1);
-      expect(screen.getByText('Horarios de aviso elegidos')).toBeTruthy();
-      expect(screen.getAllByText('07:00').length).toBeGreaterThanOrEqual(1);
-      expect(screen.getByText('Estado individual')).toBeTruthy();
-      expect(screen.getAllByText('Recordatorio activo').length).toBeGreaterThanOrEqual(1);
+      const summary = within(screen.getByTestId('reminder-summary'));
+
+      expect(summary.getByText('Días seleccionados')).toBeTruthy();
+      expect(summary.getByText('Todos los días')).toBeTruthy();
+      expect(summary.getByText('Horarios de aviso elegidos')).toBeTruthy();
+      expect(summary.getByText('07:00')).toBeTruthy();
+      expect(summary.getByText('Estado individual')).toBeTruthy();
+      expect(summary.getByText('Recordatorio activo')).toBeTruthy();
 
       // Al cambiar la hora con el teclado, el resumen se actualiza automáticamente
       fireEvent.press(screen.getByLabelText('Escribir hora con teclado para Hora del aviso'));
@@ -1175,9 +1177,11 @@ describe('Incremento 5: UI de Recordatorios y Avisos Locales', () => {
       });
       fireEvent.press(screen.getByText('Aplicar hora'));
 
+      // Verificar específicamente en el contenedor del resumen la nueva hora y la desaparición de la anterior
       await waitFor(() => {
-        expect(screen.getAllByText('09:15').length).toBeGreaterThanOrEqual(1);
+        expect(summary.getByText('09:15')).toBeTruthy();
       });
+      expect(summary.queryByText('07:00')).toBeNull();
     });
 
     it('muestra el resumen del recordatorio para medicamento con medicamento seleccionado, horarios, vigencia efectiva y pausa general', async () => {
@@ -1215,26 +1219,29 @@ describe('Incremento 5: UI de Recordatorios y Avisos Locales', () => {
       await render(<ReminderEditScreen />);
 
       await waitFor(() => {
-        expect(screen.getByText('Resumen del recordatorio')).toBeTruthy();
+        expect(screen.getByTestId('reminder-summary')).toBeTruthy();
       });
 
+      const summary = within(screen.getByTestId('reminder-summary'));
+
       // Medicamento seleccionado
-      expect(screen.getByText('Medicamento seleccionado')).toBeTruthy();
-      expect(screen.getAllByText('Ciclofosfamida 500mg').length).toBeGreaterThanOrEqual(1);
+      expect(summary.getByText('Medicamento seleccionado')).toBeTruthy();
+      expect(summary.getByText('Ciclofosfamida 500mg')).toBeTruthy();
 
       // Horas elegidas
-      expect(screen.getByText('Horarios de aviso elegidos')).toBeTruthy();
-      expect(screen.getByText('08:00, 20:00')).toBeTruthy();
+      expect(summary.getByText('Horarios de aviso elegidos')).toBeTruthy();
+      expect(summary.getByText('08:00, 20:00')).toBeTruthy();
 
       // Vigencia con fechas civiles
-      expect(screen.getByText('Vigencia')).toBeTruthy();
-      expect(screen.getAllByText(/10\/10\/2026.*25\/10\/2026/).length).toBeGreaterThanOrEqual(1);
+      expect(summary.getByText('Vigencia')).toBeTruthy();
+      expect(summary.getByText(/10\/10\/2026.*25\/10\/2026/)).toBeTruthy();
 
       // Estado individual y pausa general presentes
-      expect(screen.getByText('Estado individual')).toBeTruthy();
-      expect(screen.getAllByText('Recordatorio activo').length).toBeGreaterThanOrEqual(1);
-      expect(screen.getByText('Avisos generales')).toBeTruthy();
-      expect(screen.getByText('Avisos generales en pausa')).toBeTruthy();
+      expect(summary.getByText('Estado individual')).toBeTruthy();
+      expect(summary.getByText('Recordatorio activo')).toBeTruthy();
+      expect(summary.queryByText('Recordatorio en pausa')).toBeNull();
+      expect(summary.getByText('Avisos generales')).toBeTruthy();
+      expect(summary.getByText('Avisos generales en pausa')).toBeTruthy();
 
       // Al alternar el interruptor individual, el resumen pasa a "Recordatorio en pausa"
       const toggleSwitch = screen.getByRole('switch', {
@@ -1243,8 +1250,67 @@ describe('Incremento 5: UI de Recordatorios y Avisos Locales', () => {
       fireEvent.press(toggleSwitch);
 
       await waitFor(() => {
-        expect(screen.getAllByText('Recordatorio en pausa').length).toBeGreaterThanOrEqual(1);
+        expect(summary.getByText('Recordatorio en pausa')).toBeTruthy();
       });
+      expect(summary.queryByText('Recordatorio activo')).toBeNull();
+    });
+
+    it('muestra "Comprobando avisos generales…" mientras la consulta de preferencias está en curso', async () => {
+      mockUseLocalSearchParams.mockReturnValue({});
+      let resolvePrefs!: (value: { enabled: boolean; updatedAt: string }) => void;
+      const pendingPromise = new Promise<{ enabled: boolean; updatedAt: string }>((resolve) => {
+        resolvePrefs = resolve;
+      });
+      mockReminderRepo.getPreferences.mockImplementationOnce(() => pendingPromise);
+
+      await render(<ReminderEditScreen />);
+
+      await waitFor(() => {
+        expect(screen.getByTestId('reminder-summary')).toBeTruthy();
+      });
+
+      const summary = within(screen.getByTestId('reminder-summary'));
+      expect(summary.getByText('Comprobando avisos generales…')).toBeTruthy();
+      expect(summary.queryByText('Avisos generales en pausa')).toBeNull();
+
+      // Resolver la promesa pendiente para evitar efectos tardíos
+      await act(async () => {
+        resolvePrefs({ enabled: true, updatedAt: '2026-10-15T00:00:00Z' });
+      });
+    });
+
+    it('muestra mensaje de error y permite reintentar cuando falla la consulta de preferencias generales en SQLite', async () => {
+      mockUseLocalSearchParams.mockReturnValue({});
+      mockReminderRepo.getPreferences.mockRejectedValueOnce(new Error('Fallo de lectura SQLite'));
+
+      await render(<ReminderEditScreen />);
+
+      await waitFor(() => {
+        expect(screen.getByTestId('reminder-summary')).toBeTruthy();
+      });
+
+      const summary = within(screen.getByTestId('reminder-summary'));
+      await waitFor(() => {
+        expect(
+          summary.getByText('No pudimos comprobar el estado de los avisos generales'),
+        ).toBeTruthy();
+      });
+      expect(summary.queryByText('Avisos generales en pausa')).toBeNull();
+
+      // Configurar respuesta con pausa general para el reintento exitoso
+      mockReminderRepo.getPreferences.mockResolvedValueOnce({
+        enabled: false,
+        updatedAt: '2026-10-16T00:00:00Z',
+      });
+
+      fireEvent.press(summary.getByText('Reintentar comprobación'));
+
+      await waitFor(() => {
+        expect(summary.getByText('Avisos generales en pausa')).toBeTruthy();
+      });
+      expect(
+        summary.queryByText('No pudimos comprobar el estado de los avisos generales'),
+      ).toBeNull();
     });
   });
 

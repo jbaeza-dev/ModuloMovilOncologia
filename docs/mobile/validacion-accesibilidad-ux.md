@@ -2,7 +2,7 @@
 
 **Módulo Móvil Android:** `@modulo-movil-oncologia/mobile`  
 **Rama:** `feat/mejoras-profesor-mobile`  
-**SHA candidato evaluado:** `a9044685dc899f73962d647351f882623746e73c`  
+**SHA candidato evaluado:** `98c20a7` (Línea base inicial: `a904468`)  
 **Fecha:** 17 de octubre de 2026  
 **Estándares de referencia:** WCAG 2.2 Nivel AA, Android Accessibility Guidelines, W3C COGA Usability Guidance.
 
@@ -29,7 +29,7 @@ Para mantener la máxima transparencia y honestidad técnica con respecto a las 
 | **Prettier & ESLint**                 | Estilo, formato e higiene de código en todo el monorepositorio    | **Aprobado** (0 advertencias, 0 errores)   |
 | **TypeScript (`tsc --noEmit`)**       | Verificación estricta de tipos en raíz y workspace móvil          | **Aprobado** (0 errores)                   |
 | **Vitest (Local)**                    | 26 suites unitarias y de integración sobre SQLite en memoria      | **346 pruebas aprobadas** (100 %)          |
-| **Jest & RNTL (UI)**                  | 8 suites de interacción, accesibilidad y componentes React Native | **113 pruebas aprobadas** (100 %)          |
+| **Jest & RNTL (UI)**                  | 8 suites de interacción, accesibilidad y componentes React Native | **118 pruebas aprobadas** (100 %)          |
 | **Expo Doctor**                       | Diagnóstico de configuración, plugins y dependencias nativas      | **21/21 reglas aprobadas**                 |
 | **Android Export (`bundle:android`)** | Compilación de bundle de producción Hermes y assets estáticos     | **Aprobado** (dist generado correctamente) |
 
