@@ -425,4 +425,201 @@ describe('saveReminderWithActivation (reminder-actions)', () => {
       harness.cleanup();
     }
   });
+
+  it('keep_existing con input.habilitado: false guarda la regla deshabilitada y no solicita permisos nativos', async () => {
+    const saveWithIntentSpy = vi.fn().mockResolvedValue({
+      rule: { ...baseRule, habilitado: false },
+      preferencesEnabled: false,
+      otherEnabledRulesCount: 0,
+      resumedGeneralPreference: false,
+      pausedByGeneralPreference: false,
+    });
+    const getPermissionStateSpy = vi.fn();
+    const reconcileSpy = vi.fn().mockResolvedValue({
+      status: 'programada',
+      totalDeseadas: 0,
+      programadasConfirmadas: 0,
+      cubiertoHastaIso: '2026-10-30T10:00:00.000Z',
+      truncadas: 0,
+      reglasAfectadas: [],
+      incidencias: [],
+    });
+
+    const outcome = await saveReminderWithActivation({
+      patientId: 'patient-a',
+      contextEpoch: 1,
+      input: {
+        id: 'rule-saved-1',
+        tipo: 'registro_vitales',
+        diasSemana: [1, 2, 3, 4, 5, 6, 7],
+        horasMinutos: ['07:00'],
+        habilitado: false,
+      },
+      intent: 'keep_existing',
+      remindersRepository: {
+        saveRuleWithActivationIntent: saveWithIntentSpy,
+        getReminderStatusSnapshot: vi.fn(),
+      },
+      notificationAdapter: {
+        getPermissionState: getPermissionStateSpy,
+        requestPermission: vi.fn(),
+      },
+      reconcileReminders: reconcileSpy,
+    });
+
+    expect(getPermissionStateSpy).not.toHaveBeenCalled();
+    expect(saveWithIntentSpy).toHaveBeenCalledWith(
+      expect.objectContaining({
+        id: 'rule-saved-1',
+        habilitado: false,
+      }),
+      'keep_existing',
+    );
+    expect(reconcileSpy).toHaveBeenCalledWith('patient-a');
+    expect(outcome.kind).toBe('saved_disabled');
+    if (outcome.kind === 'saved_disabled') {
+      expect(outcome.rule.habilitado).toBe(false);
+    }
+  });
+
+  it('comprobación de persistencia real: editar con keep_existing conserva tanto la pausa general como el estado individual, y activar requiere acción explícita', async () => {
+    const { createSqliteTestHarness, patientA, patientB } =
+      await import('../../data/local/testing/sqlite-test-harness');
+    const { migrateDatabase } = await import('../../data/local/migrations');
+    const { seedPatientContextIfEmpty } = await import('../../data/local/repository');
+    const { createReminderRepository } =
+      await import('../../data/local/reminders/reminder-repository');
+
+    const harness = createSqliteTestHarness();
+    try {
+      const db = harness.open();
+      await migrateDatabase(db);
+      await seedPatientContextIfEmpty(db, patientA, patientB);
+
+      const realRepo = createReminderRepository(db, patientA);
+
+      // Crear una única regla habilitada
+      const initialRule = await realRepo.saveRule({
+        tipo: 'registro_vitales',
+        diasSemana: [1, 2, 3, 4, 5, 6, 7],
+        horasMinutos: ['07:00'],
+        habilitado: true,
+      });
+
+      // El usuario pone en pausa los avisos generales
+      await realRepo.setPreferences(false);
+      const pausedPrefs = await realRepo.getPreferences();
+      expect(pausedPrefs.enabled).toBe(false);
+
+      const reconcileSpy = vi.fn().mockResolvedValue({
+        status: 'programada',
+        totalDeseadas: 0,
+        programadasConfirmadas: 0,
+        cubiertoHastaIso: '2026-10-30T10:00:00.000Z',
+        truncadas: 0,
+        reglasAfectadas: [],
+        incidencias: [],
+      });
+
+      // Paso 1: El usuario cambia únicamente la hora (09:00) y guarda con keep_existing
+      const editOutcome = await saveReminderWithActivation({
+        patientId: patientA,
+        contextEpoch: 1,
+        input: {
+          id: initialRule.id,
+          tipo: 'registro_vitales',
+          diasSemana: [1, 2, 3, 4, 5, 6, 7],
+          horasMinutos: ['09:00'],
+          habilitado: true,
+        },
+        intent: 'keep_existing',
+        remindersRepository: realRepo,
+        notificationAdapter: {
+          getPermissionState: vi.fn().mockResolvedValue({
+            status: 'granted',
+            canAskAgain: true,
+            channelStatus: 'ok',
+          }),
+          requestPermission: vi.fn(),
+        },
+        reconcileReminders: reconcileSpy,
+      });
+
+      // Resultado: indica que la pausa general sigue activa
+      expect(editOutcome.kind).toBe('saved_preferences_paused');
+
+      // Verificación en SQLite real: la preferencia general NO fue levantada automáticamente
+      const prefsAfterEdit = await realRepo.getPreferences();
+      expect(prefsAfterEdit.enabled).toBe(false);
+
+      // Verificación en SQLite real: la regla conservó su estado habilitado: true y la nueva hora
+      const ruleAfterEdit = await realRepo.getRule(initialRule.id);
+      expect(ruleAfterEdit?.horasMinutos).toEqual(['09:00']);
+      expect(ruleAfterEdit?.habilitado).toBe(true);
+
+      // Paso 2: El usuario edita la regla para dejarla en pausa (habilitado: false) con keep_existing
+      const disableOutcome = await saveReminderWithActivation({
+        patientId: patientA,
+        contextEpoch: 1,
+        input: {
+          id: initialRule.id,
+          tipo: 'registro_vitales',
+          diasSemana: [1, 2, 3, 4, 5, 6, 7],
+          horasMinutos: ['09:00'],
+          habilitado: false,
+        },
+        intent: 'keep_existing',
+        remindersRepository: realRepo,
+        notificationAdapter: {
+          getPermissionState: vi.fn().mockResolvedValue({
+            status: 'granted',
+            canAskAgain: true,
+            channelStatus: 'ok',
+          }),
+          requestPermission: vi.fn(),
+        },
+        reconcileReminders: reconcileSpy,
+      });
+
+      expect(disableOutcome.kind).toBe('saved_disabled');
+
+      // Verificación en SQLite real: la regla ahora tiene habilitado = 0
+      const ruleAfterDisable = await realRepo.getRule(initialRule.id);
+      expect(ruleAfterDisable?.habilitado).toBe(false);
+
+      // Verificación en SQLite real: la preferencia general sigue en pausa
+      const prefsAfterDisable = await realRepo.getPreferences();
+      expect(prefsAfterDisable.enabled).toBe(false);
+
+      // Paso 3: Activar requiere una acción explícita ('save_and_activate' o 'save_and_resume_all')
+      await saveReminderWithActivation({
+        patientId: patientA,
+        contextEpoch: 1,
+        input: {
+          id: initialRule.id,
+          tipo: 'registro_vitales',
+          diasSemana: [1, 2, 3, 4, 5, 6, 7],
+          horasMinutos: ['09:00'],
+          habilitado: true,
+        },
+        intent: 'save_and_activate',
+        remindersRepository: realRepo,
+        notificationAdapter: {
+          getPermissionState: vi.fn().mockResolvedValue({
+            status: 'granted',
+            canAskAgain: true,
+            channelStatus: 'ok',
+          }),
+          requestPermission: vi.fn(),
+        },
+        reconcileReminders: reconcileSpy,
+      });
+
+      // Ahora sí se levantó la preferencia general de forma explícita
+      const prefsAfterExplicit = await realRepo.getPreferences();
+      expect(prefsAfterExplicit.enabled).toBe(true);
+    } finally {
+      harness.cleanup();
+    }
+  });
 });

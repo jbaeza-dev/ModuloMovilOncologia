@@ -931,6 +931,49 @@ describe('Incremento 5: UI de Recordatorios y Avisos Locales', () => {
       alertSpy.mockRestore();
     });
 
+    it('al confirmar la salida con "Salir sin guardar", conserva la solicitud de desplazamiento a Inicio para HomeScreen', async () => {
+      let alertButtons: { text: string; onPress?: () => void }[] = [];
+      const alertSpy = jest.spyOn(Alert, 'alert').mockImplementation((_title, _msg, buttons) => {
+        alertButtons = (buttons as { text: string; onPress?: () => void }[]) || [];
+      });
+
+      // Se solicita scroll a Inicio
+      requestHomeScrollToTop();
+
+      mockUseLocalSearchParams.mockReturnValue({});
+      await render(<ReminderEditScreen />);
+
+      await waitFor(() => {
+        expect(screen.getByLabelText('Personalizar')).toBeTruthy();
+      });
+
+      // Modificamos un campo para ensuciar el formulario
+      fireEvent.press(screen.getByLabelText('Personalizar'));
+      await waitFor(() => {
+        expect(screen.getByLabelText('Lunes')).toBeTruthy();
+      });
+      fireEvent.press(screen.getByLabelText('Lunes'));
+
+      await waitFor(() => {
+        expect(mockPreventRemoveEnabled).toBe(true);
+      });
+
+      // Intentamos salir pulsando Volver
+      fireEvent.press(screen.getByLabelText('Volver'));
+      expect(alertSpy).toHaveBeenCalled();
+
+      // El usuario elige "Salir sin guardar"
+      const salirSinGuardarBtn = alertButtons.find((b) => b.text === 'Salir sin guardar');
+      expect(salirSinGuardarBtn).toBeDefined();
+      salirSinGuardarBtn?.onPress?.();
+
+      // Debe conservar pendingScrollToTop para que Inicio lo consuma al enfocar
+      expect(consumeHomeScrollToTop()).toBe(true);
+      expect(mockNavigationDispatch).toHaveBeenCalledWith({ type: 'GO_BACK' });
+
+      alertSpy.mockRestore();
+    });
+
     it('muestra controles específicos de creación (Activar al guardar) en modo creación', async () => {
       mockUseLocalSearchParams.mockReturnValue({});
       await render(<ReminderEditScreen />);
@@ -959,6 +1002,97 @@ describe('Incremento 5: UI de Recordatorios y Avisos Locales', () => {
       });
       expect(screen.queryByText('Activar al guardar')).toBeNull();
       expect(screen.queryByText('Guardar y activar')).toBeNull();
+    });
+
+    it('en modo edición, "Guardar cambios" envía keep_existing y preserva la pausa general sin levantarla', async () => {
+      mockUseLocalSearchParams.mockReturnValue({ id: 'rule-edit-keep' });
+      mockReminderRepo.getRule.mockResolvedValueOnce({
+        ...mockDefaultRule,
+        id: 'rule-edit-keep',
+        habilitado: true,
+        horasMinutos: ['08:00'],
+      });
+      const originalSave = mockReminderRepo.saveRuleWithActivationIntent;
+      const saveSpy = jest.fn().mockResolvedValueOnce({
+        rule: {
+          ...mockDefaultRule,
+          id: 'rule-edit-keep',
+          habilitado: true,
+          horasMinutos: ['09:00'],
+        },
+        preferencesEnabled: false,
+        otherEnabledRulesCount: 0,
+        resumedGeneralPreference: false,
+        pausedByGeneralPreference: true,
+      });
+      mockReminderRepo.saveRuleWithActivationIntent = saveSpy;
+
+      await render(<ReminderEditScreen />);
+
+      await waitFor(() => {
+        expect(screen.getByText('Guardar cambios')).toBeTruthy();
+      });
+
+      fireEvent.press(screen.getByText('Guardar cambios'));
+
+      await waitFor(() => {
+        expect(saveSpy).toHaveBeenCalledWith(
+          expect.objectContaining({
+            id: 'rule-edit-keep',
+            habilitado: true,
+          }),
+          'keep_existing',
+        );
+        expect(mockRouterBack).toHaveBeenCalled();
+      });
+
+      mockReminderRepo.saveRuleWithActivationIntent = originalSave;
+    });
+
+    it('en modo edición con recordatorio en pausa, "Guardar cambios" envía keep_existing con habilitado: false', async () => {
+      mockUseLocalSearchParams.mockReturnValue({ id: 'rule-edit-paused' });
+      mockReminderRepo.getRule.mockResolvedValueOnce({
+        ...mockDefaultRule,
+        id: 'rule-edit-paused',
+        habilitado: false,
+        horasMinutos: ['08:00'],
+      });
+      const originalSave = mockReminderRepo.saveRuleWithActivationIntent;
+      const saveSpy = jest.fn().mockResolvedValueOnce({
+        rule: {
+          ...mockDefaultRule,
+          id: 'rule-edit-paused',
+          habilitado: false,
+          horasMinutos: ['08:00'],
+        },
+        preferencesEnabled: false,
+        otherEnabledRulesCount: 0,
+        resumedGeneralPreference: false,
+        pausedByGeneralPreference: false,
+      });
+      mockReminderRepo.saveRuleWithActivationIntent = saveSpy;
+
+      await render(<ReminderEditScreen />);
+
+      await waitFor(() => {
+        expect(screen.getByText('Guardar cambios')).toBeTruthy();
+        expect(screen.getByText('Recordatorio en pausa')).toBeTruthy();
+      });
+
+      fireEvent.press(screen.getByText('Guardar cambios'));
+
+      await waitFor(() => {
+        expect(saveSpy).toHaveBeenCalledWith(
+          expect.objectContaining({
+            id: 'rule-edit-paused',
+            habilitado: false,
+          }),
+          'keep_existing',
+        );
+        expect(mockRouterBack).toHaveBeenCalled();
+      });
+
+      mockReminderRepo.saveRuleWithActivationIntent = originalSave;
     });
   });
 

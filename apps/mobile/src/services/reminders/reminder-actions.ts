@@ -102,14 +102,21 @@ export async function saveReminderWithActivation(
     return { kind: 'context_changed' };
   }
 
-  const wantsActivation = intent !== 'save_disabled';
+  // Determinar si la regla resultante debe quedar habilitada
+  const targetHabilitado =
+    intent === 'save_and_activate' || intent === 'save_and_resume_all'
+      ? true
+      : intent === 'save_disabled'
+        ? false
+        : Boolean(input.habilitado);
+
   let permissionState: NotificationPermissionState = {
     status: 'granted',
     canAskAgain: true,
     channelStatus: 'ok',
   };
 
-  if (wantsActivation) {
+  if (targetHabilitado) {
     permissionState = await notificationAdapter.getPermissionState();
     if (permissionState.status !== 'granted' && permissionState.canAskAgain) {
       permissionState = await notificationAdapter.requestPermission();
@@ -129,15 +136,15 @@ export async function saveReminderWithActivation(
   const permissionGranted =
     permissionState.status === 'granted' && permissionState.channelStatus !== 'blocked';
 
-  // Si el usuario quería activar pero el permiso nativo fue denegado o el canal está bloqueado,
-  // guardamos la regla habilitada pero sin levantar silenciosamente la pausa general si estaba activa.
+  // Si se deseaba activar la preferencia general pero el permiso nativo fue denegado o el canal está bloqueado,
+  // degradamos a keep_existing para no alterar la preferencia general si estaba activa la pausa.
   const effectiveIntent: ReminderActivationIntent =
-    wantsActivation && !permissionGranted ? 'keep_existing' : intent;
+    targetHabilitado && !permissionGranted && intent !== 'keep_existing' ? 'keep_existing' : intent;
 
   const saveResult = await remindersRepository.saveRuleWithActivationIntent(
     {
       ...input,
-      habilitado: wantsActivation,
+      habilitado: targetHabilitado,
     },
     effectiveIntent,
   );
@@ -148,7 +155,7 @@ export async function saveReminderWithActivation(
     return { kind: 'context_changed' };
   }
 
-  if (!wantsActivation) {
+  if (!targetHabilitado) {
     const coordinatorResult = await reconcileReminders(patientId);
     bumpRemindersRevision?.();
     if (!checkContext()) {

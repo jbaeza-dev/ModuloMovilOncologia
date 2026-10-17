@@ -346,7 +346,6 @@ export function ReminderEditScreen() {
           text: 'Salir sin guardar',
           style: 'destructive',
           onPress: () => {
-            clearHomeScrollToTop();
             bypassPreventRemoveRef.current = true;
             if (data?.action && typeof navigation?.dispatch === 'function') {
               navigation.dispatch(data.action);
@@ -482,7 +481,15 @@ export function ReminderEditScreen() {
     }
 
     const intent: ReminderActivationIntent =
-      explicitIntent ?? (habilitado ? 'save_and_activate' : 'save_disabled');
+      explicitIntent ??
+      (isEditing ? 'keep_existing' : habilitado ? 'save_and_activate' : 'save_disabled');
+
+    const effectiveRuleHabilitado =
+      intent === 'save_and_activate' || intent === 'save_and_resume_all'
+        ? true
+        : intent === 'save_disabled'
+          ? false
+          : habilitado;
 
     const capturedPatientId = patientId;
     const capturedEpoch = manager?.getContextEpoch?.() ?? 1;
@@ -507,7 +514,7 @@ export function ReminderEditScreen() {
             zonaHoraria,
             fechaInicio: effectiveStart,
             fechaFin: effectiveEnd,
-            habilitado: intent !== 'save_disabled',
+            habilitado: effectiveRuleHabilitado,
           },
           intent,
           remindersRepository: repository.reminders,
@@ -540,7 +547,7 @@ export function ReminderEditScreen() {
           horasMinutos: selectedHours,
           fechaInicio: effectiveStart,
           fechaFin: effectiveEnd,
-          habilitado: intent !== 'save_disabled',
+          habilitado: effectiveRuleHabilitado,
         }),
       );
       setLastOutcome(outcome);
@@ -549,7 +556,8 @@ export function ReminderEditScreen() {
       if (
         outcome.kind === 'scheduled' ||
         outcome.kind === 'saved_disabled' ||
-        outcome.kind === 'saved_no_upcoming'
+        outcome.kind === 'saved_no_upcoming' ||
+        (isEditing && outcome.kind === 'saved_preferences_paused')
       ) {
         navigateBackAfterConfirmed();
       }
@@ -1283,7 +1291,7 @@ export function ReminderEditScreen() {
           }
           onPress={() =>
             void executeSave(
-              isEditing ? (habilitado ? 'save_and_activate' : 'save_disabled') : undefined,
+              isEditing ? 'keep_existing' : habilitado ? 'save_and_activate' : 'save_disabled',
             )
           }
           disabled={saving}
