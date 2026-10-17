@@ -591,6 +591,81 @@ describe('Incremento 6: UI de Acceso, Navegación Raíz, Sesión y Asistente', (
       expect(await screen.findByText('Sin conexión')).toBeTruthy();
       expect(screen.getByText('Reintentar consulta')).toBeTruthy();
     });
+
+    it('muestra estado no configurado previo al ingreso y no permite enviar consultas', async () => {
+      let contextRef = {} as LocalDataContext;
+
+      await render(
+        <LocalDataProvider>
+          <AssistantScreen />
+          <ContextConsumer onReady={(ctx) => (contextRef = ctx)} />
+        </LocalDataProvider>,
+      );
+
+      await waitFor(() => {
+        expect(contextRef.assistantController).toBeTruthy();
+      });
+
+      // Cambiar a adaptador no configurado
+      await act(async () => {
+        contextRef.assistantController?.setAdapter(new UnconfiguredAssistantAdapter());
+      });
+
+      // Debe mostrar el estado no configurado sin permitir escribir
+      expect(await screen.findByText('Servicio no configurado')).toBeTruthy();
+      expect(
+        screen.getByText(
+          'El servicio del asistente central no está configurado en este entorno. No es posible enviar consultas en este momento.',
+        ),
+      ).toBeTruthy();
+      expect(screen.getByText('Volver')).toBeTruthy();
+      expect(screen.queryByLabelText('Escribe tu consulta')).toBeNull();
+      expect(screen.queryByText('Enviar consulta')).toBeNull();
+    });
+
+    it('identifica remitentes accesibles Tú y Asistente y alerta de límite cercano', async () => {
+      let contextRef = {} as LocalDataContext;
+
+      await render(
+        <LocalDataProvider>
+          <AssistantScreen />
+          <ContextConsumer onReady={(ctx) => (contextRef = ctx)} />
+        </LocalDataProvider>,
+      );
+
+      await waitFor(() => {
+        expect(contextRef.assistantController).toBeTruthy();
+      });
+
+      await act(async () => {
+        contextRef.assistantController?.setAdapter(
+          new FakeAssistantAdapter({
+            simulatedDelayMs: 10,
+            customReply: 'Respuesta de prueba accesible',
+          }),
+        );
+      });
+
+      const input = await screen.findByLabelText('Escribe tu consulta');
+
+      // Probar alerta de límite cercano (>1800 caracteres)
+      const nearLimitText = 'a'.repeat(1850);
+      await fireEvent.changeText(input, nearLimitText);
+      expect(await screen.findByText(/1850 \/ 2000 \(límite cercano\)/)).toBeTruthy();
+
+      // Enviar consulta corta
+      await fireEvent.changeText(input, '¿Cómo tomar mi medicamento?');
+      await fireEvent.press(screen.getByText('Enviar consulta'));
+
+      // Verificar burbuja del usuario con etiqueta accesible identificando remitente
+      expect(await screen.findByLabelText('Tú: ¿Cómo tomar mi medicamento?')).toBeTruthy();
+
+      // Esperar respuesta del asistente
+      expect(await screen.findByLabelText('Asistente: Respuesta de prueba accesible')).toBeTruthy();
+
+      // Verificar anuncio en live region
+      expect(await screen.findByText('Nueva respuesta del asistente recibida.')).toBeTruthy();
+    });
   });
 
   describe('Cierre por session_required con SQLite abierto (Punto 1)', () => {

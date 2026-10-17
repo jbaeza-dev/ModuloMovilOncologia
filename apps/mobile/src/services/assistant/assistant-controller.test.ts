@@ -267,4 +267,18 @@ describe('AssistantController', () => {
 
     expect(controller.getMessages().length).toBe(50);
   });
+
+  it('expone isConfigured según el adaptador y notifica al cambiarlo', () => {
+    const unconfigured = new UnconfiguredAssistantAdapter();
+    const controller = new AssistantController(unconfigured, 'paciente-a');
+    expect(controller.isConfigured).toBe(false);
+
+    const listener = vi.fn();
+    controller.subscribe(listener);
+
+    const configured = new FakeAssistantAdapter();
+    controller.setAdapter(configured);
+    expect(controller.isConfigured).toBe(true);
+    expect(listener).toHaveBeenCalledTimes(1);
+  });
 });

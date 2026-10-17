@@ -4,6 +4,8 @@ import { useNavigationState } from 'expo-router/react-navigation';
 import type { ReactNode, RefObject } from 'react';
 import {
   KeyboardAvoidingView,
+  type NativeScrollEvent,
+  type NativeSyntheticEvent,
   Platform,
   Pressable,
   ScrollView,
@@ -24,6 +26,8 @@ type Props = {
   scroll?: boolean;
   scrollRef?: RefObject<ScrollView | null>;
   bottomAction?: ReactNode;
+  onScroll?: (event: NativeSyntheticEvent<NativeScrollEvent>) => void;
+  scrollEventThrottle?: number;
 };
 
 export function Screen({
@@ -34,6 +38,8 @@ export function Screen({
   scroll = true,
   scrollRef,
   bottomAction,
+  onScroll,
+  scrollEventThrottle,
 }: Props) {
   const { theme: appTheme } = useAppTheme();
   const styles = createStyles(appTheme.colors);
@@ -93,6 +99,8 @@ export function Screen({
         {scroll ? (
           <ScrollView
             ref={scrollRef}
+            onScroll={onScroll}
+            scrollEventThrottle={scrollEventThrottle}
             keyboardShouldPersistTaps="handled"
             contentContainerStyle={styles.content}
           >
