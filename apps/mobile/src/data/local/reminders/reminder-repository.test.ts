@@ -327,4 +327,181 @@ describe('ReminderRepository', () => {
     expect(await repoA.getRule(ruleB.id)).toBeNull();
     expect(await repoB.getRule(ruleA.id)).toBeNull();
   });
+
+  it('obtiene una instantánea transaccional consistente en getReminderStatusSnapshot', async () => {
+    const db = open();
+    await migrateDatabase(db);
+    await seedPatientContextIfEmpty(db, patientA, patientB);
+
+    const repoA = createReminderRepository(db, patientA, () => '2026-10-16T12:00:00.000Z');
+    await repoA.setPreferences(true);
+
+    const ruleVitals = await repoA.saveRule({
+      tipo: 'registro_vitales',
+      diasSemana: [1, 2, 3, 4, 5, 6, 7],
+      horasMinutos: ['07:00'],
+      habilitado: true,
+    });
+    await repoA.saveRule({
+      tipo: 'medicacion',
+      medicamentoId: 'med-a-1',
+      diasSemana: [1, 2, 3, 4, 5, 6, 7],
+      horasMinutos: ['19:00'],
+      habilitado: true,
+    });
+
+    // Notificación pasada (no debe entrar en futureNotifications) y futura (sí debe entrar)
+    await repoA.reserveOccurrence({
+      id: 'notif-past',
+      recordatorioId: ruleVitals.id,
+      revision: ruleVitals.revision,
+      tipo: 'registro_vitales',
+      fechaPrevistaUtc: '2026-10-16T10:00:00.000Z',
+      payload: {
+        version: 1,
+        notificacionId: 'notif-past',
+        revision: ruleVitals.revision,
+        pacienteId: patientA,
+        recordatorioId: ruleVitals.id,
+        tipo: 'registro_vitales',
+        destino: '/vitales/registrar',
+      },
+    });
+    await repoA.reserveOccurrence({
+      id: 'notif-future',
+      recordatorioId: ruleVitals.id,
+      revision: ruleVitals.revision,
+      tipo: 'registro_vitales',
+      fechaPrevistaUtc: '2026-10-17T10:00:00.000Z',
+      payload: {
+        version: 1,
+        notificacionId: 'notif-future',
+        revision: ruleVitals.revision,
+        pacienteId: patientA,
+        recordatorioId: ruleVitals.id,
+        tipo: 'registro_vitales',
+        destino: '/vitales/registrar',
+      },
+    });
+
+    const snapshot = await repoA.getReminderStatusSnapshot('2026-10-16T12:00:00.000Z');
+    expect(snapshot.patientId).toBe(patientA);
+    expect(snapshot.preferences.enabled).toBe(true);
+    expect(snapshot.rules).toHaveLength(3); // incluye rule-template-vitales-a (deshabilitada) + 2 nuevas
+    expect(snapshot.allEnabledRulesCount).toBe(2);
+    expect(snapshot.futureNotifications.map((n) => n.id)).toEqual(['notif-future']);
+  });
+
+  it('T-13: saveRuleWithActivationIntent habilita preferencias si no hay otras reglas habilitadas, pero respeta la pausa general si existen otras', async () => {
+    const db = open();
+    await migrateDatabase(db);
+    await seedPatientContextIfEmpty(db, patientA, patientB);
+
+    const repo = createReminderRepository(db, patientA, () => '2026-10-16T12:00:00.000Z');
+
+    // Caso 1: Preferencias apagadas y 0 reglas habilitadas -> save_and_activate levanta la preferencia general
+    expect((await repo.getPreferences()).enabled).toBe(false);
+    const firstActivation = await repo.saveRuleWithActivationIntent(
+      {
+        tipo: 'registro_vitales',
+        diasSemana: [1, 2, 3, 4, 5, 6, 7],
+        horasMinutos: ['07:00'],
+      },
+      'save_and_activate',
+    );
+    expect(firstActivation.rule.habilitado).toBe(true);
+    expect(firstActivation.preferencesEnabled).toBe(true);
+    expect(firstActivation.resumedGeneralPreference).toBe(true);
+    expect(firstActivation.pausedByGeneralPreference).toBe(false);
+    expect(firstActivation.otherEnabledRulesCount).toBe(0);
+    expect((await repo.getPreferences()).enabled).toBe(true);
+
+    // Pausar todos los avisos dejando la primera regla habilitada individualmente
+    await repo.setPreferences(false);
+
+    // Caso 2: Pausa general activa y ya existe otra regla habilitada (registro_vitales) ->
+    // save_and_activate en un medicamento guarda la regla pero NO reactiva silenciosamente las preferencias generales
+    const secondActivation = await repo.saveRuleWithActivationIntent(
+      {
+        tipo: 'medicacion',
+        medicamentoId: 'med-a-1',
+        diasSemana: [1, 2, 3, 4, 5, 6, 7],
+        horasMinutos: ['07:00', '19:00'],
+      },
+      'save_and_activate',
+    );
+    expect(secondActivation.rule.habilitado).toBe(true);
+    expect(secondActivation.preferencesEnabled).toBe(false);
+    expect(secondActivation.resumedGeneralPreference).toBe(false);
+    expect(secondActivation.pausedByGeneralPreference).toBe(true);
+    expect(secondActivation.otherEnabledRulesCount).toBe(1);
+    expect((await repo.getPreferences()).enabled).toBe(false);
+
+    // Caso 3: Consentimiento explícito save_and_resume_all levanta la pausa general
+    const resumed = await repo.saveRuleWithActivationIntent(
+      {
+        id: secondActivation.rule.id,
+        tipo: 'medicacion',
+        medicamentoId: 'med-a-1',
+        diasSemana: [1, 2, 3, 4, 5, 6, 7],
+        horasMinutos: ['07:00', '19:00'],
+      },
+      'save_and_resume_all',
+    );
+    expect(resumed.preferencesEnabled).toBe(true);
+    expect(resumed.resumedGeneralPreference).toBe(true);
+    expect(resumed.pausedByGeneralPreference).toBe(false);
+    expect((await repo.getPreferences()).enabled).toBe(true);
+  });
+
+  it('T-12 y T-15: hace rollback completo si falla la escritura en la transacción y nunca escribe en cola_envio', async () => {
+    const db = open();
+    await migrateDatabase(db);
+    await seedPatientContextIfEmpty(db, patientA, patientB);
+
+    const repo = createReminderRepository(db, patientA, () => '2026-10-16T12:00:00.000Z');
+    const initialRulesCount = (await repo.listRules()).length;
+
+    // Crear un trigger temporal que fuerce fallo al actualizar preferencia_avisos a 1
+    await db.exec(`
+      CREATE TRIGGER fail_pref_enable
+      BEFORE UPDATE ON preferencia_avisos
+      WHEN NEW.habilitado = 1
+      BEGIN
+        SELECT RAISE(ABORT, 'Fallo simulado al habilitar preferencia');
+      END;
+    `);
+
+    await expect(
+      repo.saveRuleWithActivationIntent(
+        {
+          tipo: 'registro_vitales',
+          diasSemana: [1, 2, 3, 4, 5, 6, 7],
+          horasMinutos: ['07:00'],
+        },
+        'save_and_activate',
+      ),
+    ).rejects.toThrow('Fallo simulado al habilitar preferencia');
+
+    // Rollback completo: ni la regla nueva ni la preferencia quedaron guardadas
+    expect(await repo.listRules()).toHaveLength(initialRulesCount);
+    expect((await repo.getPreferences()).enabled).toBe(false);
+
+    await db.exec('DROP TRIGGER fail_pref_enable;');
+
+    // Ahora guardar normalmente y verificar que cola_envio sigue vacía (T-15)
+    await repo.saveRuleWithActivationIntent(
+      {
+        tipo: 'registro_vitales',
+        diasSemana: [1, 2, 3, 4, 5, 6, 7],
+        horasMinutos: ['07:00'],
+      },
+      'save_and_activate',
+    );
+    const outboxRow = await db.first<{ total: number }>(
+      'SELECT count(*) AS total FROM cola_envio WHERE paciente_id = ?',
+      [patientA],
+    );
+    expect(outboxRow?.total ?? 0).toBe(0);
+  });
 });
