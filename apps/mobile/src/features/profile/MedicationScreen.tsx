@@ -1,4 +1,5 @@
 import { useCallback } from 'react';
+import { router } from 'expo-router';
 
 import { Screen } from '../../components/Screen';
 import {
@@ -15,6 +16,7 @@ import type { ActiveMedicationRecord } from '../../data/local/clinical-context/c
 import { formatDate } from '../../data/local/repository';
 import { useFocusedValue } from '../../hooks/use-local-query';
 import { useLocalData } from '../../providers/LocalDataProvider';
+import { formatCivilDateDisplay } from '../../services/reminders/reminder-status';
 
 export function MedicationScreen() {
   const { repository } = useLocalData();
@@ -30,7 +32,7 @@ export function MedicationScreen() {
   } = useFocusedValue(load, [] as ActiveMedicationRecord[]);
 
   return (
-    <Screen title="Medicación activa" backTo="/perfil">
+    <Screen title="Mis medicamentos">
       <DemoBadge />
       <BodyText>
         Información de consulta local provista por tu centro de salud. No modifiques ni suspendas tu
@@ -50,26 +52,47 @@ export function MedicationScreen() {
         <EmptyState
           icon="file-text"
           title="Sin medicamentos registrados"
-          description="No se encontraron registros de medicación activa en el almacenamiento local para este paciente."
+          description="No se encontraron registros de medicamentos para este paciente en el almacenamiento local."
         />
       ) : (
         medications.map((med) => (
           <InfoCard key={med.id}>
             <SectionTitle>{med.nombre}</SectionTitle>
-            <DetailRow label="Dosis" value={med.dosis} />
-            <DetailRow label="Frecuencia" value={med.frecuencia} />
-            {med.fecha_inicio ? <DetailRow label="Fecha inicio" value={med.fecha_inicio} /> : null}
-            {med.fecha_fin ? <DetailRow label="Fecha fin" value={med.fecha_fin} /> : null}
+            <DetailRow label="Dosis" value={med.dosis} layout="vertical" />
+            <DetailRow label="Frecuencia" value={med.frecuencia} layout="vertical" />
+            {med.fecha_inicio ? (
+              <DetailRow
+                label="Fecha de inicio"
+                value={formatCivilDateDisplay(med.fecha_inicio)}
+                layout="vertical"
+              />
+            ) : null}
+            {med.fecha_fin ? (
+              <DetailRow
+                label="Fecha de término"
+                value={formatCivilDateDisplay(med.fecha_fin)}
+                layout="vertical"
+              />
+            ) : null}
             <StatusPill>
-              Información en caché · Obtenido el {formatDate(med.obtenido_en)}
+              Información guardada en este dispositivo · Información recibida el{' '}
+              {formatDate(med.obtenido_en)}
             </StatusPill>
+            <VisualButton
+              label="Configurar aviso"
+              secondary
+              onPress={() =>
+                router.push({
+                  pathname: '/recordatorios/editar',
+                  params: { tipo: 'medicacion', medicamentoId: med.id },
+                })
+              }
+            />
           </InfoCard>
         ))
       )}
 
-      <BodyText>
-        Información en caché guardada en este dispositivo para consulta sin conexión.
-      </BodyText>
+      <BodyText>Información guardada en este dispositivo para consulta sin conexión.</BodyText>
     </Screen>
   );
 }

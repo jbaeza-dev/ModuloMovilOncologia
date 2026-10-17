@@ -1,13 +1,17 @@
 import Feather from '@expo/vector-icons/Feather';
-import { router, type Href } from 'expo-router';
-import type { ReactNode } from 'react';
+import { router } from 'expo-router';
+import { useNavigationState } from 'expo-router/react-navigation';
+import type { ReactNode, RefObject } from 'react';
 import {
   KeyboardAvoidingView,
+  type NativeScrollEvent,
+  type NativeSyntheticEvent,
   Platform,
   Pressable,
   ScrollView,
   StyleSheet,
   Text,
+  useWindowDimensions,
   View,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
@@ -18,14 +22,35 @@ import { theme } from '../theme';
 type Props = {
   children: ReactNode;
   title?: string;
-  backTo?: Href;
+  isRoot?: boolean;
   showProfile?: boolean;
   scroll?: boolean;
+  scrollRef?: RefObject<ScrollView | null>;
+  bottomAction?: ReactNode;
+  onScroll?: (event: NativeSyntheticEvent<NativeScrollEvent>) => void;
+  scrollEventThrottle?: number;
 };
 
-export function Screen({ children, title, backTo, showProfile = false, scroll = true }: Props) {
+export function Screen({
+  children,
+  title,
+  isRoot = false,
+  showProfile = false,
+  scroll = true,
+  scrollRef,
+  bottomAction,
+  onScroll,
+  scrollEventThrottle,
+}: Props) {
   const { theme: appTheme } = useAppTheme();
   const styles = createStyles(appTheme.colors);
+  const hasBackHistory = useNavigationState((state) => (state ? state.index > 0 : false));
+  const canGoBack = !isRoot && hasBackHistory;
+
+  const { fontScale, height } = useWindowDimensions();
+  const isConstrained = fontScale > 1.3 || height < 550;
+  const renderBottomActionInline = Boolean(bottomAction && scroll && isConstrained);
+
   const content = (
     <>
       {title ? (
@@ -39,13 +64,14 @@ export function Screen({ children, title, backTo, showProfile = false, scroll = 
   return (
     <SafeAreaView style={styles.safeArea} edges={['top', 'left', 'right']}>
       <View style={styles.header}>
-        {backTo ? (
+        {canGoBack ? (
           <Pressable
             accessibilityRole="button"
             accessibilityLabel="Volver"
             onPress={() => {
-              if (router.canGoBack()) router.back();
-              else router.replace(backTo);
+              if (router.canGoBack()) {
+                router.back();
+              }
             }}
             style={({ pressed }) => [styles.headerAction, pressed && styles.pressed]}
           >
@@ -60,9 +86,12 @@ export function Screen({ children, title, backTo, showProfile = false, scroll = 
             accessibilityRole="button"
             accessibilityLabel="Abrir mi perfil"
             onPress={() => router.navigate('/perfil', { withAnchor: true })}
-            style={({ pressed }) => [styles.headerAction, styles.avatar, pressed && styles.pressed]}
+            style={({ pressed }) => [styles.profileButton, pressed && styles.pressed]}
           >
-            <Feather name="user" size={24} color={appTheme.colors.primary} accessible={false} />
+            <View style={styles.avatar}>
+              <Feather name="user" size={18} color={appTheme.colors.primary} accessible={false} />
+            </View>
+            <Text style={styles.profileText}>Mi perfil</Text>
           </Pressable>
         ) : (
           <View style={styles.headerAction} />
@@ -73,12 +102,28 @@ export function Screen({ children, title, backTo, showProfile = false, scroll = 
         behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
       >
         {scroll ? (
-          <ScrollView keyboardShouldPersistTaps="handled" contentContainerStyle={styles.content}>
+          <ScrollView
+            ref={scrollRef}
+            onScroll={onScroll}
+            scrollEventThrottle={scrollEventThrottle}
+            keyboardShouldPersistTaps="handled"
+            contentContainerStyle={styles.content}
+          >
             {content}
+            {renderBottomActionInline ? (
+              <View testID="screen-bottom-action-inline" style={styles.inlineBottomAction}>
+                {bottomAction}
+              </View>
+            ) : null}
           </ScrollView>
         ) : (
           <View style={styles.staticContent}>{content}</View>
         )}
+        {!renderBottomActionInline && bottomAction ? (
+          <View testID="screen-bottom-action-container" style={styles.bottomActionContainer}>
+            {bottomAction}
+          </View>
+        ) : null}
       </KeyboardAvoidingView>
     </SafeAreaView>
   );
@@ -103,7 +148,28 @@ function createStyles(colors: ReturnType<typeof useAppTheme>['theme']['colors'])
       justifyContent: 'center',
       borderRadius: 24,
     },
-    avatar: { backgroundColor: colors.primaryContainer },
+    profileButton: {
+      flexDirection: 'row',
+      alignItems: 'center',
+      minWidth: 48,
+      minHeight: 48,
+      paddingHorizontal: theme.spacing.sm,
+      gap: theme.spacing.xs,
+      borderRadius: 24,
+    },
+    avatar: {
+      width: 32,
+      height: 32,
+      borderRadius: 16,
+      alignItems: 'center',
+      justifyContent: 'center',
+      backgroundColor: colors.primaryContainer,
+    },
+    profileText: {
+      fontSize: 14,
+      fontWeight: '600',
+      color: colors.text,
+    },
     brand: {
       flex: 1,
       textAlign: 'center',
@@ -118,6 +184,18 @@ function createStyles(colors: ReturnType<typeof useAppTheme>['theme']['colors'])
       paddingBottom: theme.spacing.xl,
     },
     staticContent: { flex: 1, padding: theme.spacing.lg, gap: theme.spacing.lg },
+    inlineBottomAction: {
+      marginTop: theme.spacing.md,
+      gap: theme.spacing.sm,
+    },
+    bottomActionContainer: {
+      paddingHorizontal: theme.spacing.lg,
+      paddingVertical: theme.spacing.md,
+      backgroundColor: colors.background,
+      borderTopWidth: 1,
+      borderTopColor: colors.border,
+      gap: theme.spacing.sm,
+    },
     title: { fontSize: 28, fontWeight: '700', color: colors.text },
     pressed: { backgroundColor: colors.pressed },
   });

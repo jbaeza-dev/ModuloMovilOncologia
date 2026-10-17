@@ -43,7 +43,7 @@ export function LoginScreen() {
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   return (
-    <Screen backTo="/">
+    <Screen>
       <AccessIntro subtitle="Acompañamiento durante tu quimioterapia." />
       <DemoBadge />
       <InfoCard>
@@ -99,7 +99,7 @@ export function LoginScreen() {
 export function RegisterScreen() {
   const [values, setValues] = useState({ name: '', surname: '', email: '', password: '' });
   return (
-    <Screen title="Crear cuenta" backTo="/acceso">
+    <Screen title="Crear cuenta">
       <DemoBadge />
       <InfoCard>
         <SectionTitle>Registro de usuarios</SectionTitle>
@@ -244,7 +244,7 @@ export function AccessConsentScreen() {
   }
 
   return (
-    <Screen title="Consentimientos" backTo="/acceso/registro">
+    <Screen title="Consentimientos">
       <DemoBadge />
       <BodyText>
         Revisión y gestión de consentimientos informados y términos versionados de QuimioCare. El
@@ -370,7 +370,7 @@ export function AccessConsentScreen() {
 export function RecoverScreen() {
   const [email, setEmail] = useState('');
   return (
-    <Screen title="Olvidé mi contraseña" backTo="/acceso">
+    <Screen title="Olvidé mi contraseña">
       <DemoBadge />
       <ProgressBar progress={33} />
       <BodyText>Paso 1 de 3 · Ingresa tu correo</BodyText>
@@ -399,7 +399,7 @@ export function RecoverScreen() {
 
 export function MailSentScreen() {
   return (
-    <Screen title="Revisa tu correo" backTo="/acceso/recuperar">
+    <Screen title="Revisa tu correo">
       <DemoBadge />
       <ProgressBar progress={66} />
       <BodyText>Paso 2 de 3 · Vista de ejemplo</BodyText>
@@ -423,7 +423,7 @@ export function NewPasswordScreen() {
   const [password, setPassword] = useState('');
   const [confirmation, setConfirmation] = useState('');
   return (
-    <Screen title="Nueva contraseña" backTo="/acceso/correo">
+    <Screen title="Nueva contraseña">
       <DemoBadge />
       <ProgressBar progress={100} />
       <BodyText>Paso 3 de 3 · Vista de ejemplo</BodyText>

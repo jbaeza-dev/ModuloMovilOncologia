@@ -78,7 +78,7 @@ export function MedicalFormsHubScreen() {
   );
 
   return (
-    <Screen title="Cuestionarios médicos">
+    <Screen isRoot title="Cuestionarios médicos">
       <DemoBadge />
       <BodyText>
         Muestras de evaluaciones estructuradas para el seguimiento continuo de tu bienestar.
@@ -296,7 +296,7 @@ export function MedicalFormDetailScreen() {
   if (!formStorageReady) {
     if (formImportStatus === 'error') {
       return (
-        <Screen title="Error de almacenamiento" backTo="/formulario">
+        <Screen title="Error de almacenamiento">
           <DemoBadge />
           <InfoCard>
             <EmptyState
@@ -312,7 +312,7 @@ export function MedicalFormDetailScreen() {
       );
     }
     return (
-      <Screen title="Cargando cuestionario…" backTo="/formulario">
+      <Screen title="Cargando cuestionario…">
         <DemoBadge />
         <InfoCard>
           <StatusPill>Preparando evaluación…</StatusPill>
@@ -324,7 +324,7 @@ export function MedicalFormDetailScreen() {
 
   if (loadingDetail) {
     return (
-      <Screen title="Cargando cuestionario…" backTo="/formulario">
+      <Screen title="Cargando cuestionario…">
         <DemoBadge />
         <InfoCard>
           <StatusPill>Recuperando cuestionario…</StatusPill>
@@ -336,7 +336,7 @@ export function MedicalFormDetailScreen() {
 
   if (detailError) {
     return (
-      <Screen title="Error de carga" backTo="/formulario">
+      <Screen title="Error de carga">
         <DemoBadge />
         <InfoCard>
           <EmptyState
@@ -354,7 +354,7 @@ export function MedicalFormDetailScreen() {
 
   if (!formDef) {
     return (
-      <Screen title="Cuestionario no encontrado" backTo="/formulario">
+      <Screen title="Cuestionario no encontrado">
         <DemoBadge />
         <EmptyState
           icon="alert-circle"
@@ -510,7 +510,7 @@ export function MedicalFormDetailScreen() {
   // Vista de Revisión y Confirmación
   if (isReviewing) {
     return (
-      <Screen title={`Revisión: ${formDef.titulo}`} backTo="/formulario">
+      <Screen title={`Revisión: ${formDef.titulo}`}>
         <DemoBadge />
         <InfoCard>
           <StatusPill>
@@ -595,7 +595,7 @@ export function MedicalFormDetailScreen() {
   }
 
   return (
-    <Screen title={formDef.titulo} backTo="/formulario">
+    <Screen title={formDef.titulo}>
       <DemoBadge />
       <BodyText>{formDef.descripcion}</BodyText>
 
@@ -724,7 +724,7 @@ export function MedicalFormSubmissionsScreen() {
   }
 
   return (
-    <Screen title="Historial de evaluaciones" backTo="/formulario">
+    <Screen title="Historial de evaluaciones">
       <DemoBadge />
       <BodyText>
         Registro de evaluaciones médicas confirmadas localmente en este dispositivo.
@@ -837,7 +837,7 @@ export function MedicalFormSubmissionDetailScreen() {
 
   if (loading) {
     return (
-      <Screen title="Detalle de evaluación" backTo="/formulario/historial">
+      <Screen title="Detalle de evaluación">
         <DemoBadge />
         <InfoCard>
           <BodyText>Cargando respuestas registradas…</BodyText>
@@ -848,7 +848,7 @@ export function MedicalFormSubmissionDetailScreen() {
 
   if (!submission || !formDef) {
     return (
-      <Screen title="Evaluación no encontrada" backTo="/formulario/historial">
+      <Screen title="Evaluación no encontrada">
         <DemoBadge />
         <EmptyState
           icon="alert-circle"
@@ -862,7 +862,7 @@ export function MedicalFormSubmissionDetailScreen() {
   const medicalForm = toMedicalFormDefinition(formDef);
 
   return (
-    <Screen title={`Entrega: ${submission.titulo}`} backTo="/formulario/historial">
+    <Screen title={`Entrega: ${submission.titulo}`}>
       <DemoBadge />
       <InfoCard>
         <StatusPill>Guardado en este dispositivo · Pendiente de envío</StatusPill>

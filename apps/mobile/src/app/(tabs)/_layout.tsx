@@ -1,11 +1,46 @@
 import Feather from '@expo/vector-icons/Feather';
 import { Tabs } from 'expo-router';
+import { StackActions } from 'expo-router/react-navigation';
 import { StyleSheet, Text, useWindowDimensions } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
+import { requestHomeScrollToTop } from '../../features/home/home-scroll-signal';
 import { useAppTheme } from '../../providers/ThemeProvider';
 
 export const unstable_settings = { initialRouteName: '(inicio)' };
+
+export type TabNavigatorLikeState = {
+  routes?: Array<{
+    name: string;
+    state?: {
+      key?: string;
+      index?: number;
+      routes?: unknown[];
+    };
+  }>;
+};
+
+export function handleHomeTabPress(navigation: {
+  getState: () => TabNavigatorLikeState | undefined;
+  dispatch: (action: unknown) => void;
+}): void {
+  const tabState = navigation.getState();
+  const homeTabRoute = tabState?.routes?.find((r) => r.name === '(inicio)');
+  const homeStackState = homeTabRoute?.state;
+  const homeStackKey = homeStackState?.key;
+  const hasSecondaryScreens =
+    Boolean(homeStackKey) &&
+    ((typeof homeStackState?.index === 'number' && homeStackState.index > 0) ||
+      (Array.isArray(homeStackState?.routes) && homeStackState.routes.length > 1));
+
+  if (hasSecondaryScreens && homeStackKey) {
+    navigation.dispatch({
+      ...StackActions.popToTop(),
+      target: homeStackKey,
+    });
+  }
+  requestHomeScrollToTop();
+}
 
 export default function TabsLayout() {
   const { theme: appTheme } = useAppTheme();
@@ -58,11 +93,16 @@ export default function TabsLayout() {
           title: 'Inicio',
           tabBarIcon: ({ color }) => <Feather name="home" size={24} color={color} />,
         }}
+        listeners={({ navigation }) => ({
+          tabPress: () => {
+            handleHomeTabPress(navigation);
+          },
+        })}
       />
       <Tabs.Screen
         name="vitales"
         options={{
-          title: 'Vitales',
+          title: 'Mediciones',
           tabBarIcon: ({ color }) => <Feather name="activity" size={24} color={color} />,
         }}
       />

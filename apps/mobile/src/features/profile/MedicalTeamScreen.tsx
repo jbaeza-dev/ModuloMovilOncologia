@@ -30,7 +30,7 @@ export function MedicalTeamScreen() {
   } = useFocusedValue(load, [] as AssignedProfessional[]);
 
   return (
-    <Screen title="Equipo tratante" backTo="/perfil">
+    <Screen title="Equipo tratante">
       <DemoBadge />
       <BodyText>
         Profesionales de salud vinculados a tu atención oncológica disponibles para consulta sin
@@ -60,15 +60,13 @@ export function MedicalTeamScreen() {
             {prof.email ? <DetailRow label="Correo" value={prof.email} /> : null}
             <DetailRow label="Vinculado desde" value={formatDate(prof.fecha_vinculacion)} />
             <StatusPill>
-              Equipo tratante activo · Obtenido el {formatDate(prof.obtenido_en)}
+              Equipo tratante activo · Información recibida el {formatDate(prof.obtenido_en)}
             </StatusPill>
           </InfoCard>
         ))
       )}
 
-      <BodyText>
-        Información en caché guardada en este dispositivo para consulta sin conexión.
-      </BodyText>
+      <BodyText>Información guardada en este dispositivo para consulta sin conexión.</BodyText>
     </Screen>
   );
 }

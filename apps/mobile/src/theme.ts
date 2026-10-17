@@ -1,6 +1,17 @@
+export const typography = {
+  screenTitle: { fontSize: 28, lineHeight: 34, fontWeight: '700' as const },
+  sectionTitle: { fontSize: 20, lineHeight: 26, fontWeight: '700' as const },
+  body: { fontSize: 16, lineHeight: 24 },
+  label: { fontSize: 16, lineHeight: 22, fontWeight: '600' as const },
+  editableValue: { fontSize: 18, lineHeight: 24 },
+  button: { fontSize: 16, lineHeight: 22, fontWeight: '700' as const },
+  helper: { fontSize: 14, lineHeight: 20 },
+} as const;
+
 export const theme = {
   spacing: { xs: 4, sm: 8, md: 16, lg: 24, xl: 32 },
   radius: { sm: 12, md: 18 },
+  typography,
 } as const;
 
 export const PALETTE_OPTIONS = [
@@ -57,6 +68,8 @@ export type AppTheme = typeof theme & {
     surface: string;
     mutedSurface: string;
     border: string;
+    inputBorder: string;
+    inputBorderFocused: string;
     text: string;
     secondary: string;
     inverse: string;
@@ -67,7 +80,12 @@ export type AppTheme = typeof theme & {
     onPrimaryContainer: string;
     success: string;
     warning: string;
+    warningContainer: string;
+    onWarningContainer: string;
     error: string;
+    onError: string;
+    errorContainer: string;
+    onErrorContainer: string;
   };
 };
 
@@ -88,6 +106,8 @@ export function resolveTheme(paletteId: PaletteId, colorScheme: ColorScheme): Ap
       surface: isDark ? '#1E1E1E' : '#F3F3F3',
       mutedSurface: isDark ? '#2A2A2A' : '#E8E8E8',
       border: isDark ? '#484848' : '#D6D6D6',
+      inputBorder: isDark ? '#757575' : '#767676',
+      inputBorderFocused: isDark ? palette.dark : palette.light,
       text: isDark ? '#F5F5F5' : '#202020',
       secondary: isDark ? '#C2C2C2' : '#595959',
       inverse: isDark ? '#121212' : '#FFFFFF',
@@ -98,7 +118,12 @@ export function resolveTheme(paletteId: PaletteId, colorScheme: ColorScheme): Ap
       onPrimaryContainer: isDark ? palette.onDarkContainer : palette.onLightContainer,
       success: isDark ? '#81C784' : '#2E7D32',
       warning: isDark ? '#FFCC80' : '#8D5700',
+      warningContainer: isDark ? '#3A2D1F' : '#FEF3C7',
+      onWarningContainer: isDark ? '#FFE2B8' : '#5A3600',
       error: isDark ? '#EF9A9A' : '#B3261E',
+      onError: isDark ? '#202020' : '#FFFFFF',
+      errorContainer: isDark ? '#3E1C1A' : '#FDE8E8',
+      onErrorContainer: isDark ? '#FFCDD2' : '#8A1C14',
     },
   };
 }

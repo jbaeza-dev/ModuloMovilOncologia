@@ -151,7 +151,7 @@ export function RegisterVitalsScreen() {
     saturation: '',
   });
   return (
-    <Screen title="Registrar signos vitales" backTo="/vitales">
+    <Screen title="Registrar signos vitales">
       <DemoBadge />
       <BodyText>
         Los campos permiten revisar el diseño. Ninguna medición se guarda ni se evalúa.
@@ -197,7 +197,7 @@ export function VitalDetailScreen() {
   const { id } = useLocalSearchParams<{ id?: string }>();
   const record = vitalRecords.find((item) => item.id === id) ?? vitalRecords[0];
   return (
-    <Screen title="Detalle del registro" backTo="/vitales">
+    <Screen title="Detalle del registro">
       <DemoBadge />
       <InfoCard>
         <SectionTitle>{record.date}</SectionTitle>
@@ -247,7 +247,7 @@ export function VitalResultScreen({ kind }: { kind: ResultKind }) {
   const styles = useStyles();
   const copy = resultCopy[kind];
   return (
-    <Screen backTo="/vitales">
+    <Screen>
       <DemoBadge />
       <View style={styles.result}>
         <Feather name={copy.icon} size={64} color={appTheme.colors.primary} />

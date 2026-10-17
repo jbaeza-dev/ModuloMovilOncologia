@@ -89,12 +89,12 @@ const groups: { title: string; links: { label: string; href: Href }[] }[] = [
 export function GalleryScreen() {
   if (!__DEV__)
     return (
-      <Screen title="Galería" backTo="/">
+      <Screen title="Galería">
         <BodyText>Disponible durante desarrollo.</BodyText>
       </Screen>
     );
   return (
-    <Screen title="Galería de revisión" backTo="/">
+    <Screen title="Galería de revisión">
       <DemoBadge />
       <BodyText>
         Abre cada pantalla para revisar diseño y estados. Los datos y resultados son ficticios.

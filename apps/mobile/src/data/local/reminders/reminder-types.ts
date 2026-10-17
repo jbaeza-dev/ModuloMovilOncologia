@@ -116,6 +116,41 @@ export interface SaveReminderInput {
   habilitado?: boolean;
 }
 
+export type ReminderActivationIntent =
+  | 'save_and_activate'
+  | 'save_and_resume_all'
+  | 'save_disabled'
+  | 'keep_existing';
+
+export interface SaveRuleWithActivationResult {
+  rule: ReminderRule;
+  preferencesEnabled: boolean;
+  resumedGeneralPreference: boolean;
+  pausedByGeneralPreference: boolean;
+  otherEnabledRulesCount: number;
+}
+
+export interface SnapshotMedicationItem {
+  id: string;
+  nombre: string;
+  fechaInicio: string | null;
+  fechaFin: string | null;
+  estadoActivo: boolean;
+}
+
+export interface ReminderStatusSnapshot {
+  patientId: string;
+  nowIso: string;
+  preferences: {
+    enabled: boolean;
+    updatedAt: string | null;
+  };
+  rules: ReminderRule[];
+  futureNotifications: NotificationItem[];
+  medications: SnapshotMedicationItem[];
+  allEnabledRulesCount: number;
+}
+
 export const ALLOWED_NOTIFICATION_DESTINATIONS = new Set<string>([
   '/vitales/registrar',
   '/perfil/medicacion',

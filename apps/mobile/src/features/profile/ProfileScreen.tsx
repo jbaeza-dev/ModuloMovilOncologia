@@ -2,6 +2,7 @@ import Feather from '@expo/vector-icons/Feather';
 import { useCallback, useState } from 'react';
 import { Pressable, StyleSheet, Text, View } from 'react-native';
 
+import { ConfirmLogoutButton } from '../../components/ConfirmLogoutButton';
 import { NavigationCard } from '../../components/NavigationCard';
 import { Screen } from '../../components/Screen';
 import {
@@ -43,7 +44,7 @@ export function ProfileScreen() {
   } = useFocusedValue(load, null as PatientProfileRecord | null);
 
   return (
-    <Screen title="Mi perfil" backTo="/">
+    <Screen title="Mi perfil">
       <DemoBadge />
       {loading ? (
         <InfoCard>
@@ -67,48 +68,29 @@ export function ProfileScreen() {
           <StatusPill>Disponible sin conexión</StatusPill>
         </InfoCard>
       )}
-      <NavigationCard
-        title="Datos personales"
-        description="Información y antecedentes del paciente."
-        icon="user"
-        href="/perfil/datos"
-      />
-      <NavigationCard
-        title="Perfil clínico"
-        description="Información de quimioterapia y ficha."
-        icon="file-text"
-        href="/perfil/clinico"
-      />
-      <NavigationCard
-        title="Medicación activa"
-        description="Fármacos y dosis en curso."
-        icon="activity"
-        href="/perfil/medicacion"
-      />
-      <NavigationCard
-        title="Equipo tratante"
-        description="Profesionales de salud vinculados."
-        icon="users"
-        href="/perfil/equipo"
-      />
+      <SectionTitle>Mi tratamiento</SectionTitle>
+      <NavigationCard title="Mi tratamiento" icon="file-text" href="/perfil/clinico" compact />
+      <NavigationCard title="Mis medicamentos" icon="activity" href="/perfil/medicacion" compact />
+      <NavigationCard title="Mi equipo de salud" icon="users" href="/perfil/equipo" compact />
+
+      <SectionTitle>Mis datos</SectionTitle>
+      <NavigationCard title="Datos personales" icon="user" href="/perfil/datos" compact />
       <NavigationCard
         title="Código de vinculación"
-        description="Código para compartir con tu equipo de salud."
         icon="link"
         href="/perfil/vinculacion"
+        compact
       />
+
+      <SectionTitle>Configuración y privacidad</SectionTitle>
+      <NavigationCard title="Preferencias" icon="settings" href="/perfil/preferencias" compact />
       <NavigationCard
         title="Consentimientos"
-        description="Gestión y trazabilidad de términos."
         icon="check-square"
         href="/perfil/consentimientos"
+        compact
       />
-      <NavigationCard
-        title="Preferencias"
-        description="Presentación de avisos y apariencia."
-        icon="settings"
-        href="/perfil/preferencias"
-      />
+      <ConfirmLogoutButton />
     </Screen>
   );
 }
@@ -127,7 +109,7 @@ export function PersonalDataScreen() {
   } = useFocusedValue(load, null as PatientProfileRecord | null);
 
   return (
-    <Screen title="Datos personales" backTo="/perfil">
+    <Screen title="Datos personales">
       <DemoBadge />
       {loading ? (
         <InfoCard>
@@ -204,7 +186,7 @@ export function ClinicalProfileScreen() {
   }
 
   return (
-    <Screen title="Perfil clínico" backTo="/perfil">
+    <Screen title="Perfil clínico">
       <DemoBadge />
       {loading ? (
         <InfoCard>
@@ -228,7 +210,8 @@ export function ClinicalProfileScreen() {
               <SectionTitle>Ficha clínica</SectionTitle>
               <DetailRow label="Identificador" value={clinicalFile.ficha_id} />
               <StatusPill>
-                Ficha identificada · Información en caché ({formatDate(clinicalFile.obtenido_en)})
+                Ficha identificada · Información guardada en este dispositivo · Información recibida
+                el {formatDate(clinicalFile.obtenido_en)}
               </StatusPill>
             </InfoCard>
           ) : null}
@@ -305,7 +288,7 @@ export function LinkCodeScreen() {
   const isValid = Boolean(linkCode && !isExpired && isPending);
 
   return (
-    <Screen title="Código de vinculación" backTo="/perfil">
+    <Screen title="Código de vinculación">
       <DemoBadge />
       <BodyText>
         Comparte este código con tu equipo de salud para vincular tu seguimiento clínico.
@@ -360,6 +343,7 @@ export function PreferencesScreen() {
     coordinator,
     patientId,
     reconcileReminders,
+    bumpRemindersRevision,
     trackOperation,
     closeActiveContext,
     isClosing,
@@ -383,6 +367,7 @@ export function PreferencesScreen() {
     const nextVal = !prefs.enabled;
     await trackOperation(async () => {
       await repository.reminders.setPreferences(nextVal);
+      bumpRemindersRevision?.();
       if (patientId) {
         if (reconcileReminders) {
           await reconcileReminders(patientId);
@@ -395,7 +380,7 @@ export function PreferencesScreen() {
   };
 
   return (
-    <Screen title="Preferencias" backTo="/perfil">
+    <Screen title="Preferencias">
       <DemoBadge />
       <InfoCard>
         <SectionTitle>Accesibilidad y apariencia</SectionTitle>
@@ -440,7 +425,7 @@ export function PreferencesScreen() {
           onPress={toggleNotices}
           style={styles.disclosure}
         >
-          <Text style={styles.heading}>Habilitar avisos locales</Text>
+          <Text style={styles.heading}>Habilitar avisos</Text>
           <Feather
             name={prefs.enabled ? 'toggle-right' : 'toggle-left'}
             size={28}
@@ -450,7 +435,7 @@ export function PreferencesScreen() {
         <BodyText>
           {prefs.enabled
             ? 'Los avisos locales están autorizados en este dispositivo para el paciente activo.'
-            : 'Los avisos locales están desactivados. No se emitirán alertas nativas.'}
+            : 'Todos tus avisos están pausados. Tus horarios guardados se conservan.'}
         </BodyText>
       </InfoCard>
       <NavigationCard
@@ -480,12 +465,7 @@ export function PreferencesScreen() {
             onPress={() => void closeActiveContext('change_patient')}
           />
         ) : null}
-        <VisualButton
-          label={isClosing ? 'Cerrando sesión…' : 'Cerrar contexto activo'}
-          secondary
-          disabled={isClosing}
-          onPress={() => void closeActiveContext('manual_close')}
-        />
+        <ConfirmLogoutButton />
       </InfoCard>
     </Screen>
   );

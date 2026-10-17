@@ -6,10 +6,13 @@ import {
   type NotificationJobPayload,
   type NotificationJobState,
   type NotificationRecord,
+  type ReminderActivationIntent,
   type ReminderRule,
   type ReminderRuleRecord,
+  type ReminderStatusSnapshot,
   type ReminderType,
   type SaveReminderInput,
+  type SaveRuleWithActivationResult,
 } from './reminder-types';
 
 export type Clock = () => string;
@@ -126,34 +129,200 @@ export function createReminderRepository(
     }
   }
 
-  return {
-    async getPreferences(): Promise<{ enabled: boolean; updatedAt: string | null }> {
-      const row = await database.first<NoticePreferencesRecord>(
-        'SELECT * FROM preferencia_avisos WHERE paciente_id = ?',
-        [patientId],
+  async function getPreferencesFromConn(
+    conn: SqlConnection,
+  ): Promise<{ enabled: boolean; updatedAt: string | null }> {
+    const row = await conn.first<NoticePreferencesRecord>(
+      'SELECT * FROM preferencia_avisos WHERE paciente_id = ?',
+      [patientId],
+    );
+    return {
+      enabled: row?.habilitado === 1,
+      updatedAt: row?.actualizado_el ?? null,
+    };
+  }
+
+  async function setPreferencesInConn(
+    conn: SqlConnection,
+    enabled: boolean,
+    timestamp: string,
+  ): Promise<void> {
+    await conn.run(
+      `INSERT INTO preferencia_avisos (paciente_id, habilitado, actualizado_el)
+       VALUES (?, ?, ?)
+       ON CONFLICT(paciente_id) DO UPDATE SET
+         habilitado = excluded.habilitado,
+         actualizado_el = excluded.actualizado_el`,
+      [patientId, enabled ? 1 : 0, timestamp],
+    );
+  }
+
+  async function saveRuleInConn(
+    conn: SqlConnection,
+    input: SaveReminderInput,
+    timestamp: string,
+  ): Promise<ReminderRule> {
+    const diasSorted = [...input.diasSemana].sort((a, b) => a - b);
+    const horasSorted = [...input.horasMinutos].sort();
+    const diasJson = JSON.stringify(diasSorted);
+    const horasJson = JSON.stringify(horasSorted);
+    const tz =
+      input.zonaHoraria || Intl.DateTimeFormat().resolvedOptions().timeZone || 'America/Santiago';
+    const habilitadoVal = input.habilitado ? 1 : 0;
+
+    if (input.id) {
+      const existing = await conn.first<ReminderRuleRecord>(
+        'SELECT * FROM recordatorio_local WHERE paciente_id = ? AND id = ?',
+        [patientId, input.id],
+      );
+      if (!existing) {
+        throw new Error(`No se encontró el recordatorio con ID ${input.id}`);
+      }
+      const nextRevision = existing.revision + 1;
+      await conn.run(
+        `UPDATE recordatorio_local
+         SET tipo = ?, medicamento_id = ?, dias_semana = ?, horas_minutos = ?, zona_horaria = ?,
+             fecha_inicio = ?, fecha_fin = ?, habilitado = ?, revision = ?, eliminado_el = NULL, actualizado_el = ?
+         WHERE paciente_id = ? AND id = ?`,
+        [
+          input.tipo,
+          input.medicamentoId ?? null,
+          diasJson,
+          horasJson,
+          tz,
+          input.fechaInicio ?? null,
+          input.fechaFin ?? null,
+          habilitadoVal,
+          nextRevision,
+          timestamp,
+          patientId,
+          input.id,
+        ],
       );
       return {
-        enabled: row?.habilitado === 1,
-        updatedAt: row?.actualizado_el ?? null,
+        id: input.id,
+        pacienteId: patientId,
+        tipo: input.tipo,
+        medicamentoId: input.medicamentoId ?? null,
+        diasSemana: diasSorted,
+        horasMinutos: horasSorted,
+        zonaHoraria: tz,
+        fechaInicio: input.fechaInicio ?? null,
+        fechaFin: input.fechaFin ?? null,
+        habilitado: input.habilitado ?? false,
+        revision: nextRevision,
+        eliminadoEl: null,
+        creadoEl: existing.creado_el,
+        actualizadoEl: timestamp,
       };
+    }
+
+    const id = newId();
+    await conn.run(
+      `INSERT INTO recordatorio_local (
+         id, paciente_id, tipo, medicamento_id, dias_semana, horas_minutos, zona_horaria,
+         fecha_inicio, fecha_fin, habilitado, revision, eliminado_el, creado_el, actualizado_el
+       ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 1, NULL, ?, ?)`,
+      [
+        id,
+        patientId,
+        input.tipo,
+        input.medicamentoId ?? null,
+        diasJson,
+        horasJson,
+        tz,
+        input.fechaInicio ?? null,
+        input.fechaFin ?? null,
+        habilitadoVal,
+        timestamp,
+        timestamp,
+      ],
+    );
+    return {
+      id,
+      pacienteId: patientId,
+      tipo: input.tipo,
+      medicamentoId: input.medicamentoId ?? null,
+      diasSemana: diasSorted,
+      horasMinutos: horasSorted,
+      zonaHoraria: tz,
+      fechaInicio: input.fechaInicio ?? null,
+      fechaFin: input.fechaFin ?? null,
+      habilitado: input.habilitado ?? false,
+      revision: 1,
+      eliminadoEl: null,
+      creadoEl: timestamp,
+      actualizadoEl: timestamp,
+    };
+  }
+
+  return {
+    async getPreferences(): Promise<{ enabled: boolean; updatedAt: string | null }> {
+      return getPreferencesFromConn(database);
     },
 
     async setPreferences(enabled: boolean): Promise<void> {
       const timestamp = now();
-      await database.run(
-        `INSERT INTO preferencia_avisos (paciente_id, habilitado, actualizado_el)
-         VALUES (?, ?, ?)
-         ON CONFLICT(paciente_id) DO UPDATE SET
-           habilitado = excluded.habilitado,
-           actualizado_el = excluded.actualizado_el`,
-        [patientId, enabled ? 1 : 0, timestamp],
-      );
+      await setPreferencesInConn(database, enabled, timestamp);
+    },
+
+    async getReminderStatusSnapshot(nowIso?: string): Promise<ReminderStatusSnapshot> {
+      const effectiveNowIso = nowIso ?? now();
+      let snapshot: ReminderStatusSnapshot | null = null;
+
+      await database.transaction(async (tx) => {
+        const preferences = await getPreferencesFromConn(tx);
+        const ruleRows = await tx.all<ReminderRuleRecord>(
+          'SELECT * FROM recordatorio_local WHERE paciente_id = ? AND eliminado_el IS NULL ORDER BY creado_el ASC, id ASC',
+          [patientId],
+        );
+        const notifRows = await tx.all<NotificationRecord>(
+          'SELECT * FROM notificacion_local WHERE paciente_id = ? AND fecha_prevista_utc > ? ORDER BY fecha_prevista_utc ASC, id ASC',
+          [patientId, effectiveNowIso],
+        );
+        const medRows = await tx.all<{
+          id: string;
+          nombre: string;
+          fecha_inicio: string | null;
+          fecha_fin: string | null;
+          estado_activo: number;
+        }>(
+          'SELECT id, nombre, fecha_inicio, fecha_fin, estado_activo FROM medicamento_activo_cache WHERE paciente_id = ? ORDER BY id ASC',
+          [patientId],
+        );
+
+        const rules = ruleRows.map(mapRule);
+        const futureNotifications = notifRows.map(mapNotification);
+        const medications = medRows.map((m) => ({
+          id: m.id,
+          nombre: m.nombre,
+          fechaInicio: m.fecha_inicio,
+          fechaFin: m.fecha_fin,
+          estadoActivo: m.estado_activo === 1,
+        }));
+        const allEnabledRulesCount = rules.filter((r) => r.habilitado).length;
+
+        snapshot = {
+          patientId,
+          nowIso: effectiveNowIso,
+          preferences,
+          rules,
+          futureNotifications,
+          medications,
+          allEnabledRulesCount,
+        };
+      });
+
+      if (!snapshot) {
+        throw new Error('No se pudo obtener la instantánea de recordatorios.');
+      }
+      return snapshot;
     },
 
     async listRules(includeDeleted = false): Promise<ReminderRule[]> {
       const sql = includeDeleted
-        ? 'SELECT * FROM recordatorio_local WHERE paciente_id = ? ORDER BY creado_el ASC'
-        : 'SELECT * FROM recordatorio_local WHERE paciente_id = ? AND eliminado_el IS NULL ORDER BY creado_el ASC';
+        ? 'SELECT * FROM recordatorio_local WHERE paciente_id = ? ORDER BY creado_el ASC, id ASC'
+        : 'SELECT * FROM recordatorio_local WHERE paciente_id = ? AND eliminado_el IS NULL ORDER BY creado_el ASC, id ASC';
       const rows = await database.all<ReminderRuleRecord>(sql, [patientId]);
       return rows.map(mapRule);
     },
@@ -166,99 +335,81 @@ export function createReminderRepository(
       return row ? mapRule(row) : null;
     },
 
-    async saveRule(input: SaveReminderInput): Promise<ReminderRule> {
+    async saveRuleWithActivationIntent(
+      input: SaveReminderInput,
+      intent: ReminderActivationIntent = 'keep_existing',
+    ): Promise<SaveRuleWithActivationResult> {
       validateInput(input);
-      const timestamp = now();
-      const diasJson = JSON.stringify([...input.diasSemana].sort((a, b) => a - b));
-      const horasJson = JSON.stringify([...input.horasMinutos].sort());
-      const tz =
-        input.zonaHoraria || Intl.DateTimeFormat().resolvedOptions().timeZone || 'America/Santiago';
-      const habilitadoVal = input.habilitado ? 1 : 0;
+      const effectiveHabilitado =
+        intent === 'save_and_activate' || intent === 'save_and_resume_all'
+          ? true
+          : intent === 'save_disabled'
+            ? false
+            : (input.habilitado ?? false);
 
-      if (input.id) {
-        const existing = await database.first<ReminderRuleRecord>(
-          'SELECT * FROM recordatorio_local WHERE paciente_id = ? AND id = ?',
-          [patientId, input.id],
+      let result: SaveRuleWithActivationResult | null = null;
+
+      await database.transaction(async (tx) => {
+        const timestamp = now();
+        const currentPrefs = await getPreferencesFromConn(tx);
+        const otherEnabledRow = input.id
+          ? await tx.first<{ total: number }>(
+              'SELECT count(*) AS total FROM recordatorio_local WHERE paciente_id = ? AND eliminado_el IS NULL AND habilitado = 1 AND id != ?',
+              [patientId, input.id],
+            )
+          : await tx.first<{ total: number }>(
+              'SELECT count(*) AS total FROM recordatorio_local WHERE paciente_id = ? AND eliminado_el IS NULL AND habilitado = 1',
+              [patientId],
+            );
+        const otherEnabledRulesCount = otherEnabledRow?.total ?? 0;
+
+        const savedRule = await saveRuleInConn(
+          tx,
+          { ...input, habilitado: effectiveHabilitado },
+          timestamp,
         );
-        if (!existing) {
-          throw new Error(`No se encontró el recordatorio con ID ${input.id}`);
+
+        let preferencesEnabled = currentPrefs.enabled;
+        let resumedGeneralPreference = false;
+        let pausedByGeneralPreference = false;
+
+        if (intent === 'save_and_activate') {
+          if (currentPrefs.enabled) {
+            preferencesEnabled = true;
+          } else if (otherEnabledRulesCount === 0) {
+            await setPreferencesInConn(tx, true, timestamp);
+            preferencesEnabled = true;
+            resumedGeneralPreference = true;
+          } else {
+            preferencesEnabled = false;
+            pausedByGeneralPreference = true;
+          }
+        } else if (intent === 'save_and_resume_all') {
+          await setPreferencesInConn(tx, true, timestamp);
+          preferencesEnabled = true;
+          resumedGeneralPreference = !currentPrefs.enabled;
+        } else {
+          pausedByGeneralPreference = Boolean(savedRule.habilitado && !currentPrefs.enabled);
         }
-        const nextRevision = existing.revision + 1;
-        await database.run(
-          `UPDATE recordatorio_local
-           SET tipo = ?, medicamento_id = ?, dias_semana = ?, horas_minutos = ?, zona_horaria = ?,
-               fecha_inicio = ?, fecha_fin = ?, habilitado = ?, revision = ?, eliminado_el = NULL, actualizado_el = ?
-           WHERE paciente_id = ? AND id = ?`,
-          [
-            input.tipo,
-            input.medicamentoId ?? null,
-            diasJson,
-            horasJson,
-            tz,
-            input.fechaInicio ?? null,
-            input.fechaFin ?? null,
-            habilitadoVal,
-            nextRevision,
-            timestamp,
-            patientId,
-            input.id,
-          ],
-        );
-        return {
-          id: input.id,
-          pacienteId: patientId,
-          tipo: input.tipo,
-          medicamentoId: input.medicamentoId ?? null,
-          diasSemana: JSON.parse(diasJson),
-          horasMinutos: JSON.parse(horasJson),
-          zonaHoraria: tz,
-          fechaInicio: input.fechaInicio ?? null,
-          fechaFin: input.fechaFin ?? null,
-          habilitado: input.habilitado ?? false,
-          revision: nextRevision,
-          eliminadoEl: null,
-          creadoEl: existing.creado_el,
-          actualizadoEl: timestamp,
-        };
-      }
 
-      const id = newId();
-      await database.run(
-        `INSERT INTO recordatorio_local (
-           id, paciente_id, tipo, medicamento_id, dias_semana, horas_minutos, zona_horaria,
-           fecha_inicio, fecha_fin, habilitado, revision, eliminado_el, creado_el, actualizado_el
-         ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 1, NULL, ?, ?)`,
-        [
-          id,
-          patientId,
-          input.tipo,
-          input.medicamentoId ?? null,
-          diasJson,
-          horasJson,
-          tz,
-          input.fechaInicio ?? null,
-          input.fechaFin ?? null,
-          habilitadoVal,
-          timestamp,
-          timestamp,
-        ],
-      );
-      return {
-        id,
-        pacienteId: patientId,
-        tipo: input.tipo,
-        medicamentoId: input.medicamentoId ?? null,
-        diasSemana: JSON.parse(diasJson),
-        horasMinutos: JSON.parse(horasJson),
-        zonaHoraria: tz,
-        fechaInicio: input.fechaInicio ?? null,
-        fechaFin: input.fechaFin ?? null,
-        habilitado: input.habilitado ?? false,
-        revision: 1,
-        eliminadoEl: null,
-        creadoEl: timestamp,
-        actualizadoEl: timestamp,
-      };
+        result = {
+          rule: savedRule,
+          preferencesEnabled,
+          resumedGeneralPreference,
+          pausedByGeneralPreference,
+          otherEnabledRulesCount,
+        };
+      });
+
+      if (!result) {
+        throw new Error('No se pudo guardar el recordatorio.');
+      }
+      return result;
+    },
+
+    async saveRule(input: SaveReminderInput): Promise<ReminderRule> {
+      const res = await this.saveRuleWithActivationIntent(input, 'keep_existing');
+      return res.rule;
     },
 
     async deleteRule(id: string): Promise<void> {
@@ -293,6 +444,7 @@ export function createReminderRepository(
       offset?: number;
       estado?: NotificationJobState;
       soloObservadas?: boolean;
+      orderBy?: 'fecha_prevista' | 'actividad_reciente';
     }): Promise<NotificationItem[]> {
       const limit = options?.limit ?? 50;
       const offset = options?.offset ?? 0;
@@ -306,7 +458,20 @@ export function createReminderRepository(
       if (options?.soloObservadas) {
         sql += ' AND (recibida_observada_en IS NOT NULL OR abierta_en IS NOT NULL)';
       }
-      sql += ' ORDER BY fecha_prevista_utc DESC, id DESC LIMIT ? OFFSET ?';
+
+      if (options?.orderBy === 'actividad_reciente') {
+        sql += ` ORDER BY
+          CASE
+            WHEN abierta_en IS NOT NULL AND recibida_observada_en IS NOT NULL
+              THEN (CASE WHEN abierta_en > recibida_observada_en THEN abierta_en ELSE recibida_observada_en END)
+            WHEN abierta_en IS NOT NULL THEN abierta_en
+            ELSE recibida_observada_en
+          END DESC,
+          id DESC
+          LIMIT ? OFFSET ?`;
+      } else {
+        sql += ' ORDER BY fecha_prevista_utc DESC, id DESC LIMIT ? OFFSET ?';
+      }
       params.push(limit, offset);
 
       const rows = await database.all<NotificationRecord>(sql, params);

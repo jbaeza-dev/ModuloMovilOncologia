@@ -37,8 +37,9 @@ const mockRouter = {
   canGoBack: jest.fn(() => mockRouteHistory.length > 1),
 };
 
+let mockUuidCounter = 0;
 jest.mock('expo-crypto', () => ({
-  randomUUID: jest.fn(() => '11111111-2222-4333-8444-555555555555'),
+  randomUUID: jest.fn(() => `mock-uuid-${++mockUuidCounter}`),
 }));
 
 jest.mock('expo-router', () => {
@@ -94,6 +95,11 @@ jest.mock('expo-router', () => {
     Stack: StackComponent,
   };
 });
+
+jest.mock('expo-router/react-navigation', () => ({
+  useNavigationState: (selector: (state: { index: number }) => unknown) =>
+    selector({ index: Math.max(0, mockRouteHistory.length - 1) }),
+}));
 
 // Mock expo-sqlite with in-memory DatabaseSync
 type SqlParam = null | number | bigint | string | Uint8Array;
@@ -272,6 +278,7 @@ import { LocalDataProvider, DEMO_PATIENTS, useLocalData } from '../providers/Loc
 import { FakeAssistantAdapter } from '../services/assistant/fake-assistant-adapter';
 import { UnconfiguredSessionAdapter } from '../services/session/unconfigured-session-adapter';
 import { UnconfiguredAssistantAdapter } from '../services/assistant/unconfigured-assistant-adapter';
+import type { AssistantMessage } from '../services/assistant/assistant-types';
 
 type LocalDataContext = ReturnType<typeof useLocalData>;
 
@@ -585,6 +592,154 @@ describe('Incremento 6: UI de Acceso, Navegación Raíz, Sesión y Asistente', (
       // Esperar respuesta offline
       expect(await screen.findByText('Sin conexión')).toBeTruthy();
       expect(screen.getByText('Reintentar consulta')).toBeTruthy();
+    });
+
+    it('muestra estado no configurado previo al ingreso y no permite enviar consultas', async () => {
+      let contextRef = {} as LocalDataContext;
+
+      await render(
+        <LocalDataProvider>
+          <AssistantScreen />
+          <ContextConsumer onReady={(ctx) => (contextRef = ctx)} />
+        </LocalDataProvider>,
+      );
+
+      await waitFor(() => {
+        expect(contextRef.assistantController).toBeTruthy();
+      });
+
+      // Cambiar a adaptador no configurado
+      await act(async () => {
+        contextRef.assistantController?.setAdapter(new UnconfiguredAssistantAdapter());
+      });
+
+      // Debe mostrar el estado no configurado sin permitir escribir
+      expect(await screen.findByText('Servicio no configurado')).toBeTruthy();
+      expect(
+        screen.getByText(
+          'El servicio del asistente central no está configurado en este entorno. No es posible enviar consultas en este momento.',
+        ),
+      ).toBeTruthy();
+      expect(screen.getByText('Volver')).toBeTruthy();
+      expect(screen.queryByLabelText('Escribe tu consulta')).toBeNull();
+      expect(screen.queryByText('Enviar consulta')).toBeNull();
+    });
+
+    it('identifica remitentes accesibles Tú y Asistente y alerta de límite cercano', async () => {
+      let contextRef = {} as LocalDataContext;
+
+      await render(
+        <LocalDataProvider>
+          <AssistantScreen />
+          <ContextConsumer onReady={(ctx) => (contextRef = ctx)} />
+        </LocalDataProvider>,
+      );
+
+      await waitFor(() => {
+        expect(contextRef.assistantController).toBeTruthy();
+      });
+
+      await act(async () => {
+        contextRef.assistantController?.setAdapter(
+          new FakeAssistantAdapter({
+            simulatedDelayMs: 10,
+            customReply: 'Respuesta de prueba accesible',
+          }),
+        );
+      });
+
+      const input = await screen.findByLabelText('Escribe tu consulta');
+
+      // Probar alerta de límite cercano (>1800 caracteres)
+      const nearLimitText = 'a'.repeat(1850);
+      await fireEvent.changeText(input, nearLimitText);
+      expect(await screen.findByText(/1850 \/ 2000 \(límite cercano\)/)).toBeTruthy();
+
+      // Enviar consulta corta
+      await fireEvent.changeText(input, '¿Cómo tomar mi medicamento?');
+      await fireEvent.press(screen.getByText('Enviar consulta'));
+
+      // Verificar burbuja del usuario con etiqueta accesible identificando remitente
+      expect(await screen.findByLabelText('Tú: ¿Cómo tomar mi medicamento?')).toBeTruthy();
+
+      // Esperar respuesta del asistente
+      expect(await screen.findByLabelText('Asistente: Respuesta de prueba accesible')).toBeTruthy();
+
+      // Verificar anuncio en live region con identificador único y texto preview
+      expect(
+        await screen.findByText(
+          /Nueva respuesta del asistente \(#\d+\): Respuesta de prueba accesible/,
+        ),
+      ).toBeTruthy();
+    });
+
+    it('detecta respuestas del asistente y genera anuncios vivos incluso cuando se alcanza el tope de 50 mensajes', async () => {
+      let contextRef = {} as LocalDataContext;
+
+      await render(
+        <LocalDataProvider>
+          <AssistantScreen />
+          <ContextConsumer onReady={(ctx) => (contextRef = ctx)} />
+        </LocalDataProvider>,
+      );
+
+      await waitFor(() => {
+        expect(contextRef.assistantController).toBeTruthy();
+      });
+
+      const ctrl = contextRef.assistantController!;
+      ctrl.setAdapter(
+        new FakeAssistantAdapter({
+          simulatedDelayMs: 10,
+          customReply: 'Respuesta número 51 detectada',
+        }),
+      );
+
+      // Pre-cargar 50 mensajes en el controlador
+      const preloadedMessages: AssistantMessage[] = [];
+      for (let i = 1; i <= 25; i++) {
+        preloadedMessages.push(
+          {
+            id: `user-msg-${i}`,
+            sender: 'user',
+            text: `Pregunta ${i}`,
+            timestamp: new Date().toISOString(),
+          },
+          {
+            id: `asst-msg-${i}`,
+            sender: 'assistant',
+            text: `Respuesta ${i}`,
+            timestamp: new Date().toISOString(),
+          },
+        );
+      }
+      expect(preloadedMessages).toHaveLength(50);
+      await act(async () => {
+        (ctrl as unknown as { messages: unknown[] }).messages = preloadedMessages;
+        (ctrl as unknown as { notify: () => void }).notify();
+      });
+
+      await waitFor(() => {
+        expect(screen.getByText('Pregunta 25')).toBeTruthy();
+      });
+
+      // Enviar una consulta adicional desde la interfaz
+      const input = await screen.findByLabelText('Escribe tu consulta');
+      await fireEvent.changeText(input, 'Consulta adicional en límite de 50');
+      await fireEvent.press(screen.getByText('Enviar consulta'));
+
+      // El tamaño total sigue siendo 50 debido al descarte FIFO
+      await waitFor(() => {
+        expect(ctrl.getMessages()).toHaveLength(50);
+        expect(screen.getByText('Respuesta número 51 detectada')).toBeTruthy();
+      });
+
+      // Se detectó correctamente la nueva respuesta y se anunció
+      expect(
+        await screen.findByText(
+          /Nueva respuesta del asistente \(#\d+\): Respuesta número 51 detectada/,
+        ),
+      ).toBeTruthy();
     });
   });
 

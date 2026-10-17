@@ -1,7 +1,7 @@
 import Feather from '@expo/vector-icons/Feather';
 import { router } from 'expo-router';
 import { useCallback, useState } from 'react';
-import { Pressable, StyleSheet, Text, View } from 'react-native';
+import { Linking, Pressable, StyleSheet, Text, View } from 'react-native';
 
 import { Screen } from '../../components/Screen';
 import {
@@ -16,191 +16,494 @@ import {
 } from '../../components/Visual';
 import type {
   NotificationItem,
-  NotificationJobState,
+  ReminderStatusSnapshot,
 } from '../../data/local/reminders/reminder-types';
 import { formatDate } from '../../data/local/repository';
 import { useFocusedValue } from '../../hooks/use-local-query';
 import { useLocalData } from '../../providers/LocalDataProvider';
 import { useAppTheme } from '../../providers/ThemeProvider';
+import {
+  classifyReminderStatus,
+  resolveDeviceAvailability,
+  type ReminderDeviceAvailability,
+} from '../../services/reminders/reminder-status';
 import { theme } from '../../theme';
 
-type FilterOption = 'todos' | 'programada' | 'observada' | 'cancelada';
+type TrayTab = 'proximos' | 'actividad';
+
+interface UpcomingItem {
+  id: string;
+  ruleId: string;
+  tipo: 'registro_vitales' | 'medicacion';
+  medicamentoId: string | null;
+  medicamentoNombre?: string;
+  fechaPrevistaUtc: string;
+  zonaHoraria?: string | null;
+}
 
 export function NoticesTrayScreen() {
   const { theme: appTheme } = useAppTheme();
   const styles = useStyles();
-  const { repository } = useLocalData();
+  const { repository, notificationAdapter } = useLocalData();
 
-  const [filter, setFilter] = useState<FilterOption>('todos');
+  const [activeTab, setActiveTab] = useState<TrayTab>('proximos');
   const [limit, setLimit] = useState(25);
+  const [showTechDetails, setShowTechDetails] = useState(false);
 
-  const loadNotifications = useCallback(async () => {
-    if (!repository) return [];
-    let estadoFilter: NotificationJobState | undefined;
-    if (filter === 'programada') {
-      estadoFilter = 'programada';
-    } else if (filter === 'cancelada') {
-      estadoFilter = 'cancelada';
+  // 1. Cargar Próximos usando la instantánea y el clasificador existente
+  const loadUpcoming = useCallback(async (): Promise<{
+    items: UpcomingItem[];
+    snapshot: ReminderStatusSnapshot | null;
+    deviceAvailability: ReminderDeviceAvailability;
+  }> => {
+    if (!repository?.reminders?.getReminderStatusSnapshot) {
+      return { items: [], snapshot: null, deviceAvailability: 'available' };
+    }
+    const nowIso = new Date().toISOString();
+    const snap = await repository.reminders.getReminderStatusSnapshot(nowIso);
+    if (!snap) return { items: [], snapshot: null, deviceAvailability: 'available' };
+
+    let permissionState = null;
+    if (notificationAdapter) {
+      permissionState = await notificationAdapter.getPermissionState();
+    }
+    const deviceAvailability = resolveDeviceAvailability(permissionState, null);
+
+    const activeRules = snap.rules.filter((r) => r.eliminadoEl === null && r.habilitado);
+    const upcomingList: UpcomingItem[] = [];
+
+    for (const rule of activeRules) {
+      const evalRes = classifyReminderStatus(snap, {
+        ruleId: rule.id,
+        permissionState,
+      });
+      if (evalRes.status === 'scheduled' && evalRes.fechaPrevistaUtc) {
+        const med =
+          rule.tipo === 'medicacion' && rule.medicamentoId
+            ? snap.medications.find((m) => m.id === rule.medicamentoId)
+            : undefined;
+
+        upcomingList.push({
+          id: evalRes.notificationId ?? `eval-${rule.id}`,
+          ruleId: rule.id,
+          tipo: rule.tipo,
+          medicamentoId: rule.medicamentoId,
+          medicamentoNombre: med?.nombre,
+          fechaPrevistaUtc: evalRes.fechaPrevistaUtc,
+          zonaHoraria: evalRes.zonaHoraria,
+        });
+      }
     }
 
+    upcomingList.sort(
+      (a, b) =>
+        a.fechaPrevistaUtc.localeCompare(b.fechaPrevistaUtc) || a.ruleId.localeCompare(b.ruleId),
+    );
+
+    return { items: upcomingList, snapshot: snap, deviceAvailability };
+  }, [repository, notificationAdapter]);
+
+  const {
+    value: upcomingData,
+    loading: loadingUpcoming,
+    error: errorUpcoming,
+    refresh: refreshUpcoming,
+  } = useFocusedValue(loadUpcoming, {
+    items: [] as UpcomingItem[],
+    snapshot: null as ReminderStatusSnapshot | null,
+    deviceAvailability: 'available' as ReminderDeviceAvailability,
+  });
+
+  // 2. Cargar Actividad ordenada por COALESCE(abierta_en, recibida_observada_en) DESC
+  const loadActivity = useCallback(async (): Promise<NotificationItem[]> => {
+    if (!repository?.reminders?.listNotifications) return [];
     return repository.reminders.listNotifications({
       limit,
-      estado: estadoFilter,
-      soloObservadas: filter === 'observada',
+      soloObservadas: true,
+      orderBy: 'actividad_reciente',
     });
-  }, [repository, filter, limit]);
+  }, [repository, limit]);
 
-  const { value: notifications, loading } = useFocusedValue(
-    loadNotifications,
-    [] as NotificationItem[],
-  );
+  const {
+    value: activityItems,
+    loading: loadingActivity,
+    error: errorActivity,
+    refresh: refreshActivity,
+  } = useFocusedValue(loadActivity, [] as NotificationItem[]);
 
-  const getStatusBadge = (item: NotificationItem) => {
+  // 3. Cargar avisos técnicos / cancelaciones para la sección secundaria
+  const loadCancellations = useCallback(async (): Promise<NotificationItem[]> => {
+    if (!repository?.reminders?.listNotifications || !showTechDetails) return [];
+    return repository.reminders.listNotifications({
+      limit: 25,
+      estado: 'cancelada',
+    });
+  }, [repository, showTechDetails]);
+
+  const { value: cancelledItems } = useFocusedValue(loadCancellations, [] as NotificationItem[]);
+
+  const getActivityBadge = (item: NotificationItem) => {
     if (item.abiertaEn) {
-      return <StatusPill>Abierta en la app</StatusPill>;
+      return <StatusPill>Abierta en la aplicación</StatusPill>;
     }
     if (item.recibidaObservadaEn) {
-      return <StatusPill>Recepción observada</StatusPill>;
+      return <StatusPill>La aplicación detectó este aviso</StatusPill>;
     }
-    switch (item.estado) {
-      case 'programada':
-        return <StatusPill>Programada en el sistema</StatusPill>;
-      case 'pendiente':
-        return <StatusPill>Programación pendiente</StatusPill>;
-      case 'cancelacion_pendiente':
-        return <StatusPill>Cancelación en curso</StatusPill>;
-      case 'cancelada':
-        return <StatusPill>Cancelada</StatusPill>;
-      case 'finalizada_sin_observacion':
-        return <StatusPill>Finalizada sin observación</StatusPill>;
-      case 'error':
-        return <StatusPill>Error nativo</StatusPill>;
-      default:
-        return <StatusPill>{item.estado}</StatusPill>;
-    }
+    return <StatusPill>{item.estado}</StatusPill>;
   };
 
   return (
-    <Screen title="Bandeja de avisos" backTo="/">
+    <Screen title="Bandeja de avisos">
       <DemoBadge />
 
       <InfoCard>
-        <SectionTitle>Avisos locales planificados</SectionTitle>
+        <SectionTitle>Avisos planificados y actividad</SectionTitle>
         <BodyText>
-          Esta bandeja refleja la agenda generada en este dispositivo. Una fecha futura indica
-          programación en el sistema operativo, no entrega anticipada.
+          {activeTab === 'proximos'
+            ? 'Próximo aviso de cada uno de tus horarios configurados. Una fecha futura indica programación en el dispositivo, no entrega anticipada.'
+            : 'Historial de avisos detectados o abiertos en este teléfono. Una detección no implica lectura del paciente.'}
         </BodyText>
       </InfoCard>
 
-      {/* Selector de filtros */}
+      {/* Selector de vistas principales: Próximos y Actividad (con minHeight 48) */}
       <View style={styles.filterRow} accessibilityRole="tablist">
-        {(
-          [
-            { id: 'todos', label: 'Todos' },
-            { id: 'programada', label: 'Programados' },
-            { id: 'observada', label: 'Observados' },
-            { id: 'cancelada', label: 'Cancelados' },
-          ] as const
-        ).map((tab) => {
-          const selected = filter === tab.id;
-          return (
-            <Pressable
-              key={tab.id}
-              accessibilityRole="tab"
-              accessibilityState={{ selected }}
-              accessibilityLabel={`Filtrar por ${tab.label}`}
-              onPress={() => setFilter(tab.id)}
-              style={[styles.filterPill, selected && styles.filterPillSelected]}
-            >
-              <Text style={[styles.filterText, selected && styles.filterTextSelected]}>
-                {tab.label}
-              </Text>
-            </Pressable>
-          );
-        })}
+        <Pressable
+          accessibilityRole="tab"
+          accessibilityState={{ selected: activeTab === 'proximos' }}
+          accessibilityLabel="Ver próximos avisos"
+          onPress={() => setActiveTab('proximos')}
+          style={[styles.filterPill, activeTab === 'proximos' && styles.filterPillSelected]}
+        >
+          <Text style={[styles.filterText, activeTab === 'proximos' && styles.filterTextSelected]}>
+            Próximos
+          </Text>
+        </Pressable>
+
+        <Pressable
+          accessibilityRole="tab"
+          accessibilityState={{ selected: activeTab === 'actividad' }}
+          accessibilityLabel="Ver actividad observada"
+          onPress={() => setActiveTab('actividad')}
+          style={[styles.filterPill, activeTab === 'actividad' && styles.filterPillSelected]}
+        >
+          <Text style={[styles.filterText, activeTab === 'actividad' && styles.filterTextSelected]}>
+            Actividad
+          </Text>
+        </Pressable>
       </View>
 
-      {/* Lista de avisos */}
-      {loading && notifications.length === 0 ? (
-        <InfoCard>
-          <BodyText>Cargando avisos…</BodyText>
-        </InfoCard>
-      ) : notifications.length === 0 ? (
-        <EmptyState
-          icon="bell-off"
-          title="Sin avisos en esta vista"
-          description={
-            filter === 'todos'
-              ? 'No hay avisos locales registrados para este paciente. Configura tus recordatorios desde la sección de inicio o preferencias.'
-              : 'No se encontraron avisos que coincidan con el filtro seleccionado.'
-          }
-        />
-      ) : (
-        <View style={styles.listContainer}>
-          {notifications.map((item) => {
-            const isVitales = item.tipo === 'registro_vitales';
-            return (
-              <InfoCard key={item.id}>
-                <View style={styles.cardHeader}>
-                  <View style={styles.typeBadge}>
-                    <Feather
-                      name={isVitales ? 'activity' : 'calendar'}
-                      size={16}
-                      color={appTheme.colors.primary}
+      {/* VISTA 1: PRÓXIMOS */}
+      {activeTab === 'proximos' ? (
+        <>
+          {upcomingData.snapshot && !upcomingData.snapshot.preferences.enabled ? (
+            <InfoCard>
+              <View style={styles.alertHeader}>
+                <Feather name="bell-off" size={20} color={appTheme.colors.warning} />
+                <Text style={[styles.heading, { color: appTheme.colors.warning }]}>
+                  Avisos en pausa
+                </Text>
+              </View>
+              <BodyText>
+                Tus avisos generales están en pausa. Tus horarios se conservan listos en este
+                dispositivo.
+              </BodyText>
+            </InfoCard>
+          ) : null}
+
+          {upcomingData.deviceAvailability === 'channel_blocked' ? (
+            <InfoCard>
+              <View style={styles.alertHeader}>
+                <Feather name="alert-triangle" size={20} color={appTheme.colors.error} />
+                <Text style={[styles.heading, { color: appTheme.colors.error }]}>
+                  Canal de notificaciones bloqueado
+                </Text>
+              </View>
+              <BodyText>
+                El canal de avisos de QuimioCare ha sido bloqueado en los Ajustes de Android. Para
+                recibir avisos, debes habilitar el canal de recordatorios.
+              </BodyText>
+              <VisualButton
+                label="Abrir Ajustes de Android"
+                secondary
+                onPress={() => {
+                  void Linking.openSettings();
+                }}
+              />
+            </InfoCard>
+          ) : upcomingData.deviceAvailability === 'permission_blocked' ? (
+            <InfoCard>
+              <View style={styles.alertHeader}>
+                <Feather name="alert-triangle" size={20} color={appTheme.colors.error} />
+                <Text style={[styles.heading, { color: appTheme.colors.error }]}>
+                  Permiso bloqueado
+                </Text>
+              </View>
+              <BodyText>
+                Las notificaciones están bloqueadas en los Ajustes de Android. Para recibir estos
+                avisos, debes habilitar los permisos en el sistema.
+              </BodyText>
+              <VisualButton
+                label="Abrir Ajustes de Android"
+                secondary
+                onPress={() => {
+                  void Linking.openSettings();
+                }}
+              />
+            </InfoCard>
+          ) : upcomingData.deviceAvailability === 'permission_required' ? (
+            <InfoCard>
+              <View style={styles.alertHeader}>
+                <Feather name="alert-circle" size={20} color={appTheme.colors.warning} />
+                <Text style={[styles.heading, { color: appTheme.colors.warning }]}>
+                  Permiso de notificaciones pendiente
+                </Text>
+              </View>
+              <BodyText>
+                QuimioCare necesita tu autorización para mostrar recordatorios en este teléfono.
+              </BodyText>
+              <VisualButton
+                label="Habilitar notificaciones"
+                secondary
+                onPress={async () => {
+                  if (notificationAdapter) {
+                    try {
+                      await notificationAdapter.requestPermission();
+                      refreshUpcoming();
+                    } catch {
+                      void Linking.openSettings();
+                    }
+                  } else {
+                    void Linking.openSettings();
+                  }
+                }}
+              />
+            </InfoCard>
+          ) : null}
+
+          {errorUpcoming ? (
+            <InfoCard>
+              <View style={styles.alertHeader}>
+                <Feather name="alert-circle" size={20} color={appTheme.colors.error} />
+                <Text style={[styles.heading, { color: appTheme.colors.error }]}>
+                  No se pudieron cargar los avisos
+                </Text>
+              </View>
+              <BodyText>
+                Ocurrió un problema al leer el estado del sistema o los recordatorios en este
+                dispositivo.
+              </BodyText>
+              <VisualButton label="Reintentar" secondary onPress={refreshUpcoming} />
+            </InfoCard>
+          ) : loadingUpcoming && upcomingData.items.length === 0 ? (
+            <InfoCard>
+              <BodyText>Cargando avisos…</BodyText>
+            </InfoCard>
+          ) : upcomingData.items.length === 0 ? (
+            <EmptyState
+              icon="bell-off"
+              title="Sin avisos en esta vista"
+              description="No hay avisos programados próximamente. Puedes revisar y configurar tus horarios en Recordatorios."
+            />
+          ) : (
+            <View style={styles.listContainer}>
+              {upcomingData.items.map((item) => {
+                const isVitales = item.tipo === 'registro_vitales';
+                const title = isVitales
+                  ? 'Signos vitales'
+                  : (item.medicamentoNombre ?? 'Mis medicamentos');
+
+                return (
+                  <InfoCard key={item.id}>
+                    <View style={styles.cardHeader}>
+                      <View style={styles.typeBadge}>
+                        <Feather
+                          name={isVitales ? 'activity' : 'calendar'}
+                          size={18}
+                          color={appTheme.colors.primary}
+                        />
+                        <Text style={styles.typeText}>{title}</Text>
+                      </View>
+                      <StatusPill>Programada en el sistema</StatusPill>
+                    </View>
+
+                    <DetailRow
+                      label="Fecha y hora prevista"
+                      value={formatDate(item.fechaPrevistaUtc)}
                     />
+
+                    <View style={styles.cardActions}>
+                      {isVitales ? (
+                        <VisualButton
+                          label="Registrar signos vitales"
+                          secondary
+                          onPress={() => router.push('/vitales/registrar')}
+                        />
+                      ) : (
+                        <VisualButton
+                          label="Consultar medicamentos"
+                          secondary
+                          onPress={() => router.push('/perfil/medicacion')}
+                        />
+                      )}
+                    </View>
+                  </InfoCard>
+                );
+              })}
+            </View>
+          )}
+        </>
+      ) : null}
+
+      {/* VISTA 2: ACTIVIDAD */}
+      {activeTab === 'actividad' ? (
+        <>
+          {errorActivity ? (
+            <InfoCard>
+              <View style={styles.alertHeader}>
+                <Feather name="alert-circle" size={20} color={appTheme.colors.error} />
+                <Text style={[styles.heading, { color: appTheme.colors.error }]}>
+                  No se pudo cargar la actividad
+                </Text>
+              </View>
+              <BodyText>
+                Ocurrió un problema al leer el historial de avisos en este dispositivo.
+              </BodyText>
+              <VisualButton label="Reintentar" secondary onPress={refreshActivity} />
+            </InfoCard>
+          ) : loadingActivity && activityItems.length === 0 ? (
+            <InfoCard>
+              <BodyText>Cargando actividad…</BodyText>
+            </InfoCard>
+          ) : activityItems.length === 0 ? (
+            <EmptyState
+              icon="clock"
+              title="Sin avisos en esta vista"
+              description="No se ha detectado actividad de avisos en este dispositivo aún."
+            />
+          ) : (
+            <View style={styles.listContainer}>
+              {activityItems.map((item) => {
+                const isVitales = item.tipo === 'registro_vitales';
+                return (
+                  <InfoCard key={item.id}>
+                    <View style={styles.cardHeader}>
+                      <View style={styles.typeBadge}>
+                        <Feather
+                          name={isVitales ? 'activity' : 'calendar'}
+                          size={18}
+                          color={appTheme.colors.primary}
+                        />
+                        <Text style={styles.typeText}>
+                          {isVitales ? 'Signos vitales' : 'Mis medicamentos'}
+                        </Text>
+                      </View>
+                      {getActivityBadge(item)}
+                    </View>
+
+                    <DetailRow
+                      label="Fecha y hora prevista"
+                      value={formatDate(item.fechaPrevistaUtc)}
+                    />
+
+                    {item.recibidaObservadaEn ? (
+                      <DetailRow
+                        label="Detección de aviso"
+                        value={formatDate(item.recibidaObservadaEn)}
+                      />
+                    ) : null}
+
+                    {item.abiertaEn ? (
+                      <DetailRow
+                        label="Abierta en la aplicación"
+                        value={formatDate(item.abiertaEn)}
+                      />
+                    ) : null}
+
+                    {item.error ? <DetailRow label="Detalle de error" value={item.error} /> : null}
+
+                    <View style={styles.cardActions}>
+                      {isVitales ? (
+                        <VisualButton
+                          label="Registrar signos vitales"
+                          secondary
+                          onPress={() => router.push('/vitales/registrar')}
+                        />
+                      ) : (
+                        <VisualButton
+                          label="Consultar medicación"
+                          secondary
+                          onPress={() => router.push('/perfil/medicacion')}
+                        />
+                      )}
+                    </View>
+                  </InfoCard>
+                );
+              })}
+
+              {activityItems.length >= limit ? (
+                <VisualButton
+                  label="Cargar más avisos"
+                  secondary
+                  onPress={() => setLimit((prev) => prev + 25)}
+                />
+              ) : null}
+            </View>
+          )}
+        </>
+      ) : null}
+
+      {/* SECCIÓN SECUNDARIA: DETALLES DE AVISOS Y CANCELACIONES */}
+      <InfoCard>
+        <Pressable
+          accessibilityRole="button"
+          accessibilityLabel={
+            showTechDetails
+              ? 'Ocultar detalles técnicos y cancelaciones'
+              : 'Ver detalles técnicos y cancelaciones'
+          }
+          accessibilityState={{ expanded: showTechDetails }}
+          onPress={() => setShowTechDetails((prev) => !prev)}
+          style={styles.detailsToggle}
+        >
+          <Text style={styles.detailsToggleText}>
+            {showTechDetails
+              ? 'Ocultar detalles técnicos y cancelaciones'
+              : 'Ver detalles técnicos y cancelaciones'}
+          </Text>
+          <Feather
+            name={showTechDetails ? 'chevron-up' : 'chevron-down'}
+            size={18}
+            color={appTheme.colors.primary}
+          />
+        </Pressable>
+
+        {showTechDetails ? (
+          <View style={styles.techDetailsContainer}>
+            <BodyText>
+              Avisos cancelados por modificación de horario o término de tratamiento:
+            </BodyText>
+            {cancelledItems.length === 0 ? (
+              <BodyText style={{ color: appTheme.colors.secondary, fontStyle: 'italic' }}>
+                No hay avisos cancelados registrados.
+              </BodyText>
+            ) : (
+              cancelledItems.map((item) => (
+                <View key={item.id} style={styles.cancelledRow}>
+                  <View style={{ flex: 1 }}>
                     <Text style={styles.typeText}>
-                      {isVitales ? 'Signos vitales' : 'Medicación activa'}
+                      {item.tipo === 'registro_vitales' ? 'Signos vitales' : 'Medicación'}
+                    </Text>
+                    <Text style={styles.cancelledSubtext}>
+                      Previsto: {formatDate(item.fechaPrevistaUtc)}
                     </Text>
                   </View>
-                  {getStatusBadge(item)}
+                  <StatusPill>Cancelada</StatusPill>
                 </View>
-
-                <DetailRow
-                  label="Fecha y hora prevista"
-                  value={formatDate(item.fechaPrevistaUtc)}
-                />
-
-                {item.recibidaObservadaEn ? (
-                  <DetailRow
-                    label="Recepción observada"
-                    value={formatDate(item.recibidaObservadaEn)}
-                  />
-                ) : null}
-
-                {item.abiertaEn ? (
-                  <DetailRow label="Abierta en la app" value={formatDate(item.abiertaEn)} />
-                ) : null}
-
-                {item.error ? <DetailRow label="Detalle de error" value={item.error} /> : null}
-
-                <View style={styles.cardActions}>
-                  {isVitales ? (
-                    <VisualButton
-                      label="Registrar signos vitales"
-                      secondary
-                      onPress={() => router.push('/vitales/registrar')}
-                    />
-                  ) : (
-                    <VisualButton
-                      label="Consultar medicación"
-                      secondary
-                      onPress={() => router.push('/perfil/medicacion')}
-                    />
-                  )}
-                </View>
-              </InfoCard>
-            );
-          })}
-
-          {notifications.length >= limit ? (
-            <VisualButton
-              label="Cargar más avisos"
-              secondary
-              onPress={() => setLimit((prev) => prev + 25)}
-            />
-          ) : null}
-        </View>
-      )}
+              ))
+            )}
+          </View>
+        ) : null}
+      </InfoCard>
 
       <VisualButton label="Gestionar recordatorios" onPress={() => router.push('/recordatorios')} />
     </Screen>
@@ -212,6 +515,11 @@ function useStyles() {
   const colors = appTheme.colors;
 
   return StyleSheet.create({
+    heading: {
+      fontSize: 16,
+      fontWeight: '700',
+      color: colors.text,
+    },
     filterRow: {
       flexDirection: 'row',
       flexWrap: 'wrap',
@@ -225,7 +533,8 @@ function useStyles() {
       backgroundColor: colors.surface,
       borderWidth: 1,
       borderColor: colors.border,
-      minHeight: 36,
+      minHeight: 48,
+      minWidth: 48,
       justifyContent: 'center',
       alignItems: 'center',
     },
@@ -234,8 +543,8 @@ function useStyles() {
       borderColor: colors.primary,
     },
     filterText: {
-      fontSize: 13,
-      fontWeight: '600',
+      fontSize: 14,
+      fontWeight: '700',
       color: colors.text,
     },
     filterTextSelected: {
@@ -258,12 +567,47 @@ function useStyles() {
       gap: theme.spacing.xs,
     },
     typeText: {
-      fontSize: 14,
+      fontSize: 15,
       fontWeight: '700',
       color: colors.text,
     },
     cardActions: {
       marginTop: theme.spacing.xs,
+    },
+    alertHeader: {
+      flexDirection: 'row',
+      alignItems: 'center',
+      gap: theme.spacing.sm,
+      marginBottom: 4,
+    },
+    detailsToggle: {
+      minHeight: 48,
+      flexDirection: 'row',
+      alignItems: 'center',
+      justifyContent: 'space-between',
+    },
+    detailsToggleText: {
+      fontSize: 14,
+      fontWeight: '600',
+      color: colors.primary,
+    },
+    techDetailsContainer: {
+      gap: theme.spacing.sm,
+      marginTop: theme.spacing.xs,
+    },
+    cancelledRow: {
+      flexDirection: 'row',
+      alignItems: 'center',
+      justifyContent: 'space-between',
+      paddingVertical: theme.spacing.xs,
+      borderTopWidth: StyleSheet.hairlineWidth,
+      borderTopColor: colors.border,
+      gap: theme.spacing.sm,
+    },
+    cancelledSubtext: {
+      fontSize: 13,
+      color: colors.secondary,
+      marginTop: 2,
     },
   });
 }

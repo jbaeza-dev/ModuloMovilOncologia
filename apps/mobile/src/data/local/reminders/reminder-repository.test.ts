@@ -327,4 +327,294 @@ describe('ReminderRepository', () => {
     expect(await repoA.getRule(ruleB.id)).toBeNull();
     expect(await repoB.getRule(ruleA.id)).toBeNull();
   });
+
+  it('obtiene una instantánea transaccional consistente en getReminderStatusSnapshot', async () => {
+    const db = open();
+    await migrateDatabase(db);
+    await seedPatientContextIfEmpty(db, patientA, patientB);
+
+    const repoA = createReminderRepository(db, patientA, () => '2026-10-16T12:00:00.000Z');
+    await repoA.setPreferences(true);
+
+    const ruleVitals = await repoA.saveRule({
+      tipo: 'registro_vitales',
+      diasSemana: [1, 2, 3, 4, 5, 6, 7],
+      horasMinutos: ['07:00'],
+      habilitado: true,
+    });
+    await repoA.saveRule({
+      tipo: 'medicacion',
+      medicamentoId: 'med-a-1',
+      diasSemana: [1, 2, 3, 4, 5, 6, 7],
+      horasMinutos: ['19:00'],
+      habilitado: true,
+    });
+
+    // Notificación pasada (no debe entrar en futureNotifications) y futura (sí debe entrar)
+    await repoA.reserveOccurrence({
+      id: 'notif-past',
+      recordatorioId: ruleVitals.id,
+      revision: ruleVitals.revision,
+      tipo: 'registro_vitales',
+      fechaPrevistaUtc: '2026-10-16T10:00:00.000Z',
+      payload: {
+        version: 1,
+        notificacionId: 'notif-past',
+        revision: ruleVitals.revision,
+        pacienteId: patientA,
+        recordatorioId: ruleVitals.id,
+        tipo: 'registro_vitales',
+        destino: '/vitales/registrar',
+      },
+    });
+    await repoA.reserveOccurrence({
+      id: 'notif-future',
+      recordatorioId: ruleVitals.id,
+      revision: ruleVitals.revision,
+      tipo: 'registro_vitales',
+      fechaPrevistaUtc: '2026-10-17T10:00:00.000Z',
+      payload: {
+        version: 1,
+        notificacionId: 'notif-future',
+        revision: ruleVitals.revision,
+        pacienteId: patientA,
+        recordatorioId: ruleVitals.id,
+        tipo: 'registro_vitales',
+        destino: '/vitales/registrar',
+      },
+    });
+
+    const snapshot = await repoA.getReminderStatusSnapshot('2026-10-16T12:00:00.000Z');
+    expect(snapshot.patientId).toBe(patientA);
+    expect(snapshot.preferences.enabled).toBe(true);
+    expect(snapshot.rules).toHaveLength(3); // incluye rule-template-vitales-a (deshabilitada) + 2 nuevas
+    expect(snapshot.allEnabledRulesCount).toBe(2);
+    expect(snapshot.futureNotifications.map((n) => n.id)).toEqual(['notif-future']);
+  });
+
+  it('T-13: saveRuleWithActivationIntent habilita preferencias si no hay otras reglas habilitadas, pero respeta la pausa general si existen otras', async () => {
+    const db = open();
+    await migrateDatabase(db);
+    await seedPatientContextIfEmpty(db, patientA, patientB);
+
+    const repo = createReminderRepository(db, patientA, () => '2026-10-16T12:00:00.000Z');
+
+    // Caso 1: Preferencias apagadas y 0 reglas habilitadas -> save_and_activate levanta la preferencia general
+    expect((await repo.getPreferences()).enabled).toBe(false);
+    const firstActivation = await repo.saveRuleWithActivationIntent(
+      {
+        tipo: 'registro_vitales',
+        diasSemana: [1, 2, 3, 4, 5, 6, 7],
+        horasMinutos: ['07:00'],
+      },
+      'save_and_activate',
+    );
+    expect(firstActivation.rule.habilitado).toBe(true);
+    expect(firstActivation.preferencesEnabled).toBe(true);
+    expect(firstActivation.resumedGeneralPreference).toBe(true);
+    expect(firstActivation.pausedByGeneralPreference).toBe(false);
+    expect(firstActivation.otherEnabledRulesCount).toBe(0);
+    expect((await repo.getPreferences()).enabled).toBe(true);
+
+    // Pausar todos los avisos dejando la primera regla habilitada individualmente
+    await repo.setPreferences(false);
+
+    // Caso 2: Pausa general activa y ya existe otra regla habilitada (registro_vitales) ->
+    // save_and_activate en un medicamento guarda la regla pero NO reactiva silenciosamente las preferencias generales
+    const secondActivation = await repo.saveRuleWithActivationIntent(
+      {
+        tipo: 'medicacion',
+        medicamentoId: 'med-a-1',
+        diasSemana: [1, 2, 3, 4, 5, 6, 7],
+        horasMinutos: ['07:00', '19:00'],
+      },
+      'save_and_activate',
+    );
+    expect(secondActivation.rule.habilitado).toBe(true);
+    expect(secondActivation.preferencesEnabled).toBe(false);
+    expect(secondActivation.resumedGeneralPreference).toBe(false);
+    expect(secondActivation.pausedByGeneralPreference).toBe(true);
+    expect(secondActivation.otherEnabledRulesCount).toBe(1);
+    expect((await repo.getPreferences()).enabled).toBe(false);
+
+    // Caso 3: Consentimiento explícito save_and_resume_all levanta la pausa general
+    const resumed = await repo.saveRuleWithActivationIntent(
+      {
+        id: secondActivation.rule.id,
+        tipo: 'medicacion',
+        medicamentoId: 'med-a-1',
+        diasSemana: [1, 2, 3, 4, 5, 6, 7],
+        horasMinutos: ['07:00', '19:00'],
+      },
+      'save_and_resume_all',
+    );
+    expect(resumed.preferencesEnabled).toBe(true);
+    expect(resumed.resumedGeneralPreference).toBe(true);
+    expect(resumed.pausedByGeneralPreference).toBe(false);
+    expect((await repo.getPreferences()).enabled).toBe(true);
+  });
+
+  it('T-12 y T-15: hace rollback completo si falla la escritura en la transacción y nunca escribe en cola_envio', async () => {
+    const db = open();
+    await migrateDatabase(db);
+    await seedPatientContextIfEmpty(db, patientA, patientB);
+
+    const repo = createReminderRepository(db, patientA, () => '2026-10-16T12:00:00.000Z');
+    const initialRulesCount = (await repo.listRules()).length;
+
+    // Crear un trigger temporal que fuerce fallo al actualizar preferencia_avisos a 1
+    await db.exec(`
+      CREATE TRIGGER fail_pref_enable
+      BEFORE UPDATE ON preferencia_avisos
+      WHEN NEW.habilitado = 1
+      BEGIN
+        SELECT RAISE(ABORT, 'Fallo simulado al habilitar preferencia');
+      END;
+    `);
+
+    await expect(
+      repo.saveRuleWithActivationIntent(
+        {
+          tipo: 'registro_vitales',
+          diasSemana: [1, 2, 3, 4, 5, 6, 7],
+          horasMinutos: ['07:00'],
+        },
+        'save_and_activate',
+      ),
+    ).rejects.toThrow('Fallo simulado al habilitar preferencia');
+
+    // Rollback completo: ni la regla nueva ni la preferencia quedaron guardadas
+    expect(await repo.listRules()).toHaveLength(initialRulesCount);
+    expect((await repo.getPreferences()).enabled).toBe(false);
+
+    await db.exec('DROP TRIGGER fail_pref_enable;');
+
+    // Ahora guardar normalmente y verificar que cola_envio sigue vacía (T-15)
+    await repo.saveRuleWithActivationIntent(
+      {
+        tipo: 'registro_vitales',
+        diasSemana: [1, 2, 3, 4, 5, 6, 7],
+        horasMinutos: ['07:00'],
+      },
+      'save_and_activate',
+    );
+    const outboxRow = await db.first<{ total: number }>(
+      'SELECT count(*) AS total FROM cola_envio WHERE paciente_id = ?',
+      [patientA],
+    );
+    expect(outboxRow?.total ?? 0).toBe(0);
+  });
+
+  it('listNotifications ordena por actividad reciente considerando abierta_en, recibida_observada_en, nulos y desempate por id', async () => {
+    const db = open();
+    await migrateDatabase(db);
+    await seedPatientContextIfEmpty(db, patientA, patientB);
+
+    const repo = createReminderRepository(db, patientA);
+
+    const rule = await repo.saveRule({
+      tipo: 'registro_vitales',
+      diasSemana: [1, 2, 3, 4, 5, 6, 7],
+      horasMinutos: ['08:00'],
+    });
+
+    const nowIso = '2026-10-16T12:00:00.000Z';
+
+    // notif-1: abierta_en más reciente que recibida_observada_en (15:00 vs 13:00) -> actividad efectiva = 15:00
+    await db.run(
+      `INSERT INTO notificacion_local (
+         id, paciente_id, recordatorio_id, revision, tipo, fecha_prevista_utc,
+         id_nativo, estado, payload_minimo, recibida_observada_en, abierta_en, creado_el, actualizado_el
+       ) VALUES (?, ?, ?, 1, 'registro_vitales', '2026-10-16T08:00:00.000Z', 'nat-1', 'programada', '{}', ?, ?, ?, ?)`,
+      [
+        'notif-1',
+        patientA,
+        rule.id,
+        '2026-10-16T13:00:00.000Z',
+        '2026-10-16T15:00:00.000Z',
+        nowIso,
+        nowIso,
+      ],
+    );
+
+    // notif-2: solo recibida_observada_en (16:00) -> actividad efectiva = 16:00
+    await db.run(
+      `INSERT INTO notificacion_local (
+         id, paciente_id, recordatorio_id, revision, tipo, fecha_prevista_utc,
+         id_nativo, estado, payload_minimo, recibida_observada_en, abierta_en, creado_el, actualizado_el
+       ) VALUES (?, ?, ?, 1, 'registro_vitales', '2026-10-17T08:00:00.000Z', 'nat-2', 'programada', '{}', ?, NULL, ?, ?)`,
+      ['notif-2', patientA, rule.id, '2026-10-16T16:00:00.000Z', nowIso, nowIso],
+    );
+
+    // notif-3: solo abierta_en (14:00) -> actividad efectiva = 14:00
+    await db.run(
+      `INSERT INTO notificacion_local (
+         id, paciente_id, recordatorio_id, revision, tipo, fecha_prevista_utc,
+         id_nativo, estado, payload_minimo, recibida_observada_en, abierta_en, creado_el, actualizado_el
+       ) VALUES (?, ?, ?, 1, 'registro_vitales', '2026-10-18T08:00:00.000Z', 'nat-3', 'programada', '{}', NULL, ?, ?, ?)`,
+      ['notif-3', patientA, rule.id, '2026-10-16T14:00:00.000Z', nowIso, nowIso],
+    );
+
+    // notif-4: recibida más reciente que abierta (17:00 vs 16:30) -> actividad efectiva = 17:00
+    await db.run(
+      `INSERT INTO notificacion_local (
+         id, paciente_id, recordatorio_id, revision, tipo, fecha_prevista_utc,
+         id_nativo, estado, payload_minimo, recibida_observada_en, abierta_en, creado_el, actualizado_el
+       ) VALUES (?, ?, ?, 1, 'registro_vitales', '2026-10-19T08:00:00.000Z', 'nat-4', 'programada', '{}', ?, ?, ?, ?)`,
+      [
+        'notif-4',
+        patientA,
+        rule.id,
+        '2026-10-16T17:00:00.000Z',
+        '2026-10-16T16:30:00.000Z',
+        nowIso,
+        nowIso,
+      ],
+    );
+
+    // notif-5: misma actividad que notif-2 (16:00) para desempate por id DESC ('notif-5' > 'notif-2')
+    await db.run(
+      `INSERT INTO notificacion_local (
+         id, paciente_id, recordatorio_id, revision, tipo, fecha_prevista_utc,
+         id_nativo, estado, payload_minimo, recibida_observada_en, abierta_en, creado_el, actualizado_el
+       ) VALUES (?, ?, ?, 1, 'registro_vitales', '2026-10-20T08:00:00.000Z', 'nat-5', 'programada', '{}', ?, NULL, ?, ?)`,
+      ['notif-5', patientA, rule.id, '2026-10-16T16:00:00.000Z', nowIso, nowIso],
+    );
+
+    // notif-6: sin actividad observada (ambos nulos)
+    await db.run(
+      `INSERT INTO notificacion_local (
+         id, paciente_id, recordatorio_id, revision, tipo, fecha_prevista_utc,
+         id_nativo, estado, payload_minimo, recibida_observada_en, abierta_en, creado_el, actualizado_el
+       ) VALUES (?, ?, ?, 1, 'registro_vitales', '2026-10-21T08:00:00.000Z', 'nat-6', 'programada', '{}', NULL, NULL, ?, ?)`,
+      ['notif-6', patientA, rule.id, nowIso, nowIso],
+    );
+
+    // 1. Filtrando solo observadas (Bandeja de actividad)
+    const observedList = await repo.listNotifications({
+      soloObservadas: true,
+      orderBy: 'actividad_reciente',
+    });
+
+    expect(observedList.map((n) => n.id)).toEqual([
+      'notif-4', // 17:00
+      'notif-5', // 16:00 (id desempate)
+      'notif-2', // 16:00
+      'notif-1', // 15:00
+      'notif-3', // 14:00
+    ]);
+
+    // 2. Sin soloObservadas: los registros sin actividad quedan al final
+    const allList = await repo.listNotifications({
+      orderBy: 'actividad_reciente',
+    });
+    expect(allList.map((n) => n.id)).toEqual([
+      'notif-4',
+      'notif-5',
+      'notif-2',
+      'notif-1',
+      'notif-3',
+      'notif-6',
+    ]);
+  });
 });

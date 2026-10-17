@@ -83,7 +83,7 @@ export function EducationCopiesScreen() {
   }
 
   return (
-    <Screen title="Mis copias guardadas" backTo="/educacion">
+    <Screen title="Mis copias guardadas">
       <DemoBadge />
       <BodyText>Archivos descargados en almacenamiento privado para lectura sin conexión.</BodyText>
 

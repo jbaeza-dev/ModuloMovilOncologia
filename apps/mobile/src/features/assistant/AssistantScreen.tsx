@@ -1,6 +1,17 @@
+import Feather from '@expo/vector-icons/Feather';
 import * as Crypto from 'expo-crypto';
-import { useEffect, useMemo, useState } from 'react';
-import { StyleSheet, Text, View } from 'react-native';
+import { router } from 'expo-router';
+import { useEffect, useMemo, useRef, useState } from 'react';
+import {
+  type NativeScrollEvent,
+  type NativeSyntheticEvent,
+  Pressable,
+  type ScrollView,
+  StyleSheet,
+  Text,
+  useWindowDimensions,
+  View,
+} from 'react-native';
 
 import { Screen } from '../../components/Screen';
 import {
@@ -24,6 +35,7 @@ export function AssistantScreen() {
   const { theme: appTheme } = useAppTheme();
   const styles = createStyles(appTheme.colors);
   const { patientId, assistantController: contextController, closeActiveContext } = useLocalData();
+  const { fontScale, height } = useWindowDimensions();
 
   const controller = useMemo(() => {
     if (contextController) return contextController;
@@ -40,14 +52,35 @@ export function AssistantScreen() {
 
   const [state, setState] = useState(controller.getState());
   const [messages, setMessages] = useState(controller.getMessages());
+  const [isConfigured, setIsConfigured] = useState(controller.isConfigured);
   const [input, setInput] = useState('');
+  const [hasNewUnreadResponse, setHasNewUnreadResponse] = useState(false);
+  const [latestAnnouncement, setLatestAnnouncement] = useState('');
+
+  const scrollRef = useRef<ScrollView | null>(null);
+  const isNearBottomRef = useRef(true);
+  const lastAssistantMsgIdRef = useRef<string | null>(
+    messages
+      .slice()
+      .reverse()
+      .find((m) => m.sender === 'assistant')?.id ?? null,
+  );
+  const lastUserMsgIdRef = useRef<string | null>(
+    messages
+      .slice()
+      .reverse()
+      .find((m) => m.sender === 'user')?.id ?? null,
+  );
+  const responseCounterRef = useRef(0);
 
   useEffect(() => {
     setState(controller.getState());
     setMessages(controller.getMessages());
+    setIsConfigured(controller.isConfigured);
     const unsubscribe = controller.subscribe(() => {
       setState(controller.getState());
       setMessages(controller.getMessages());
+      setIsConfigured(controller.isConfigured);
     });
     return () => {
       unsubscribe();
@@ -56,6 +89,58 @@ export function AssistantScreen() {
       }
     };
   }, [controller]);
+
+  useEffect(() => {
+    if (messages.length === 0) return;
+    const lastMsg = messages[messages.length - 1];
+    if (!lastMsg) return;
+
+    if (lastMsg.sender === 'assistant' && lastMsg.id !== lastAssistantMsgIdRef.current) {
+      lastAssistantMsgIdRef.current = lastMsg.id;
+      responseCounterRef.current += 1;
+      const snippet = lastMsg.text.length > 50 ? `${lastMsg.text.slice(0, 50)}…` : lastMsg.text;
+      setLatestAnnouncement(
+        `Nueva respuesta del asistente (#${responseCounterRef.current}): ${snippet}`,
+      );
+      if (isNearBottomRef.current) {
+        setTimeout(() => {
+          scrollRef.current?.scrollToEnd({ animated: true });
+        }, 100);
+      } else {
+        setHasNewUnreadResponse(true);
+      }
+    } else if (lastMsg.sender === 'user' && lastMsg.id !== lastUserMsgIdRef.current) {
+      lastUserMsgIdRef.current = lastMsg.id;
+      setTimeout(() => {
+        scrollRef.current?.scrollToEnd({ animated: true });
+      }, 100);
+    }
+  }, [messages]);
+
+  const handleScroll = (event: NativeSyntheticEvent<NativeScrollEvent>) => {
+    const { layoutMeasurement, contentOffset, contentSize } = event.nativeEvent;
+    const paddingToBottom = 80;
+    const isClose =
+      layoutMeasurement.height + contentOffset.y >= contentSize.height - paddingToBottom;
+    isNearBottomRef.current = isClose;
+    if (isClose && hasNewUnreadResponse) {
+      setHasNewUnreadResponse(false);
+    }
+  };
+
+  const handleScrollToBottom = () => {
+    scrollRef.current?.scrollToEnd({ animated: true });
+    setHasNewUnreadResponse(false);
+    isNearBottomRef.current = true;
+  };
+
+  const handleBack = () => {
+    if (router.canGoBack()) {
+      router.back();
+    } else {
+      router.navigate('/');
+    }
+  };
 
   const isSending = state === 'sending';
   const canSend = !isSending && input.trim().length > 0 && input.length <= 2000;
@@ -82,8 +167,83 @@ export function AssistantScreen() {
     }
   };
 
+  if (!isConfigured || state === 'not_configured') {
+    return (
+      <Screen title="Asistente QuimioCare">
+        <DemoBadge />
+        <InfoCard>
+          <SectionTitle>Servicio no configurado</SectionTitle>
+          <BodyText>
+            El servicio del asistente central no está configurado en este entorno. No es posible
+            enviar consultas en este momento.
+          </BodyText>
+          <VisualButton label="Volver" secondary onPress={handleBack} />
+        </InfoCard>
+      </Screen>
+    );
+  }
+
+  const isNearLimit = input.length >= 1800;
+  const isAtLimit = input.length >= 2000;
+  const useScrollableInput = fontScale > 1.3 || height < 500;
+
+  const newResponseChip = hasNewUnreadResponse ? (
+    <Pressable
+      accessibilityRole="button"
+      accessibilityLabel="Nueva respuesta del asistente. Pulsa para ir al final"
+      onPress={handleScrollToBottom}
+      style={({ pressed }) => [styles.newResponseChip, pressed && styles.pressed]}
+    >
+      <Feather name="arrow-down" size={16} color={appTheme.colors.onPrimary} />
+      <Text style={styles.newResponseText}>Nueva respuesta</Text>
+    </Pressable>
+  ) : null;
+
+  const inputSection = (
+    <View style={styles.inputSection}>
+      <VisualField
+        label="Escribe tu consulta"
+        value={input}
+        onChangeText={setInput}
+        placeholder="Escribe aquí tu consulta..."
+        multiline
+        maxLength={2000}
+      />
+      <View style={styles.counterRow}>
+        <Text
+          style={[
+            styles.counterText,
+            isNearLimit && styles.counterTextWarning,
+            isAtLimit && styles.counterTextLimit,
+          ]}
+        >
+          {`${input.length} / 2000`}
+          {isNearLimit ? ' (límite cercano)' : ''}
+        </Text>
+      </View>
+      <VisualButton label="Enviar consulta" disabled={!canSend} onPress={handleSend} />
+      <BodyText style={styles.disclaimerText}>
+        La conversación se conserva temporalmente en memoria durante la sesión y no se registra en
+        el almacenamiento permanente.
+      </BodyText>
+    </View>
+  );
+
   return (
-    <Screen title="Asistente QuimioCare" backTo="/">
+    <Screen
+      title="Asistente QuimioCare"
+      scrollRef={scrollRef}
+      onScroll={handleScroll}
+      scrollEventThrottle={16}
+      bottomAction={
+        !useScrollableInput ? (
+          <>
+            {newResponseChip}
+            {inputSection}
+          </>
+        ) : undefined
+      }
+    >
       <DemoBadge />
       <InfoCard>
         <SectionTitle>Orientación general</SectionTitle>
@@ -101,21 +261,37 @@ export function AssistantScreen() {
         />
       ) : (
         <View style={styles.chat}>
-          {messages.map((msg) => (
-            <View
-              key={msg.id}
-              style={[
-                styles.bubbleWrapper,
-                msg.sender === 'user' ? styles.userWrapper : styles.assistantWrapper,
-              ]}
-            >
-              <Text style={msg.sender === 'user' ? styles.userBubble : styles.assistantBubble}>
-                {msg.text}
-              </Text>
-            </View>
-          ))}
+          {messages.map((msg) => {
+            const isUser = msg.sender === 'user';
+            const senderLabel = isUser ? 'Tú' : 'Asistente';
+            return (
+              <View
+                key={msg.id}
+                style={[
+                  styles.bubbleWrapper,
+                  isUser ? styles.userWrapper : styles.assistantWrapper,
+                ]}
+                accessible={true}
+                accessibilityRole="text"
+                accessibilityLabel={`${senderLabel}: ${msg.text}`}
+              >
+                <Text
+                  style={isUser ? styles.userBubble : styles.assistantBubble}
+                  accessible={false}
+                >
+                  {msg.text}
+                </Text>
+              </View>
+            );
+          })}
         </View>
       )}
+
+      {latestAnnouncement ? (
+        <View accessibilityLiveRegion="polite" style={styles.srOnly}>
+          <Text style={styles.srOnlyText}>{latestAnnouncement}</Text>
+        </View>
+      ) : null}
 
       {isSending ? (
         <InfoCard>
@@ -150,13 +326,6 @@ export function AssistantScreen() {
           <SectionTitle>Consulta cancelada</SectionTitle>
           <BodyText>La consulta en curso fue cancelada por el usuario.</BodyText>
         </InfoCard>
-      ) : state === 'not_configured' ? (
-        <InfoCard>
-          <SectionTitle>Servicio no configurado</SectionTitle>
-          <BodyText>
-            El servicio del asistente central no está configurado en este entorno.
-          </BodyText>
-        </InfoCard>
       ) : state === 'error' ? (
         <InfoCard>
           <SectionTitle>No se pudo procesar</SectionTitle>
@@ -167,24 +336,12 @@ export function AssistantScreen() {
         </InfoCard>
       ) : null}
 
-      <View style={styles.inputSection}>
-        <VisualField
-          label="Escribe tu consulta"
-          value={input}
-          onChangeText={setInput}
-          placeholder="Escribe aquí tu consulta..."
-          multiline
-          maxLength={2000}
-        />
-        <View style={styles.counterRow}>
-          <Text style={styles.counterText}>{`${input.length} / 2000`}</Text>
-        </View>
-        <VisualButton label="Enviar consulta" disabled={!canSend} onPress={handleSend} />
-        <BodyText style={styles.disclaimerText}>
-          La conversación se conserva temporalmente en memoria durante la sesión y no se registra en
-          el almacenamiento permanente.
-        </BodyText>
-      </View>
+      {useScrollableInput ? (
+        <>
+          {newResponseChip}
+          {inputSection}
+        </>
+      ) : null}
     </Screen>
   );
 }
@@ -234,7 +391,7 @@ function createStyles(colors: ReturnType<typeof useAppTheme>['theme']['colors'])
     },
     inputSection: {
       gap: theme.spacing.xs,
-      marginTop: theme.spacing.sm,
+      marginTop: theme.spacing.xs,
     },
     counterRow: {
       alignItems: 'flex-end',
@@ -244,11 +401,54 @@ function createStyles(colors: ReturnType<typeof useAppTheme>['theme']['colors'])
       fontSize: 12,
       color: colors.secondary,
     },
+    counterTextWarning: {
+      color: colors.error,
+      fontWeight: '700',
+    },
+    counterTextLimit: {
+      color: colors.error,
+      fontWeight: '800',
+    },
     disclaimerText: {
       fontSize: 12,
       color: colors.secondary,
       textAlign: 'center',
       marginTop: theme.spacing.xs,
+    },
+    newResponseChip: {
+      alignSelf: 'center',
+      flexDirection: 'row',
+      alignItems: 'center',
+      justifyContent: 'center',
+      backgroundColor: colors.primary,
+      paddingHorizontal: theme.spacing.md,
+      paddingVertical: theme.spacing.xs,
+      borderRadius: 24,
+      minHeight: 48,
+      minWidth: 48,
+      gap: theme.spacing.xs,
+      marginBottom: theme.spacing.xs,
+      elevation: 2,
+    },
+    newResponseText: {
+      color: colors.onPrimary,
+      fontSize: 14,
+      fontWeight: '600',
+    },
+    pressed: {
+      opacity: 0.8,
+    },
+    srOnly: {
+      position: 'absolute',
+      width: 1,
+      height: 1,
+      padding: 0,
+      margin: -1,
+      overflow: 'hidden',
+    },
+    srOnlyText: {
+      fontSize: 1,
+      color: 'transparent',
     },
   });
 }

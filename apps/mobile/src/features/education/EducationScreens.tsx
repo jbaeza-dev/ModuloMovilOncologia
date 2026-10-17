@@ -66,7 +66,7 @@ export function EducationScreen() {
   const { items: categories } = useFocusedList(loadCategories);
 
   return (
-    <Screen title="Contenido educativo">
+    <Screen isRoot title="Contenido educativo">
       <DemoBadge />
       <BodyText>
         Biblioteca multimedia sobre quimioterapia: guías e infografías descargables y videos
@@ -153,7 +153,7 @@ export function EducationCategoryScreen() {
   const interactionMap = new Map((value?.interactions ?? []).map((i) => [i.contentId, i]));
 
   return (
-    <Screen title={value?.currentCategory?.title ?? 'Categoría'} backTo="/educacion">
+    <Screen title={value?.currentCategory?.title ?? 'Categoría'}>
       <DemoBadge />
       <BodyText>Recursos y guías diseñadas para acompañarte en tu cuidado diario.</BodyText>
 
@@ -329,7 +329,7 @@ export function EducationResourceScreen() {
 
   if (loadingResource) {
     return (
-      <Screen title="Cargando recurso" backTo="/educacion">
+      <Screen title="Cargando recurso">
         <DemoBadge />
         <BodyText>Obteniendo información del recurso educativo…</BodyText>
       </Screen>
@@ -338,7 +338,7 @@ export function EducationResourceScreen() {
 
   if (!effectiveResource) {
     return (
-      <Screen title="Recurso no encontrado" backTo="/educacion">
+      <Screen title="Recurso no encontrado">
         <DemoBadge />
         <EmptyState
           icon="alert-circle"
@@ -607,7 +607,7 @@ export function EducationResourceScreen() {
   }
 
   return (
-    <Screen title={effectiveResource.title} backTo="/educacion">
+    <Screen title={effectiveResource.title}>
       <DemoBadge />
 
       <InfoCard>
@@ -813,7 +813,7 @@ export function EducationStateScreen() {
     'sin-conexion': ['Requiere conexión', 'Este recurso no está descargado.'],
   }[state];
   return (
-    <Screen title="Estado de biblioteca" backTo="/educacion">
+    <Screen title="Estado de biblioteca">
       <DemoBadge />
       <EmptyState
         icon={state === 'sin-conexion' ? 'wifi-off' : 'book-open'}

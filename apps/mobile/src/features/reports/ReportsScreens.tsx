@@ -2,7 +2,7 @@ import Feather from '@expo/vector-icons/Feather';
 import { File } from 'expo-file-system';
 import { router, useFocusEffect, useLocalSearchParams } from 'expo-router';
 import { useCallback, useEffect, useRef, useState } from 'react';
-import { StyleSheet, Text, View } from 'react-native';
+import { AccessibilityInfo, Alert, Pressable, StyleSheet, Text, View } from 'react-native';
 
 import { Screen } from '../../components/Screen';
 import {
@@ -36,6 +36,83 @@ import { theme } from '../../theme';
 import { generateAndPersistReportPdf } from './report-pdf';
 import { generateAndPersistReportXlsx } from './report-xlsx';
 
+interface SavedReportCardProps {
+  report: PatientReportItem;
+  saving: boolean;
+  onShare: () => void;
+  onDelete: () => void;
+}
+
+function SavedReportCard({ report, saving, onShare, onDelete }: SavedReportCardProps) {
+  const { theme: appTheme } = useAppTheme();
+  const styles = createStyles(appTheme.colors);
+  const [expanded, setExpanded] = useState(false);
+
+  const sizeKb = report.sizeBytes ? (report.sizeBytes / 1024).toFixed(1) : null;
+  const formattedDate = report.generatedAt ? formatDate(report.generatedAt) : 'Reciente';
+  const isPdf = report.format === 'pdf';
+  const title = report.periodDays
+    ? `Reporte ${isPdf ? 'PDF' : 'Excel'} de ${report.periodDays} días`
+    : isPdf
+      ? 'Reporte PDF'
+      : 'Reporte Excel';
+
+  const handleToggleDetails = () => {
+    const next = !expanded;
+    setExpanded(next);
+    AccessibilityInfo.announceForAccessibility(
+      next ? 'Detalles del archivo mostrados' : 'Detalles del archivo ocultos',
+    );
+  };
+
+  return (
+    <InfoCard>
+      <View style={styles.cardHeader}>
+        <Feather
+          name={isPdf ? 'file-text' : 'grid'}
+          size={24}
+          color={appTheme.colors.primary}
+          accessible={false}
+        />
+        <View style={styles.cardHeaderCopy}>
+          <Text style={styles.cardTitle}>{title}</Text>
+          <BodyText>Generado el {formattedDate}</BodyText>
+        </View>
+        <StatusPill>{isPdf ? 'PDF' : 'Excel'}</StatusPill>
+      </View>
+
+      <Pressable
+        accessibilityRole="button"
+        accessibilityLabel={expanded ? 'Ocultar detalles del archivo' : 'Ver detalles del archivo'}
+        accessibilityState={{ expanded }}
+        onPress={handleToggleDetails}
+        style={styles.detailsToggle}
+      >
+        <Text style={styles.detailsToggleText}>Detalles del archivo</Text>
+        <Feather
+          name={expanded ? 'chevron-up' : 'chevron-down'}
+          size={18}
+          color={appTheme.colors.primary}
+          accessible={false}
+        />
+      </Pressable>
+
+      {expanded ? (
+        <View style={styles.techDetailsContainer}>
+          <DetailRow label="Archivo" value={report.filename} layout="vertical" />
+          <DetailRow label="Tamaño" value={sizeKb ? `${sizeKb} KB` : 'No disponible'} />
+          <DetailRow label="Formato" value={isPdf ? 'Documento PDF' : 'Planilla Excel (.xlsx)'} />
+        </View>
+      ) : null}
+
+      <View style={styles.reportActions}>
+        <VisualButton label={isPdf ? 'Compartir PDF' : 'Compartir Excel'} onPress={onShare} />
+        <VisualButton label="Eliminar reporte" secondary disabled={saving} onPress={onDelete} />
+      </View>
+    </InfoCard>
+  );
+}
+
 export function ReportsScreen() {
   const { theme: appTheme } = useAppTheme();
   const styles = createStyles(appTheme.colors);
@@ -63,7 +140,7 @@ export function ReportsScreen() {
     }, []),
   );
 
-  const { repository, patientId, runSave, saving } = useLocalData();
+  const { repository, patientId, runSave, saving, manager } = useLocalData();
 
   const loadData = useCallback(async () => {
     if (!repository) return null;
@@ -120,19 +197,10 @@ export function ReportsScreen() {
         if (!isMountedRef.current || !isFocusedRef.current) return;
         refreshReports();
 
-        const shareResult = await shareReportFile(res.persistentUri, targetFormat);
+        await shareReportFile(res.persistentUri, targetFormat);
         if (!isMountedRef.current || !isFocusedRef.current) return;
 
-        const formatLabel = targetFormat === 'pdf' ? 'PDF' : 'Excel (.xlsx)';
-        if (shareResult === 'shared_sheet_opened') {
-          setReportFeedback(
-            `Reporte ${formatLabel} guardado localmente y hoja de compartir abierta.`,
-          );
-        } else {
-          setReportFeedback(
-            `Reporte ${formatLabel} guardado localmente (hoja de compartir no disponible).`,
-          );
-        }
+        setReportFeedback('Archivo guardado. Puedes compartirlo cuando quieras.');
 
         router.navigate('/vitales/reporte-estado?archivo=' + encodeURIComponent(res.filename));
       });
@@ -145,13 +213,46 @@ export function ReportsScreen() {
     }
   }
 
-  async function handleDeleteReport(filename: string) {
-    if (!patientId || saving) return;
+  async function handleDeleteReport(
+    filename: string,
+    expectedPatientId?: string,
+    expectedEpoch?: number,
+  ) {
+    const activePatient = manager?.getPatientId?.() ?? patientId;
+    const activeEpoch = manager?.getContextEpoch?.() ?? 0;
+
+    if (
+      !activePatient ||
+      saving ||
+      !isMountedRef.current ||
+      !isFocusedRef.current ||
+      (expectedPatientId && activePatient !== expectedPatientId) ||
+      (expectedEpoch !== undefined && activeEpoch !== expectedEpoch)
+    ) {
+      return;
+    }
+
     setReportFeedback(null);
     setReportError(null);
     try {
-      const ok = await runSave(() => deletePatientReport(patientId, filename));
-      if (!isMountedRef.current || !isFocusedRef.current) return;
+      const ok = await runSave(async () => {
+        const checkPatient = manager?.getPatientId?.() ?? patientId;
+        const checkEpoch = manager?.getContextEpoch?.() ?? 0;
+        if (
+          checkPatient !== activePatient ||
+          (expectedEpoch !== undefined && checkEpoch !== expectedEpoch)
+        ) {
+          return false;
+        }
+        return deletePatientReport(activePatient, filename);
+      });
+      if (
+        !isMountedRef.current ||
+        !isFocusedRef.current ||
+        (manager?.getContextEpoch?.() ?? 0) !== activeEpoch
+      ) {
+        return;
+      }
       if (ok) {
         setReportFeedback('Reporte eliminado del almacenamiento local.');
       } else {
@@ -164,12 +265,45 @@ export function ReportsScreen() {
     }
   }
 
+  function confirmDeleteReport(filename: string) {
+    const dialogPatientId = manager?.getPatientId?.() ?? patientId;
+    const dialogEpoch = manager?.getContextEpoch?.() ?? 0;
+
+    Alert.alert(
+      '¿Eliminar este reporte?',
+      'Se eliminará el archivo de este dispositivo. Tus mediciones y síntomas se conservarán.',
+      [
+        {
+          text: 'Cancelar',
+          style: 'cancel',
+        },
+        {
+          text: 'Eliminar reporte',
+          style: 'destructive',
+          onPress: () => {
+            const currentPatientId = manager?.getPatientId?.() ?? patientId;
+            const currentEpoch = manager?.getContextEpoch?.() ?? 0;
+            // Si el paciente o la época cambiaron mientras el diálogo estaba abierto, abortar
+            if (
+              !isMountedRef.current ||
+              !isFocusedRef.current ||
+              currentPatientId !== dialogPatientId ||
+              currentEpoch !== dialogEpoch ||
+              !dialogPatientId
+            ) {
+              return;
+            }
+            void handleDeleteReport(filename, dialogPatientId, dialogEpoch);
+          },
+        },
+      ],
+      { cancelable: true },
+    );
+  }
+
   return (
-    <Screen title="Reportes" backTo="/vitales">
-      <BodyText>
-        Resumen de evolución clínica generado localmente a partir de signos vitales y síntomas en
-        este dispositivo.
-      </BodyText>
+    <Screen title="Reportes">
+      <BodyText>Crea un resumen de tus mediciones y síntomas para compartirlo.</BodyText>
 
       <SectionTitle>Período</SectionTitle>
       <View style={styles.chips}>
@@ -233,11 +367,6 @@ export function ReportsScreen() {
         <>
           <InfoCard>
             <SectionTitle>Resumen de datos clínicos en el período</SectionTitle>
-            <DetailRow label="Período evaluado" value={`${days} días`} />
-            <DetailRow
-              label="Formato seleccionado"
-              value={selectedFormat === 'pdf' ? 'PDF (Documento)' : 'Excel (.xlsx)'}
-            />
             <DetailRow
               label="Signos vitales registrados"
               value={
@@ -332,54 +461,19 @@ export function ReportsScreen() {
           <BodyText>No hay reportes generados previamente en este dispositivo.</BodyText>
         </InfoCard>
       ) : (
-        savedReports.map((report) => {
-          const sizeKb = report.sizeBytes ? (report.sizeBytes / 1024).toFixed(1) : null;
-          const formattedDate = report.generatedAt ? formatDate(report.generatedAt) : 'Reciente';
-          const isPdf = report.format === 'pdf';
-
-          return (
-            <InfoCard key={report.filename}>
-              <View style={styles.cardHeader}>
-                <Feather
-                  name={isPdf ? 'file-text' : 'grid'}
-                  size={24}
-                  color={appTheme.colors.primary}
-                />
-                <View style={styles.cardHeaderCopy}>
-                  <Text style={styles.cardTitle}>
-                    {report.periodDays ? `Reporte (${report.periodDays} días)` : 'Reporte clínico'}
-                  </Text>
-                  <BodyText>Generado el {formattedDate}</BodyText>
-                </View>
-                <StatusPill>{isPdf ? 'PDF' : 'Excel'}</StatusPill>
-              </View>
-
-              <DetailRow label="Archivo" value={report.filename} />
-              <DetailRow label="Tamaño" value={sizeKb ? `${sizeKb} KB` : 'No disponible'} />
-              <DetailRow
-                label="Formato"
-                value={isPdf ? 'Documento PDF' : 'Planilla Excel (.xlsx)'}
-              />
-
-              <View style={styles.reportActions}>
-                <VisualButton
-                  label="Ver o compartir"
-                  onPress={() =>
-                    router.navigate(
-                      '/vitales/reporte-estado?archivo=' + encodeURIComponent(report.filename),
-                    )
-                  }
-                />
-                <VisualButton
-                  label="Eliminar reporte"
-                  secondary
-                  disabled={saving}
-                  onPress={() => handleDeleteReport(report.filename)}
-                />
-              </View>
-            </InfoCard>
-          );
-        })
+        savedReports.map((report) => (
+          <SavedReportCard
+            key={report.filename}
+            report={report}
+            saving={saving}
+            onShare={() =>
+              router.navigate(
+                '/vitales/reporte-estado?archivo=' + encodeURIComponent(report.filename),
+              )
+            }
+            onDelete={() => confirmDeleteReport(report.filename)}
+          />
+        ))
       )}
     </Screen>
   );
@@ -422,7 +516,7 @@ export function ReportStatusScreen() {
 
   if (!isValidFormat || !fileExists || !targetFile || !archivo) {
     return (
-      <Screen title="Estado del reporte" backTo="/vitales/reportes">
+      <Screen title="Estado del reporte">
         <DemoBadge />
         <EmptyState
           icon="alert-circle"
@@ -448,12 +542,12 @@ export function ReportStatusScreen() {
   const formattedDate = timestampIso ? formatDate(timestampIso) : 'Reciente';
 
   return (
-    <Screen title="Estado del reporte" backTo="/vitales/reportes">
+    <Screen title="Estado del reporte">
       <DemoBadge />
       <InfoCard>
         <SectionTitle>Reporte generado y guardado</SectionTitle>
-        <StatusPill>Persistido en almacenamiento local</StatusPill>
-        <DetailRow label="Archivo" value={archivo} />
+        <StatusPill>Archivo guardado. Puedes compartirlo cuando quieras.</StatusPill>
+        <DetailRow label="Archivo" value={archivo} layout="vertical" />
         <DetailRow
           label="Formato"
           value={fileFormat === 'pdf' ? 'Documento PDF' : 'Planilla Excel (.xlsx)'}
@@ -463,7 +557,10 @@ export function ReportStatusScreen() {
         {sharingFeedback ? <StatusPill>{sharingFeedback}</StatusPill> : null}
       </InfoCard>
 
-      <VisualButton label="Abrir hoja de compartir" onPress={handleReshare} />
+      <VisualButton
+        label={fileFormat === 'pdf' ? 'Compartir PDF' : 'Compartir Excel'}
+        onPress={handleReshare}
+      />
       <VisualButton
         label="Volver a reportes guardados"
         secondary
@@ -490,5 +587,22 @@ function createStyles(colors: ReturnType<typeof useAppTheme>['theme']['colors'])
     cardHeaderCopy: { flex: 1, gap: 2 },
     cardTitle: { fontSize: 16, fontWeight: '700', color: colors.text },
     reportActions: { gap: theme.spacing.sm, marginTop: theme.spacing.sm },
+    detailsToggle: {
+      minHeight: 48,
+      flexDirection: 'row',
+      alignItems: 'center',
+      justifyContent: 'space-between',
+      paddingVertical: theme.spacing.xs,
+    },
+    detailsToggleText: {
+      fontSize: 14,
+      fontWeight: '600',
+      color: colors.primary,
+    },
+    techDetailsContainer: {
+      gap: theme.spacing.xs,
+      marginTop: theme.spacing.xs,
+      marginBottom: theme.spacing.xs,
+    },
   });
 }

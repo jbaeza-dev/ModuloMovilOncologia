@@ -36,6 +36,10 @@ export class AssistantController {
     return this.state;
   }
 
+  get isConfigured(): boolean {
+    return this.adapter.isConfigured;
+  }
+
   getMessages(): readonly AssistantMessage[] {
     return this.messages;
   }
@@ -57,6 +61,7 @@ export class AssistantController {
 
   setAdapter(adapter: AssistantAdapter): void {
     this.adapter = adapter;
+    this.notify();
   }
 
   async send(text: string, isRetry = false): Promise<void> {
