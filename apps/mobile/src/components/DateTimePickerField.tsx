@@ -154,7 +154,7 @@ export function DateTimePickerField(props: DateTimePickerFieldProps) {
 
       <Pressable
         accessibilityRole="button"
-        accessibilityLabel={accessibilityLabel ?? label}
+        accessibilityLabel={accessibilityLabel ?? `${label}, ${displayValue}`}
         accessibilityState={{ disabled }}
         disabled={disabled}
         onPress={handleOpenPicker}
@@ -169,6 +169,7 @@ export function DateTimePickerField(props: DateTimePickerFieldProps) {
             name={mode === 'time' ? 'clock' : 'calendar'}
             size={20}
             color={appTheme.colors.primary}
+            accessible={false}
           />
           <Text style={styles.valueText}>{displayValue}</Text>
         </View>
@@ -297,7 +298,8 @@ function useStyles() {
       color: colors.primary,
     },
     keyboardToggle: {
-      minHeight: 36,
+      minHeight: 48,
+      minWidth: 48,
       justifyContent: 'center',
       alignSelf: 'flex-start',
       paddingVertical: 4,
@@ -330,7 +332,8 @@ function useStyles() {
     },
     errorText: {
       fontSize: 13,
-      color: '#dc2626',
+      color: colors.error,
+      fontWeight: '600',
     },
   });
 }

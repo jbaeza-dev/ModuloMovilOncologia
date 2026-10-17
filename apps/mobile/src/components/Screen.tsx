@@ -23,6 +23,7 @@ type Props = {
   showProfile?: boolean;
   scroll?: boolean;
   scrollRef?: RefObject<ScrollView | null>;
+  bottomAction?: ReactNode;
 };
 
 export function Screen({
@@ -32,6 +33,7 @@ export function Screen({
   showProfile = false,
   scroll = true,
   scrollRef,
+  bottomAction,
 }: Props) {
   const { theme: appTheme } = useAppTheme();
   const styles = createStyles(appTheme.colors);
@@ -96,6 +98,7 @@ export function Screen({
         ) : (
           <View style={styles.staticContent}>{content}</View>
         )}
+        {bottomAction ? <View style={styles.bottomActionContainer}>{bottomAction}</View> : null}
       </KeyboardAvoidingView>
     </SafeAreaView>
   );
@@ -135,6 +138,14 @@ function createStyles(colors: ReturnType<typeof useAppTheme>['theme']['colors'])
       paddingBottom: theme.spacing.xl,
     },
     staticContent: { flex: 1, padding: theme.spacing.lg, gap: theme.spacing.lg },
+    bottomActionContainer: {
+      paddingHorizontal: theme.spacing.lg,
+      paddingVertical: theme.spacing.md,
+      backgroundColor: colors.background,
+      borderTopWidth: 1,
+      borderTopColor: colors.border,
+      gap: theme.spacing.sm,
+    },
     title: { fontSize: 28, fontWeight: '700', color: colors.text },
     pressed: { backgroundColor: colors.pressed },
   });
