@@ -89,6 +89,15 @@ describe('vitals-formatters', () => {
     it('devuelve fecha formateada DD/MM/YYYY para fechas anteriores', () => {
       expect(getDaySectionTitle('2026-10-15', nowIso, 'America/Santiago')).toBe('15/10/2026');
     });
+
+    it('devuelve Ayer correctamente alrededor del cambio de hora de Chile (DST)', () => {
+      // El 7 de septiembre de 2026 a las 00:30 en Santiago (UTC-3 tras adelanto DST) -> 2026-09-07T03:30:00.000Z
+      const dstTransitionNow = '2026-09-07T03:30:00.000Z';
+      expect(getDaySectionTitle('2026-09-06', dstTransitionNow, 'America/Santiago')).toBe('Ayer');
+      expect(getDaySectionTitle('2026-09-05', dstTransitionNow, 'America/Santiago')).toBe(
+        '05/09/2026',
+      );
+    });
   });
 
   describe('groupVitalsByDay', () => {

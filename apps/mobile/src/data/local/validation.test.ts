@@ -66,14 +66,11 @@ describe('validateVitalInput y parseVitalInput', () => {
     expect(missingSys.errors.systolic).toBe('Ingresa la presión sistólica.');
   });
 
-  it('rechaza si la presión sistólica es menor o igual a la diastólica', () => {
-    const equal = validateVitalInput({ ...blank, systolic: '100', diastolic: '100' });
-    expect(equal.valid).toBe(false);
-    expect(equal.errors.systolic).toBe('La presión sistólica debe ser mayor que la diastólica.');
-
-    const lower = validateVitalInput({ ...blank, systolic: '80', diastolic: '120' });
-    expect(lower.valid).toBe(false);
-    expect(lower.errors.systolic).toBe('La presión sistólica debe ser mayor que la diastólica.');
+  it('admite presión arterial completa sin imponer reglas clínicas inventadas', () => {
+    const valid = validateVitalInput({ ...blank, systolic: '120', diastolic: '80' });
+    expect(valid.valid).toBe(true);
+    expect(valid.values.presion_sistolica).toBe(120);
+    expect(valid.values.presion_diastolica).toBe(80);
   });
 
   it('asocia errores de formato numérico a los campos respectivos', () => {

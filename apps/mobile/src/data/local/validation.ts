@@ -68,12 +68,6 @@ export function validateVitalInput(input: VitalInput): VitalValidationResult {
     errors.diastolic = 'Ingresa la presión diastólica.';
   } else if (!hasSysRaw && hasDiaRaw) {
     errors.systolic = 'Ingresa la presión sistólica.';
-  } else if (
-    presion_sistolica !== null &&
-    presion_diastolica !== null &&
-    presion_sistolica <= presion_diastolica
-  ) {
-    errors.systolic = 'La presión sistólica debe ser mayor que la diastólica.';
   }
 
   const hasAnyInput =

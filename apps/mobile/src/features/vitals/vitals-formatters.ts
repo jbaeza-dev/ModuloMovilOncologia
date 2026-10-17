@@ -59,13 +59,16 @@ export function getDaySectionTitle(
   const todayParts = getCivilPartsInTimeZone(nowIso, timeZone);
   const todayDate = todayParts.civilDate;
 
-  // Calcular ayer en la misma zona horaria
-  const nowMs = new Date(nowIso).getTime();
-  const yesterdayParts = getCivilPartsInTimeZone(
-    new Date(nowMs - 86400000).toISOString(),
-    timeZone,
-  );
-  const yesterdayDate = yesterdayParts.civilDate;
+  // Calcular el día civil anterior mediante aritmética de calendario en UTC (inmune a DST y transiciones horarias)
+  const [yearStr, monthStr, dayStr] = todayDate.split('-');
+  const y = Number(yearStr);
+  const m = Number(monthStr);
+  const d = Number(dayStr);
+  const prevDate = new Date(Date.UTC(y, m - 1, d - 1));
+  const prevYear = prevDate.getUTCFullYear();
+  const prevMonth = String(prevDate.getUTCMonth() + 1).padStart(2, '0');
+  const prevDay = String(prevDate.getUTCDate()).padStart(2, '0');
+  const yesterdayDate = `${prevYear}-${prevMonth}-${prevDay}`;
 
   if (civilDate === todayDate) {
     return 'Hoy';
