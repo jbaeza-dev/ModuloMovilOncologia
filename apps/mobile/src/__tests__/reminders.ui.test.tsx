@@ -2,7 +2,7 @@
 
 import { act, fireEvent, render, screen, waitFor } from '@testing-library/react-native';
 import React from 'react';
-import { Alert } from 'react-native';
+import { Alert, Linking } from 'react-native';
 
 import {
   consumeHomeScrollToTop,
@@ -1219,8 +1219,206 @@ describe('Incremento 5: UI de Recordatorios y Avisos Locales', () => {
       });
     });
 
+    it('muestra tarjeta de error con reintento si falla la consulta de Próximos (sin mostrar "Sin avisos")', async () => {
+      mockReminderRepo.getReminderStatusSnapshot.mockRejectedValueOnce(
+        new Error('Fallo de base de datos'),
+      );
+
+      await render(<NoticesTrayScreen />);
+
+      await waitFor(() => {
+        expect(screen.getByText('No se pudieron cargar los avisos')).toBeTruthy();
+      });
+      expect(
+        screen.getByText(
+          'Ocurrió un problema al leer los recordatorios guardados en este dispositivo.',
+        ),
+      ).toBeTruthy();
+      expect(screen.getByRole('button', { name: 'Reintentar' })).toBeTruthy();
+      expect(screen.queryByText('Sin avisos en esta vista')).toBeNull();
+
+      // Al pulsar reintentar se refresca
+      mockReminderRepo.getReminderStatusSnapshot.mockResolvedValueOnce({
+        patientId: 'paciente-a',
+        nowIso: '2026-10-16T00:00:00.000Z',
+        preferences: { enabled: true, updatedAt: null },
+        rules: [],
+        futureNotifications: [],
+        medications: [],
+        allEnabledRulesCount: 0,
+      });
+
+      fireEvent.press(screen.getByRole('button', { name: 'Reintentar' }));
+
+      await waitFor(() => {
+        expect(screen.getByText('Sin avisos en esta vista')).toBeTruthy();
+      });
+    });
+
+    it('muestra aviso de permiso bloqueado con enlace a Ajustes cuando deviceAvailability es permission_blocked', async () => {
+      const openSettingsSpy = jest
+        .spyOn(Linking, 'openSettings')
+        .mockResolvedValue(undefined as never);
+
+      mockAdapter.getPermissionState.mockResolvedValueOnce({
+        status: 'denied',
+        canAskAgain: false,
+        channelStatus: 'granted',
+      });
+
+      await render(<NoticesTrayScreen />);
+
+      await waitFor(() => {
+        expect(screen.getByText('Permiso bloqueado')).toBeTruthy();
+      });
+      expect(
+        screen.getByText(
+          'Las notificaciones están bloqueadas en los Ajustes de Android. Para recibir estos avisos, debes habilitar los permisos en el sistema.',
+        ),
+      ).toBeTruthy();
+
+      const openBtn = screen.getByRole('button', { name: 'Abrir Ajustes de Android' });
+      expect(openBtn).toBeTruthy();
+      fireEvent.press(openBtn);
+      expect(openSettingsSpy).toHaveBeenCalled();
+    });
+
+    it('muestra aviso de permiso pendiente con accion de autorizacion cuando deviceAvailability es permission_required', async () => {
+      mockAdapter.getPermissionState.mockResolvedValueOnce({
+        status: 'undetermined',
+        canAskAgain: true,
+        channelStatus: 'granted',
+      });
+
+      await render(<NoticesTrayScreen />);
+
+      await waitFor(() => {
+        expect(screen.getByText('Permiso de notificaciones pendiente')).toBeTruthy();
+      });
+      expect(
+        screen.getByText(
+          'QuimioCare necesita tu autorización para mostrar recordatorios en este teléfono.',
+        ),
+      ).toBeTruthy();
+
+      const allowBtn = screen.getByRole('button', { name: 'Habilitar notificaciones' });
+      expect(allowBtn).toBeTruthy();
+      fireEvent.press(allowBtn);
+      expect(mockAdapter.requestPermission).toHaveBeenCalled();
+    });
+
+    it('muestra aviso de canal bloqueado con enlace a Ajustes cuando deviceAvailability es channel_blocked', async () => {
+      const openSettingsSpy = jest
+        .spyOn(Linking, 'openSettings')
+        .mockResolvedValue(undefined as never);
+
+      mockAdapter.getPermissionState.mockResolvedValueOnce({
+        status: 'granted',
+        canAskAgain: true,
+        channelStatus: 'blocked',
+      });
+
+      await render(<NoticesTrayScreen />);
+
+      await waitFor(() => {
+        expect(screen.getByText('Canal de notificaciones bloqueado')).toBeTruthy();
+      });
+      expect(
+        screen.getByText(
+          'El canal de avisos de QuimioCare ha sido bloqueado en los Ajustes de Android. Para recibir avisos, debes habilitar el canal de recordatorios.',
+        ),
+      ).toBeTruthy();
+
+      const openBtn = screen.getByRole('button', { name: 'Abrir Ajustes de Android' });
+      expect(openBtn).toBeTruthy();
+      fireEvent.press(openBtn);
+      expect(openSettingsSpy).toHaveBeenCalled();
+    });
+
+    it('muestra tarjeta de error con reintento si falla la consulta de Actividad', async () => {
+      mockReminderRepo.listNotifications.mockRejectedValueOnce(
+        new Error('Error de lectura en base de datos'),
+      );
+
+      await render(<NoticesTrayScreen />);
+
+      await waitFor(() => {
+        expect(screen.getByRole('tab', { name: 'Ver actividad observada' })).toBeTruthy();
+      });
+
+      fireEvent.press(screen.getByRole('tab', { name: 'Ver actividad observada' }));
+
+      await waitFor(() => {
+        expect(screen.getByText('No se pudo cargar la actividad')).toBeTruthy();
+      });
+      expect(
+        screen.getByText('Ocurrió un problema al leer el historial de avisos en este dispositivo.'),
+      ).toBeTruthy();
+      expect(screen.getByRole('button', { name: 'Reintentar' })).toBeTruthy();
+      expect(screen.queryByText('Sin avisos en esta vista')).toBeNull();
+    });
+
     it('en Próximos con múltiples ocurrencias (caso de 98 ocurrencias), muestra la próxima de cada regla en orden ascendente', async () => {
       const nowIso = '2026-10-17T00:00:00.000Z';
+      const futureNotifications = [];
+
+      // Generar 49 ocurrencias para rule-vitales y 49 para rule-med-1
+      for (let i = 0; i < 49; i++) {
+        const dVital = new Date(Date.UTC(2026, 9, 17 + i, 10, 0, 0));
+        futureNotifications.push({
+          id: `notif-vital-${i}`,
+          pacienteId: 'paciente-a',
+          recordatorioId: 'rule-vitales',
+          revision: 1,
+          tipo: 'registro_vitales' as const,
+          fechaPrevistaUtc: dVital.toISOString(),
+          idNativo: `native-vital-${i}`,
+          estado: 'programada' as const,
+          payloadMinimo: {
+            version: 1,
+            notificacionId: `notif-vital-${i}`,
+            revision: 1,
+            pacienteId: 'paciente-a',
+            recordatorioId: 'rule-vitales',
+            tipo: 'registro_vitales' as const,
+            destino: '/vitales/registrar',
+          },
+          error: null,
+          recibidaObservadaEn: null,
+          abiertaEn: null,
+          creadoEl: nowIso,
+          actualizadoEl: nowIso,
+        });
+
+        const dMed = new Date(Date.UTC(2026, 9, 17 + i, 15, 0, 0));
+        futureNotifications.push({
+          id: `notif-med-${i}`,
+          pacienteId: 'paciente-a',
+          recordatorioId: 'rule-med-1',
+          revision: 1,
+          tipo: 'medicacion' as const,
+          fechaPrevistaUtc: dMed.toISOString(),
+          idNativo: `native-med-${i}`,
+          estado: 'programada' as const,
+          payloadMinimo: {
+            version: 1,
+            notificacionId: `notif-med-${i}`,
+            revision: 1,
+            pacienteId: 'paciente-a',
+            recordatorioId: 'rule-med-1',
+            tipo: 'medicacion' as const,
+            destino: '/perfil/medicacion',
+          },
+          error: null,
+          recibidaObservadaEn: null,
+          abiertaEn: null,
+          creadoEl: nowIso,
+          actualizadoEl: nowIso,
+        });
+      }
+
+      expect(futureNotifications).toHaveLength(98);
+
       mockReminderRepo.getReminderStatusSnapshot.mockResolvedValueOnce({
         patientId: 'paciente-a',
         nowIso,
@@ -1259,56 +1457,7 @@ describe('Incremento 5: UI de Recordatorios y Avisos Locales', () => {
             eliminadoEl: null,
           },
         ],
-        futureNotifications: [
-          {
-            id: 'notif-vital-1',
-            pacienteId: 'paciente-a',
-            recordatorioId: 'rule-vitales',
-            revision: 1,
-            tipo: 'registro_vitales',
-            fechaPrevistaUtc: '2026-10-17T10:00:00.000Z',
-            idNativo: 'native-vital-1',
-            estado: 'programada',
-            payloadMinimo: {
-              version: 1,
-              notificacionId: 'notif-vital-1',
-              revision: 1,
-              pacienteId: 'paciente-a',
-              recordatorioId: 'rule-vitales',
-              tipo: 'registro_vitales',
-              destino: '/vitales/registrar',
-            },
-            error: null,
-            recibidaObservadaEn: null,
-            abiertaEn: null,
-            creadoEl: nowIso,
-            actualizadoEl: nowIso,
-          },
-          {
-            id: 'notif-med-1',
-            pacienteId: 'paciente-a',
-            recordatorioId: 'rule-med-1',
-            revision: 1,
-            tipo: 'medicacion',
-            fechaPrevistaUtc: '2026-10-17T15:00:00.000Z',
-            idNativo: 'native-med-1',
-            estado: 'programada',
-            payloadMinimo: {
-              version: 1,
-              notificacionId: 'notif-med-1',
-              revision: 1,
-              pacienteId: 'paciente-a',
-              recordatorioId: 'rule-med-1',
-              tipo: 'medicacion',
-              destino: '/perfil/medicacion',
-            },
-            error: null,
-            recibidaObservadaEn: null,
-            abiertaEn: null,
-            creadoEl: nowIso,
-            actualizadoEl: nowIso,
-          },
-        ],
+        futureNotifications,
         medications: [
           {
             id: 'med-1',

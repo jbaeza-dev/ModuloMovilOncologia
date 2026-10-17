@@ -1,7 +1,7 @@
 import Feather from '@expo/vector-icons/Feather';
 import { router } from 'expo-router';
 import { useCallback, useState } from 'react';
-import { Pressable, StyleSheet, Text, View } from 'react-native';
+import { Linking, Pressable, StyleSheet, Text, View } from 'react-native';
 
 import { Screen } from '../../components/Screen';
 import {
@@ -22,7 +22,11 @@ import { formatDate } from '../../data/local/repository';
 import { useFocusedValue } from '../../hooks/use-local-query';
 import { useLocalData } from '../../providers/LocalDataProvider';
 import { useAppTheme } from '../../providers/ThemeProvider';
-import { classifyReminderStatus } from '../../services/reminders/reminder-status';
+import {
+  classifyReminderStatus,
+  resolveDeviceAvailability,
+  type ReminderDeviceAvailability,
+} from '../../services/reminders/reminder-status';
 import { theme } from '../../theme';
 
 type TrayTab = 'proximos' | 'actividad';
@@ -50,25 +54,24 @@ export function NoticesTrayScreen() {
   const loadUpcoming = useCallback(async (): Promise<{
     items: UpcomingItem[];
     snapshot: ReminderStatusSnapshot | null;
-    isBlocked: boolean;
+    deviceAvailability: ReminderDeviceAvailability;
   }> => {
     if (!repository?.reminders?.getReminderStatusSnapshot) {
-      return { items: [], snapshot: null, isBlocked: false };
+      return { items: [], snapshot: null, deviceAvailability: 'available' };
     }
     const nowIso = new Date().toISOString();
     const snap = await repository.reminders.getReminderStatusSnapshot(nowIso);
-    if (!snap) return { items: [], snapshot: null, isBlocked: false };
+    if (!snap) return { items: [], snapshot: null, deviceAvailability: 'available' };
 
-    let isBlocked = false;
     let permissionState = null;
     if (notificationAdapter) {
       try {
         permissionState = await notificationAdapter.getPermissionState();
-        isBlocked = permissionState.status === 'denied' && !permissionState.canAskAgain;
       } catch {
         // Ignorar fallo de permisos
       }
     }
+    const deviceAvailability = resolveDeviceAvailability(permissionState, null);
 
     const activeRules = snap.rules.filter((r) => r.eliminadoEl === null && r.habilitado);
     const upcomingList: UpcomingItem[] = [];
@@ -101,13 +104,18 @@ export function NoticesTrayScreen() {
         a.fechaPrevistaUtc.localeCompare(b.fechaPrevistaUtc) || a.ruleId.localeCompare(b.ruleId),
     );
 
-    return { items: upcomingList, snapshot: snap, isBlocked };
+    return { items: upcomingList, snapshot: snap, deviceAvailability };
   }, [repository, notificationAdapter]);
 
-  const { value: upcomingData, loading: loadingUpcoming } = useFocusedValue(loadUpcoming, {
+  const {
+    value: upcomingData,
+    loading: loadingUpcoming,
+    error: errorUpcoming,
+    refresh: refreshUpcoming,
+  } = useFocusedValue(loadUpcoming, {
     items: [] as UpcomingItem[],
     snapshot: null as ReminderStatusSnapshot | null,
-    isBlocked: false,
+    deviceAvailability: 'available' as ReminderDeviceAvailability,
   });
 
   // 2. Cargar Actividad ordenada por COALESCE(abierta_en, recibida_observada_en) DESC
@@ -120,10 +128,12 @@ export function NoticesTrayScreen() {
     });
   }, [repository, limit]);
 
-  const { value: activityItems, loading: loadingActivity } = useFocusedValue(
-    loadActivity,
-    [] as NotificationItem[],
-  );
+  const {
+    value: activityItems,
+    loading: loadingActivity,
+    error: errorActivity,
+    refresh: refreshActivity,
+  } = useFocusedValue(loadActivity, [] as NotificationItem[]);
 
   // 3. Cargar avisos técnicos / cancelaciones para la sección secundaria
   const loadCancellations = useCallback(async (): Promise<NotificationItem[]> => {
@@ -204,7 +214,27 @@ export function NoticesTrayScreen() {
             </InfoCard>
           ) : null}
 
-          {upcomingData.isBlocked ? (
+          {upcomingData.deviceAvailability === 'channel_blocked' ? (
+            <InfoCard>
+              <View style={styles.alertHeader}>
+                <Feather name="alert-triangle" size={20} color={appTheme.colors.error} />
+                <Text style={[styles.heading, { color: appTheme.colors.error }]}>
+                  Canal de notificaciones bloqueado
+                </Text>
+              </View>
+              <BodyText>
+                El canal de avisos de QuimioCare ha sido bloqueado en los Ajustes de Android. Para
+                recibir avisos, debes habilitar el canal de recordatorios.
+              </BodyText>
+              <VisualButton
+                label="Abrir Ajustes de Android"
+                secondary
+                onPress={() => {
+                  void Linking.openSettings();
+                }}
+              />
+            </InfoCard>
+          ) : upcomingData.deviceAvailability === 'permission_blocked' ? (
             <InfoCard>
               <View style={styles.alertHeader}>
                 <Feather name="alert-triangle" size={20} color={appTheme.colors.error} />
@@ -216,10 +246,58 @@ export function NoticesTrayScreen() {
                 Las notificaciones están bloqueadas en los Ajustes de Android. Para recibir estos
                 avisos, debes habilitar los permisos en el sistema.
               </BodyText>
+              <VisualButton
+                label="Abrir Ajustes de Android"
+                secondary
+                onPress={() => {
+                  void Linking.openSettings();
+                }}
+              />
+            </InfoCard>
+          ) : upcomingData.deviceAvailability === 'permission_required' ? (
+            <InfoCard>
+              <View style={styles.alertHeader}>
+                <Feather name="alert-circle" size={20} color={appTheme.colors.warning} />
+                <Text style={[styles.heading, { color: appTheme.colors.warning }]}>
+                  Permiso de notificaciones pendiente
+                </Text>
+              </View>
+              <BodyText>
+                QuimioCare necesita tu autorización para mostrar recordatorios en este teléfono.
+              </BodyText>
+              <VisualButton
+                label="Habilitar notificaciones"
+                secondary
+                onPress={async () => {
+                  if (notificationAdapter) {
+                    try {
+                      await notificationAdapter.requestPermission();
+                      refreshUpcoming();
+                    } catch {
+                      void Linking.openSettings();
+                    }
+                  } else {
+                    void Linking.openSettings();
+                  }
+                }}
+              />
             </InfoCard>
           ) : null}
 
-          {loadingUpcoming && upcomingData.items.length === 0 ? (
+          {errorUpcoming ? (
+            <InfoCard>
+              <View style={styles.alertHeader}>
+                <Feather name="alert-circle" size={20} color={appTheme.colors.error} />
+                <Text style={[styles.heading, { color: appTheme.colors.error }]}>
+                  No se pudieron cargar los avisos
+                </Text>
+              </View>
+              <BodyText>
+                Ocurrió un problema al leer los recordatorios guardados en este dispositivo.
+              </BodyText>
+              <VisualButton label="Reintentar" secondary onPress={refreshUpcoming} />
+            </InfoCard>
+          ) : loadingUpcoming && upcomingData.items.length === 0 ? (
             <InfoCard>
               <BodyText>Cargando avisos…</BodyText>
             </InfoCard>
@@ -282,7 +360,20 @@ export function NoticesTrayScreen() {
       {/* VISTA 2: ACTIVIDAD */}
       {activeTab === 'actividad' ? (
         <>
-          {loadingActivity && activityItems.length === 0 ? (
+          {errorActivity ? (
+            <InfoCard>
+              <View style={styles.alertHeader}>
+                <Feather name="alert-circle" size={20} color={appTheme.colors.error} />
+                <Text style={[styles.heading, { color: appTheme.colors.error }]}>
+                  No se pudo cargar la actividad
+                </Text>
+              </View>
+              <BodyText>
+                Ocurrió un problema al leer el historial de avisos en este dispositivo.
+              </BodyText>
+              <VisualButton label="Reintentar" secondary onPress={refreshActivity} />
+            </InfoCard>
+          ) : loadingActivity && activityItems.length === 0 ? (
             <InfoCard>
               <BodyText>Cargando actividad…</BodyText>
             </InfoCard>
