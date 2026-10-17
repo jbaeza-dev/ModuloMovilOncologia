@@ -192,8 +192,10 @@ export function NoticesTrayScreen() {
           {upcomingData.snapshot && !upcomingData.snapshot.preferences.enabled ? (
             <InfoCard>
               <View style={styles.alertHeader}>
-                <Feather name="bell-off" size={20} color="#b45309" />
-                <Text style={[styles.heading, { color: '#b45309' }]}>Avisos en pausa</Text>
+                <Feather name="bell-off" size={20} color={appTheme.colors.warning} />
+                <Text style={[styles.heading, { color: appTheme.colors.warning }]}>
+                  Avisos en pausa
+                </Text>
               </View>
               <BodyText>
                 Tus avisos generales están en pausa. Tus horarios se conservan listos en este
@@ -205,8 +207,10 @@ export function NoticesTrayScreen() {
           {upcomingData.isBlocked ? (
             <InfoCard>
               <View style={styles.alertHeader}>
-                <Feather name="alert-triangle" size={20} color="#dc2626" />
-                <Text style={[styles.heading, { color: '#dc2626' }]}>Permiso bloqueado</Text>
+                <Feather name="alert-triangle" size={20} color={appTheme.colors.error} />
+                <Text style={[styles.heading, { color: appTheme.colors.error }]}>
+                  Permiso bloqueado
+                </Text>
               </View>
               <BodyText>
                 Las notificaciones están bloqueadas en los Ajustes de Android. Para recibir estos

@@ -616,8 +616,10 @@ export function ReminderEditScreen() {
         <DemoBadge />
         <InfoCard>
           <View style={styles.errorHeader}>
-            <Feather name="alert-circle" size={20} color="#dc2626" />
-            <Text style={[styles.heading, { color: '#dc2626' }]}>Recordatorio no encontrado</Text>
+            <Feather name="alert-circle" size={20} color={appTheme.colors.error} />
+            <Text style={[styles.heading, { color: appTheme.colors.error }]}>
+              Recordatorio no encontrado
+            </Text>
           </View>
           <BodyText>El recordatorio solicitado no existe o fue eliminado.</BodyText>
           <VisualButton label="Volver a recordatorios" secondary onPress={() => router.back()} />
@@ -632,8 +634,8 @@ export function ReminderEditScreen() {
         <DemoBadge />
         <InfoCard>
           <View style={styles.errorHeader}>
-            <Feather name="alert-circle" size={20} color="#dc2626" />
-            <Text style={[styles.heading, { color: '#dc2626' }]}>Error al cargar</Text>
+            <Feather name="alert-circle" size={20} color={appTheme.colors.error} />
+            <Text style={[styles.heading, { color: appTheme.colors.error }]}>Error al cargar</Text>
           </View>
           <BodyText>No se pudo cargar la configuración de este recordatorio.</BodyText>
           <VisualButton label="Volver a recordatorios" secondary onPress={() => router.back()} />
@@ -688,10 +690,12 @@ export function ReminderEditScreen() {
       {errorMsg ? (
         <InfoCard>
           <View style={styles.errorHeader}>
-            <Feather name="alert-circle" size={20} color="#dc2626" />
-            <Text style={[styles.heading, { color: '#dc2626' }]}>Revisa la configuración</Text>
+            <Feather name="alert-circle" size={20} color={appTheme.colors.error} />
+            <Text style={[styles.heading, { color: appTheme.colors.error }]}>
+              Revisa la configuración
+            </Text>
           </View>
-          <BodyText style={{ color: '#dc2626' }}>{errorMsg}</BodyText>
+          <BodyText style={{ color: appTheme.colors.error }}>{errorMsg}</BodyText>
         </InfoCard>
       ) : null}
 
@@ -699,8 +703,8 @@ export function ReminderEditScreen() {
       {lastOutcome?.kind === 'saved_preferences_paused' ? (
         <InfoCard>
           <View style={styles.errorHeader}>
-            <Feather name="bell-off" size={20} color="#b45309" />
-            <Text style={[styles.heading, { color: '#b45309' }]}>
+            <Feather name="bell-off" size={20} color={appTheme.colors.warning} />
+            <Text style={[styles.heading, { color: appTheme.colors.warning }]}>
               Tus avisos generales están en pausa
             </Text>
           </View>
@@ -732,8 +736,8 @@ export function ReminderEditScreen() {
       {lastOutcome?.kind === 'saved_permission_denied' ? (
         <InfoCard>
           <View style={styles.errorHeader}>
-            <Feather name="alert-triangle" size={20} color="#dc2626" />
-            <Text style={[styles.heading, { color: '#dc2626' }]}>
+            <Feather name="alert-triangle" size={20} color={appTheme.colors.error} />
+            <Text style={[styles.heading, { color: appTheme.colors.error }]}>
               Horario guardado, pero faltan permisos de notificación
             </Text>
           </View>
@@ -762,8 +766,8 @@ export function ReminderEditScreen() {
       lastOutcome?.kind === 'saved_pending_scheduling' ? (
         <InfoCard>
           <View style={styles.errorHeader}>
-            <Feather name="info" size={20} color="#b45309" />
-            <Text style={[styles.heading, { color: '#b45309' }]}>
+            <Feather name="info" size={20} color={appTheme.colors.warning} />
+            <Text style={[styles.heading, { color: appTheme.colors.warning }]}>
               Horario guardado en este teléfono
             </Text>
           </View>
@@ -873,7 +877,7 @@ export function ReminderEditScreen() {
               Selecciona el medicamento de tu tratamiento para configurar sus horarios de aviso.
             </BodyText>
             {medicationsLoaded && medications.length === 0 ? (
-              <BodyText style={{ color: '#b45309' }}>
+              <BodyText style={{ color: appTheme.colors.warning }}>
                 Aún no hay medicamentos disponibles en tu perfil.
               </BodyText>
             ) : (
@@ -1074,7 +1078,7 @@ export function ReminderEditScreen() {
                       onPress={() => removeHour(hour)}
                       style={styles.removeHourBtn}
                     >
-                      <Feather name="trash-2" size={18} color="#dc2626" />
+                      <Feather name="trash-2" size={18} color={appTheme.colors.error} />
                     </Pressable>
                   ) : null}
                 </View>
@@ -1226,7 +1230,9 @@ export function ReminderEditScreen() {
                   </BodyText>
                 ) : null}
                 {clampedNotice ? (
-                  <BodyText style={{ color: '#b45309', fontSize: 13 }}>{clampedNotice}</BodyText>
+                  <BodyText style={{ color: appTheme.colors.warning, fontSize: 13 }}>
+                    {clampedNotice}
+                  </BodyText>
                 ) : null}
               </View>
             ) : null}

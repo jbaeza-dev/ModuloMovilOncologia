@@ -2,6 +2,7 @@
 
 import { fireEvent, render, screen } from '@testing-library/react-native';
 import React, { createRef } from 'react';
+import * as ReactNative from 'react-native';
 import { Text, type TextInput } from 'react-native';
 
 import { Screen } from '../components/Screen';
@@ -160,6 +161,10 @@ describe('Componentes Accesibles Visual.tsx y Screen.tsx (B1 - UX-03 a UX-07)', 
   });
 
   describe('Screen con bottomAction', () => {
+    afterEach(() => {
+      jest.restoreAllMocks();
+    });
+
     it('renderiza bottomAction dentro de la jerarquía de la pantalla', async () => {
       await render(
         <Screen
@@ -173,6 +178,70 @@ describe('Componentes Accesibles Visual.tsx y Screen.tsx (B1 - UX-03 a UX-07)', 
       expect(screen.getByText('Prueba de pantalla')).toBeTruthy();
       expect(screen.getByText('Contenido principal')).toBeTruthy();
       expect(screen.getByTestId('bottom-btn')).toBeTruthy();
+    });
+
+    it('renderiza bottomAction en contenedor fijo por defecto cuando las dimensiones son estándar', async () => {
+      jest.spyOn(ReactNative, 'useWindowDimensions').mockReturnValue({
+        width: 360,
+        height: 800,
+        scale: 2,
+        fontScale: 1,
+      });
+
+      await render(
+        <Screen
+          title="Prueba de pantalla normal"
+          bottomAction={<Text testID="bottom-btn-normal">Guardar registro</Text>}
+        >
+          <Text>Contenido principal</Text>
+        </Screen>,
+      );
+
+      expect(screen.getByTestId('screen-bottom-action-container')).toBeTruthy();
+      expect(screen.queryByTestId('screen-bottom-action-inline')).toBeNull();
+    });
+
+    it('renderiza bottomAction inline dentro de ScrollView cuando fontScale > 1.3', async () => {
+      jest.spyOn(ReactNative, 'useWindowDimensions').mockReturnValue({
+        width: 360,
+        height: 800,
+        scale: 2,
+        fontScale: 1.5,
+      });
+
+      await render(
+        <Screen
+          title="Prueba de pantalla ampliada"
+          bottomAction={<Text testID="bottom-btn-scaled">Guardar registro</Text>}
+        >
+          <Text>Contenido principal</Text>
+        </Screen>,
+      );
+
+      expect(screen.getByTestId('screen-bottom-action-inline')).toBeTruthy();
+      expect(screen.queryByTestId('screen-bottom-action-container')).toBeNull();
+      expect(screen.getByTestId('bottom-btn-scaled')).toBeTruthy();
+    });
+
+    it('renderiza bottomAction inline dentro de ScrollView cuando height < 550', async () => {
+      jest.spyOn(ReactNative, 'useWindowDimensions').mockReturnValue({
+        width: 360,
+        height: 480,
+        scale: 2,
+        fontScale: 1,
+      });
+
+      await render(
+        <Screen
+          title="Prueba de pantalla reducida"
+          bottomAction={<Text testID="bottom-btn-short">Guardar registro</Text>}
+        >
+          <Text>Contenido principal</Text>
+        </Screen>,
+      );
+
+      expect(screen.getByTestId('screen-bottom-action-inline')).toBeTruthy();
+      expect(screen.queryByTestId('screen-bottom-action-container')).toBeNull();
     });
   });
 });

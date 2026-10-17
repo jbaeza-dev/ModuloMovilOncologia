@@ -11,6 +11,7 @@ import {
   ScrollView,
   StyleSheet,
   Text,
+  useWindowDimensions,
   View,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
@@ -45,6 +46,10 @@ export function Screen({
   const styles = createStyles(appTheme.colors);
   const hasBackHistory = useNavigationState((state) => (state ? state.index > 0 : false));
   const canGoBack = !isRoot && hasBackHistory;
+
+  const { fontScale, height } = useWindowDimensions();
+  const isConstrained = fontScale > 1.3 || height < 550;
+  const renderBottomActionInline = Boolean(bottomAction && scroll && isConstrained);
 
   const content = (
     <>
@@ -105,11 +110,20 @@ export function Screen({
             contentContainerStyle={styles.content}
           >
             {content}
+            {renderBottomActionInline ? (
+              <View testID="screen-bottom-action-inline" style={styles.inlineBottomAction}>
+                {bottomAction}
+              </View>
+            ) : null}
           </ScrollView>
         ) : (
           <View style={styles.staticContent}>{content}</View>
         )}
-        {bottomAction ? <View style={styles.bottomActionContainer}>{bottomAction}</View> : null}
+        {!renderBottomActionInline && bottomAction ? (
+          <View testID="screen-bottom-action-container" style={styles.bottomActionContainer}>
+            {bottomAction}
+          </View>
+        ) : null}
       </KeyboardAvoidingView>
     </SafeAreaView>
   );
@@ -170,6 +184,10 @@ function createStyles(colors: ReturnType<typeof useAppTheme>['theme']['colors'])
       paddingBottom: theme.spacing.xl,
     },
     staticContent: { flex: 1, padding: theme.spacing.lg, gap: theme.spacing.lg },
+    inlineBottomAction: {
+      marginTop: theme.spacing.md,
+      gap: theme.spacing.sm,
+    },
     bottomActionContainer: {
       paddingHorizontal: theme.spacing.lg,
       paddingVertical: theme.spacing.md,

@@ -45,9 +45,9 @@ describe('Accesibilidad y Contraste Semántico (UX-04, UX-06)', () => {
         expect(ratio).toBeGreaterThanOrEqual(4.5);
       });
 
-      it('cumple contraste mínimo en botón principal (>= 4.5:1 o >= 3:1)', () => {
+      it('cumple contraste mínimo en botón principal (>= 4.5:1 para etiquetas de 16dp)', () => {
         const ratio = contrastRatio(theme.colors.onPrimary, theme.colors.primary);
-        expect(ratio).toBeGreaterThanOrEqual(3.0);
+        expect(ratio).toBeGreaterThanOrEqual(4.5);
       });
 
       it('cumple contraste semántico entre error y onError (>= 4.5:1) eliminando texto blanco sobre rosa en oscuro', () => {

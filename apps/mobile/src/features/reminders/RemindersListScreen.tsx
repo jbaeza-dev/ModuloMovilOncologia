@@ -384,8 +384,8 @@ export function RemindersListScreen() {
       {isBlockedInSettings || isChannelBlocked ? (
         <InfoCard>
           <View style={styles.alertHeader}>
-            <Feather name="alert-triangle" size={24} color="#dc2626" />
-            <Text style={[styles.heading, { color: '#dc2626' }]}>
+            <Feather name="alert-triangle" size={24} color={appTheme.colors.error} />
+            <Text style={[styles.heading, { color: appTheme.colors.error }]}>
               {isChannelBlocked ? 'Canal de notificaciones bloqueado' : 'Permiso bloqueado'}
             </Text>
           </View>
@@ -409,11 +409,13 @@ export function RemindersListScreen() {
       (coordinatorResult.status === 'error' || coordinatorResult.incidencias.length > 0) ? (
         <InfoCard>
           <View style={styles.alertHeader}>
-            <Feather name="alert-circle" size={24} color="#dc2626" />
-            <Text style={[styles.heading, { color: '#dc2626' }]}>Atención con tus avisos</Text>
+            <Feather name="alert-circle" size={24} color={appTheme.colors.error} />
+            <Text style={[styles.heading, { color: appTheme.colors.error }]}>
+              Atención con tus avisos
+            </Text>
           </View>
           {coordinatorResult.incidencias.map((inc, idx) => (
-            <BodyText key={idx} style={{ color: '#dc2626', fontSize: 13 }}>
+            <BodyText key={idx} style={{ color: appTheme.colors.error, fontSize: 13 }}>
               • {inc}
             </BodyText>
           ))}
@@ -493,8 +495,8 @@ export function RemindersListScreen() {
       ) : medicationsError ? (
         <InfoCard>
           <View style={styles.alertHeader}>
-            <Feather name="alert-circle" size={22} color="#dc2626" />
-            <Text style={[styles.heading, { color: '#dc2626' }]}>
+            <Feather name="alert-circle" size={22} color={appTheme.colors.error} />
+            <Text style={[styles.heading, { color: appTheme.colors.error }]}>
               No se pudieron cargar tus medicamentos
             </Text>
           </View>
@@ -617,7 +619,7 @@ export function RemindersListScreen() {
 
           {coordinatorResult && coordinatorResult.truncadas > 0 ? (
             <View style={styles.warningBox}>
-              <Feather name="info" size={20} color="#b45309" />
+              <Feather name="info" size={20} color={appTheme.colors.warning} />
               <BodyText>
                 Se alcanzó el límite de avisos simultáneos del teléfono. Los avisos más próximos
                 quedaron programados y se renovarán automáticamente al abrir QuimioCare.
