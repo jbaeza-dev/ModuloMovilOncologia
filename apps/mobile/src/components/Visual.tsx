@@ -95,7 +95,13 @@ type FieldProps = {
   onChangeText?: (value: string) => void;
   placeholder?: string;
   secureTextEntry?: boolean;
-  keyboardType?: 'default' | 'email-address' | 'numeric' | 'phone-pad' | 'decimal-pad';
+  keyboardType?:
+    | 'default'
+    | 'email-address'
+    | 'numeric'
+    | 'phone-pad'
+    | 'decimal-pad'
+    | 'number-pad';
   multiline?: boolean;
   maxLength?: number;
   editable?: boolean;

@@ -23,6 +23,7 @@ jest.mock('expo-router', () => {
       canGoBack: () => mockRouterCanGoBack(),
     },
     useLocalSearchParams: () => ({}),
+    useNavigation: () => ({ dispatch: jest.fn() }),
     useFocusEffect: (cb: () => void | (() => void)) => {
       React.useEffect(() => {
         return cb();
@@ -37,6 +38,7 @@ jest.mock('expo-router', () => {
 jest.mock('expo-router/react-navigation', () => ({
   useNavigationState: (selector: (state: { index: number }) => unknown) =>
     selector({ index: mockNavIndex }),
+  usePreventRemove: jest.fn(),
   StackActions: {
     popToTop: () => ({ type: 'POP_TO_TOP' }),
   },

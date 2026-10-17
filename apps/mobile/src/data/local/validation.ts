@@ -14,36 +14,121 @@ export type VitalValues = {
   saturacion_o2: number | null;
 };
 
-export class InputError extends Error {}
+export class InputError extends Error {
+  fieldErrors?: Partial<Record<keyof VitalInput, string>>;
+  constructor(message: string, fieldErrors?: Partial<Record<keyof VitalInput, string>>) {
+    super(message);
+    this.name = 'InputError';
+    this.fieldErrors = fieldErrors;
+  }
+}
 
-function positiveNumber(raw: string, label: string, integer: boolean, max?: number): number | null {
-  const value = raw.trim();
-  if (!value) return null;
-  if (!/^\d+(?:[.,]\d+)?$/.test(value) || (integer && !/^\d+$/.test(value))) {
-    throw new InputError(`${label}: ingresa un número válido.`);
+export interface VitalValidationResult {
+  valid: boolean;
+  values: VitalValues;
+  errors: Partial<Record<keyof VitalInput, string>>;
+  generalError?: string;
+}
+
+export function validateVitalInput(input: VitalInput): VitalValidationResult {
+  const errors: Partial<Record<keyof VitalInput, string>> = {};
+  let generalError: string | undefined;
+
+  function parseField(
+    raw: string,
+    key: keyof VitalInput,
+    label: string,
+    integer: boolean,
+    max?: number,
+  ): number | null {
+    const value = raw.trim();
+    if (!value) return null;
+    if (!/^\d+(?:[.,]\d+)?$/.test(value) || (integer && !/^\d+$/.test(value))) {
+      errors[key] = `${label}: ingresa un número válido.`;
+      return null;
+    }
+    const parsed = Number(value.replace(',', '.'));
+    if (!Number.isFinite(parsed) || parsed <= 0 || (max !== undefined && parsed > max)) {
+      errors[key] = `${label}: ingresa un valor válido.`;
+      return null;
+    }
+    return parsed;
   }
-  const parsed = Number(value.replace(',', '.'));
-  if (!Number.isFinite(parsed) || parsed <= 0 || (max !== undefined && parsed > max)) {
-    throw new InputError(`${label}: ingresa un valor válido.`);
+
+  const temperatura = parseField(input.temperature, 'temperature', 'Temperatura', false);
+  const presion_sistolica = parseField(input.systolic, 'systolic', 'Presión sistólica', true);
+  const presion_diastolica = parseField(input.diastolic, 'diastolic', 'Presión diastólica', true);
+  const pulso = parseField(input.pulse, 'pulse', 'Pulso', true);
+  const saturacion_o2 = parseField(input.saturation, 'saturation', 'Saturación', true, 100);
+
+  const hasSysRaw = input.systolic.trim().length > 0;
+  const hasDiaRaw = input.diastolic.trim().length > 0;
+
+  if (hasSysRaw && !hasDiaRaw) {
+    errors.diastolic = 'Ingresa la presión diastólica.';
+  } else if (!hasSysRaw && hasDiaRaw) {
+    errors.systolic = 'Ingresa la presión sistólica.';
+  } else if (
+    presion_sistolica !== null &&
+    presion_diastolica !== null &&
+    presion_sistolica <= presion_diastolica
+  ) {
+    errors.systolic = 'La presión sistólica debe ser mayor que la diastólica.';
   }
-  return parsed;
+
+  const hasAnyInput =
+    input.temperature.trim().length > 0 ||
+    hasSysRaw ||
+    hasDiaRaw ||
+    input.pulse.trim().length > 0 ||
+    input.saturation.trim().length > 0;
+
+  if (!hasAnyInput) {
+    generalError = 'Ingresa al menos una medición.';
+  }
+
+  const valid = Object.keys(errors).length === 0 && !generalError;
+
+  return {
+    valid,
+    values: {
+      temperatura,
+      presion_sistolica,
+      presion_diastolica,
+      pulso,
+      saturacion_o2,
+    },
+    errors,
+    generalError,
+  };
 }
 
 export function parseVitalInput(input: VitalInput): VitalValues {
-  const values = {
-    temperatura: positiveNumber(input.temperature, 'Temperatura', false),
-    presion_sistolica: positiveNumber(input.systolic, 'Presión sistólica', true),
-    presion_diastolica: positiveNumber(input.diastolic, 'Presión diastólica', true),
-    pulso: positiveNumber(input.pulse, 'Pulso', true),
-    saturacion_o2: positiveNumber(input.saturation, 'Saturación', true, 100),
-  };
-  if ((values.presion_sistolica === null) !== (values.presion_diastolica === null)) {
-    throw new InputError('Ingresa ambos valores de presión arterial.');
+  const result = validateVitalInput(input);
+  if (!result.valid) {
+    if (result.generalError) {
+      throw new InputError(result.generalError, result.errors);
+    }
+    const hasSysRaw = input.systolic.trim().length > 0;
+    const hasDiaRaw = input.diastolic.trim().length > 0;
+    if ((hasSysRaw && !hasDiaRaw) || (!hasSysRaw && hasDiaRaw)) {
+      throw new InputError('Ingresa ambos valores de presión arterial.', result.errors);
+    }
+    const fieldOrder: Array<keyof VitalInput> = [
+      'temperature',
+      'systolic',
+      'diastolic',
+      'pulse',
+      'saturation',
+    ];
+    for (const key of fieldOrder) {
+      if (result.errors[key]) {
+        throw new InputError(result.errors[key]!, result.errors);
+      }
+    }
+    throw new InputError('Datos de medición inválidos.', result.errors);
   }
-  if (Object.values(values).every((value) => value === null)) {
-    throw new InputError('Ingresa al menos una medición.');
-  }
-  return values;
+  return result.values;
 }
 
 export function parseSymptomDescription(raw: string): string {
