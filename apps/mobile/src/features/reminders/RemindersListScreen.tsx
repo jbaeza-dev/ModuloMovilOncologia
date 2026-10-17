@@ -427,37 +427,6 @@ export function RemindersListScreen() {
         </InfoCard>
       ) : null}
 
-      {/* Estado y Cobertura de la Agenda */}
-      {prefs.enabled && permissionState?.status === 'granted' && !isChannelBlocked ? (
-        <InfoCard>
-          <SectionTitle>Estado de tus avisos</SectionTitle>
-          <View style={styles.row}>
-            <Text style={styles.subheading}>Cobertura actual:</Text>
-            <StatusPill>{getStatusCoverageText(coordinatorResult)}</StatusPill>
-          </View>
-
-          {coordinatorResult?.cubiertoHastaIso ? (
-            <BodyText>
-              Avisos preparados hasta:{' '}
-              <Text style={{ fontWeight: '700' }}>
-                {formatCoverageDateDisplay(coordinatorResult.cubiertoHastaIso)}
-              </Text>{' '}
-              (se renuevan al abrir la aplicación).
-            </BodyText>
-          ) : null}
-
-          {coordinatorResult && coordinatorResult.truncadas > 0 ? (
-            <View style={styles.warningBox}>
-              <Feather name="info" size={20} color="#b45309" />
-              <BodyText>
-                Se alcanzó el límite de avisos simultáneos del teléfono. Los avisos más próximos
-                quedaron programados y se renovarán automáticamente al abrir QuimioCare.
-              </BodyText>
-            </View>
-          ) : null}
-        </InfoCard>
-      ) : null}
-
       {/* SECCIÓN 1: MEDICIONES */}
       <View style={styles.sectionHeader}>
         <SectionTitle>Mediciones</SectionTitle>
@@ -621,6 +590,42 @@ export function RemindersListScreen() {
           ))}
         </>
       )}
+
+      {/* SECCIÓN 3: PREPARACIÓN Y DETALLES DE PROGRAMACIÓN */}
+      {prefs.enabled && permissionState?.status === 'granted' && !isChannelBlocked ? (
+        <InfoCard>
+          <SectionTitle>Preparación de avisos</SectionTitle>
+          <View style={styles.row}>
+            <Text style={styles.subheading}>Cobertura actual:</Text>
+            <StatusPill>{getStatusCoverageText(coordinatorResult)}</StatusPill>
+          </View>
+
+          {coordinatorResult?.cubiertoHastaIso ? (
+            <BodyText>
+              Avisos preparados hasta:{' '}
+              <Text style={{ fontWeight: '700' }}>
+                {formatCoverageDateDisplay(coordinatorResult.cubiertoHastaIso)}
+              </Text>{' '}
+              (se renuevan al abrir la aplicación).
+            </BodyText>
+          ) : (
+            <BodyText>
+              Los avisos se programan de forma local en este dispositivo y se renuevan al abrir la
+              aplicación.
+            </BodyText>
+          )}
+
+          {coordinatorResult && coordinatorResult.truncadas > 0 ? (
+            <View style={styles.warningBox}>
+              <Feather name="info" size={20} color="#b45309" />
+              <BodyText>
+                Se alcanzó el límite de avisos simultáneos del teléfono. Los avisos más próximos
+                quedaron programados y se renovarán automáticamente al abrir QuimioCare.
+              </BodyText>
+            </View>
+          ) : null}
+        </InfoCard>
+      ) : null}
 
       {/* Acceso a la Bandeja de Avisos */}
       <InfoCard>

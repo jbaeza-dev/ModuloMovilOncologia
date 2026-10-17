@@ -642,8 +642,47 @@ export function ReminderEditScreen() {
     );
   }
 
+  const isStateChangedInEdit =
+    isEditing && confirmedSnapshot !== null && habilitado !== confirmedSnapshot.habilitado;
+
+  const primaryLabel = saving
+    ? 'Guardando...'
+    : isEditing
+      ? isStateChangedInEdit
+        ? habilitado
+          ? 'Guardar y activar'
+          : 'Guardar en pausa'
+        : 'Guardar cambios'
+      : 'Guardar y activar';
+
+  const primaryIntent: ReminderActivationIntent = isEditing
+    ? isStateChangedInEdit
+      ? habilitado
+        ? 'save_and_activate'
+        : 'save_disabled'
+      : 'keep_existing'
+    : 'save_and_activate';
+
+  const bottomAction = (
+    <View style={styles.actions}>
+      <VisualButton
+        label={primaryLabel}
+        onPress={() => void executeSave(primaryIntent)}
+        disabled={saving}
+      />
+      {isEditing ? (
+        <VisualButton
+          label="Eliminar recordatorio"
+          secondary
+          onPress={() => void handleDelete()}
+          disabled={saving}
+        />
+      ) : null}
+    </View>
+  );
+
   return (
-    <Screen title={screenTitle} isRoot={false}>
+    <Screen title={screenTitle} isRoot={false} bottomAction={bottomAction}>
       <DemoBadge />
 
       {errorMsg ? (
@@ -1223,32 +1262,8 @@ export function ReminderEditScreen() {
         </>
       ) : null}
 
-      {/* Opción para guardar pausado en creación rápida o estado explícito en edición */}
-      {!isEditing ? (
-        <InfoCard>
-          <Pressable
-            accessibilityRole="switch"
-            accessibilityLabel="Activar este recordatorio al guardar"
-            accessibilityState={{ checked: habilitado }}
-            onPress={() => setHabilitado((prev) => !prev)}
-            style={styles.toggleRow}
-          >
-            <View style={{ flex: 1, paddingRight: theme.spacing.sm }}>
-              <Text style={styles.heading}>Activar al guardar</Text>
-              <BodyText>
-                {habilitado
-                  ? 'Se activará y programará los próximos avisos al guardar.'
-                  : 'Se guardará pausado sin emitir avisos por ahora.'}
-              </BodyText>
-            </View>
-            <Feather
-              name={habilitado ? 'toggle-right' : 'toggle-left'}
-              size={32}
-              color={habilitado ? appTheme.colors.primary : appTheme.colors.secondary}
-            />
-          </Pressable>
-        </InfoCard>
-      ) : (
+      {/* En edición: control de estado explícito para pausar o activar la regla */}
+      {isEditing ? (
         <InfoCard>
           <SectionTitle>Estado del recordatorio</SectionTitle>
           <Pressable
@@ -1275,36 +1290,24 @@ export function ReminderEditScreen() {
             />
           </Pressable>
         </InfoCard>
-      )}
+      ) : null}
 
-      {/* Botones de acción */}
-      <View style={styles.actions}>
-        <VisualButton
-          label={
-            saving
-              ? 'Guardando...'
-              : isEditing
-                ? 'Guardar cambios'
-                : habilitado
-                  ? 'Guardar y activar'
-                  : 'Guardar sin activar'
-          }
-          onPress={() =>
-            void executeSave(
-              isEditing ? 'keep_existing' : habilitado ? 'save_and_activate' : 'save_disabled',
-            )
-          }
-          disabled={saving}
-        />
-        {isEditing ? (
+      {/* En creación: opción para guardar sin activar */}
+      {!isEditing ? (
+        <InfoCard>
+          <SectionTitle>Opciones adicionales</SectionTitle>
+          <BodyText>
+            Si prefieres guardar este horario ahora y activarlo más adelante, puedes guardarlo sin
+            activar avisos.
+          </BodyText>
           <VisualButton
-            label="Eliminar recordatorio"
+            label="Guardar sin activar"
             secondary
-            onPress={() => void handleDelete()}
+            onPress={() => void executeSave('save_disabled')}
             disabled={saving}
           />
-        ) : null}
-      </View>
+        </InfoCard>
+      ) : null}
     </Screen>
   );
 }

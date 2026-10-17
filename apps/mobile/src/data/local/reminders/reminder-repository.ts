@@ -444,6 +444,7 @@ export function createReminderRepository(
       offset?: number;
       estado?: NotificationJobState;
       soloObservadas?: boolean;
+      orderBy?: 'fecha_prevista' | 'actividad_reciente';
     }): Promise<NotificationItem[]> {
       const limit = options?.limit ?? 50;
       const offset = options?.offset ?? 0;
@@ -457,7 +458,20 @@ export function createReminderRepository(
       if (options?.soloObservadas) {
         sql += ' AND (recibida_observada_en IS NOT NULL OR abierta_en IS NOT NULL)';
       }
-      sql += ' ORDER BY fecha_prevista_utc DESC, id DESC LIMIT ? OFFSET ?';
+
+      if (options?.orderBy === 'actividad_reciente') {
+        sql += ` ORDER BY
+          CASE
+            WHEN abierta_en IS NOT NULL AND recibida_observada_en IS NOT NULL
+              THEN (CASE WHEN abierta_en > recibida_observada_en THEN abierta_en ELSE recibida_observada_en END)
+            WHEN abierta_en IS NOT NULL THEN abierta_en
+            ELSE recibida_observada_en
+          END DESC,
+          id DESC
+          LIMIT ? OFFSET ?`;
+      } else {
+        sql += ' ORDER BY fecha_prevista_utc DESC, id DESC LIMIT ? OFFSET ?';
+      }
       params.push(limit, offset);
 
       const rows = await database.all<NotificationRecord>(sql, params);

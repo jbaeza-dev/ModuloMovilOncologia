@@ -622,4 +622,55 @@ describe('saveReminderWithActivation (reminder-actions)', () => {
       harness.cleanup();
     }
   });
+
+  it('en edición ordinaria (keep_existing) no invoca requestPermission aunque canAskAgain sea true', async () => {
+    const requestPermissionSpy = vi.fn();
+    const getPermissionStateSpy = vi.fn().mockResolvedValue({
+      status: 'denied',
+      canAskAgain: true,
+      channelStatus: 'ok',
+    });
+
+    const snapshot: ReminderStatusSnapshot = {
+      patientId: 'patient-a',
+      nowIso: '2026-10-16T12:00:00.000Z',
+      preferences: { enabled: true, updatedAt: '2026-10-16T12:00:00.000Z' },
+      rules: [baseRule],
+      futureNotifications: [],
+      medications: [],
+      allEnabledRulesCount: 1,
+    };
+
+    const outcome = await saveReminderWithActivation({
+      patientId: 'patient-a',
+      contextEpoch: 1,
+      input: {
+        id: 'rule-saved-1',
+        tipo: 'registro_vitales',
+        diasSemana: [1, 2, 3, 4, 5, 6, 7],
+        horasMinutos: ['08:00'],
+        habilitado: true,
+      },
+      intent: 'keep_existing',
+      remindersRepository: {
+        saveRuleWithActivationIntent: vi.fn().mockResolvedValue({
+          rule: { ...baseRule, horasMinutos: ['08:00'] },
+          preferencesEnabled: true,
+          otherEnabledRulesCount: 0,
+          resumedGeneralPreference: false,
+          pausedByGeneralPreference: false,
+        }),
+        getReminderStatusSnapshot: vi.fn().mockResolvedValue(snapshot),
+      },
+      notificationAdapter: {
+        getPermissionState: getPermissionStateSpy,
+        requestPermission: requestPermissionSpy,
+      },
+      reconcileReminders: vi.fn().mockResolvedValue(null),
+    });
+
+    expect(getPermissionStateSpy).toHaveBeenCalledTimes(1);
+    expect(requestPermissionSpy).not.toHaveBeenCalled();
+    expect(outcome.kind).toBe('saved_permission_denied');
+  });
 });

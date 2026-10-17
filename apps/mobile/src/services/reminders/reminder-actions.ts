@@ -118,7 +118,13 @@ export async function saveReminderWithActivation(
 
   if (targetHabilitado) {
     permissionState = await notificationAdapter.getPermissionState();
-    if (permissionState.status !== 'granted' && permissionState.canAskAgain) {
+    // En edición ordinaria (keep_existing) no se solicita permiso al usuario,
+    // únicamente se comprueba el estado actual de disponibilidad del dispositivo.
+    if (
+      intent !== 'keep_existing' &&
+      permissionState.status !== 'granted' &&
+      permissionState.canAskAgain
+    ) {
       permissionState = await notificationAdapter.requestPermission();
     }
 

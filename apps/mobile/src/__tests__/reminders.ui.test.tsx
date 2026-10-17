@@ -1023,14 +1023,15 @@ describe('Incremento 5: UI de Recordatorios y Avisos Locales', () => {
       alertSpy.mockRestore();
     });
 
-    it('muestra controles específicos de creación (Activar al guardar) en modo creación', async () => {
+    it('muestra controles específicos de creación (Guardar y activar y Guardar sin activar) en modo creación', async () => {
       mockUseLocalSearchParams.mockReturnValue({});
       await render(<ReminderEditScreen />);
 
       await waitFor(() => {
-        expect(screen.getByText('Activar al guardar')).toBeTruthy();
         expect(screen.getByText('Guardar y activar')).toBeTruthy();
+        expect(screen.getByText('Guardar sin activar')).toBeTruthy();
       });
+      expect(screen.queryByText('Activar al guardar')).toBeNull();
       expect(screen.queryByText('Estado del recordatorio')).toBeNull();
       expect(screen.queryByText('Guardar cambios')).toBeNull();
     });
@@ -1147,7 +1148,15 @@ describe('Incremento 5: UI de Recordatorios y Avisos Locales', () => {
 
   describe('NoticesTrayScreen', () => {
     it('muestra el estado vacío cuando no hay avisos en la bandeja', async () => {
-      mockReminderRepo.listNotifications.mockResolvedValueOnce([]);
+      mockReminderRepo.getReminderStatusSnapshot.mockResolvedValueOnce({
+        patientId: 'paciente-a',
+        nowIso: '2026-10-16T00:00:00.000Z',
+        preferences: { enabled: true, updatedAt: null },
+        rules: [],
+        futureNotifications: [],
+        medications: [],
+        allEnabledRulesCount: 0,
+      });
 
       await render(<NoticesTrayScreen />);
 
@@ -1156,34 +1165,7 @@ describe('Incremento 5: UI de Recordatorios y Avisos Locales', () => {
       });
     });
 
-    it('muestra avisos programados con sus fechas y estados', async () => {
-      mockReminderRepo.listNotifications.mockResolvedValueOnce([
-        {
-          id: 'notif-1',
-          pacienteId: 'paciente-a',
-          recordatorioId: 'rule-1',
-          revision: 1,
-          tipo: 'registro_vitales',
-          fechaPrevistaUtc: '2026-10-14T12:00:00Z',
-          idNativo: 'native-1',
-          estado: 'programada',
-          payload: {
-            version: 1,
-            notificacionId: 'notif-1',
-            revision: 1,
-            pacienteId: 'paciente-a',
-            recordatorioId: 'rule-1',
-            tipo: 'registro_vitales',
-            destino: '/vitales/registrar',
-          },
-          error: null,
-          recibidaObservadaEn: null,
-          abiertaEn: null,
-          creadoEl: '2026-10-13T10:00:00Z',
-          actualizadoEl: '2026-10-13T10:00:00Z',
-        },
-      ]);
-
+    it('muestra avisos programados con sus fechas y estados en Próximos', async () => {
       await render(<NoticesTrayScreen />);
 
       await waitFor(() => {
@@ -1193,22 +1175,161 @@ describe('Incremento 5: UI de Recordatorios y Avisos Locales', () => {
       expect(screen.getByText('Registrar signos vitales')).toBeTruthy();
     });
 
-    it('permite filtrar por estado en la bandeja de avisos', async () => {
-      mockReminderRepo.listNotifications.mockResolvedValue([]);
+    it('permite alternar entre Próximos y Actividad en la bandeja de avisos', async () => {
+      mockReminderRepo.listNotifications.mockResolvedValueOnce([
+        {
+          id: 'notif-obs-1',
+          pacienteId: 'paciente-a',
+          recordatorioId: 'rule-1',
+          revision: 1,
+          tipo: 'registro_vitales',
+          fechaPrevistaUtc: '2026-10-16T12:00:00.000Z',
+          idNativo: 'native-obs-1',
+          estado: 'programada',
+          payload: {
+            version: 1,
+            notificacionId: 'notif-obs-1',
+            revision: 1,
+            pacienteId: 'paciente-a',
+            recordatorioId: 'rule-1',
+            tipo: 'registro_vitales',
+            destino: '/vitales/registrar',
+          },
+          error: null,
+          recibidaObservadaEn: '2026-10-16T12:01:00.000Z',
+          abiertaEn: null,
+          creadoEl: '2026-10-16T10:00:00.000Z',
+          actualizadoEl: '2026-10-16T12:01:00.000Z',
+        },
+      ]);
 
       await render(<NoticesTrayScreen />);
 
       await waitFor(() => {
-        expect(screen.getByRole('tab', { name: 'Filtrar por Programados' })).toBeTruthy();
+        expect(screen.getByRole('tab', { name: 'Ver actividad observada' })).toBeTruthy();
       });
 
-      fireEvent.press(screen.getByRole('tab', { name: 'Filtrar por Programados' }));
+      fireEvent.press(screen.getByRole('tab', { name: 'Ver actividad observada' }));
 
       await waitFor(() => {
         expect(mockReminderRepo.listNotifications).toHaveBeenCalledWith(
-          expect.objectContaining({ estado: 'programada' }),
+          expect.objectContaining({ soloObservadas: true, orderBy: 'actividad_reciente' }),
         );
+        expect(screen.getByText('La aplicación detectó este aviso')).toBeTruthy();
       });
+    });
+
+    it('en Próximos con múltiples ocurrencias (caso de 98 ocurrencias), muestra la próxima de cada regla en orden ascendente', async () => {
+      const nowIso = '2026-10-17T00:00:00.000Z';
+      mockReminderRepo.getReminderStatusSnapshot.mockResolvedValueOnce({
+        patientId: 'paciente-a',
+        nowIso,
+        preferences: { enabled: true, updatedAt: null },
+        rules: [
+          {
+            id: 'rule-vitales',
+            pacienteId: 'paciente-a',
+            tipo: 'registro_vitales',
+            medicamentoId: null,
+            diasSemana: [1, 2, 3, 4, 5, 6, 7],
+            horasMinutos: ['07:00'],
+            zonaHoraria: 'America/Santiago',
+            fechaInicio: null,
+            fechaFin: null,
+            habilitado: true,
+            revision: 1,
+            creadoEl: nowIso,
+            actualizadoEl: nowIso,
+            eliminadoEl: null,
+          },
+          {
+            id: 'rule-med-1',
+            pacienteId: 'paciente-a',
+            tipo: 'medicacion',
+            medicamentoId: 'med-1',
+            diasSemana: [1, 2, 3, 4, 5, 6, 7],
+            horasMinutos: ['12:00'],
+            zonaHoraria: 'America/Santiago',
+            fechaInicio: null,
+            fechaFin: null,
+            habilitado: true,
+            revision: 1,
+            creadoEl: nowIso,
+            actualizadoEl: nowIso,
+            eliminadoEl: null,
+          },
+        ],
+        futureNotifications: [
+          {
+            id: 'notif-vital-1',
+            pacienteId: 'paciente-a',
+            recordatorioId: 'rule-vitales',
+            revision: 1,
+            tipo: 'registro_vitales',
+            fechaPrevistaUtc: '2026-10-17T10:00:00.000Z',
+            idNativo: 'native-vital-1',
+            estado: 'programada',
+            payloadMinimo: {
+              version: 1,
+              notificacionId: 'notif-vital-1',
+              revision: 1,
+              pacienteId: 'paciente-a',
+              recordatorioId: 'rule-vitales',
+              tipo: 'registro_vitales',
+              destino: '/vitales/registrar',
+            },
+            error: null,
+            recibidaObservadaEn: null,
+            abiertaEn: null,
+            creadoEl: nowIso,
+            actualizadoEl: nowIso,
+          },
+          {
+            id: 'notif-med-1',
+            pacienteId: 'paciente-a',
+            recordatorioId: 'rule-med-1',
+            revision: 1,
+            tipo: 'medicacion',
+            fechaPrevistaUtc: '2026-10-17T15:00:00.000Z',
+            idNativo: 'native-med-1',
+            estado: 'programada',
+            payloadMinimo: {
+              version: 1,
+              notificacionId: 'notif-med-1',
+              revision: 1,
+              pacienteId: 'paciente-a',
+              recordatorioId: 'rule-med-1',
+              tipo: 'medicacion',
+              destino: '/perfil/medicacion',
+            },
+            error: null,
+            recibidaObservadaEn: null,
+            abiertaEn: null,
+            creadoEl: nowIso,
+            actualizadoEl: nowIso,
+          },
+        ],
+        medications: [
+          {
+            id: 'med-1',
+            nombre: 'Ciclofosfamida 500mg',
+            fechaInicio: null,
+            fechaFin: null,
+            estadoActivo: true,
+          },
+        ],
+        allEnabledRulesCount: 2,
+      });
+
+      await render(<NoticesTrayScreen />);
+
+      await waitFor(() => {
+        expect(screen.getByText('Signos vitales')).toBeTruthy();
+        expect(screen.getByText('Ciclofosfamida 500mg')).toBeTruthy();
+      });
+      // Ambos con su acción correspondiente
+      expect(screen.getByText('Registrar signos vitales')).toBeTruthy();
+      expect(screen.getByText('Consultar medicación')).toBeTruthy();
     });
   });
 });
