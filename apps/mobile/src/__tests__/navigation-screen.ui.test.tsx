@@ -2,7 +2,7 @@
 
 import { fireEvent, render, screen } from '@testing-library/react-native';
 import React from 'react';
-import { Text } from 'react-native';
+import { Alert, Text } from 'react-native';
 
 let mockNavIndex = 0;
 const mockRouterBack = jest.fn();
@@ -69,16 +69,69 @@ jest.mock('../providers/ThemeProvider', () => ({
   useAppTheme: () => ({ theme: mockTheme }),
 }));
 
+let mockDemoMode = true;
 jest.mock('../utils/environment', () => ({
-  isDemoMode: () => true,
+  isDemoMode: () => mockDemoMode,
 }));
+
+const mockCloseActiveContext = jest.fn().mockResolvedValue({
+  success: true,
+  cancelledPatientId: 'paciente-demo-001',
+  pendingNotificationsCount: 0,
+});
+
+const defaultSnapshot = {
+  patientId: 'paciente-demo-001',
+  nowIso: '2026-10-16T12:00:00.000Z',
+  preferences: { enabled: false, updatedAt: null },
+  rules: [],
+  futureNotifications: [],
+  medications: [],
+  allEnabledRulesCount: 0,
+};
+
+const mockGetReminderStatusSnapshot = jest.fn().mockResolvedValue(defaultSnapshot);
 
 const mockUseLocalData = jest.fn().mockReturnValue({
   patientId: 'paciente-demo-001',
+  manager: {
+    getPatientId: () => 'paciente-demo-001',
+    getContextEpoch: () => 1,
+  },
   repository: {
+    profile: jest.fn().mockResolvedValue({
+      paciente_id: 'paciente-demo-001',
+      nombre: 'María Elena Morales',
+      email: 'maria@quimiocare.test',
+      rut: '12.345.678-9',
+      obtenido_en: '2026-10-16T00:00:00.000Z',
+    }),
     latestVital: jest.fn().mockResolvedValue(null),
     createVitals: jest.fn().mockResolvedValue(undefined),
+    symptoms: jest.fn().mockResolvedValue([]),
+    reminders: {
+      getReminderStatusSnapshot: (...args: unknown[]) => mockGetReminderStatusSnapshot(...args),
+      setPreferences: jest.fn().mockResolvedValue(undefined),
+    },
   },
+  notificationAdapter: {
+    getPermissionState: jest.fn().mockResolvedValue({
+      status: 'granted',
+      canAskAgain: true,
+      channelStatus: 'ok',
+    }),
+    requestPermission: jest.fn().mockResolvedValue({
+      status: 'granted',
+      canAskAgain: true,
+      channelStatus: 'ok',
+    }),
+  },
+  remindersRevision: 0,
+  scopedCoordinatorState: null,
+  bumpRemindersRevision: jest.fn(),
+  reconcileReminders: jest.fn().mockResolvedValue(undefined),
+  trackOperation: jest.fn((fn: () => Promise<unknown>) => fn()),
+  closeActiveContext: (...args: unknown[]) => mockCloseActiveContext(...args),
   changePatient: jest.fn(),
   runSave: jest.fn((fn: () => Promise<unknown>) => fn()),
   saving: false,
@@ -94,16 +147,24 @@ jest.mock('../providers/LocalDataProvider', () => ({
 }));
 
 import { handleHomeTabPress } from '../app/(tabs)/_layout';
+import {
+  ConfirmLogoutButton,
+  LOGOUT_CONFIRM_MESSAGE,
+  LOGOUT_CONFIRM_TITLE,
+} from '../components/ConfirmLogoutButton';
 import { NavigationCard } from '../components/NavigationCard';
 import { Screen } from '../components/Screen';
-import { HomeScreen } from '../features/home/HomeScreen';
+import { SymptomDataScreen } from '../features/form/SymptomDataScreen';
+import { HomeScreen, resolveHomeGreeting } from '../features/home/HomeScreen';
 import { clearHomeScrollToTop, consumeHomeScrollToTop } from '../features/home/home-scroll-signal';
 import { RegisterVitalsDataScreen } from '../features/vitals/VitalsDataScreens';
 
-describe('Screen, NavigationCard, rutas de Inicio y reinicio dirigido (Bloque 1)', () => {
+describe('Screen, NavigationCard, rutas de Inicio y reinicio dirigido (Bloque 1 y Bloque 2)', () => {
   beforeEach(() => {
     jest.clearAllMocks();
     mockNavIndex = 0;
+    mockDemoMode = true;
+    mockGetReminderStatusSnapshot.mockResolvedValue(defaultSnapshot);
     clearHomeScrollToTop();
   });
 
@@ -170,17 +231,162 @@ describe('Screen, NavigationCard, rutas de Inicio y reinicio dirigido (Bloque 1)
     expect(mockRouterReplace).toHaveBeenCalledWith('/');
   });
 
-  it('HomeScreen hace push a /(tabs)/(inicio)/registrar-vitales y /(tabs)/(inicio)/registrar-sintomas y oculta Volver por ser raíz', async () => {
+  it('HomeScreen muestra saludo personalizado, tarjeta de próximo recordatorio y hace push a sus rutas hijas', async () => {
     mockNavIndex = 1;
     await render(<HomeScreen />);
 
     expect(screen.queryByLabelText('Volver')).toBeNull();
+    expect(await screen.findByText('Hola, María Elena Morales')).toBeTruthy();
+    expect(screen.getByText('Próximo recordatorio de medición')).toBeTruthy();
+    expect(screen.getByText('Configurar aviso')).toBeTruthy();
+    expect(screen.getByText('Guarda una descripción de síntomas y malestares.')).toBeTruthy();
 
     await fireEvent.press(screen.getByLabelText('Registrar signos vitales'));
     expect(mockRouterPush).toHaveBeenCalledWith('/(tabs)/(inicio)/registrar-vitales');
 
     await fireEvent.press(screen.getByLabelText('Registrar síntomas'));
     expect(mockRouterPush).toHaveBeenCalledWith('/(tabs)/(inicio)/registrar-sintomas');
+  });
+
+  it('P-01: resolveHomeGreeting evita mostrar el nombre retenido de otro paciente y aplica respaldos correctos', () => {
+    // Mientras carga, usa el saludo genérico aunque haya un perfil previo en memoria
+    expect(
+      resolveHomeGreeting({
+        loadingProfile: true,
+        profile: {
+          paciente_id: 'paciente-demo-001',
+          nombre: 'Paciente Anterior',
+          email: null,
+          rut: null,
+          obtenido_en: '2026-10-16T00:00:00.000Z',
+        },
+        patientId: 'paciente-demo-001',
+        demoMode: true,
+      }),
+    ).toBe('Hola, te damos la bienvenida');
+
+    // Si el perfil en memoria pertenece a otro paciente (cambio A -> B), nunca muestra el nombre de A
+    expect(
+      resolveHomeGreeting({
+        loadingProfile: false,
+        profile: {
+          paciente_id: 'paciente-demo-001',
+          nombre: 'Paciente A',
+          email: null,
+          rut: null,
+          obtenido_en: '2026-10-16T00:00:00.000Z',
+        },
+        patientId: 'paciente-demo-002',
+        demoMode: false,
+      }),
+    ).toBe('Hola, te damos la bienvenida');
+
+    // Sin nombre en perfil y en modo demo, usa la etiqueta del paciente demo activo
+    expect(
+      resolveHomeGreeting({
+        loadingProfile: false,
+        profile: {
+          paciente_id: 'paciente-demo-002',
+          nombre: '   ',
+          email: null,
+          rut: null,
+          obtenido_en: '2026-10-16T00:00:00.000Z',
+        },
+        patientId: 'paciente-demo-002',
+        demoMode: true,
+      }),
+    ).toBe('Hola, Paciente de prueba B');
+  });
+
+  it('P-03: HomeScreen muestra el próximo aviso confirmado («Hoy a las 15:00») cuando está programado', async () => {
+    mockGetReminderStatusSnapshot.mockResolvedValue({
+      patientId: 'paciente-demo-001',
+      nowIso: '2026-10-16T12:00:00.000Z',
+      preferences: { enabled: true, updatedAt: '2026-10-16T00:00:00.000Z' },
+      rules: [
+        {
+          id: 'rule-v-1',
+          pacienteId: 'paciente-demo-001',
+          tipo: 'registro_vitales',
+          medicamentoId: null,
+          diasSemana: [1, 2, 3, 4, 5, 6, 7],
+          horasMinutos: ['15:00'],
+          zonaHoraria: 'America/Santiago',
+          fechaInicio: null,
+          fechaFin: null,
+          habilitado: true,
+          revision: 1,
+          eliminadoEl: null,
+          creadoEl: '2026-10-16T00:00:00.000Z',
+          actualizadoEl: '2026-10-16T00:00:00.000Z',
+        },
+      ],
+      futureNotifications: [
+        {
+          id: 'notif-v-1',
+          pacienteId: 'paciente-demo-001',
+          recordatorioId: 'rule-v-1',
+          revision: 1,
+          tipo: 'registro_vitales',
+          fechaPrevistaUtc: '2026-10-16T18:00:00.000Z',
+          idNativo: 'native-v-1',
+          estado: 'programada',
+          payloadMinimo: {
+            version: 1,
+            notificacionId: 'notif-v-1',
+            revision: 1,
+            pacienteId: 'paciente-demo-001',
+            recordatorioId: 'rule-v-1',
+            tipo: 'registro_vitales',
+            destino: '/vitales/registrar',
+          },
+          error: null,
+          recibidaObservadaEn: null,
+          abiertaEn: null,
+          creadoEl: '2026-10-16T00:00:00.000Z',
+          actualizadoEl: '2026-10-16T00:00:00.000Z',
+        },
+      ],
+      medications: [],
+      allEnabledRulesCount: 1,
+    });
+
+    await render(<HomeScreen />);
+    expect(await screen.findByText('Hoy a las 15:00')).toBeTruthy();
+    expect(screen.getByText('Cambiar horario')).toBeTruthy();
+
+    await fireEvent.press(screen.getByText('Cambiar horario'));
+    expect(mockRouterPush).toHaveBeenCalledWith('/recordatorios/editar?id=rule-v-1');
+  });
+
+  it('P-02: ConfirmLogoutButton solicita confirmación y ejecuta closeActiveContext("manual_close") solo al confirmar', async () => {
+    const alertSpy = jest.spyOn(Alert, 'alert').mockImplementation(() => {});
+
+    await render(<ConfirmLogoutButton />);
+
+    await fireEvent.press(screen.getByText('Cerrar sesión'));
+    expect(alertSpy).toHaveBeenCalledTimes(1);
+    const [title, message, buttons] = alertSpy.mock.calls[0];
+    expect(title).toBe(LOGOUT_CONFIRM_TITLE);
+    expect(message).toBe(LOGOUT_CONFIRM_MESSAGE);
+    expect(buttons).toHaveLength(2);
+    expect(buttons?.[0]?.text).toBe('Cancelar');
+    expect(buttons?.[1]?.text).toBe('Cerrar sesión');
+
+    // Al pulsar Cancelar no cierra el contexto
+    expect(mockCloseActiveContext).not.toHaveBeenCalled();
+
+    // Al confirmar cierra el contexto una sola vez
+    buttons?.[1]?.onPress?.();
+    expect(mockCloseActiveContext).toHaveBeenCalledTimes(1);
+    expect(mockCloseActiveContext).toHaveBeenCalledWith('manual_close');
+
+    alertSpy.mockRestore();
+  });
+
+  it('P-05: SymptomDataScreen presenta el encabezado «Registrar síntomas»', async () => {
+    await render(<SymptomDataScreen />);
+    expect(screen.getByText('Registrar síntomas')).toBeTruthy();
   });
 
   it('RegisterVitalsDataScreen distingue flecha Volver (router.back) de Ver historial de mediciones (router.navigate)', async () => {

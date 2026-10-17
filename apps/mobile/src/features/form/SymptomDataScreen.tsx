@@ -65,7 +65,7 @@ export function SymptomDataScreen() {
   }
 
   return (
-    <Screen title="Síntomas de hoy" scroll={false}>
+    <Screen title="Registrar síntomas" scroll={false}>
       <FlatList<SymptomWithSyncRecord>
         data={list.items}
         keyExtractor={(item) => item.id}

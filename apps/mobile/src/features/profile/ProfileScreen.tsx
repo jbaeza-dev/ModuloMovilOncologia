@@ -2,6 +2,7 @@ import Feather from '@expo/vector-icons/Feather';
 import { useCallback, useState } from 'react';
 import { Pressable, StyleSheet, Text, View } from 'react-native';
 
+import { ConfirmLogoutButton } from '../../components/ConfirmLogoutButton';
 import { NavigationCard } from '../../components/NavigationCard';
 import { Screen } from '../../components/Screen';
 import {
@@ -109,6 +110,7 @@ export function ProfileScreen() {
         icon="settings"
         href="/perfil/preferencias"
       />
+      <ConfirmLogoutButton />
     </Screen>
   );
 }
@@ -360,6 +362,7 @@ export function PreferencesScreen() {
     coordinator,
     patientId,
     reconcileReminders,
+    bumpRemindersRevision,
     trackOperation,
     closeActiveContext,
     isClosing,
@@ -383,6 +386,7 @@ export function PreferencesScreen() {
     const nextVal = !prefs.enabled;
     await trackOperation(async () => {
       await repository.reminders.setPreferences(nextVal);
+      bumpRemindersRevision?.();
       if (patientId) {
         if (reconcileReminders) {
           await reconcileReminders(patientId);
@@ -450,7 +454,7 @@ export function PreferencesScreen() {
         <BodyText>
           {prefs.enabled
             ? 'Los avisos locales están autorizados en este dispositivo para el paciente activo.'
-            : 'Los avisos locales están desactivados. No se emitirán alertas nativas.'}
+            : 'Todos tus avisos están pausados. Tus horarios guardados se conservan.'}
         </BodyText>
       </InfoCard>
       <NavigationCard
@@ -480,12 +484,7 @@ export function PreferencesScreen() {
             onPress={() => void closeActiveContext('change_patient')}
           />
         ) : null}
-        <VisualButton
-          label={isClosing ? 'Cerrando sesión…' : 'Cerrar contexto activo'}
-          secondary
-          disabled={isClosing}
-          onPress={() => void closeActiveContext('manual_close')}
-        />
+        <ConfirmLogoutButton />
       </InfoCard>
     </Screen>
   );
