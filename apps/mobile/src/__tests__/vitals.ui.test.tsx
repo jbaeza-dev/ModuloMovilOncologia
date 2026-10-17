@@ -225,6 +225,25 @@ describe('VitalsDataScreens UI tests (Bloque 3)', () => {
         expect.any(Object),
       );
     });
+
+    it('cuando isClosing es true, bypassPreventRemove desactiva la protección contra descarte para permitir el cierre limpio de sesión', async () => {
+      mockIsClosing = true;
+      await render(<RegisterVitalsDataScreen />);
+
+      const tempInput = screen.getByLabelText('Temperatura corporal (°C)');
+      await fireEvent.changeText(tempInput, '37.5');
+
+      // Formulario tiene datos (isDirty es true), pero isClosing es true -> preventRemove DEBE estar en false
+      expect(mockPreventRemoveEnabled).toBe(false);
+
+      const alertSpy = jest.spyOn(Alert, 'alert');
+      const backBtn = screen.getByRole('button', { name: 'Volver' });
+      fireEvent.press(backBtn);
+
+      // Regresa limpiamente sin levantar Alert.alert
+      expect(mockRouterBack).toHaveBeenCalled();
+      expect(alertSpy).not.toHaveBeenCalled();
+    });
   });
 
   describe('VitalsDataScreen (Historial)', () => {

@@ -504,4 +504,117 @@ describe('ReminderRepository', () => {
     );
     expect(outboxRow?.total ?? 0).toBe(0);
   });
+
+  it('listNotifications ordena por actividad reciente considerando abierta_en, recibida_observada_en, nulos y desempate por id', async () => {
+    const db = open();
+    await migrateDatabase(db);
+    await seedPatientContextIfEmpty(db, patientA, patientB);
+
+    const repo = createReminderRepository(db, patientA);
+
+    const rule = await repo.saveRule({
+      tipo: 'registro_vitales',
+      diasSemana: [1, 2, 3, 4, 5, 6, 7],
+      horasMinutos: ['08:00'],
+    });
+
+    const nowIso = '2026-10-16T12:00:00.000Z';
+
+    // notif-1: abierta_en más reciente que recibida_observada_en (15:00 vs 13:00) -> actividad efectiva = 15:00
+    await db.run(
+      `INSERT INTO notificacion_local (
+         id, paciente_id, recordatorio_id, revision, tipo, fecha_prevista_utc,
+         id_nativo, estado, payload_minimo, recibida_observada_en, abierta_en, creado_el, actualizado_el
+       ) VALUES (?, ?, ?, 1, 'registro_vitales', '2026-10-16T08:00:00.000Z', 'nat-1', 'programada', '{}', ?, ?, ?, ?)`,
+      [
+        'notif-1',
+        patientA,
+        rule.id,
+        '2026-10-16T13:00:00.000Z',
+        '2026-10-16T15:00:00.000Z',
+        nowIso,
+        nowIso,
+      ],
+    );
+
+    // notif-2: solo recibida_observada_en (16:00) -> actividad efectiva = 16:00
+    await db.run(
+      `INSERT INTO notificacion_local (
+         id, paciente_id, recordatorio_id, revision, tipo, fecha_prevista_utc,
+         id_nativo, estado, payload_minimo, recibida_observada_en, abierta_en, creado_el, actualizado_el
+       ) VALUES (?, ?, ?, 1, 'registro_vitales', '2026-10-17T08:00:00.000Z', 'nat-2', 'programada', '{}', ?, NULL, ?, ?)`,
+      ['notif-2', patientA, rule.id, '2026-10-16T16:00:00.000Z', nowIso, nowIso],
+    );
+
+    // notif-3: solo abierta_en (14:00) -> actividad efectiva = 14:00
+    await db.run(
+      `INSERT INTO notificacion_local (
+         id, paciente_id, recordatorio_id, revision, tipo, fecha_prevista_utc,
+         id_nativo, estado, payload_minimo, recibida_observada_en, abierta_en, creado_el, actualizado_el
+       ) VALUES (?, ?, ?, 1, 'registro_vitales', '2026-10-18T08:00:00.000Z', 'nat-3', 'programada', '{}', NULL, ?, ?, ?)`,
+      ['notif-3', patientA, rule.id, '2026-10-16T14:00:00.000Z', nowIso, nowIso],
+    );
+
+    // notif-4: recibida más reciente que abierta (17:00 vs 16:30) -> actividad efectiva = 17:00
+    await db.run(
+      `INSERT INTO notificacion_local (
+         id, paciente_id, recordatorio_id, revision, tipo, fecha_prevista_utc,
+         id_nativo, estado, payload_minimo, recibida_observada_en, abierta_en, creado_el, actualizado_el
+       ) VALUES (?, ?, ?, 1, 'registro_vitales', '2026-10-19T08:00:00.000Z', 'nat-4', 'programada', '{}', ?, ?, ?, ?)`,
+      [
+        'notif-4',
+        patientA,
+        rule.id,
+        '2026-10-16T17:00:00.000Z',
+        '2026-10-16T16:30:00.000Z',
+        nowIso,
+        nowIso,
+      ],
+    );
+
+    // notif-5: misma actividad que notif-2 (16:00) para desempate por id DESC ('notif-5' > 'notif-2')
+    await db.run(
+      `INSERT INTO notificacion_local (
+         id, paciente_id, recordatorio_id, revision, tipo, fecha_prevista_utc,
+         id_nativo, estado, payload_minimo, recibida_observada_en, abierta_en, creado_el, actualizado_el
+       ) VALUES (?, ?, ?, 1, 'registro_vitales', '2026-10-20T08:00:00.000Z', 'nat-5', 'programada', '{}', ?, NULL, ?, ?)`,
+      ['notif-5', patientA, rule.id, '2026-10-16T16:00:00.000Z', nowIso, nowIso],
+    );
+
+    // notif-6: sin actividad observada (ambos nulos)
+    await db.run(
+      `INSERT INTO notificacion_local (
+         id, paciente_id, recordatorio_id, revision, tipo, fecha_prevista_utc,
+         id_nativo, estado, payload_minimo, recibida_observada_en, abierta_en, creado_el, actualizado_el
+       ) VALUES (?, ?, ?, 1, 'registro_vitales', '2026-10-21T08:00:00.000Z', 'nat-6', 'programada', '{}', NULL, NULL, ?, ?)`,
+      ['notif-6', patientA, rule.id, nowIso, nowIso],
+    );
+
+    // 1. Filtrando solo observadas (Bandeja de actividad)
+    const observedList = await repo.listNotifications({
+      soloObservadas: true,
+      orderBy: 'actividad_reciente',
+    });
+
+    expect(observedList.map((n) => n.id)).toEqual([
+      'notif-4', // 17:00
+      'notif-5', // 16:00 (id desempate)
+      'notif-2', // 16:00
+      'notif-1', // 15:00
+      'notif-3', // 14:00
+    ]);
+
+    // 2. Sin soloObservadas: los registros sin actividad quedan al final
+    const allList = await repo.listNotifications({
+      orderBy: 'actividad_reciente',
+    });
+    expect(allList.map((n) => n.id)).toEqual([
+      'notif-4',
+      'notif-5',
+      'notif-2',
+      'notif-1',
+      'notif-3',
+      'notif-6',
+    ]);
+  });
 });
