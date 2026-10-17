@@ -98,6 +98,20 @@ describe('Componentes Accesibles Visual.tsx y Screen.tsx (B1 - UX-03 a UX-07)', 
       expect(inputRef.current).not.toBeNull();
       expect(typeof inputRef.current?.focus).toBe('function');
     });
+
+    it('aplica estilo editableValue con tipografía de 18dp e interlineado 24 cuando se habilita editableValueStyle', async () => {
+      await render(<VisualField label="Temperatura editable" value="37.2" editableValueStyle />);
+
+      const input = screen.getByDisplayValue('37.2');
+      expect(input.props.style).toEqual(
+        expect.arrayContaining([
+          expect.objectContaining({
+            fontSize: mockTheme.typography.editableValue.fontSize,
+            lineHeight: mockTheme.typography.editableValue.lineHeight,
+          }),
+        ]),
+      );
+    });
   });
 
   describe('StatusPill', () => {

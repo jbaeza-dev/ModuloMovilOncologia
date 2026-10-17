@@ -226,10 +226,7 @@ export function ReportsScreen() {
 
   return (
     <Screen title="Reportes">
-      <BodyText>
-        Resumen de evolución clínica generado localmente a partir de signos vitales y síntomas en
-        este dispositivo.
-      </BodyText>
+      <BodyText>Crea un resumen de tus mediciones y síntomas para compartirlo.</BodyText>
 
       <SectionTitle>Período</SectionTitle>
       <View style={styles.chips}>

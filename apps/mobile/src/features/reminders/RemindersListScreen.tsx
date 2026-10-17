@@ -355,10 +355,10 @@ export function RemindersListScreen() {
 
       {/* Switch Maestro */}
       <InfoCard>
-        <SectionTitle>Recordatorios locales</SectionTitle>
+        <SectionTitle>Mis recordatorios</SectionTitle>
         <Pressable
           accessibilityRole="switch"
-          accessibilityLabel="Activar recordatorios locales"
+          accessibilityLabel="Activar mis recordatorios"
           accessibilityState={{ checked: prefs.enabled, disabled: toggling }}
           onPress={() => void handleToggleMaster()}
           style={styles.disclosure}

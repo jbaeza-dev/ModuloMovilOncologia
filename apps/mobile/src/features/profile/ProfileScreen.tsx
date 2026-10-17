@@ -210,7 +210,8 @@ export function ClinicalProfileScreen() {
               <SectionTitle>Ficha clínica</SectionTitle>
               <DetailRow label="Identificador" value={clinicalFile.ficha_id} />
               <StatusPill>
-                Ficha identificada · Información en caché ({formatDate(clinicalFile.obtenido_en)})
+                Ficha identificada · Información guardada en este dispositivo · Información recibida
+                el {formatDate(clinicalFile.obtenido_en)}
               </StatusPill>
             </InfoCard>
           ) : null}
@@ -424,7 +425,7 @@ export function PreferencesScreen() {
           onPress={toggleNotices}
           style={styles.disclosure}
         >
-          <Text style={styles.heading}>Habilitar avisos locales</Text>
+          <Text style={styles.heading}>Habilitar avisos</Text>
           <Feather
             name={prefs.enabled ? 'toggle-right' : 'toggle-left'}
             size={28}

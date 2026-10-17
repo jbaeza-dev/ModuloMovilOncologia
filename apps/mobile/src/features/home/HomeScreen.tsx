@@ -357,12 +357,12 @@ export function HomeScreen() {
         <SectionTitle>Acompañamiento</SectionTitle>
         <NavigationCard
           title="Mis medicamentos"
-          description="Revisa tus pautas farmacológicas indicadas."
+          description="Consulta tus medicamentos y las indicaciones de tu equipo de salud."
           icon="shield"
           href="/perfil/medicacion"
         />
         <NavigationCard
-          title="Recordatorios locales"
+          title="Mis recordatorios"
           description="Avisos configurados en este dispositivo para signos y medicación."
           icon="clock"
           href="/recordatorios"

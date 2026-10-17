@@ -113,6 +113,7 @@ type FieldProps = {
   blurOnSubmit?: boolean;
   nativeID?: string;
   accessibilityHint?: string;
+  editableValueStyle?: boolean;
 };
 
 export function VisualField({
@@ -123,6 +124,7 @@ export function VisualField({
   inputRef,
   nativeID,
   accessibilityHint,
+  editableValueStyle = false,
   ...input
 }: FieldProps) {
   const styles = useStyles();
@@ -146,6 +148,7 @@ export function VisualField({
         placeholderTextColor={appTheme.colors.secondary}
         style={[
           styles.input,
+          editableValueStyle && styles.inputEditableValue,
           hasError && styles.inputError,
           input.multiline && styles.multilineInput,
           editable === false && styles.disabledInput,
@@ -316,7 +319,7 @@ function useStyles() {
       borderRadius: theme.radius.md,
       backgroundColor: colors.surface,
     },
-    body: { fontSize: 15, lineHeight: 23, color: colors.secondary },
+    body: { ...theme.typography.body, color: colors.secondary },
     pill: {
       alignSelf: 'flex-start',
       overflow: 'hidden',
@@ -334,6 +337,7 @@ function useStyles() {
     },
     button: {
       minHeight: 52,
+      paddingVertical: theme.spacing.sm,
       paddingHorizontal: theme.spacing.md,
       borderRadius: theme.radius.sm,
       alignItems: 'center',
@@ -344,24 +348,27 @@ function useStyles() {
     disabledButton: { opacity: 0.55 },
     pressed: { opacity: 0.75 },
     buttonLabel: {
-      fontSize: 16,
-      fontWeight: '700',
+      ...theme.typography.button,
       color: colors.onPrimary,
       textAlign: 'center',
     },
     secondaryLabel: { color: colors.text },
     field: { gap: theme.spacing.sm },
-    fieldLabel: { fontSize: 16, fontWeight: '600', color: colors.text },
-    fieldHelper: { fontSize: 14, lineHeight: 20, color: colors.secondary },
+    fieldLabel: { ...theme.typography.label, color: colors.text },
+    fieldHelper: { ...theme.typography.helper, color: colors.secondary },
     input: {
       minHeight: 52,
       paddingHorizontal: theme.spacing.md,
+      paddingVertical: theme.spacing.sm,
       borderRadius: theme.radius.sm,
       borderWidth: 1.5,
       borderColor: colors.inputBorder,
       backgroundColor: colors.surface,
       color: colors.text,
-      fontSize: 16,
+      ...theme.typography.body,
+    },
+    inputEditableValue: {
+      ...theme.typography.editableValue,
     },
     inputError: {
       borderColor: colors.error,

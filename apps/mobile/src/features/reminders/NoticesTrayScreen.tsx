@@ -160,7 +160,7 @@ export function NoticesTrayScreen() {
         <SectionTitle>Avisos planificados y actividad</SectionTitle>
         <BodyText>
           {activeTab === 'proximos'
-            ? 'Próxima ocurrencia de cada uno de tus horarios configurados. Una fecha futura indica programación en el dispositivo, no entrega anticipada.'
+            ? 'Próximo aviso de cada uno de tus horarios configurados. Una fecha futura indica programación en el dispositivo, no entrega anticipada.'
             : 'Historial de avisos detectados o abiertos en este teléfono. Una detección no implica lectura del paciente.'}
         </BodyText>
       </InfoCard>
@@ -310,7 +310,7 @@ export function NoticesTrayScreen() {
                 const isVitales = item.tipo === 'registro_vitales';
                 const title = isVitales
                   ? 'Signos vitales'
-                  : (item.medicamentoNombre ?? 'Medicación activa');
+                  : (item.medicamentoNombre ?? 'Mis medicamentos');
 
                 return (
                   <InfoCard key={item.id}>
@@ -340,7 +340,7 @@ export function NoticesTrayScreen() {
                         />
                       ) : (
                         <VisualButton
-                          label="Consultar medicación"
+                          label="Consultar medicamentos"
                           secondary
                           onPress={() => router.push('/perfil/medicacion')}
                         />
@@ -394,7 +394,7 @@ export function NoticesTrayScreen() {
                           color={appTheme.colors.primary}
                         />
                         <Text style={styles.typeText}>
-                          {isVitales ? 'Signos vitales' : 'Medicación activa'}
+                          {isVitales ? 'Signos vitales' : 'Mis medicamentos'}
                         </Text>
                       </View>
                       {getActivityBadge(item)}

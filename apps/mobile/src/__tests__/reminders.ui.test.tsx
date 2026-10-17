@@ -506,10 +506,10 @@ describe('Incremento 5: UI de Recordatorios y Avisos Locales', () => {
       await render(<RemindersListScreen />);
 
       await waitFor(() => {
-        expect(screen.getByRole('switch', { name: 'Activar recordatorios locales' })).toBeTruthy();
+        expect(screen.getByRole('switch', { name: 'Activar mis recordatorios' })).toBeTruthy();
       });
 
-      const masterSwitch = screen.getByRole('switch', { name: 'Activar recordatorios locales' });
+      const masterSwitch = screen.getByRole('switch', { name: 'Activar mis recordatorios' });
       fireEvent.press(masterSwitch);
 
       await waitFor(() => {
@@ -1551,7 +1551,7 @@ describe('Incremento 5: UI de Recordatorios y Avisos Locales', () => {
 
       // Acciones individuales presentes
       expect(screen.getByRole('button', { name: 'Registrar signos vitales' })).toBeTruthy();
-      expect(screen.getByRole('button', { name: 'Consultar medicación' })).toBeTruthy();
+      expect(screen.getByRole('button', { name: 'Consultar medicamentos' })).toBeTruthy();
     });
   });
 });

@@ -341,7 +341,7 @@ describe('HomeScreen UI tests (Bloque 2)', () => {
     await render(<HomeScreen />);
 
     expect(screen.getByText('Mis medicamentos')).toBeTruthy();
-    expect(screen.getByText('Recordatorios locales')).toBeTruthy();
+    expect(screen.getByText('Mis recordatorios')).toBeTruthy();
     expect(screen.getByText('Bandeja de avisos')).toBeTruthy();
     expect(screen.getByText('Asistente QuimioCare')).toBeTruthy();
 

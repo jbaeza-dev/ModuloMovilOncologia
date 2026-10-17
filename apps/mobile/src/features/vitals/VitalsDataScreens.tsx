@@ -326,6 +326,7 @@ export function RegisterVitalsDataScreen() {
         inputRef={tempRef}
         returnKeyType="next"
         onSubmitEditing={() => sysRef.current?.focus()}
+        editableValueStyle
       />
 
       <SectionTitle>Presión arterial</SectionTitle>
@@ -339,6 +340,7 @@ export function RegisterVitalsDataScreen() {
         inputRef={sysRef}
         returnKeyType="next"
         onSubmitEditing={() => diaRef.current?.focus()}
+        editableValueStyle
       />
       <VisualField
         label="Presión diastólica (mmHg)"
@@ -350,6 +352,7 @@ export function RegisterVitalsDataScreen() {
         inputRef={diaRef}
         returnKeyType="next"
         onSubmitEditing={() => pulseRef.current?.focus()}
+        editableValueStyle
       />
 
       <VisualField
@@ -362,6 +365,7 @@ export function RegisterVitalsDataScreen() {
         inputRef={pulseRef}
         returnKeyType="next"
         onSubmitEditing={() => satRef.current?.focus()}
+        editableValueStyle
       />
 
       <VisualField
@@ -372,6 +376,7 @@ export function RegisterVitalsDataScreen() {
         errorText={fieldErrors.saturation}
         inputRef={satRef}
         returnKeyType="done"
+        editableValueStyle
       />
 
       {generalError ? (
