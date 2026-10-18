@@ -6,6 +6,7 @@ import { ConfirmLogoutButton } from '../../components/ConfirmLogoutButton';
 import { NavigationCard } from '../../components/NavigationCard';
 import { Screen } from '../../components/Screen';
 import { InfoCard, SectionTitle, StatusPill, VisualButton } from '../../components/Visual';
+import type { DailyFormStatus } from '../../data/local/forms/form-types';
 import type { PatientProfileRecord } from '../../data/local/repository';
 import { useFocusedValue } from '../../hooks/use-local-query';
 import { useReminderStatus } from '../../hooks/use-reminder-status';
@@ -72,6 +73,20 @@ export function HomeScreen() {
     loadProfile,
     null as PatientProfileRecord | null,
   );
+
+  const loadDailyStatus = useCallback(async () => {
+    if (!repository || typeof repository.listAssignedForms !== 'function') return null;
+    try {
+      const assigned = await repository.listAssignedForms();
+      if (assigned.length === 0) return null;
+      const primary = assigned[0];
+      return await repository.getDailyFormStatus(primary.formulario_id);
+    } catch {
+      return null;
+    }
+  }, [repository]);
+
+  const { value: dailyStatus } = useFocusedValue(loadDailyStatus, null as DailyFormStatus | null);
 
   const {
     loading: reminderLoading,
@@ -346,10 +361,16 @@ export function HomeScreen() {
           primary
         />
         <NavigationCard
-          title="Registrar síntomas"
-          description="Guarda una descripción de síntomas y malestares."
+          title="Cómo me siento hoy"
+          description={
+            dailyStatus?.hasSubmittedToday
+              ? 'Seguimiento de hoy completado. Puedes revisarlo o actualizarlo.'
+              : dailyStatus?.hasActiveDraft
+                ? 'Tienes un seguimiento en curso para hoy.'
+                : 'Completa tu cuestionario diario de seguimiento.'
+          }
           icon="clipboard"
-          href="/(tabs)/(inicio)/registrar-sintomas"
+          href="/formulario"
           navigationMethod="push"
         />
       </View>

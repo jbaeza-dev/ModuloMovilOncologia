@@ -114,6 +114,30 @@ describe('exportador de reportes Excel (.xlsx) con SheetJS', () => {
     expect(wb.Sheets['Sintomas']).toBeDefined();
   });
 
+  it('regresión: conserva exactamente 3 hojas en el libro y mantiene el historial de síntomas sin alterar el contrato de exportación', () => {
+    const data = createMockReportData({
+      symptoms: [
+        {
+          id: 'symp-legacy-1',
+          paciente_id: patientId,
+          fecha_registro: '2026-10-10T12:00:00.000Z',
+          descripcion: 'Molestia digestiva histórica',
+          fecha_subida: null,
+        },
+      ],
+    });
+    const wb = buildReportWorkbook(data);
+    expect(wb.SheetNames).toHaveLength(3);
+    expect(wb.SheetNames).toEqual(['Resumen', 'Signos vitales', 'Sintomas']);
+    expect(wb.SheetNames).not.toContain('Seguimiento');
+    expect(wb.SheetNames).not.toContain('Formularios');
+
+    // Verificar que la hoja de síntomas contiene el dato histórico
+    const ws = wb.Sheets['Sintomas'];
+    const rowContent = JSON.stringify(ws);
+    expect(rowContent).toContain('Molestia digestiva histórica');
+  });
+
   it('serializa a bytes válidos legibles por SheetJS sin corromper la estructura', () => {
     const data = createMockReportData();
     const bytes = generateReportXlsxBytes(data);
