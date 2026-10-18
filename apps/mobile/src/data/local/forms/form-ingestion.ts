@@ -1,11 +1,9 @@
+import { validateConditionIntegrity } from '../../../services/forms/form-conditions';
 import type { SqlConnection } from '../core/sql';
 import {
   type FormDefinitionRecord,
   type FormQuestionRecord,
   type MedicalFormBundle,
-  type MedicalFormQuestionType,
-  SUPPORTED_QUESTION_TYPES,
-  TipoPreguntaNoSoportadoError,
   VersionInmutableError,
 } from './form-types';
 
@@ -25,15 +23,9 @@ export async function ingestMedicalFormBundle(
   const forms = bundle.formularios ?? [];
   const assignments = bundle.asignaciones ?? [];
 
-  // 1. Validación previa de tipos de pregunta soportados
+  // 1. Validación previa de integridad estructural, tipos y condiciones
   for (const form of forms) {
-    for (const q of form.preguntas) {
-      if (!SUPPORTED_QUESTION_TYPES.includes(q.tipo as MedicalFormQuestionType)) {
-        throw new TipoPreguntaNoSoportadoError(
-          `Tipo de pregunta no soportado: '${q.tipo}' en pregunta '${q.preguntaId}' del formulario '${form.formularioId}'.`,
-        );
-      }
-    }
+    validateConditionIntegrity(form);
   }
 
   // 2. Ingestión y verificación de inmutabilidad de formularios y preguntas

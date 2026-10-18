@@ -30,6 +30,52 @@ export class ConflictoEntregaError extends Error {
   }
 }
 
+export class DefinicionIncompatibleError extends Error {
+  constructor(message: string) {
+    super(message);
+    this.name = 'DefinicionIncompatibleError';
+  }
+}
+
+export class CondicionInvalidaError extends Error {
+  constructor(message: string) {
+    super(message);
+    this.name = 'CondicionInvalidaError';
+  }
+}
+
+export type FormCondition =
+  | { op: 'eq'; questionId: string; value: string }
+  | { op: 'in'; questionId: string; values: string[] }
+  | { op: 'all'; conditions: FormCondition[] };
+
+export type FormSection = {
+  id: string;
+  titulo: string;
+  orden: number;
+  descripcion?: string;
+};
+
+export type FormPeriodicity = 'daily' | 'standalone';
+
+export type FormConfiguration = {
+  secciones?: FormSection[];
+  periodicidad?: FormPeriodicity;
+  schemaVersion?: number;
+  [key: string]: unknown;
+};
+
+export type QuestionConfiguration = {
+  sectionId?: string;
+  sourceCode?: string;
+  visibleWhen?: FormCondition;
+  opciones?: MedicalFormChoice[];
+  maxLength?: number;
+  minEtiqueta?: string;
+  maxEtiqueta?: string;
+  [key: string]: unknown;
+};
+
 export type FormDefinitionRecord = {
   formulario_id: string;
   version: string;
@@ -108,12 +154,7 @@ export type MedicalFormBundleQuestion = {
   tipo: string;
   orden: number;
   requerida?: boolean;
-  configuracion?: {
-    opciones?: MedicalFormChoice[];
-    minEtiqueta?: string;
-    maxEtiqueta?: string;
-    [key: string]: unknown;
-  };
+  configuracion?: QuestionConfiguration;
 };
 
 export type MedicalFormBundleItem = {
@@ -122,7 +163,7 @@ export type MedicalFormBundleItem = {
   titulo: string;
   descripcion: string;
   duracionEstimadaMin: number;
-  configuracion?: Record<string, unknown>;
+  configuracion?: FormConfiguration;
   preguntas: MedicalFormBundleQuestion[];
 };
 

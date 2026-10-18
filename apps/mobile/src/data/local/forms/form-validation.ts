@@ -1,4 +1,11 @@
-import type { FormAnswerValue, FormQuestionRecord, MedicalFormQuestionType } from './form-types';
+import { computeVisibleQuestions } from '../../../services/forms/form-conditions';
+import type {
+  FormAnswerValue,
+  FormCondition,
+  FormQuestionRecord,
+  MedicalFormQuestionType,
+  QuestionConfiguration,
+} from './form-types';
 
 export type ValidatableQuestion = {
   id: string;
@@ -6,6 +13,9 @@ export type ValidatableQuestion = {
   tipo: MedicalFormQuestionType;
   requerida?: boolean;
   opciones?: Array<{ valor: string; etiqueta: string; esExcluyente?: boolean }>;
+  maxLength?: number;
+  visibleWhen?: FormCondition;
+  sectionId?: string;
   min?: number;
   max?: number;
   minEtiqueta?: string;
@@ -89,6 +99,9 @@ export function validateQuestionValue(
       if (typeof value !== 'string') {
         return 'El texto ingresado no es válido.';
       }
+      if (question.maxLength !== undefined && value.length > question.maxLength) {
+        return `El texto no puede superar los ${question.maxLength} caracteres.`;
+      }
       return null;
     }
 
@@ -100,12 +113,14 @@ export function validateQuestionValue(
 /**
  * Valida funcionalmente un conjunto de respuestas frente a un formulario clínico.
  * - Rechaza cualquier clave ajena a la definición.
- * - Valida tipos y coherencia de cada respuesta presente (incluso en preguntas opcionales).
- * - Exige respuestas obligatorias.
+ * - Evalúa visibilidad: sólo las preguntas visibles son exigidas como obligatorias.
+ * - Si rejectHiddenAnswers está activo, rechaza respuestas para preguntas ocultas.
+ * - Valida tipos y coherencia de cada respuesta presente.
  */
 export function validateFormAnswers(
   form: ValidatableForm,
   answers: Record<string, FormAnswerValue>,
+  options?: { rejectHiddenAnswers?: boolean },
 ): AnswerValidationResult {
   const errors: Record<string, string> = {};
   const validQuestionMap = new Map<string, ValidatableQuestion>();
@@ -120,14 +135,32 @@ export function validateFormAnswers(
     }
   }
 
+  // Resolver visibilidad de preguntas en base a las respuestas
+  const visibleQuestionIds = computeVisibleQuestions(
+    form.preguntas.map((q) => ({
+      preguntaId: q.id,
+      configuracion: { visibleWhen: q.visibleWhen },
+    })),
+    answers,
+  );
+
   // 2. Validar cada pregunta de la definición
   for (const question of form.preguntas) {
+    const isVisible = visibleQuestionIds.has(question.id);
     const value = answers[question.id];
     const isPresent = value !== undefined && value !== null;
 
     // Determinar si representa ausencia para su tipo específico
     const isBlankText = typeof value === 'string' && value.trim().length === 0;
     const isEmptyArray = Array.isArray(value) && value.length === 0;
+
+    if (!isVisible) {
+      if (options?.rejectHiddenAnswers && isPresent && !isBlankText && !isEmptyArray) {
+        errors[question.id] =
+          `La pregunta '${question.id}' está oculta por sus condiciones y no debe contener respuestas.`;
+      }
+      continue;
+    }
 
     if (question.requerida) {
       if (!isPresent) {
@@ -170,11 +203,13 @@ export function validateFormAnswers(
 }
 
 /**
- * Normaliza las respuestas antes de persistirlas, descartando respuestas opcionales vacías.
+ * Normaliza las respuestas antes de persistirlas, descartando respuestas opcionales vacías
+ * y ordenando arrays de selecciones múltiples.
  */
 export function normalizeFormAnswers(
   form: ValidatableForm,
   answers: Record<string, FormAnswerValue>,
+  options?: { onlyVisible?: boolean },
 ): Record<string, FormAnswerValue> {
   const result: Record<string, FormAnswerValue> = {};
   const questionMap = new Map<string, ValidatableQuestion>();
@@ -182,9 +217,21 @@ export function normalizeFormAnswers(
     questionMap.set(q.id, q);
   }
 
+  const visibleQuestionIds = computeVisibleQuestions(
+    form.preguntas.map((q) => ({
+      preguntaId: q.id,
+      configuracion: { visibleWhen: q.visibleWhen },
+    })),
+    answers,
+  );
+
   for (const [key, value] of Object.entries(answers)) {
     const q = questionMap.get(key);
     if (!q) continue;
+
+    if (options?.onlyVisible && !visibleQuestionIds.has(key)) {
+      continue;
+    }
 
     if (value === undefined || value === null) continue;
 
@@ -194,7 +241,7 @@ export function normalizeFormAnswers(
       result[key] = q.tipo === 'text' ? trimmed : value;
     } else if (Array.isArray(value)) {
       if (value.length === 0 && !q.requerida) continue;
-      result[key] = value;
+      result[key] = [...value].sort();
     } else {
       result[key] = value;
     }
@@ -204,17 +251,11 @@ export function normalizeFormAnswers(
 }
 
 /**
- * Convierte registros de `pregunta_cache` al formato validable y valida las respuestas.
+ * Convierte registros de `pregunta_cache` al formato validable.
  */
 export function toValidatableQuestions(questions: FormQuestionRecord[]): ValidatableQuestion[] {
   return questions.map((q) => {
-    let configuracion: {
-      opciones?: Array<{ valor: string; etiqueta: string; esExcluyente?: boolean }>;
-      min?: number;
-      max?: number;
-      minEtiqueta?: string;
-      maxEtiqueta?: string;
-    } | null = null;
+    let configuracion: QuestionConfiguration | null = null;
 
     if (q.configuracion_json) {
       try {
@@ -230,8 +271,11 @@ export function toValidatableQuestions(questions: FormQuestionRecord[]): Validat
       tipo: q.tipo,
       requerida: q.requerida === 1,
       opciones: configuracion?.opciones,
-      min: configuracion?.min,
-      max: configuracion?.max,
+      maxLength: configuracion?.maxLength,
+      visibleWhen: configuracion?.visibleWhen,
+      sectionId: configuracion?.sectionId,
+      min: typeof configuracion?.min === 'number' ? configuracion.min : undefined,
+      max: typeof configuracion?.max === 'number' ? configuracion.max : undefined,
       minEtiqueta: configuracion?.minEtiqueta,
       maxEtiqueta: configuracion?.maxEtiqueta,
     };
@@ -294,4 +338,33 @@ export function areAnswersEqual(
   };
 
   return JSON.stringify(normalize(a)) === JSON.stringify(normalize(b));
+}
+
+/**
+ * Alterna una opción en una selección múltiple respetando la exclusividad (esExcluyente):
+ * - Si se selecciona una opción con esExcluyente: true, se desmarcan todas las demás.
+ * - Si se selecciona otra opción, se desmarca cualquier opción excluyente previamente activa.
+ */
+export function toggleMultipleChoiceValue(
+  currentValues: string[],
+  targetValue: string,
+  options?: Array<{ valor: string; etiqueta: string; esExcluyente?: boolean }>,
+): string[] {
+  const targetOption = options?.find((o) => o.valor === targetValue);
+  const isTargetExclusive = targetOption?.esExcluyente ?? targetValue === 'ninguna';
+
+  if (currentValues.includes(targetValue)) {
+    return currentValues.filter((v) => v !== targetValue);
+  }
+
+  if (isTargetExclusive) {
+    return [targetValue];
+  }
+
+  const exclusiveValues = new Set(
+    (options ?? []).filter((o) => o.esExcluyente || o.valor === 'ninguna').map((o) => o.valor),
+  );
+
+  const cleanValues = currentValues.filter((v) => !exclusiveValues.has(v));
+  return [...cleanValues, targetValue].sort();
 }
