@@ -11,6 +11,10 @@ import {
   RECORDATORIOS_LOCALES_VERSION,
 } from './008_recordatorios_locales';
 import { FORMULARIOS_DIARIOS_SQL, FORMULARIOS_DIARIOS_VERSION } from './009_formularios_diarios';
+import {
+  RETIRO_MARKDOWN_EDUCATIVO_SQL,
+  RETIRO_MARKDOWN_EDUCATIVO_VERSION,
+} from './010_retiro_markdown_educativo';
 
 export type Migration = { version: number; sql: string };
 export const migrations: readonly Migration[] = [
@@ -23,6 +27,7 @@ export const migrations: readonly Migration[] = [
   { version: EDUCACION_MULTIMEDIA_VERSION, sql: EDUCACION_MULTIMEDIA_SQL },
   { version: RECORDATORIOS_LOCALES_VERSION, sql: RECORDATORIOS_LOCALES_SQL },
   { version: FORMULARIOS_DIARIOS_VERSION, sql: FORMULARIOS_DIARIOS_SQL },
+  { version: RETIRO_MARKDOWN_EDUCATIVO_VERSION, sql: RETIRO_MARKDOWN_EDUCATIVO_SQL },
 ];
 
 export async function migrateDatabase(

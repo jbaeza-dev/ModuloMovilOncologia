@@ -20,18 +20,18 @@ describe('descargas y recursos educativos offline', () => {
     await migrateDatabase(database);
     await seedPatientContextIfEmpty(database, patientA, patientB);
 
-    // 1. Estado 'descargado' válido con ruta y fecha
+    // 1. Estado 'descargado' válido con ruta, fecha y formato
     await database.run(
-      `INSERT INTO descarga (paciente_id, contenido_id, ruta_local, estado, fecha_descarga)
-       VALUES (?, 'edu-valido', '/data/res.md', 'descargado', '2026-09-29T10:00:00Z')`,
+      `INSERT INTO descarga (paciente_id, contenido_id, ruta_local, estado, fecha_descarga, formato)
+       VALUES (?, 'edu-valido', '/data/res.png', 'descargado', '2026-09-29T10:00:00Z', 'png')`,
       [patientA],
     );
 
     // 2. Estado 'descargado' sin ruta_local debe fallar CHECK
     await expect(
       database.run(
-        `INSERT INTO descarga (paciente_id, contenido_id, ruta_local, estado, fecha_descarga)
-         VALUES (?, 'edu-sin-ruta', NULL, 'descargado', '2026-09-29T10:00:00Z')`,
+        `INSERT INTO descarga (paciente_id, contenido_id, ruta_local, estado, fecha_descarga, formato)
+         VALUES (?, 'edu-sin-ruta', NULL, 'descargado', '2026-09-29T10:00:00Z', 'png')`,
         [patientA],
       ),
     ).rejects.toThrow();
@@ -39,43 +39,61 @@ describe('descargas y recursos educativos offline', () => {
     // 3. Estado 'descargado' sin fecha_descarga debe fallar CHECK
     await expect(
       database.run(
-        `INSERT INTO descarga (paciente_id, contenido_id, ruta_local, estado, fecha_descarga)
-         VALUES (?, 'edu-sin-fecha', '/data/res.md', 'descargado', NULL)`,
+        `INSERT INTO descarga (paciente_id, contenido_id, ruta_local, estado, fecha_descarga, formato)
+         VALUES (?, 'edu-sin-fecha', '/data/res.png', 'descargado', NULL, 'png')`,
         [patientA],
       ),
     ).rejects.toThrow();
 
     // 4. Estados 'pendiente', 'descargando' y 'error' permiten ruta_local y fecha_descarga nulas
     await database.run(
-      `INSERT INTO descarga (paciente_id, contenido_id, ruta_local, estado, fecha_descarga)
-       VALUES (?, 'edu-pendiente', NULL, 'pendiente', NULL)`,
+      `INSERT INTO descarga (paciente_id, contenido_id, ruta_local, estado, fecha_descarga, formato)
+       VALUES (?, 'edu-pendiente', NULL, 'pendiente', NULL, 'png')`,
       [patientA],
     );
     await database.run(
-      `INSERT INTO descarga (paciente_id, contenido_id, ruta_local, estado, fecha_descarga)
-       VALUES (?, 'edu-descargando', NULL, 'descargando', NULL)`,
+      `INSERT INTO descarga (paciente_id, contenido_id, ruta_local, estado, fecha_descarga, formato)
+       VALUES (?, 'edu-descargando', NULL, 'descargando', NULL, 'png')`,
       [patientA],
     );
     await database.run(
-      `INSERT INTO descarga (paciente_id, contenido_id, ruta_local, estado, fecha_descarga)
-       VALUES (?, 'edu-error', NULL, 'error', NULL)`,
+      `INSERT INTO descarga (paciente_id, contenido_id, ruta_local, estado, fecha_descarga, formato)
+       VALUES (?, 'edu-error', NULL, 'error', NULL, 'png')`,
       [patientA],
     );
 
     // 5. Estado inválido debe fallar CHECK
     await expect(
       database.run(
-        `INSERT INTO descarga (paciente_id, contenido_id, ruta_local, estado, fecha_descarga)
-         VALUES (?, 'edu-invalido', '/data/res.md', 'completado', '2026-09-29T10:00:00Z')`,
+        `INSERT INTO descarga (paciente_id, contenido_id, ruta_local, estado, fecha_descarga, formato)
+         VALUES (?, 'edu-invalido', '/data/res.png', 'completado', '2026-09-29T10:00:00Z', 'png')`,
         [patientA],
       ),
     ).rejects.toThrow();
 
-    // 6. Paciente inexistente debe fallar restricción de clave foránea
+    // 6. Formato inválido debe fallar CHECK
     await expect(
       database.run(
-        `INSERT INTO descarga (paciente_id, contenido_id, ruta_local, estado, fecha_descarga)
-         VALUES ('paciente-fantasma', 'edu-1', '/data/res.md', 'descargado', '2026-09-29T10:00:00Z')`,
+        `INSERT INTO descarga (paciente_id, contenido_id, ruta_local, estado, fecha_descarga, formato)
+         VALUES (?, 'edu-formato-invalido', '/data/res.pdf', 'descargado', '2026-09-29T10:00:00Z', 'pdf')`,
+        [patientA],
+      ),
+    ).rejects.toThrow();
+
+    // 7. Formato markdown sin retirado_en debe fallar CHECK
+    await expect(
+      database.run(
+        `INSERT INTO descarga (paciente_id, contenido_id, ruta_local, estado, fecha_descarga, formato, retirado_en)
+         VALUES (?, 'edu-md-no-retirado', '/data/res.md', 'descargado', '2026-09-29T10:00:00Z', 'markdown', NULL)`,
+        [patientA],
+      ),
+    ).rejects.toThrow();
+
+    // 8. Paciente inexistente debe fallar restricción de clave foránea
+    await expect(
+      database.run(
+        `INSERT INTO descarga (paciente_id, contenido_id, ruta_local, estado, fecha_descarga, formato)
+         VALUES ('paciente-fantasma', 'edu-1', '/data/res.png', 'descargado', '2026-09-29T10:00:00Z', 'png')`,
       ),
     ).rejects.toThrow(/FOREIGN KEY/i);
 

@@ -164,22 +164,15 @@ export function DiagnosticsDemoModal({ visible, onClose }: DiagnosticsDemoModalP
         await saveEducationalMediaWithCompensation({
           pacienteId: patientId,
           contenidoId: testContentId,
-          formato: 'markdown',
-          content: '# Test E-05 Contenido Temporal',
+          formato: 'png',
+          content: new Uint8Array([137, 80, 78, 71, 13, 10, 26, 10]),
           persistCopyInTx: async (params) => {
             await database.transaction(async (tx) => {
               // Inserción real de prueba dentro de la transacción antes del fallo
               await tx.run(
                 `INSERT INTO descarga (paciente_id, contenido_id, ruta_local, formato, tamano_bytes, fecha_descarga, revision_declarada, estado)
                  VALUES (?, ?, ?, ?, ?, ?, 0, 'descargado')`,
-                [
-                  patientId,
-                  testContentId,
-                  params.rutaLocal,
-                  'markdown',
-                  128,
-                  new Date().toISOString(),
-                ],
+                [patientId, testContentId, params.rutaLocal, 'png', 128, new Date().toISOString()],
               );
               // Lanzar la excepción identificada esperada para forzar el rollback
               throw new Error(EXPECTED_ERROR);

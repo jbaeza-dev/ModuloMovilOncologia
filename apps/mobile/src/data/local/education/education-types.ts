@@ -1,6 +1,8 @@
 export type EducationalContentType = 'guia' | 'infografia' | 'video';
 
-export type EducationalCopyFormat = 'markdown' | 'png' | 'jpeg';
+export type ActiveEducationalCopyFormat = 'png' | 'jpeg';
+
+export type EducationalCopyFormat = ActiveEducationalCopyFormat | 'markdown';
 
 export type EducationalAssetRef =
   | {
@@ -70,6 +72,8 @@ export interface EducationalLocalCopy {
   visualizadoEn?: string | null;
   revisionDeclarada: boolean;
   revisionDeclaradaEn?: string | null;
+  retiradoEn?: string | null;
+  ultimoErrorRetiro?: string | null;
   metadataLocal?: EducationalLocalCopyMetadata;
 }
 

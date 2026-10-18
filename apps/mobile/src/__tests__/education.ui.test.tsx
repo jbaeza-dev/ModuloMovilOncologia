@@ -112,6 +112,7 @@ import {
   EducationCategoryScreen,
   EducationResourceScreen,
 } from '../features/education/EducationScreens';
+import { InfographicViewerScreen } from '../features/education/InfographicViewerScreen';
 
 describe('Pruebas de interfaz (UI) para módulo de Educación', () => {
   beforeEach(() => {
@@ -454,6 +455,81 @@ describe('Pruebas de interfaz (UI) para módulo de Educación', () => {
       await waitFor(() => {
         expect(screen.getByText('Contenido explicativo accesible')).toBeTruthy();
         expect(screen.getByText(/Tres pilares nutricionales durante el tratamiento/)).toBeTruthy();
+      });
+    });
+  });
+
+  describe('Visor ampliado de infografías (InfographicViewerScreen)', () => {
+    it('renderiza título, controles de zoom (100% a 300%) y botón de texto alternativo', async () => {
+      mockUseLocalSearchParams.mockReturnValue({ recurso: 'edu-infografia-alimentacion' });
+
+      await render(<InfographicViewerScreen />);
+
+      await waitFor(() => {
+        expect(screen.getByText('Infografía: Guía nutricional en quimioterapia')).toBeTruthy();
+      });
+
+      // Controles de zoom con áreas táctiles accesibles
+      expect(screen.getByText('100%')).toBeTruthy();
+      expect(screen.getByText('150%')).toBeTruthy();
+      expect(screen.getByText('200%')).toBeTruthy();
+      expect(screen.getByText('300%')).toBeTruthy();
+
+      // Botón de texto alternativo
+      expect(screen.getByText('Texto accesible')).toBeTruthy();
+
+      // Botón de regreso
+      expect(screen.getByText('Volver al detalle')).toBeTruthy();
+    });
+
+    it('permite cambiar el nivel de zoom y actualiza el anuncio de accesibilidad', async () => {
+      mockUseLocalSearchParams.mockReturnValue({ recurso: 'edu-infografia-alimentacion' });
+
+      await render(<InfographicViewerScreen />);
+
+      await waitFor(() => {
+        expect(screen.getByText('150%')).toBeTruthy();
+      });
+
+      const button150 = screen.getByText('150%');
+      fireEvent.press(button150);
+
+      await waitFor(() => {
+        expect(screen.getByText('Nivel de zoom al 150%')).toBeTruthy();
+      });
+
+      const button300 = screen.getByText('300%');
+      fireEvent.press(button300);
+
+      await waitFor(() => {
+        expect(screen.getByText('Nivel de zoom al 300%')).toBeTruthy();
+      });
+    });
+
+    it('abre el modal accesible de texto offline y lo cierra correctamente', async () => {
+      mockUseLocalSearchParams.mockReturnValue({ recurso: 'edu-infografia-alimentacion' });
+
+      await render(<InfographicViewerScreen />);
+
+      await waitFor(() => {
+        expect(screen.getByText('Texto accesible')).toBeTruthy();
+      });
+
+      // Abrir modal
+      const textBtn = screen.getByText('Texto accesible');
+      fireEvent.press(textBtn);
+
+      await waitFor(() => {
+        expect(screen.getByText('Texto alternativo accesible')).toBeTruthy();
+        expect(screen.getByText(/Tres pilares nutricionales/)).toBeTruthy();
+      });
+
+      // Cerrar modal
+      const closeBtn = screen.getByText('Cerrar lectura');
+      fireEvent.press(closeBtn);
+
+      await waitFor(() => {
+        expect(screen.queryByText('Texto alternativo accesible')).toBeNull();
       });
     });
   });

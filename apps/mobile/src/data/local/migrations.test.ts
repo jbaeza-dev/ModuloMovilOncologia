@@ -39,7 +39,7 @@ describe('migraciones SQLite', () => {
     await migrateDatabase(second);
     expect(
       (await second.first<{ user_version: number }>('PRAGMA user_version'))?.user_version,
-    ).toBe(9);
+    ).toBe(10);
     expect(
       (await createPatientRepository(second, patientA, ids()).vitals('2026-01-01', 30, 0)).map(
         (row) => row.id,
@@ -146,11 +146,11 @@ describe('migraciones SQLite', () => {
 
   it('rechaza una versión de base posterior sin modificarla', async () => {
     const database = open();
-    await database.exec('PRAGMA user_version = 10');
+    await database.exec('PRAGMA user_version = 11');
     await expect(migrateDatabase(database)).rejects.toThrow('versión más reciente');
     expect(
       (await database.first<{ user_version: number }>('PRAGMA user_version'))?.user_version,
-    ).toBe(10);
+    ).toBe(11);
   });
 
   it('migra de versión 3 a 4 preservando registros previos de cola_envio y ampliando CHECK para nuevos tipos', async () => {
@@ -278,10 +278,10 @@ describe('migraciones SQLite', () => {
       [patientA],
     );
 
-    // 2. Aplicar todas las migraciones (hasta v8)
+    // 2. Aplicar todas las migraciones (hasta v10)
     await migrateDatabase(database);
     const v7 = await database.first<{ user_version: number }>('PRAGMA user_version');
-    expect(v7?.user_version).toBe(9);
+    expect(v7?.user_version).toBe(10);
 
     // Verificar que los datos previos se conservaron intactos
     const vital = await database.first<{ id: string }>(
@@ -318,10 +318,10 @@ describe('migraciones SQLite', () => {
       [patientA],
     );
 
-    // 2. Aplicar todas las migraciones (hasta v8)
+    // 2. Aplicar todas las migraciones (hasta v10)
     await migrateDatabase(database);
     const v = await database.first<{ user_version: number }>('PRAGMA user_version');
-    expect(v?.user_version).toBe(9);
+    expect(v?.user_version).toBe(10);
 
     // 3. Comprobar que la descarga previa conserva sus valores y tiene los nuevos defaults
     const prev = await database.first<{
@@ -533,7 +533,7 @@ describe('migraciones SQLite', () => {
     await migrateDatabase(database);
 
     const versionRow = await database.first<{ user_version: number }>('PRAGMA user_version');
-    expect(versionRow?.user_version).toBe(9);
+    expect(versionRow?.user_version).toBe(10);
 
     // 4. Verificar integridad referencial completa
     const fkErrors = await database.all('PRAGMA foreign_key_check');
@@ -601,5 +601,106 @@ describe('migraciones SQLite', () => {
       ['resp-prev-1'],
     );
     expect(reloadedResp?.fecha_seguimiento).toBe('2026-10-16');
+  });
+
+  it('aplica migración 010 marcando descargas markdown como retiradas y aplicando restricciones de formato', async () => {
+    const database = open();
+
+    // 1. Aplicar migraciones hasta v9
+    const { migrations } = await import('./migrations');
+    const v9Migrations = migrations.filter((m) => m.version <= 9);
+    await migrateDatabase(database, v9Migrations);
+    await seedPatientContextIfEmpty(database, patientA, patientB);
+
+    // 2. Insertar descarga previa en formato markdown (v9 tenía formato DEFAULT 'markdown')
+    await database.run(
+      `INSERT INTO descarga (
+        paciente_id, contenido_id, ruta_local, estado, fecha_descarga, visualizada, visualizada_en,
+        revision_declarada, revision_declarada_en, formato, tamano_bytes, metadata_local_json
+      ) VALUES (
+        ?, 'edu-guia-legacy', '/data/user/0/recursos/edu-guia-legacy.md', 'descargado', '2026-10-10T10:00:00Z',
+        1, '2026-10-10T10:05:00Z', 1, '2026-10-10T10:05:00Z', 'markdown', 2048, '{"titulo":"Guía previa","versionOrigen":"1.0"}'
+      )`,
+      [patientA],
+    );
+
+    // Insertar también una descarga previa en formato png
+    await database.run(
+      `INSERT INTO descarga (
+        paciente_id, contenido_id, ruta_local, estado, fecha_descarga, visualizada, visualizada_en,
+        revision_declarada, revision_declarada_en, formato, tamano_bytes, metadata_local_json
+      ) VALUES (
+        ?, 'edu-info-existente', '/data/user/0/recursos/edu-info-existente.png', 'descargado', '2026-10-10T11:00:00Z',
+        0, NULL, 0, NULL, 'png', 409600, '{"titulo":"Infografía previa","versionOrigen":"1.0"}'
+      )`,
+      [patientA],
+    );
+
+    // 3. Aplicar migración 010 (todas las migraciones disponibles)
+    await migrateDatabase(database);
+
+    const versionRow = await database.first<{ user_version: number }>('PRAGMA user_version');
+    expect(versionRow?.user_version).toBe(10);
+
+    // 4. Verificar integridad referencial
+    const fkErrors = await database.all('PRAGMA foreign_key_check');
+    expect(fkErrors).toEqual([]);
+
+    // 5. Verificar que la fila markdown quedó marcada como retirada con su ruta y datos preservados
+    const retiredRow = await database.first<{
+      paciente_id: string;
+      contenido_id: string;
+      ruta_local: string;
+      estado: string;
+      formato: string;
+      retirado_en: string | null;
+      ultimo_error_retiro: string | null;
+      metadata_local_json: string;
+    }>('SELECT * FROM descarga WHERE paciente_id = ? AND contenido_id = ?', [
+      patientA,
+      'edu-guia-legacy',
+    ]);
+
+    expect(retiredRow).not.toBeNull();
+    expect(retiredRow?.formato).toBe('markdown');
+    expect(retiredRow?.retirado_en).toBeTruthy();
+    expect(retiredRow?.ultimo_error_retiro).toBeNull();
+    expect(retiredRow?.ruta_local).toBe('/data/user/0/recursos/edu-guia-legacy.md');
+    expect(retiredRow?.metadata_local_json).toContain('Guía previa');
+
+    // 6. Verificar que la fila png conservó retirado_en en NULL (activa)
+    const activeRow = await database.first<{
+      formato: string;
+      retirado_en: string | null;
+    }>('SELECT formato, retirado_en FROM descarga WHERE paciente_id = ? AND contenido_id = ?', [
+      patientA,
+      'edu-info-existente',
+    ]);
+    expect(activeRow?.formato).toBe('png');
+    expect(activeRow?.retirado_en).toBeNull();
+
+    // 7. Intentar insertar una nueva fila markdown activa (sin retirado_en) debe violar la restricción CHECK
+    await expect(
+      database.run(
+        `INSERT INTO descarga (
+          paciente_id, contenido_id, ruta_local, estado, fecha_descarga, formato, retirado_en
+        ) VALUES (?, 'edu-nuevo-md', '/data/test.md', 'descargado', '2026-10-18T10:00:00Z', 'markdown', NULL)`,
+        [patientA],
+      ),
+    ).rejects.toThrow();
+
+    // 8. Se pueden insertar copias activas en jpeg o png
+    await database.run(
+      `INSERT INTO descarga (
+        paciente_id, contenido_id, ruta_local, estado, fecha_descarga, formato
+      ) VALUES (?, 'edu-nuevo-jpeg', '/data/test.jpg', 'descargado', '2026-10-18T10:00:00Z', 'jpeg')`,
+      [patientA],
+    );
+    const jpegRow = await database.first<{ formato: string; retirado_en: string | null }>(
+      'SELECT formato, retirado_en FROM descarga WHERE paciente_id = ? AND contenido_id = ?',
+      [patientA, 'edu-nuevo-jpeg'],
+    );
+    expect(jpegRow?.formato).toBe('jpeg');
+    expect(jpegRow?.retirado_en).toBeNull();
   });
 });

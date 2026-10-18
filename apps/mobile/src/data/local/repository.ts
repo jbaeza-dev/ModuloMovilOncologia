@@ -52,6 +52,9 @@ export type DownloadRecord = {
   fecha_descarga: string | null;
   visualizada: number;
   visualizada_en: string | null;
+  formato?: string;
+  retirado_en?: string | null;
+  ultimo_error_retiro?: string | null;
 };
 
 export type PatientProfileRecord = {
@@ -353,19 +356,39 @@ export function createPatientRepository(
       contenido_id: string;
       ruta_local: string;
       estado?: 'descargado';
+      formato?: string;
     }): Promise<void> {
       const timestamp = now();
+      const ext = data.ruta_local.split('.').pop()?.toLowerCase();
+      const inferredFormato =
+        data.formato ??
+        (ext === 'jpeg' || ext === 'jpg' ? 'jpeg' : ext === 'md' ? 'markdown' : 'png');
+      const isMarkdown = inferredFormato === 'markdown';
+      const retiradoEn = isMarkdown ? timestamp : null;
+
       await database.run(
         `INSERT INTO descarga (
-          paciente_id, contenido_id, ruta_local, estado, fecha_descarga, visualizada, visualizada_en
-        ) VALUES (?, ?, ?, ?, ?, 0, NULL)
+          paciente_id, contenido_id, ruta_local, estado, fecha_descarga, visualizada, visualizada_en,
+          formato, tamano_bytes, retirado_en, ultimo_error_retiro
+        ) VALUES (?, ?, ?, ?, ?, 0, NULL, ?, 0, ?, NULL)
         ON CONFLICT(paciente_id, contenido_id) DO UPDATE SET
           ruta_local = excluded.ruta_local,
           estado = excluded.estado,
           fecha_descarga = excluded.fecha_descarga,
           visualizada = 0,
-          visualizada_en = NULL`,
-        [patientId, data.contenido_id, data.ruta_local, data.estado ?? 'descargado', timestamp],
+          visualizada_en = NULL,
+          formato = excluded.formato,
+          retirado_en = excluded.retirado_en,
+          ultimo_error_retiro = excluded.ultimo_error_retiro`,
+        [
+          patientId,
+          data.contenido_id,
+          data.ruta_local,
+          data.estado ?? 'descargado',
+          timestamp,
+          inferredFormato,
+          retiradoEn,
+        ],
       );
     },
 

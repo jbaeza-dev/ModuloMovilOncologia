@@ -1,7 +1,7 @@
 import { computeSha256 } from '../../../utils/crypto';
 import type {
+  ActiveEducationalCopyFormat,
   EducationalContentType,
-  EducationalCopyFormat,
   EducationalLocalCopyMetadata,
 } from '../education/education-types';
 import { ExpoFileStorageAdapter, type FileStorageAdapter } from './file-storage-adapter';
@@ -11,6 +11,9 @@ import {
   registerActiveWrite,
   withPatientResourceLock,
 } from './resource-storage';
+
+export const MAX_EDUCATIONAL_MEDIA_BYTES = 5 * 1024 * 1024; // 5 MiB (5,242,880 bytes)
+export const MAX_EDUCATIONAL_IMAGE_PIXELS = 8_000_000; // 8 Megapíxeles
 
 const defaultExpoAdapter = new ExpoFileStorageAdapter();
 
@@ -28,19 +31,22 @@ function generateSafeUuid(): string {
 export interface SaveMediaParams {
   pacienteId: string;
   contenidoId: string;
-  formato: EducationalCopyFormat;
+  formato: ActiveEducationalCopyFormat;
   content: string | Uint8Array;
   versionOrigen?: string;
   mimeType?: string;
   titulo?: string;
   tipo?: EducationalContentType;
   descripcion?: string;
+  textoAccesible?: string;
+  anchoPx?: number;
+  altoPx?: number;
   previousRutaLocal?: string | null;
   getPreviousRutaLocal?: () => Promise<string | null | undefined> | string | null | undefined;
   tokenGenerator?: () => string;
   persistCopyInTx: (params: {
     rutaLocal: string;
-    formato: EducationalCopyFormat;
+    formato: ActiveEducationalCopyFormat;
     tamanoBytes: number;
     metadataLocal: EducationalLocalCopyMetadata;
   }) => Promise<void>;
@@ -142,6 +148,22 @@ export async function saveEducationalMediaWithCompensation(
   assertSafeId(pacienteId, 'pacienteId');
   assertSafeId(contenidoId, 'contenidoId');
 
+  if ((formato as string) === 'markdown' || (formato !== 'png' && formato !== 'jpeg')) {
+    throw new Error('Formato no permitido: solo se admiten imágenes PNG y JPEG para descarga.');
+  }
+
+  const anchoPx = params.anchoPx;
+  const altoPx = params.altoPx;
+  if (anchoPx && altoPx && anchoPx * altoPx > MAX_EDUCATIONAL_IMAGE_PIXELS) {
+    throw new Error('La imagen supera la resolución máxima permitida de 8 megapíxeles.');
+  }
+
+  const isString = typeof content === 'string';
+  const tamanoBytes = isString ? new TextEncoder().encode(content).length : content.byteLength;
+  if (tamanoBytes > MAX_EDUCATIONAL_MEDIA_BYTES) {
+    throw new Error('El archivo supera el tamaño máximo permitido de 5 MB.');
+  }
+
   const adapter = params.adapter ?? defaultExpoAdapter;
 
   return withPatientResourceLock(pacienteId, async () => {
@@ -157,16 +179,14 @@ export async function saveEducationalMediaWithCompensation(
     await adapter.ensureDirectory(baseDir);
 
     const baseDirClean = baseDir.replace(/\\/g, '/').replace(/\/+$/, '');
-    const extension = formato === 'markdown' ? 'md' : formato === 'png' ? 'png' : 'jpg';
+    const extension = formato === 'png' ? 'png' : 'jpg';
     const token = params.tokenGenerator
       ? params.tokenGenerator()
       : `${contenidoId}.${Date.now()}.${generateSafeUuid()}`;
     const tmpUri = `${baseDirClean}/${token}.tmp`;
     const finalUri = `${baseDirClean}/${token}.${extension}`;
 
-    // Cálculo estricto de SHA-256 y tamaño sobre los bytes reales
-    const isString = typeof content === 'string';
-    const tamanoBytes = isString ? new TextEncoder().encode(content).length : content.byteLength;
+    // Cálculo estricto de SHA-256 sobre los bytes reales
     const sha256 = await computeSha256(content);
 
     // Proteger temporal y destino en activeWrites
@@ -201,6 +221,9 @@ export async function saveEducationalMediaWithCompensation(
           titulo: params.titulo,
           tipo: params.tipo,
           descripcion: params.descripcion,
+          textoAccesible: params.textoAccesible,
+          anchoPx,
+          altoPx,
         },
       });
 

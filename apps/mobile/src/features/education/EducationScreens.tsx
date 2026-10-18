@@ -19,6 +19,7 @@ import {
 } from '../../components/Visual';
 import type { SqlConnection } from '../../data/local/core/sql';
 import type {
+  ActiveEducationalCopyFormat,
   EducationalInteraction,
   EducationalLocalCopy,
   EducationalResource,
@@ -508,53 +509,50 @@ export function EducationResourceScreen() {
 
     try {
       await runSave(async () => {
-        let contentToSave: string | Uint8Array;
-        let mimeType = 'text/markdown';
-        const formato = resource.type === 'infografia' ? 'png' : 'markdown';
-
-        if (resource.type === 'infografia') {
-          mimeType = 'image/png';
-          const assetKey = resource.asset?.type === 'bundled' ? resource.asset.assetKey : '';
-          const assetModule = BUNDLED_ASSETS[assetKey];
-
-          if (!assetModule) {
-            throw new Error(
-              'El archivo de la infografía no se encuentra empaquetado en este dispositivo.',
-            );
-          }
-
-          const [loadedAsset] = await Asset.loadAsync(assetModule);
-          if (
-            loadedAsset &&
-            (!loadedAsset.localUri ||
-              (!loadedAsset.localUri.startsWith('file://') &&
-                !loadedAsset.localUri.startsWith('/'))) &&
-            typeof loadedAsset.downloadAsync === 'function'
-          ) {
-            // En builds Release de Android, los drawables empaquetados no tienen ruta de archivo local aún.
-            // Forzar descarga nativa para materializar el recurso empaquetado en caché y obtener una URI file://
-            loadedAsset.downloaded = false;
-            await loadedAsset.downloadAsync();
-          }
-
-          const rawUri = loadedAsset?.localUri ?? loadedAsset?.uri;
-          if (!rawUri) {
-            throw new Error(
-              'No se pudo resolver la ruta local de la infografía empaquetada. Se cancela la operación para conservar la integridad del almacenamiento.',
-            );
-          }
-
-          const absoluteUri = rawUri.startsWith('file://')
-            ? rawUri
-            : rawUri.startsWith('/')
-              ? `file://${rawUri}`
-              : rawUri;
-          const fileObj = new File(absoluteUri);
-          contentToSave = await fileObj.bytes();
-        } else {
-          contentToSave =
-            resource.contentMarkdown ?? `# ${resource.title}\n\nContenido de muestra.`;
+        if (resource.type !== 'infografia') {
+          throw new Error('Solo se permite la descarga de infografías en formato de imagen.');
         }
+
+        const mimeType = 'image/png';
+        const formato: ActiveEducationalCopyFormat = 'png';
+
+        const assetKey = resource.asset?.type === 'bundled' ? resource.asset.assetKey : '';
+        const assetModule = BUNDLED_ASSETS[assetKey];
+
+        if (!assetModule) {
+          throw new Error(
+            'El archivo de la infografía no se encuentra empaquetado en este dispositivo.',
+          );
+        }
+
+        const [loadedAsset] = await Asset.loadAsync(assetModule);
+        if (
+          loadedAsset &&
+          (!loadedAsset.localUri ||
+            (!loadedAsset.localUri.startsWith('file://') &&
+              !loadedAsset.localUri.startsWith('/'))) &&
+          typeof loadedAsset.downloadAsync === 'function'
+        ) {
+          // En builds Release de Android, los drawables empaquetados no tienen ruta de archivo local aún.
+          // Forzar descarga nativa para materializar el recurso empaquetado en caché y obtener una URI file://
+          loadedAsset.downloaded = false;
+          await loadedAsset.downloadAsync();
+        }
+
+        const rawUri = loadedAsset?.localUri ?? loadedAsset?.uri;
+        if (!rawUri) {
+          throw new Error(
+            'No se pudo resolver la ruta local de la infografía empaquetada. Se cancela la operación para conservar la integridad del almacenamiento.',
+          );
+        }
+
+        const absoluteUri = rawUri.startsWith('file://')
+          ? rawUri
+          : rawUri.startsWith('/')
+            ? `file://${rawUri}`
+            : rawUri;
+        const fileObj = new File(absoluteUri);
+        const contentToSave = await fileObj.bytes();
 
         // Coordinar guardado seguro con compensación atómica y limpieza de copia anterior post-commit
         await saveEducationalMediaWithCompensation({
@@ -567,6 +565,7 @@ export function EducationResourceScreen() {
           titulo: resource.title,
           tipo: resource.type,
           descripcion: resource.description,
+          textoAccesible: resource.textoAccesible,
           previousRutaLocal: localCopy?.rutaRelativa ?? localCopy?.rutaAbsoluta,
           getPreviousRutaLocal: async () => {
             const current = await repository.education.getLocalCopy(resource.id);
@@ -817,6 +816,15 @@ export function EducationResourceScreen() {
               disabled={busy}
               onPress={
                 readingContent ? () => setReadingContent(null) : () => void handleReadGuide()
+              }
+            />
+          ) : null}
+
+          {effectiveResource.type === 'infografia' ? (
+            <VisualButton
+              label="Ver en pantalla completa"
+              onPress={() =>
+                router.push('/educacion/visor?recurso=' + encodeURIComponent(effectiveResource.id))
               }
             />
           ) : null}
