@@ -837,33 +837,10 @@ export function MedicalFormSubmissionDetailScreen() {
     };
   }, [repository, patientId, id]);
 
-  if (loading) {
-    return (
-      <Screen title="Detalle de evaluación">
-        <DemoBadge />
-        <InfoCard>
-          <BodyText>Cargando respuestas registradas…</BodyText>
-        </InfoCard>
-      </Screen>
-    );
-  }
-
-  if (!submission || !formDef) {
-    return (
-      <Screen title="Evaluación no encontrada">
-        <DemoBadge />
-        <EmptyState
-          icon="alert-circle"
-          title="Registro no disponible"
-          description="No se encontró la entrega solicitada para este paciente."
-        />
-      </Screen>
-    );
-  }
-
-  const medicalForm = toMedicalFormDefinition(formDef);
+  const medicalForm = useMemo(() => (formDef ? toMedicalFormDefinition(formDef) : null), [formDef]);
 
   const visibleQuestions = useMemo(() => {
+    if (!formDef || !submission || !medicalForm) return [];
     const visibleIds = computeVisibleQuestions(
       formDef.preguntas.map((q) => ({
         preguntaId: q.pregunta_id,
@@ -876,7 +853,31 @@ export function MedicalFormSubmissionDetailScreen() {
         visibleIds.has(q.id) ||
         (submission.respuestas[q.id] !== undefined && submission.respuestas[q.id] !== ''),
     );
-  }, [formDef, medicalForm, submission.respuestas]);
+  }, [formDef, medicalForm, submission]);
+
+  if (loading) {
+    return (
+      <Screen title="Detalle de evaluación">
+        <DemoBadge />
+        <InfoCard>
+          <BodyText>Cargando respuestas registradas…</BodyText>
+        </InfoCard>
+      </Screen>
+    );
+  }
+
+  if (!submission || !formDef || !medicalForm) {
+    return (
+      <Screen title="Evaluación no encontrada">
+        <DemoBadge />
+        <EmptyState
+          icon="alert-circle"
+          title="Registro no disponible"
+          description="No se encontró la entrega solicitada para este paciente."
+        />
+      </Screen>
+    );
+  }
 
   return (
     <Screen title={`Entrega: ${submission.titulo}`}>

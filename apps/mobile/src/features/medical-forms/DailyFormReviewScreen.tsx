@@ -1,6 +1,6 @@
 import Feather from '@expo/vector-icons/Feather';
 import { router, useLocalSearchParams } from 'expo-router';
-import { useEffect, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useState } from 'react';
 import { Alert, ScrollView, StyleSheet, Text, View } from 'react-native';
 
 import { Screen } from '../../components/Screen';
@@ -22,7 +22,17 @@ import { computeVisibleQuestions } from '../../services/forms/form-conditions';
 export function DailyFormReviewScreen() {
   const { theme: appTheme } = useAppTheme();
   const styles = createStyles(appTheme.colors);
-  const { repository, patientId, formStorageReady } = useLocalData();
+  const { repository, patientId, formStorageReady, trackOperation } = useLocalData();
+
+  const runTracked = useCallback(
+    <T,>(operation: () => Promise<T>): Promise<T> => {
+      if (typeof trackOperation === 'function') {
+        return trackOperation(operation);
+      }
+      return operation();
+    },
+    [trackOperation],
+  );
 
   const params = useLocalSearchParams<{
     id?: string;
@@ -124,15 +134,17 @@ export function DailyFormReviewScreen() {
     }
 
     try {
-      const confirmedId = await repository.confirmDailySubmission(
-        {
-          formId: formDef.formulario_id,
-          version: formDef.version,
-          periodoClave: params.periodoClave ?? 'legacy',
-          deliveryId: deliveryIdToUse,
-        },
-        answers,
-      );
+      const confirmedId = await runTracked(async () => {
+        return repository.confirmDailySubmission(
+          {
+            formId: formDef.formulario_id,
+            version: formDef.version,
+            periodoClave: params.periodoClave ?? 'legacy',
+            deliveryId: deliveryIdToUse,
+          },
+          answers,
+        );
+      });
 
       setIsConfirmed(true);
       setConfirmedDeliveryId(confirmedId);

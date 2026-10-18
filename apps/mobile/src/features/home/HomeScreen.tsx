@@ -1,6 +1,6 @@
 import { router, useFocusEffect } from 'expo-router';
-import { useCallback, useRef, useState } from 'react';
-import { Linking, ScrollView, StyleSheet, Text, View } from 'react-native';
+import { useCallback, useEffect, useRef, useState } from 'react';
+import { AppState, Linking, ScrollView, StyleSheet, Text, View } from 'react-native';
 
 import { ConfirmLogoutButton } from '../../components/ConfirmLogoutButton';
 import { NavigationCard } from '../../components/NavigationCard';
@@ -86,7 +86,21 @@ export function HomeScreen() {
     }
   }, [repository]);
 
-  const { value: dailyStatus } = useFocusedValue(loadDailyStatus, null as DailyFormStatus | null);
+  const { value: dailyStatus, refresh: refreshDailyStatus } = useFocusedValue(
+    loadDailyStatus,
+    null as DailyFormStatus | null,
+  );
+
+  useEffect(() => {
+    const subscription = AppState.addEventListener('change', (nextState) => {
+      if (nextState === 'active') {
+        refreshDailyStatus();
+      }
+    });
+    return () => {
+      subscription.remove();
+    };
+  }, [refreshDailyStatus]);
 
   const {
     loading: reminderLoading,

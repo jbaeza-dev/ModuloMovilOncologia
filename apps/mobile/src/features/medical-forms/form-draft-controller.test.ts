@@ -147,4 +147,35 @@ describe('FormDraftController', () => {
 
     expect(controller.getStatus().isConfirmed).toBe(true);
   });
+
+  it('dispara onSaveSuccess cuando el guardado es exitoso y onSaveError cuando falla', async () => {
+    const onSave = vi
+      .fn()
+      .mockResolvedValueOnce(undefined)
+      .mockRejectedValueOnce(new Error('Fallo de SQLite'));
+    const onConfirm = vi.fn().mockResolvedValue('del-uuid-1');
+    const onSaveSuccess = vi.fn();
+    const onSaveError = vi.fn();
+
+    const controller = new FormDraftController({
+      identity,
+      onSave,
+      onConfirm,
+      onSaveSuccess,
+      onSaveError,
+      debounceMs: 10,
+    });
+
+    // 1. Guardado exitoso
+    controller.queueSave({ P1: 'si' }, 'sec-1', true);
+    await vi.runAllTimersAsync();
+    expect(onSaveSuccess).toHaveBeenCalledTimes(1);
+    expect(onSaveError).not.toHaveBeenCalled();
+
+    // 2. Guardado fallido
+    controller.queueSave({ P1: 'no' }, 'sec-1', true);
+    await vi.runAllTimersAsync();
+    expect(onSaveError).toHaveBeenCalledTimes(1);
+    expect(onSaveError).toHaveBeenCalledWith(expect.any(Error));
+  });
 });

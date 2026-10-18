@@ -17,6 +17,7 @@ import {
 import {
   createDailyFormContext,
   formatDailyPeriodKey,
+  parseDailyPeriodKey,
   getCivilDateInTimeZone,
   DEFAULT_FORMS_TIMEZONE,
   type DailyFormContext,
@@ -357,7 +358,8 @@ export function createFormRepository(
         // 2. Obtener preguntas para validación y normalización
         const questions = await tx.all<FormQuestionRecord>(
           `SELECT * FROM pregunta_cache
-           WHERE formulario_id = ? AND version = ?`,
+           WHERE formulario_id = ? AND version = ?
+           ORDER BY orden ASC`,
           [formId, version],
         );
 
@@ -368,7 +370,9 @@ export function createFormRepository(
           throw new Error(`Validación fallida: ${firstError}`);
         }
 
-        const normalizedAnswers = normalizeFormQuestionsRecords(questions, answers);
+        const normalizedAnswers = normalizeFormQuestionsRecords(questions, answers, {
+          onlyVisible: true,
+        });
 
         // 4. Comprobar si ya existe una entrega con este deliveryId
         const existingSubmission = await tx.first<FormSubmissionRecord>(
@@ -445,14 +449,28 @@ export function createFormRepository(
         trackingDate ?? getCivilDateInTimeZone(now(), DEFAULT_FORMS_TIMEZONE);
       const activePeriodKey = formatDailyPeriodKey(todayTrackingDate);
 
-      // 1. Buscar entregas de hoy (por fecha_seguimiento civil o fecha_confirmacion en el mismo día civil)
-      const lastSubmission = await database.first<FormSubmissionRecord>(
+      // 1. Buscar entregas de hoy (priorizando fecha_seguimiento civil, o convirtiendo fecha_confirmacion mediante getCivilDateInTimeZone para filas históricas sin fecha_seguimiento)
+      const recentSubmissions = await database.all<FormSubmissionRecord>(
         `SELECT * FROM respuesta_formulario
          WHERE paciente_id = ? AND formulario_id = ?
-           AND (fecha_seguimiento = ? OR fecha_confirmacion LIKE ?)
-         ORDER BY fecha_confirmacion DESC, id DESC LIMIT 1`,
-        [patientId, formId, todayTrackingDate, `${todayTrackingDate}%`],
+         ORDER BY fecha_confirmacion DESC, id DESC LIMIT 10`,
+        [patientId, formId],
       );
+
+      const lastSubmission =
+        recentSubmissions.find((sub) => {
+          if (sub.fecha_seguimiento) {
+            return sub.fecha_seguimiento === todayTrackingDate;
+          }
+          try {
+            return (
+              getCivilDateInTimeZone(sub.fecha_confirmacion, DEFAULT_FORMS_TIMEZONE) ===
+              todayTrackingDate
+            );
+          } catch {
+            return false;
+          }
+        }) ?? null;
 
       // 2. Buscar borradores existentes
       const allDrafts = await database.all<FormDraftRecord>(
@@ -479,9 +497,26 @@ export function createFormRepository(
     async getOrCreateDailyDraft(
       formId: string,
       version: string,
-      dailyContext?: DailyFormContext,
+      dailyContextOrPeriod?: DailyFormContext | string,
     ): Promise<DailyDraftData> {
-      const context = dailyContext ?? createDailyFormContext({ now: now() });
+      let context: DailyFormContext;
+      if (typeof dailyContextOrPeriod === 'string') {
+        const parsed = parseDailyPeriodKey(dailyContextOrPeriod);
+        if (parsed) {
+          context = {
+            fechaSeguimiento: parsed.fechaSeguimiento,
+            periodoClave: dailyContextOrPeriod,
+            zonaHoraria: DEFAULT_FORMS_TIMEZONE,
+            iniciadoEn: now(),
+            ventanaDesde: new Date(new Date(now()).getTime() - 24 * 60 * 60 * 1000).toISOString(),
+            ventanaHasta: now(),
+          };
+        } else {
+          context = createDailyFormContext({ now: now() });
+        }
+      } else {
+        context = dailyContextOrPeriod ?? createDailyFormContext({ now: now() });
+      }
 
       // Verificar si ya existe el borrador en SQLite
       const existing = await database.first<FormDraftRecord>(
@@ -528,8 +563,9 @@ export function createFormRepository(
       const deliveryId = newId();
       const timestamp = now();
 
+      // Inserción atómica y segura ante concurrencia
       await database.run(
-        `INSERT INTO borrador_formulario (
+        `INSERT OR IGNORE INTO borrador_formulario (
           paciente_id, formulario_id, version, periodo_clave,
           fecha_seguimiento, zona_horaria, iniciado_en, ventana_desde, ventana_hasta, paso_actual,
           entrega_id, respuestas_json, guardado_en, version_payload
@@ -549,19 +585,37 @@ export function createFormRepository(
         ],
       );
 
+      // Recuperar el registro definitivo (el insertado o el ya existente por concurrencia)
+      const record = await database.first<FormDraftRecord>(
+        `SELECT * FROM borrador_formulario
+         WHERE paciente_id = ? AND formulario_id = ? AND version = ? AND periodo_clave = ?`,
+        [patientId, formId, version, context.periodoClave],
+      );
+
+      if (!record) {
+        throw new Error('No se pudo inicializar ni recuperar el borrador diario.');
+      }
+
+      let respuestas: Record<string, FormAnswerValue>;
+      try {
+        respuestas = JSON.parse(record.respuestas_json);
+      } catch {
+        respuestas = {};
+      }
+
       return {
-        formId,
-        version,
-        periodoClave: context.periodoClave,
-        entregaId: deliveryId,
-        fechaSeguimiento: context.fechaSeguimiento,
-        zonaHoraria: context.zonaHoraria,
-        iniciadoEn: context.iniciadoEn,
-        ventanaDesde: context.ventanaDesde,
-        ventanaHasta: context.ventanaHasta,
-        pasoActual: null,
-        respuestas: {},
-        guardadoEn: timestamp,
+        formId: record.formulario_id,
+        version: record.version,
+        periodoClave: record.periodo_clave,
+        entregaId: record.entrega_id,
+        fechaSeguimiento: record.fecha_seguimiento ?? context.fechaSeguimiento,
+        zonaHoraria: record.zona_horaria ?? context.zonaHoraria,
+        iniciadoEn: record.iniciado_en ?? record.guardado_en,
+        ventanaDesde: record.ventana_desde ?? context.ventanaDesde,
+        ventanaHasta: record.ventana_hasta ?? context.ventanaHasta,
+        pasoActual: record.paso_actual,
+        respuestas,
+        guardadoEn: record.guardado_en,
       };
     },
 
@@ -574,7 +628,8 @@ export function createFormRepository(
 
       const questions = await database.all<FormQuestionRecord>(
         `SELECT * FROM pregunta_cache
-         WHERE formulario_id = ? AND version = ?`,
+         WHERE formulario_id = ? AND version = ?
+         ORDER BY orden ASC`,
         [formId, version],
       );
 
@@ -616,43 +671,11 @@ export function createFormRepository(
       if (!deliveryId)
         throw new Error('El deliveryId es requerido para confirmar el seguimiento diario.');
 
-      // 1. Recuperar el borrador persistido para heredar sus metadatos temporales
-      const draft = await database.first<FormDraftRecord>(
-        `SELECT * FROM borrador_formulario
-         WHERE paciente_id = ? AND formulario_id = ? AND version = ? AND periodo_clave = ? AND entrega_id = ?`,
-        [patientId, formId, version, periodoClave, deliveryId],
-      );
-
       const timestamp = now();
       const queueId = newId();
 
       await database.transaction(async (tx) => {
-        // 2. Verificar asignación activa
-        const assignment = await tx.first<{ estado_conocido: string }>(
-          `SELECT estado_conocido FROM formulario_asignacion_cache
-           WHERE paciente_id = ? AND formulario_id = ? AND version = ?`,
-          [patientId, formId, version],
-        );
-        if (!assignment || assignment.estado_conocido !== 'activa') {
-          throw new Error('No existe una asignación activa para este cuestionario.');
-        }
-
-        // 3. Obtener preguntas para validación
-        const questions = await tx.all<FormQuestionRecord>(
-          `SELECT * FROM pregunta_cache
-           WHERE formulario_id = ? AND version = ?`,
-          [formId, version],
-        );
-
-        const validation = validateFormQuestionsRecords(questions, answers);
-        if (!validation.isValid) {
-          const firstError = Object.values(validation.errors)[0];
-          throw new Error(`Validación fallida: ${firstError}`);
-        }
-
-        const normalizedAnswers = normalizeFormQuestionsRecords(questions, answers);
-
-        // 4. Idempotencia ante reintentos
+        // 1. Idempotencia ante reintentos
         const existing = await tx.first<FormSubmissionRecord>(
           'SELECT * FROM respuesta_formulario WHERE id = ?',
           [deliveryId],
@@ -662,7 +685,7 @@ export function createFormRepository(
           let sameAnswers = false;
           try {
             const parsedExisting = JSON.parse(existing.respuestas_json);
-            sameAnswers = areAnswersEqual(normalizedAnswers, parsedExisting);
+            sameAnswers = areAnswersEqual(answers, parsedExisting);
           } catch {
             // error al parsear
           }
@@ -681,15 +704,62 @@ export function createFormRepository(
           );
         }
 
-        // 5. Inserción con contexto temporal heredado del borrador
+        // 2. Recuperar el borrador persistido bajo transacción obligatoriamente
+        const draft = await tx.first<FormDraftRecord>(
+          `SELECT * FROM borrador_formulario
+           WHERE paciente_id = ? AND formulario_id = ? AND version = ? AND periodo_clave = ?`,
+          [patientId, formId, version, periodoClave],
+        );
+
+        if (!draft) {
+          throw new Error('No existe un borrador activo para confirmar esta entrega diaria.');
+        }
+
+        if (draft.entrega_id !== deliveryId) {
+          throw new ConflictoEntregaError(
+            `El identificador de borrador '${draft.entrega_id}' no coincide con el deliveryId '${deliveryId}'.`,
+          );
+        }
+
+        // 3. Verificar asignación activa
+        const assignment = await tx.first<{ estado_conocido: string }>(
+          `SELECT estado_conocido FROM formulario_asignacion_cache
+           WHERE paciente_id = ? AND formulario_id = ? AND version = ?`,
+          [patientId, formId, version],
+        );
+        if (!assignment || assignment.estado_conocido !== 'activa') {
+          throw new Error('No existe una asignación activa para este cuestionario.');
+        }
+
+        // 4. Obtener preguntas para validación y normalización en orden determinista
+        const questions = await tx.all<FormQuestionRecord>(
+          `SELECT * FROM pregunta_cache
+           WHERE formulario_id = ? AND version = ?
+           ORDER BY orden ASC`,
+          [formId, version],
+        );
+
+        // 5. Validar respuestas (rechazando claves ajenas o campos inválidos)
+        const validation = validateFormQuestionsRecords(questions, answers);
+        if (!validation.isValid) {
+          const firstError = Object.values(validation.errors)[0];
+          throw new Error(`Validación fallida: ${firstError}`);
+        }
+
+        // 6. Normalizar respuestas (descartando preguntas que quedaron ocultas por condiciones)
+        const normalizedAnswers = normalizeFormQuestionsRecords(questions, answers, {
+          onlyVisible: true,
+        });
+
+        // 6. Inserción con contexto temporal heredado del borrador
         const fechaSeguimiento =
-          draft?.fecha_seguimiento ?? getCivilDateInTimeZone(timestamp, DEFAULT_FORMS_TIMEZONE);
-        const zonaHoraria = draft?.zona_horaria ?? DEFAULT_FORMS_TIMEZONE;
-        const iniciadoEn = draft?.iniciado_en ?? timestamp;
+          draft.fecha_seguimiento ?? getCivilDateInTimeZone(timestamp, DEFAULT_FORMS_TIMEZONE);
+        const zonaHoraria = draft.zona_horaria ?? DEFAULT_FORMS_TIMEZONE;
+        const iniciadoEn = draft.iniciado_en ?? timestamp;
         const ventanaDesde =
-          draft?.ventana_desde ??
+          draft.ventana_desde ??
           new Date(new Date(iniciadoEn).getTime() - 24 * 60 * 60 * 1000).toISOString();
-        const ventanaHasta = draft?.ventana_hasta ?? iniciadoEn;
+        const ventanaHasta = draft.ventana_hasta ?? iniciadoEn;
 
         const answersJson = JSON.stringify(normalizedAnswers);
 

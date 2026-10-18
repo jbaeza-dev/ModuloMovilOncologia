@@ -304,6 +304,7 @@ export function validateFormQuestionsRecords(
 export function normalizeFormQuestionsRecords(
   questions: FormQuestionRecord[],
   answers: Record<string, FormAnswerValue>,
+  options?: { onlyVisible?: boolean },
 ): Record<string, FormAnswerValue> {
   return normalizeFormAnswers(
     {
@@ -311,6 +312,7 @@ export function normalizeFormQuestionsRecords(
       preguntas: toValidatableQuestions(questions),
     },
     answers,
+    options,
   );
 }
 

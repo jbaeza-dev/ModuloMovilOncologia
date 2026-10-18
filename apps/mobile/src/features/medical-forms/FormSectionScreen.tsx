@@ -3,7 +3,13 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { AccessibilityInfo, Alert, ScrollView, StyleSheet, Text, View } from 'react-native';
 
 import { Screen } from '../../components/Screen';
-import { BodyText, DemoBadge, ProgressBar, VisualButton } from '../../components/Visual';
+import {
+  BodyText,
+  DemoBadge,
+  FeedbackBanner,
+  ProgressBar,
+  VisualButton,
+} from '../../components/Visual';
 import type { FormAnswerValue, QuestionConfiguration } from '../../data/local/forms/form-types';
 import type { FullFormDefinition } from '../../data/local/forms/form-repository';
 import { useLocalData } from '../../providers/LocalDataProvider';
@@ -15,7 +21,17 @@ import { QuestionInput } from './components/QuestionInput';
 export function FormSectionScreen() {
   const { theme: appTheme } = useAppTheme();
   const styles = createStyles(appTheme.colors);
-  const { repository, patientId, formStorageReady } = useLocalData();
+  const { repository, patientId, formStorageReady, trackOperation } = useLocalData();
+
+  const runTracked = useCallback(
+    <T,>(operation: () => Promise<T>): Promise<T> => {
+      if (typeof trackOperation === 'function') {
+        return trackOperation(operation);
+      }
+      return operation();
+    },
+    [trackOperation],
+  );
 
   const params = useLocalSearchParams<{
     id?: string;
@@ -30,6 +46,7 @@ export function FormSectionScreen() {
   const [deliveryId, setDeliveryId] = useState<string>('');
   const [activePeriod, setActivePeriod] = useState<string>('');
   const [validationErrors, setValidationErrors] = useState<Record<string, string>>({});
+  const [autosaveError, setAutosaveError] = useState(false);
 
   const scrollRef = useRef<ScrollView>(null);
   const headerRef = useRef<View>(null);
@@ -63,10 +80,13 @@ export function FormSectionScreen() {
           return;
         }
 
-        const draftData = await repository.getOrCreateDailyDraft(
-          definition.formulario_id,
-          definition.version,
-        );
+        const draftData = await runTracked(async () => {
+          return repository.getOrCreateDailyDraft(
+            definition.formulario_id,
+            definition.version,
+            params.periodoClave,
+          );
+        });
 
         if (!isMounted) return;
 
@@ -93,10 +113,20 @@ export function FormSectionScreen() {
             deliveryId: draftData.entregaId,
           },
           onSave: async (identity, saveAnswers, currentSection) => {
-            await repository.saveDailyDraft(identity, saveAnswers, currentSection);
+            await runTracked(async () => {
+              await repository.saveDailyDraft(identity, saveAnswers, currentSection);
+            });
           },
           onConfirm: async (identity, confirmAnswers) => {
-            return repository.confirmDailySubmission(identity, confirmAnswers);
+            return runTracked(async () => {
+              return repository.confirmDailySubmission(identity, confirmAnswers);
+            });
+          },
+          onSaveSuccess: () => {
+            if (isMounted) setAutosaveError(false);
+          },
+          onSaveError: () => {
+            if (isMounted) setAutosaveError(true);
           },
           debounceMs: 400,
         });
@@ -321,6 +351,11 @@ export function FormSectionScreen() {
     router.replace('/formulario');
   }, []);
 
+  const handleRetrySave = useCallback(() => {
+    setAutosaveError(false);
+    controllerRef.current?.queueSave(answers, currentSection.id, true);
+  }, [answers, currentSection.id]);
+
   if (loading || !formDef) {
     return (
       <Screen isRoot={false} title="Cargando...">
@@ -339,6 +374,18 @@ export function FormSectionScreen() {
         keyboardShouldPersistTaps="handled"
       >
         <DemoBadge />
+
+        {autosaveError && (
+          <View style={{ marginBottom: 16 }}>
+            <FeedbackBanner
+              variant="error"
+              title="No se pudo guardar automáticamente el borrador"
+              message="Tus respuestas siguen intactas en la pantalla. Puedes reintentar guardar el avance en cualquier momento."
+              actionLabel="Reintentar guardado"
+              onAction={handleRetrySave}
+            />
+          </View>
+        )}
 
         {/* Encabezado dinámico de sección */}
         <View ref={headerRef} accessibilityRole="header" style={styles.sectionHeaderCard}>

@@ -770,4 +770,166 @@ describe('formularios y persistencia clínica en SQLite', () => {
     expect(esasList).toHaveLength(1);
     expect(esasList[0].borrador_periodo_clave).toBe('dia:2026-10-18');
   });
+
+  it('getOrCreateDailyDraft es atómico y seguro ante concurrencia sin violaciones de clave', async () => {
+    const database = open();
+    await migrateDatabase(database);
+    await seedPatientContextIfEmpty(database, patientA, patientB);
+
+    const repoA = createPatientRepository(database, patientA, ids());
+
+    // Ejecución paralela masiva
+    const [d1, d2, d3] = await Promise.all([
+      repoA.getOrCreateDailyDraft('form-esas-muestra', '1.0', {
+        fechaSeguimiento: '2026-10-18',
+        periodoClave: 'dia:2026-10-18',
+        zonaHoraria: 'America/Santiago',
+        iniciadoEn: '2026-10-18T12:00:00.000Z',
+        ventanaDesde: '2026-10-17T12:00:00.000Z',
+        ventanaHasta: '2026-10-18T12:00:00.000Z',
+      }),
+      repoA.getOrCreateDailyDraft('form-esas-muestra', '1.0', {
+        fechaSeguimiento: '2026-10-18',
+        periodoClave: 'dia:2026-10-18',
+        zonaHoraria: 'America/Santiago',
+        iniciadoEn: '2026-10-18T12:00:00.000Z',
+        ventanaDesde: '2026-10-17T12:00:00.000Z',
+        ventanaHasta: '2026-10-18T12:00:00.000Z',
+      }),
+      repoA.getOrCreateDailyDraft('form-esas-muestra', '1.0', {
+        fechaSeguimiento: '2026-10-18',
+        periodoClave: 'dia:2026-10-18',
+        zonaHoraria: 'America/Santiago',
+        iniciadoEn: '2026-10-18T12:00:00.000Z',
+        ventanaDesde: '2026-10-17T12:00:00.000Z',
+        ventanaHasta: '2026-10-18T12:00:00.000Z',
+      }),
+    ]);
+
+    expect(d1.entregaId).toBe(d2.entregaId);
+    expect(d2.entregaId).toBe(d3.entregaId);
+    expect(d1.periodoClave).toBe('dia:2026-10-18');
+  });
+
+  it('confirmDailySubmission exige borrador correspondiente y rechaza deliveryId no coincidente', async () => {
+    const database = open();
+    await migrateDatabase(database);
+    await seedPatientContextIfEmpty(database, patientA, patientB);
+
+    const repoA = createPatientRepository(database, patientA, ids());
+
+    const draft = await repoA.getOrCreateDailyDraft('form-esas-muestra', '1.0', {
+      fechaSeguimiento: '2026-10-18',
+      periodoClave: 'dia:2026-10-18',
+      zonaHoraria: 'America/Santiago',
+      iniciadoEn: '2026-10-18T12:00:00.000Z',
+      ventanaDesde: '2026-10-17T12:00:00.000Z',
+      ventanaHasta: '2026-10-18T12:00:00.000Z',
+    });
+
+    // Rechaza si deliveryId difiere del borrador
+    await expect(
+      repoA.confirmDailySubmission(
+        {
+          formId: 'form-esas-muestra',
+          version: '1.0',
+          periodoClave: 'dia:2026-10-18',
+          deliveryId: 'del-otro-id',
+        },
+        { esas_dolor: 1, esas_fatiga: 1, esas_nauseas: 1 },
+      ),
+    ).rejects.toThrow(ConflictoEntregaError);
+
+    // Rechaza si no existe borrador para ese periodo
+    await expect(
+      repoA.confirmDailySubmission(
+        {
+          formId: 'form-esas-muestra',
+          version: '1.0',
+          periodoClave: 'dia:2026-10-19',
+          deliveryId: draft.entregaId,
+        },
+        { esas_dolor: 1, esas_fatiga: 1, esas_nauseas: 1 },
+      ),
+    ).rejects.toThrow('No existe un borrador activo');
+  });
+
+  it('confirmDailySubmission y confirmSubmission filtran respuestas a preguntas ocultas por condiciones dinámicas', async () => {
+    const database = open();
+    await migrateDatabase(database);
+    await seedPatientContextIfEmpty(database, patientA, patientB);
+
+    const repoA = createPatientRepository(database, patientA, ids());
+
+    const draft = await repoA.getOrCreateDailyDraft('seguimiento-domiciliario', '1.0.0', {
+      fechaSeguimiento: '2026-10-18',
+      periodoClave: 'dia:2026-10-18',
+      zonaHoraria: 'America/Santiago',
+      iniciadoEn: '2026-10-18T12:00:00.000Z',
+      ventanaDesde: '2026-10-17T12:00:00.000Z',
+      ventanaHasta: '2026-10-18T12:00:00.000Z',
+    });
+
+    // P1 está en 'no', por lo que P1.1 (síntomas de fiebre) está OCULTA.
+    // Si answers contiene P1.1 con un valor, este debe filtrarse antes de persistir.
+    const answersWithHidden: Record<string, string> = {
+      'P0.1': 'no',
+      P1: 'no',
+      'P1.1': 'calor_decaimiento', // Oculta
+      P2: 'no',
+      'P3.A': 'no',
+      'P3.B': 'no',
+      P4: 'no',
+      P5: 'no',
+      P6: 'no',
+      P7: 'no',
+      P8: 'no',
+      'P9.A': 'no',
+      'P9.B': 'no',
+    };
+
+    const confirmedId = await repoA.confirmDailySubmission(
+      {
+        formId: 'seguimiento-domiciliario',
+        version: '1.0.0',
+        periodoClave: 'dia:2026-10-18',
+        deliveryId: draft.entregaId,
+      },
+      answersWithHidden,
+    );
+
+    const sub = await repoA.getSubmission(confirmedId);
+    expect(sub?.respuestas).toHaveProperty('P1', 'no');
+    // P1.1 no debe existir en las respuestas persistidas
+    expect('P1.1' in (sub?.respuestas ?? {})).toBe(false);
+    expect(sub?.respuestas).not.toHaveProperty(['P1.1']);
+  });
+
+  it('getDailyFormStatus resuelve fecha civil en zona horaria local sin fallos por prefijo UTC', async () => {
+    const database = open();
+    await migrateDatabase(database);
+    await seedPatientContextIfEmpty(database, patientA, patientB);
+
+    const repoA = createPatientRepository(database, patientA, ids());
+
+    // Insertar fila histórica sin fecha_seguimiento, confirmada a las 22:00 CLT (01:00 UTC del día siguiente)
+    // 2026-10-18T22:00:00-03:00 = 2026-10-19T01:00:00.000Z
+    const historicalUtcTimestamp = '2026-10-19T01:00:00.000Z';
+    await database.run(
+      `INSERT INTO respuesta_formulario (
+        id, paciente_id, formulario_id, version, respuestas_json, fecha_confirmacion, creado_localmente_en,
+        fecha_seguimiento, zona_horaria
+      ) VALUES (?, ?, 'form-esas-muestra', '1.0', '{}', ?, ?, NULL, NULL)`,
+      ['del-hist-utc', patientA, historicalUtcTimestamp, historicalUtcTimestamp],
+    );
+
+    // En hora civil de America/Santiago, 2026-10-19T01:00:00.000Z es el día 2026-10-18
+    const status = await repoA.getDailyFormStatus('form-esas-muestra', '2026-10-18');
+    expect(status.hasSubmittedToday).toBe(true);
+    expect(status.lastSubmission?.id).toBe('del-hist-utc');
+
+    // Y para el día 2026-10-19 civil, no debe reportar como entregado
+    const statusNext = await repoA.getDailyFormStatus('form-esas-muestra', '2026-10-19');
+    expect(statusNext.hasSubmittedToday).toBe(false);
+  });
 });

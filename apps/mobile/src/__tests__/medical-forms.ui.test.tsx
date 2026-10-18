@@ -8,6 +8,7 @@ import { QuestionInput } from '../features/medical-forms/components/QuestionInpu
 import { DailyFollowUpScreen } from '../features/medical-forms/DailyFollowUpScreen';
 import { FormSectionScreen } from '../features/medical-forms/FormSectionScreen';
 import { DailyFormReviewScreen } from '../features/medical-forms/DailyFormReviewScreen';
+import { MedicalFormSubmissionDetailScreen } from '../features/medical-forms/MedicalFormsScreens';
 import { SAMPLE_DECOUPLED_FORM } from '../features/medical-forms/fixtures/sample-decoupled-form';
 
 // Mock expo-router
@@ -77,6 +78,7 @@ const mockRepository = {
   confirmDailySubmission: jest.fn(),
   discardDraft: jest.fn(),
   getDraft: jest.fn(),
+  getSubmission: jest.fn(),
 };
 
 jest.mock('../providers/LocalDataProvider', () => ({
@@ -84,6 +86,7 @@ jest.mock('../providers/LocalDataProvider', () => ({
     repository: mockRepository,
     patientId: 'patient-test-1',
     formStorageReady: true,
+    trackOperation: jest.fn((fn: () => Promise<unknown>) => fn()),
   }),
 }));
 
@@ -591,6 +594,60 @@ describe('Pruebas de UI: Componentes y Pantallas de Formularios Médicos', () =>
         expect(screen.getByText('Registro completado con éxito')).toBeTruthy();
         expect(screen.getByText('Guardado en este dispositivo · Pendiente de envío')).toBeTruthy();
       });
+    });
+  });
+
+  describe('MedicalFormSubmissionDetailScreen', () => {
+    it('renderiza el detalle de la entrega sin violaciones de Hooks tras completar la carga', async () => {
+      mockUseLocalSearchParams.mockReturnValue({ id: 'sub-test-123' });
+
+      mockRepository.getSubmission.mockResolvedValue({
+        id: 'sub-test-123',
+        formulario_id: SAMPLE_DECOUPLED_FORM.formularioId,
+        version: SAMPLE_DECOUPLED_FORM.version,
+        titulo: SAMPLE_DECOUPLED_FORM.titulo,
+        respuestas: {
+          Q_ANIMO: 'si',
+          Q_DETALLE_ANIMO: 'Caminé por el parque',
+        },
+        fecha_confirmacion: '2026-10-18T14:30:00Z',
+        fecha_seguimiento: '2026-10-18',
+        zona_horaria: 'America/Santiago',
+        ventana_desde: '2026-10-17T14:30:00Z',
+        ventana_hasta: '2026-10-18T14:30:00Z',
+      });
+
+      mockRepository.getFormDefinition.mockResolvedValue({
+        formulario_id: SAMPLE_DECOUPLED_FORM.formularioId,
+        version: SAMPLE_DECOUPLED_FORM.version,
+        titulo: SAMPLE_DECOUPLED_FORM.titulo,
+        descripcion: SAMPLE_DECOUPLED_FORM.descripcion,
+        duracion_estimada_min: SAMPLE_DECOUPLED_FORM.duracionEstimadaMin,
+        configuracion: SAMPLE_DECOUPLED_FORM.configuracion,
+        preguntas: SAMPLE_DECOUPLED_FORM.preguntas.map((q) => ({
+          formulario_id: SAMPLE_DECOUPLED_FORM.formularioId,
+          version: SAMPLE_DECOUPLED_FORM.version,
+          pregunta_id: q.preguntaId,
+          texto: q.texto,
+          tipo: q.tipo,
+          orden: q.orden,
+          requerida: q.requerida ? 1 : 0,
+          configuracion: q.configuracion,
+          retirado: 0,
+        })),
+      });
+
+      await render(<MedicalFormSubmissionDetailScreen />);
+
+      // Esperar a que pase el estado de carga y renderice el detalle
+      await waitFor(() => {
+        expect(screen.getByText(`Entrega: ${SAMPLE_DECOUPLED_FORM.titulo}`)).toBeTruthy();
+      });
+
+      expect(screen.getByText('Respuestas registradas')).toBeTruthy();
+      expect(screen.getByText('¿Te has sentido con buen ánimo hoy?')).toBeTruthy();
+      expect(screen.getByText('¿Qué actividad te ayudó a sentirte mejor?')).toBeTruthy();
+      expect(screen.getByText('Caminé por el parque')).toBeTruthy();
     });
   });
 });

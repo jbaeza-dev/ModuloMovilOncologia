@@ -18,6 +18,8 @@ export interface FormDraftControllerOptions {
     identity: FormDraftIdentity,
     answers: Record<string, FormAnswerValue>,
   ) => Promise<string>;
+  onSaveSuccess?: () => void;
+  onSaveError?: (error: unknown) => void;
   debounceMs?: number;
 }
 
@@ -34,6 +36,8 @@ export class FormDraftController {
   private readonly identity: FormDraftIdentity;
   private readonly onSave: FormDraftControllerOptions['onSave'];
   private readonly onConfirm: FormDraftControllerOptions['onConfirm'];
+  private readonly onSaveSuccess?: () => void;
+  private readonly onSaveError?: (error: unknown) => void;
   private readonly debounceMs: number;
 
   private debounceTimer: ReturnType<typeof setTimeout> | null = null;
@@ -50,6 +54,8 @@ export class FormDraftController {
     this.identity = options.identity;
     this.onSave = options.onSave;
     this.onConfirm = options.onConfirm;
+    this.onSaveSuccess = options.onSaveSuccess;
+    this.onSaveError = options.onSaveError;
     this.debounceMs = options.debounceMs ?? 400;
   }
 
@@ -121,6 +127,9 @@ export class FormDraftController {
           current.answers,
           current.currentSection,
         );
+        this.onSaveSuccess?.();
+      } catch (error) {
+        this.onSaveError?.(error);
       } finally {
         this.inFlightPromise = null;
       }

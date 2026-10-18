@@ -1,7 +1,7 @@
 import Feather from '@expo/vector-icons/Feather';
 import { router } from 'expo-router';
-import { useCallback, useState } from 'react';
-import { Alert, StyleSheet, Text, View } from 'react-native';
+import { useCallback, useEffect, useState } from 'react';
+import { Alert, AppState, StyleSheet, Text, View } from 'react-native';
 
 import { NavigationCard } from '../../components/NavigationCard';
 import { Screen } from '../../components/Screen';
@@ -30,7 +30,17 @@ import { parseDailyPeriodKey } from '../../services/forms/daily-form-context';
 export function DailyFollowUpScreen() {
   const { theme: appTheme } = useAppTheme();
   const styles = createStyles(appTheme.colors);
-  const { repository, patientId, formStorageReady } = useLocalData();
+  const { repository, patientId, formStorageReady, trackOperation } = useLocalData();
+
+  const runTracked = useCallback(
+    <T,>(operation: () => Promise<T>): Promise<T> => {
+      if (typeof trackOperation === 'function') {
+        return trackOperation(operation);
+      }
+      return operation();
+    },
+    [trackOperation],
+  );
 
   const [discardingOlder, setDiscardingOlder] = useState(false);
 
@@ -107,10 +117,23 @@ export function DailyFollowUpScreen() {
 
   const { assigned, dailyStatus, mainForm, isIncompatible } = value;
 
+  useEffect(() => {
+    const subscription = AppState.addEventListener('change', (nextState) => {
+      if (nextState === 'active') {
+        refresh();
+      }
+    });
+    return () => {
+      subscription.remove();
+    };
+  }, [refresh]);
+
   const handleStartOrContinue = async () => {
     if (!mainForm || !repository) return;
     try {
-      await repository.getOrCreateDailyDraft(mainForm.formulario_id, mainForm.version);
+      await runTracked(async () => {
+        return repository.getOrCreateDailyDraft(mainForm.formulario_id, mainForm.version);
+      });
       router.push({
         pathname: '/formulario/cuestionario',
         params: { id: mainForm.formulario_id, version: mainForm.version },
@@ -137,7 +160,13 @@ export function DailyFollowUpScreen() {
           onPress: async () => {
             setDiscardingOlder(true);
             try {
-              await repository.discardDraft(mainForm.formulario_id, mainForm.version, periodoClave);
+              await runTracked(async () => {
+                await repository.discardDraft(
+                  mainForm.formulario_id,
+                  mainForm.version,
+                  periodoClave,
+                );
+              });
               refresh();
             } catch (error) {
               Alert.alert(
