@@ -16,15 +16,9 @@ import {
   useWindowDimensions,
   View,
 } from 'react-native';
+import { SafeAreaView } from 'react-native-safe-area-context';
 
-import { Screen } from '../../components/Screen';
-import {
-  BodyText,
-  DemoBadge,
-  EmptyState,
-  SectionTitle,
-  VisualButton,
-} from '../../components/Visual';
+import { BodyText, EmptyState, SectionTitle, VisualButton } from '../../components/Visual';
 import type { EducationalResource } from '../../data/local/education/education-types';
 import { resourceFileExists } from '../../data/local/files/resource-storage';
 import { useFocusedValue } from '../../hooks/use-local-query';
@@ -47,7 +41,7 @@ const ZOOM_LEVELS = [
 
 export function InfographicViewerScreen() {
   const { theme: appTheme } = useAppTheme();
-  const { patientId, repository } = useLocalData();
+  const { patientId, repository, isClosing } = useLocalData();
   const styles = useStyles();
   const { width: windowWidth, height: windowHeight } = useWindowDimensions();
   const { recurso } = useLocalSearchParams<{ recurso?: string }>();
@@ -61,6 +55,21 @@ export function InfographicViewerScreen() {
 
   const textButtonRef = useRef<View>(null);
   const modalTitleRef = useRef<View>(null);
+
+  const handleClose = useCallback(() => {
+    if (router.canGoBack()) {
+      router.back();
+    } else {
+      router.replace('/educacion');
+    }
+  }, []);
+
+  // Guardia de pérdida de sesión o cierre
+  useEffect(() => {
+    if (!patientId || isClosing) {
+      handleClose();
+    }
+  }, [patientId, isClosing, handleClose]);
 
   const loadResourceData = useCallback(async () => {
     if (!recurso) return null;
@@ -184,32 +193,43 @@ export function InfographicViewerScreen() {
 
   if (loadingCatalog || loadingCopy) {
     return (
-      <Screen title="Cargando infografía" scroll={false}>
-        <DemoBadge />
+      <SafeAreaView style={styles.safeArea} edges={['top', 'bottom', 'left', 'right']}>
         <View style={styles.centered}>
           <ActivityIndicator size="large" color={appTheme.colors.primary} />
           <BodyText style={{ marginTop: 12 }}>Preparando visor de infografía…</BodyText>
         </View>
-      </Screen>
+      </SafeAreaView>
     );
   }
 
   if (!effectiveResource) {
     return (
-      <Screen title="Infografía no encontrada" scroll={false}>
-        <DemoBadge />
+      <SafeAreaView style={styles.safeArea} edges={['top', 'bottom', 'left', 'right']}>
+        <View style={styles.header}>
+          <Pressable
+            accessibilityRole="button"
+            accessibilityLabel="Cerrar visor de infografía"
+            onPress={handleClose}
+            style={styles.closeButton}
+          >
+            <Feather name="x" size={24} color={appTheme.colors.text} />
+            <Text style={styles.closeButtonText}>Cerrar</Text>
+          </Pressable>
+        </View>
         <EmptyState
           icon="alert-circle"
           title="Infografía no disponible"
           description="No se encontró el material educativo solicitado."
         />
-        <VisualButton label="Volver a educación" secondary onPress={() => router.back()} />
-      </Screen>
+        <View style={{ padding: 16 }}>
+          <VisualButton label="Volver a educación" secondary onPress={handleClose} />
+        </View>
+      </SafeAreaView>
     );
   }
 
   const baseImageWidth = Math.max(300, windowWidth - 32);
-  const baseImageHeight = Math.max(380, windowHeight - 340);
+  const baseImageHeight = Math.max(400, windowHeight - 160);
   const scaledWidth = baseImageWidth * zoomFactor;
   const scaledHeight = baseImageHeight * zoomFactor;
 
@@ -221,10 +241,35 @@ export function InfographicViewerScreen() {
     'No hay descripción textual disponible para esta infografía.';
 
   return (
-    <Screen title={effectiveResource.title} scroll={false}>
+    <SafeAreaView style={styles.safeArea} edges={['top', 'bottom', 'left', 'right']}>
+      {/* Barra de cabecera con botón de cierre y título */}
+      <View style={styles.header}>
+        <Pressable
+          accessibilityRole="button"
+          accessibilityLabel="Cerrar visor de infografía"
+          onPress={handleClose}
+          style={styles.closeButton}
+        >
+          <Feather name="x" size={24} color={appTheme.colors.text} />
+          <Text style={styles.closeButtonText}>Cerrar</Text>
+        </Pressable>
+        <Text
+          accessibilityRole="header"
+          numberOfLines={1}
+          ellipsizeMode="tail"
+          style={styles.headerTitle}
+        >
+          {effectiveResource.title}
+        </Text>
+      </View>
+
       {/* Barra de herramientas accesible con controles de zoom y texto alternativo */}
       <View style={styles.toolbar}>
-        <View style={styles.zoomButtonsContainer} accessibilityRole="toolbar">
+        <View
+          style={styles.zoomButtonsContainer}
+          accessibilityRole="toolbar"
+          accessibilityLabel="Controles de zoom"
+        >
           <Text style={styles.toolbarLabel}>Zoom:</Text>
           {ZOOM_LEVELS.map(({ factor, label }) => {
             const isSelected = zoomFactor === factor;
@@ -249,7 +294,7 @@ export function InfographicViewerScreen() {
           ref={textButtonRef}
           collapsable={false}
           accessibilityRole="button"
-          accessibilityLabel="Leer texto alternativo accesible de la infografía"
+          accessibilityLabel="Leer contenido en texto accesible de la infografía"
           onPress={handleOpenModal}
           style={styles.textAltButton}
         >
@@ -334,11 +379,6 @@ export function InfographicViewerScreen() {
         )}
       </View>
 
-      {/* Pie de pantalla con botón de regreso */}
-      <View style={styles.footer}>
-        <VisualButton label="Volver al detalle" secondary onPress={() => router.back()} />
-      </View>
-
       {/* Modal accesible para lectura de texto alternativo sin conexión */}
       <Modal
         visible={isTextModalVisible}
@@ -378,7 +418,7 @@ export function InfographicViewerScreen() {
           </View>
         </View>
       </Modal>
-    </Screen>
+    </SafeAreaView>
   );
 }
 
@@ -386,6 +426,40 @@ function useStyles() {
   const { theme: appTheme } = useAppTheme();
 
   return StyleSheet.create({
+    safeArea: {
+      flex: 1,
+      backgroundColor: appTheme.colors.background,
+    },
+    header: {
+      flexDirection: 'row',
+      alignItems: 'center',
+      paddingHorizontal: 12,
+      paddingVertical: 8,
+      gap: 8,
+      borderBottomWidth: 1,
+      borderBottomColor: appTheme.colors.border,
+      backgroundColor: appTheme.colors.surface,
+    },
+    closeButton: {
+      flexDirection: 'row',
+      alignItems: 'center',
+      minWidth: 48,
+      minHeight: 48,
+      paddingHorizontal: 8,
+      gap: 4,
+      borderRadius: theme.radius.sm,
+    },
+    closeButtonText: {
+      fontSize: 16,
+      fontWeight: '600',
+      color: appTheme.colors.text,
+    },
+    headerTitle: {
+      flex: 1,
+      fontSize: 16,
+      fontWeight: '700',
+      color: appTheme.colors.text,
+    },
     fullSize: {
       flex: 1,
     },
@@ -405,6 +479,8 @@ function useStyles() {
       paddingVertical: 8,
       borderRadius: theme.radius.sm,
       gap: 8,
+      marginHorizontal: 8,
+      marginTop: 8,
       marginBottom: 8,
       borderWidth: 1,
       borderColor: appTheme.colors.border,
@@ -467,6 +543,8 @@ function useStyles() {
       overflow: 'hidden',
       borderWidth: 1,
       borderColor: appTheme.colors.border,
+      marginHorizontal: 8,
+      marginBottom: 8,
     },
     horizontalScrollContent: {
       minWidth: '100%',
@@ -496,9 +574,6 @@ function useStyles() {
       fontSize: 18,
       fontWeight: '700',
       color: appTheme.colors.error,
-    },
-    footer: {
-      paddingVertical: 8,
     },
     srOnly: {
       position: 'absolute',

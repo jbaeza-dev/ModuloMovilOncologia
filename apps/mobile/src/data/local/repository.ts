@@ -432,6 +432,7 @@ export function createPatientRepository(
 }
 
 export type PatientRepository = ReturnType<typeof createPatientRepository>;
+export type AppRepository = PatientRepository;
 
 export async function seedPatientContextIfEmpty(
   database: SqlConnection,

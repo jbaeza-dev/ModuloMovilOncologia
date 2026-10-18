@@ -5,7 +5,17 @@ import * as Linking from 'expo-linking';
 import * as Network from 'expo-network';
 import { router, useLocalSearchParams } from 'expo-router';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { ActivityIndicator, Image, Pressable, StyleSheet, Text, View } from 'react-native';
+import {
+  ActivityIndicator,
+  Alert,
+  Image,
+  Modal,
+  Pressable,
+  ScrollView,
+  StyleSheet,
+  Text,
+  View,
+} from 'react-native';
 
 import { Screen } from '../../components/Screen';
 import {
@@ -44,11 +54,133 @@ import {
   type EducationalFormatFilter,
 } from './educational-catalog-service';
 import { getCategoryByIdOrSlug } from './educational-categories';
+import { executeYouTubeLaunch } from './youtube-launcher';
 
 const BUNDLED_ASSETS: Record<string, number> = {
   // eslint-disable-next-line @typescript-eslint/no-require-imports
   infografia_alimentacion_quimio: require('../../../assets/education/infografia_alimentacion_quimio.png'),
 };
+
+/**
+ * Guarda o actualiza físicamente una infografía en el almacenamiento local
+ * y persiste el registro en SQLite de forma atómica.
+ */
+export async function downloadAndSaveInfographic({
+  resource,
+  patientId,
+  repository,
+  database,
+  localCopy,
+}: {
+  resource: EducationalResource;
+  patientId: string;
+  repository: NonNullable<ReturnType<typeof useLocalData>['repository']>;
+  database: SqlConnection;
+  localCopy?: EducationalLocalCopy | null;
+}): Promise<void> {
+  if (resource.type !== 'infografia') {
+    throw new Error('Solo se permite la descarga de infografías en formato de imagen.');
+  }
+
+  const isJpeg =
+    resource.asset?.extension === 'jpg' ||
+    resource.asset?.extension === 'jpeg' ||
+    Boolean(resource.asset?.mimeType?.toLowerCase().includes('jpeg'));
+  const formato: ActiveEducationalCopyFormat = isJpeg ? 'jpeg' : 'png';
+  const mimeType = isJpeg ? 'image/jpeg' : (resource.asset?.mimeType ?? 'image/png');
+
+  const assetKey = resource.asset?.type === 'bundled' ? resource.asset.assetKey : '';
+  const assetModule = BUNDLED_ASSETS[assetKey];
+
+  if (!assetModule) {
+    throw new Error('El archivo de la infografía no se encuentra empaquetado en este dispositivo.');
+  }
+
+  const [loadedAsset] = await Asset.loadAsync(assetModule);
+  if (
+    loadedAsset &&
+    (!loadedAsset.localUri ||
+      (!loadedAsset.localUri.startsWith('file://') && !loadedAsset.localUri.startsWith('/'))) &&
+    typeof loadedAsset.downloadAsync === 'function'
+  ) {
+    loadedAsset.downloaded = false;
+    await loadedAsset.downloadAsync();
+  }
+
+  const rawUri = loadedAsset?.localUri ?? loadedAsset?.uri;
+  if (!rawUri) {
+    throw new Error(
+      'No se pudo resolver la ruta local de la infografía empaquetada. Se cancela la operación para conservar la integridad del almacenamiento.',
+    );
+  }
+
+  const absoluteUri = rawUri.startsWith('file://')
+    ? rawUri
+    : rawUri.startsWith('/')
+      ? `file://${rawUri}`
+      : rawUri;
+  const fileObj = new File(absoluteUri);
+  const contentToSave = await fileObj.bytes();
+
+  await saveEducationalMediaWithCompensation({
+    pacienteId: patientId,
+    contenidoId: resource.id,
+    formato,
+    content: contentToSave,
+    versionOrigen: resource.version,
+    mimeType,
+    titulo: resource.title,
+    tipo: resource.type,
+    descripcion: resource.description,
+    textoAccesible: resource.textoAccesible,
+    previousRutaLocal: localCopy?.rutaRelativa ?? localCopy?.rutaAbsoluta,
+    getPreviousRutaLocal: async () => {
+      const current = await repository.education.getLocalCopy(resource.id);
+      return current?.rutaAbsoluta ?? current?.rutaRelativa ?? null;
+    },
+    persistCopyInTx: async (params) => {
+      await database.transaction(async (tx: SqlConnection) => {
+        await repository.education.persistCopyInTx(tx, {
+          contentId: resource.id,
+          rutaLocal: params.rutaLocal,
+          formato: params.formato,
+          tamanoBytes: params.tamanoBytes,
+          nowIso: new Date().toISOString(),
+          metadataLocal: params.metadataLocal,
+        });
+      });
+    },
+  });
+}
+
+/**
+ * Elimina una copia física comprobando su eliminación antes de limpiar SQLite.
+ */
+export async function removeLocalInfographicCopy({
+  contentId,
+  patientId,
+  repository,
+  localCopy,
+}: {
+  contentId: string;
+  patientId: string;
+  repository: NonNullable<ReturnType<typeof useLocalData>['repository']>;
+  localCopy?: EducationalLocalCopy | null;
+}): Promise<void> {
+  if (localCopy?.rutaRelativa) {
+    const physicallyDeleted = await deleteResourceFile(
+      patientId,
+      contentId,
+      localCopy.rutaRelativa,
+    );
+    if (!physicallyDeleted) {
+      throw new Error(
+        'No se pudo confirmar la eliminación física del archivo del almacenamiento local.',
+      );
+    }
+  }
+  await repository.education.removeLocalCopy(contentId);
+}
 
 export function EducationScreen() {
   const { theme: appTheme } = useAppTheme();
@@ -118,10 +250,14 @@ export function EducationScreen() {
 
 export function EducationCategoryScreen() {
   const { theme: appTheme } = useAppTheme();
-  const { repository, patientId } = useLocalData();
+  const { repository, patientId, runSave, database } = useLocalData();
   const styles = useStyles();
-  const [expanded, setExpanded] = useState<string | null>(null);
+
   const [formatFilter, setFormatFilter] = useState<EducationalFormatFilter>('all');
+  const [infoResource, setInfoResource] = useState<EducationalResource | null>(null);
+  const [modalActionBusy, setModalActionBusy] = useState(false);
+  const [modalError, setModalError] = useState<string | null>(null);
+
   const { categoria } = useLocalSearchParams<{ categoria?: string }>();
   const resolvedCategory = useMemo(() => getCategoryByIdOrSlug(categoria), [categoria]);
   const categoryIndex = resolvedCategory.id;
@@ -155,6 +291,7 @@ export function EducationCategoryScreen() {
     value,
     loading: loadingData,
     error: dataError,
+    refresh: refreshData,
   } = useFocusedValue<{
     currentCategory?: EducationalCategory;
     resources: EducationalResource[];
@@ -169,6 +306,123 @@ export function EducationCategoryScreen() {
 
   const copyMap = new Map((value?.copies ?? []).map((c) => [c.contentId, c]));
   const interactionMap = new Map((value?.interactions ?? []).map((i) => [i.contentId, i]));
+
+  // Acceso directo con 1 toque según tipo de recurso
+  async function handleDirectOpen(resource: EducationalResource) {
+    if (resource.type === 'video') {
+      const res = await executeYouTubeLaunch({
+        resourceId: resource.id,
+        youtubeVideoId: resource.youtubeVideoId,
+        version: resource.version,
+        patientId,
+        repository,
+        runSave,
+      });
+      if (!res.success && res.error) {
+        Alert.alert('Video online', res.error);
+      }
+      refreshData();
+    } else if (resource.type === 'infografia') {
+      router.push('/visor-infografia?recurso=' + encodeURIComponent(resource.id));
+    } else if (resource.type === 'guia') {
+      router.push('/educacion/recurso?recurso=' + encodeURIComponent(resource.id));
+    }
+  }
+
+  // Acciones individuales desde el modal Información
+  async function handleSaveFromModal(targetResource: EducationalResource) {
+    if (!repository || !patientId || !database || modalActionBusy) return;
+    setModalActionBusy(true);
+    setModalError(null);
+    try {
+      await runSave(async () => {
+        const copy = copyMap.get(targetResource.id);
+        await downloadAndSaveInfographic({
+          resource: targetResource,
+          patientId,
+          repository,
+          database,
+          localCopy: copy,
+        });
+      });
+      refreshData();
+    } catch (err) {
+      setModalError(
+        err instanceof Error
+          ? err.message
+          : 'No se pudo guardar la infografía sin conexión en el dispositivo.',
+      );
+    } finally {
+      setModalActionBusy(false);
+    }
+  }
+
+  async function handleDeleteFromModal(
+    targetResource: EducationalResource,
+    copy?: EducationalLocalCopy | null,
+  ) {
+    if (!repository || !patientId || modalActionBusy) return;
+    setModalActionBusy(true);
+    setModalError(null);
+    try {
+      await runSave(async () => {
+        await removeLocalInfographicCopy({
+          contentId: targetResource.id,
+          patientId,
+          repository,
+          localCopy: copy,
+        });
+      });
+      refreshData();
+    } catch (err) {
+      setModalError(
+        err instanceof Error
+          ? err.message
+          : 'No se pudo eliminar el archivo local en el dispositivo.',
+      );
+    } finally {
+      setModalActionBusy(false);
+    }
+  }
+
+  async function handleDeclareCopyReviewedFromModal(targetResource: EducationalResource) {
+    if (!repository || modalActionBusy) return;
+    setModalActionBusy(true);
+    setModalError(null);
+    try {
+      await runSave(async () => {
+        await repository.education.declareCopyReviewed(targetResource.id);
+      });
+      refreshData();
+    } catch {
+      setModalError('No se pudo registrar la revisión de la copia local.');
+    } finally {
+      setModalActionBusy(false);
+    }
+  }
+
+  async function handleDeclareVideoReviewedFromModal(targetResource: EducationalResource) {
+    if (!repository || modalActionBusy || !targetResource.youtubeVideoId) return;
+    setModalActionBusy(true);
+    setModalError(null);
+    try {
+      await runSave(async () => {
+        const res = await repository.education.declareYouTubeReviewed({
+          contentId: targetResource.id,
+          youtubeVideoId: targetResource.youtubeVideoId!,
+          versionOrigen: targetResource.version,
+        });
+        if (!res.updated) {
+          throw new Error('No se pudo confirmar la revisión del video.');
+        }
+      });
+      refreshData();
+    } catch {
+      setModalError('No se pudo confirmar la revisión del video.');
+    } finally {
+      setModalActionBusy(false);
+    }
+  }
 
   return (
     <Screen title={value?.currentCategory?.title ?? resolvedCategory.title}>
@@ -246,9 +500,7 @@ export function EducationCategoryScreen() {
             patientId && copy?.rutaRelativa
               ? resourceFileExists(patientId, resource.id, copy.rutaRelativa)
               : false;
-          const isDownloaded = Boolean(copy && fileExists);
-          const isFileMissing = Boolean(copy && !fileExists);
-          const isExpanded = expanded === resource.id;
+          const isDownloaded = Boolean(copy && fileExists && copy.estado !== 'error');
 
           const typeIcon =
             resource.type === 'video'
@@ -257,70 +509,252 @@ export function EducationCategoryScreen() {
                 ? 'image'
                 : 'file-text';
 
+          const formatChipLabel =
+            resource.type === 'video'
+              ? 'Video · Requiere internet'
+              : resource.type === 'infografia'
+                ? isDownloaded
+                  ? 'Infografía · Disponible sin internet'
+                  : 'Infografía · Disponible para guardar'
+                : isDownloaded
+                  ? 'Guía · Disponible sin internet'
+                  : 'Guía · Disponible para guardar';
+
+          const isReviewed =
+            resource.type === 'video'
+              ? Boolean(interaction?.revisionDeclaradaEn)
+              : Boolean(copy?.revisionDeclarada);
+
+          const reviewedDate =
+            resource.type === 'video'
+              ? interaction?.revisionDeclaradaEn
+                ? formatDate(interaction.revisionDeclaradaEn)
+                : null
+              : copy?.revisionDeclaradaEn
+                ? formatDate(copy.revisionDeclaradaEn)
+                : null;
+
           return (
-            <InfoCard key={resource.id}>
+            <View key={resource.id} style={styles.cardContainer}>
+              {/* Área principal táctil: 1 toque abre el recurso directamente */}
               <Pressable
                 accessibilityRole="button"
-                accessibilityLabel={`${resource.title}, ${resource.type}`}
-                onPress={() => setExpanded(isExpanded ? null : resource.id)}
+                accessibilityLabel={`${resource.title}, ${formatChipLabel}`}
+                onPress={() => void handleDirectOpen(resource)}
+                style={styles.cardMainPressable}
               >
-                <View style={styles.row}>
-                  <Feather name={typeIcon} size={24} color={appTheme.colors.primary} />
-                  <View style={styles.copy}>
-                    <Text style={styles.heading}>{resource.title}</Text>
-                    <BodyText>
-                      {resource.type === 'video'
-                        ? 'Video online (YouTube)'
-                        : resource.type === 'infografia'
-                          ? 'Infografía descargable'
-                          : 'Guía de lectura'}
-                      {resource.estimatedReadTimeMinutes
-                        ? ` · ~${resource.estimatedReadTimeMinutes} min`
-                        : ''}
-                    </BodyText>
+                <Feather name={typeIcon} size={28} color={appTheme.colors.primary} />
+                <View style={styles.cardContent}>
+                  <Text style={styles.heading}>{resource.title}</Text>
+                  <View style={styles.chipsRow}>
+                    <StatusPill>{formatChipLabel}</StatusPill>
+                    {isReviewed && reviewedDate ? (
+                      <StatusPill>{`Revisado el ${reviewedDate}`}</StatusPill>
+                    ) : null}
                   </View>
-                  <Feather
-                    name={isExpanded ? 'chevron-up' : 'chevron-down'}
-                    size={22}
-                    color={appTheme.colors.text}
-                  />
                 </View>
               </Pressable>
 
-              <View style={styles.noticeBox}>
-                <StatusPill>
-                  {resource.type === 'video'
-                    ? interaction?.revisionDeclaradaEn
-                      ? `Revisado el ${formatDate(interaction.revisionDeclaradaEn)}`
-                      : interaction
-                        ? 'Video abierto (pendiente de confirmar)'
-                        : 'Disponible online'
-                    : isDownloaded
-                      ? copy?.revisionDeclarada
-                        ? `Revisado el ${copy.revisionDeclaradaEn ? formatDate(copy.revisionDeclaradaEn) : 'sí'}`
-                        : 'Guardado en disco'
-                      : isFileMissing
-                        ? 'Archivo no disponible'
-                        : 'Disponible para descarga'}
-                </StatusPill>
-              </View>
-
-              {isExpanded ? (
-                <View style={styles.stack}>
-                  <BodyText>{resource.description}</BodyText>
-                  <VisualButton
-                    label="Ver detalle completo"
-                    secondary
-                    onPress={() =>
-                      router.push('/educacion/recurso?recurso=' + encodeURIComponent(resource.id))
-                    }
-                  />
-                </View>
-              ) : null}
-            </InfoCard>
+              {/* Botón aislado para información y acciones individuales */}
+              <Pressable
+                accessibilityRole="button"
+                accessibilityLabel={`Información de ${resource.title}`}
+                onPress={() => {
+                  setModalError(null);
+                  setInfoResource(resource);
+                }}
+                style={styles.cardInfoButton}
+              >
+                <Feather name="info" size={20} color={appTheme.colors.primary} />
+                <Text style={styles.cardInfoButtonText}>Info</Text>
+              </Pressable>
+            </View>
           );
         })
       )}
+
+      {/* Modal de Información con metadatos y acciones individuales */}
+      {infoResource ? (
+        <Modal
+          visible={Boolean(infoResource)}
+          transparent={true}
+          animationType="fade"
+          onRequestClose={() => {
+            setInfoResource(null);
+            setModalError(null);
+          }}
+          accessibilityViewIsModal={true}
+        >
+          {(() => {
+            const currentCopy = copyMap.get(infoResource.id);
+            const currentInteraction = interactionMap.get(infoResource.id);
+            const fileExists =
+              patientId && currentCopy?.rutaRelativa
+                ? resourceFileExists(patientId, infoResource.id, currentCopy.rutaRelativa)
+                : false;
+            const isDownloaded = Boolean(
+              currentCopy && fileExists && currentCopy.estado !== 'error',
+            );
+            const isFileMissing = Boolean(
+              currentCopy && (!fileExists || currentCopy.estado === 'error'),
+            );
+
+            return (
+              <View style={styles.modalOverlay}>
+                <View style={styles.modalCard}>
+                  <View style={styles.modalHeader}>
+                    <View style={{ flex: 1 }}>
+                      <SectionTitle>{infoResource.title}</SectionTitle>
+                    </View>
+                    <Pressable
+                      accessibilityRole="button"
+                      accessibilityLabel="Cerrar información"
+                      onPress={() => {
+                        setInfoResource(null);
+                        setModalError(null);
+                      }}
+                      style={styles.modalCloseIcon}
+                    >
+                      <Feather name="x" size={24} color={appTheme.colors.text} />
+                    </Pressable>
+                  </View>
+
+                  <ScrollView style={styles.modalScroll} contentContainerStyle={{ gap: 12 }}>
+                    <BodyText>{infoResource.description}</BodyText>
+                    <BodyText>Categoría: {infoResource.categoryName}</BodyText>
+                    {infoResource.estimatedReadTimeMinutes ? (
+                      <BodyText>
+                        Tiempo estimado: ~{infoResource.estimatedReadTimeMinutes} minutos
+                      </BodyText>
+                    ) : null}
+
+                    <View style={styles.noticeBox}>
+                      <StatusPill>
+                        {infoResource.type === 'video'
+                          ? currentInteraction?.revisionDeclaradaEn
+                            ? `Video revisado el ${formatDate(currentInteraction.revisionDeclaradaEn)}`
+                            : currentInteraction
+                              ? 'Video abierto (pendiente de confirmar)'
+                              : 'Disponible online'
+                          : isDownloaded
+                            ? currentCopy?.revisionDeclarada
+                              ? `Material revisado el ${currentCopy.revisionDeclaradaEn ? formatDate(currentCopy.revisionDeclaradaEn) : 'sí'}`
+                              : 'Guardado en este dispositivo'
+                            : isFileMissing
+                              ? 'Archivo no disponible'
+                              : 'Disponible para guardar'}
+                      </StatusPill>
+                    </View>
+
+                    {infoResource.type === 'video' ? (
+                      <View style={styles.noticeBox}>
+                        <Feather name="info" size={18} color={appTheme.colors.primary} />
+                        <Text style={styles.noticeText}>
+                          Los videos educativos se abren externamente en YouTube y requieren
+                          conexión activa.
+                        </Text>
+                      </View>
+                    ) : null}
+
+                    {modalError ? (
+                      <Text accessibilityRole="alert" style={styles.errorText}>
+                        {modalError}
+                      </Text>
+                    ) : null}
+                  </ScrollView>
+
+                  <View style={styles.modalFooter}>
+                    {infoResource.type === 'video' ? (
+                      <>
+                        <VisualButton
+                          label={modalActionBusy ? 'Abriendo…' : 'Abrir en YouTube'}
+                          disabled={modalActionBusy}
+                          onPress={() => void handleDirectOpen(infoResource)}
+                        />
+                        {currentInteraction && !currentInteraction.revisionDeclaradaEn ? (
+                          <VisualButton
+                            label={modalActionBusy ? 'Confirmando…' : 'Marcar como visto'}
+                            secondary
+                            disabled={modalActionBusy}
+                            onPress={() => void handleDeclareVideoReviewedFromModal(infoResource)}
+                          />
+                        ) : null}
+                      </>
+                    ) : isDownloaded ? (
+                      <>
+                        <VisualButton
+                          label="Ver en pantalla completa"
+                          disabled={modalActionBusy}
+                          onPress={() => {
+                            setInfoResource(null);
+                            router.push(
+                              '/visor-infografia?recurso=' + encodeURIComponent(infoResource.id),
+                            );
+                          }}
+                        />
+                        {!currentCopy?.revisionDeclarada ? (
+                          <VisualButton
+                            label={modalActionBusy ? 'Confirmando…' : 'Marcar como visto'}
+                            disabled={modalActionBusy}
+                            onPress={() => void handleDeclareCopyReviewedFromModal(infoResource)}
+                          />
+                        ) : null}
+                        <VisualButton
+                          label={modalActionBusy ? 'Quitando…' : 'Quitar descarga'}
+                          secondary
+                          disabled={modalActionBusy}
+                          onPress={() => void handleDeleteFromModal(infoResource, currentCopy)}
+                        />
+                      </>
+                    ) : isFileMissing ? (
+                      <>
+                        <VisualButton
+                          label={modalActionBusy ? 'Descargando…' : 'Reintentar descarga'}
+                          disabled={modalActionBusy}
+                          onPress={() => void handleSaveFromModal(infoResource)}
+                        />
+                        <VisualButton
+                          label={modalActionBusy ? 'Quitando…' : 'Quitar descarga'}
+                          secondary
+                          disabled={modalActionBusy}
+                          onPress={() => void handleDeleteFromModal(infoResource, currentCopy)}
+                        />
+                      </>
+                    ) : (
+                      <>
+                        <VisualButton
+                          label="Ver en pantalla completa"
+                          secondary
+                          disabled={modalActionBusy}
+                          onPress={() => {
+                            setInfoResource(null);
+                            router.push(
+                              '/visor-infografia?recurso=' + encodeURIComponent(infoResource.id),
+                            );
+                          }}
+                        />
+                        <VisualButton
+                          label={modalActionBusy ? 'Guardando…' : 'Guardar infografía sin conexión'}
+                          disabled={modalActionBusy || !repository}
+                          onPress={() => void handleSaveFromModal(infoResource)}
+                        />
+                      </>
+                    )}
+                    <VisualButton
+                      label="Cerrar"
+                      secondary
+                      onPress={() => {
+                        setInfoResource(null);
+                        setModalError(null);
+                      }}
+                    />
+                  </View>
+                </View>
+              </View>
+            );
+          })()}
+        </Modal>
+      ) : null}
     </Screen>
   );
 }
@@ -376,8 +810,6 @@ export function EducationResourceScreen() {
   const localCopy = statusData?.copy;
   const interaction = statusData?.interaction;
 
-  // Permitir lectura sin conexión mediante los metadatos y la ruta persistidos
-  // incluso cuando el recurso no esté presente en el catálogo
   const effectiveResource: EducationalResource | null =
     resource ??
     (localCopy
@@ -431,7 +863,6 @@ export function EducationResourceScreen() {
   const isFileMissing = Boolean(localCopy && (!fileExists || localCopy.estado === 'error'));
   const busy = actionBusy || saving;
 
-  // Lógica de apertura externa para videos de YouTube con comprobación de red
   async function handleOpenYouTube() {
     if (!repository || !patientId || !effectiveResource?.youtubeVideoId || busy) return;
     setActionBusy(true);
@@ -446,7 +877,6 @@ export function EducationResourceScreen() {
         return;
       }
 
-      // Registrar interacción de apertura en SQLite
       await runSave(async () => {
         await repository.education.recordYouTubeInteraction({
           contentId: effectiveResource.id,
@@ -475,7 +905,6 @@ export function EducationResourceScreen() {
     }
   }
 
-  // Declarar video de YouTube como revisado
   async function handleDeclareYouTubeReviewed() {
     if (!repository || !patientId || !effectiveResource?.youtubeVideoId || busy) return;
     setActionBusy(true);
@@ -500,7 +929,6 @@ export function EducationResourceScreen() {
     }
   }
 
-  // Guardar copia local offline (Guía o Infografía) sin fallbacks corruptos
   async function handleSaveOfflineCopy() {
     if (!repository || !patientId || !effectiveResource || busy || !database) return;
     if (!resource) {
@@ -514,85 +942,12 @@ export function EducationResourceScreen() {
 
     try {
       await runSave(async () => {
-        if (resource.type !== 'infografia') {
-          throw new Error('Solo se permite la descarga de infografías en formato de imagen.');
-        }
-
-        const isJpeg =
-          resource.asset?.extension === 'jpg' ||
-          resource.asset?.extension === 'jpeg' ||
-          Boolean(resource.asset?.mimeType?.toLowerCase().includes('jpeg'));
-        const formato: ActiveEducationalCopyFormat = isJpeg ? 'jpeg' : 'png';
-        const mimeType = isJpeg ? 'image/jpeg' : (resource.asset?.mimeType ?? 'image/png');
-
-        const assetKey = resource.asset?.type === 'bundled' ? resource.asset.assetKey : '';
-        const assetModule = BUNDLED_ASSETS[assetKey];
-
-        if (!assetModule) {
-          throw new Error(
-            'El archivo de la infografía no se encuentra empaquetado en este dispositivo.',
-          );
-        }
-
-        const [loadedAsset] = await Asset.loadAsync(assetModule);
-        if (
-          loadedAsset &&
-          (!loadedAsset.localUri ||
-            (!loadedAsset.localUri.startsWith('file://') &&
-              !loadedAsset.localUri.startsWith('/'))) &&
-          typeof loadedAsset.downloadAsync === 'function'
-        ) {
-          // En builds Release de Android, los drawables empaquetados no tienen ruta de archivo local aún.
-          // Forzar descarga nativa para materializar el recurso empaquetado en caché y obtener una URI file://
-          loadedAsset.downloaded = false;
-          await loadedAsset.downloadAsync();
-        }
-
-        const rawUri = loadedAsset?.localUri ?? loadedAsset?.uri;
-        if (!rawUri) {
-          throw new Error(
-            'No se pudo resolver la ruta local de la infografía empaquetada. Se cancela la operación para conservar la integridad del almacenamiento.',
-          );
-        }
-
-        const absoluteUri = rawUri.startsWith('file://')
-          ? rawUri
-          : rawUri.startsWith('/')
-            ? `file://${rawUri}`
-            : rawUri;
-        const fileObj = new File(absoluteUri);
-        const contentToSave = await fileObj.bytes();
-
-        // Coordinar guardado seguro con compensación atómica y limpieza de copia anterior post-commit
-        await saveEducationalMediaWithCompensation({
-          pacienteId: patientId,
-          contenidoId: resource.id,
-          formato,
-          content: contentToSave,
-          versionOrigen: resource.version,
-          mimeType,
-          titulo: resource.title,
-          tipo: resource.type,
-          descripcion: resource.description,
-          textoAccesible: resource.textoAccesible,
-          previousRutaLocal: localCopy?.rutaRelativa ?? localCopy?.rutaAbsoluta,
-          getPreviousRutaLocal: async () => {
-            const current = await repository.education.getLocalCopy(resource.id);
-            return current?.rutaAbsoluta ?? current?.rutaRelativa ?? null;
-          },
-          persistCopyInTx: async (params) => {
-            // Guardar dentro de transacción de SQLite
-            await database.transaction(async (tx: SqlConnection) => {
-              await repository.education.persistCopyInTx(tx, {
-                contentId: resource.id,
-                rutaLocal: params.rutaLocal,
-                formato: params.formato,
-                tamanoBytes: params.tamanoBytes,
-                nowIso: new Date().toISOString(),
-                metadataLocal: params.metadataLocal,
-              });
-            });
-          },
+        await downloadAndSaveInfographic({
+          resource,
+          patientId,
+          repository,
+          database,
+          localCopy,
         });
       });
       refreshStatus();
@@ -607,7 +962,6 @@ export function EducationResourceScreen() {
     }
   }
 
-  // Declarar copia local como revisada
   async function handleDeclareCopyReviewed() {
     if (!repository || !patientId || !effectiveResource || busy) return;
     setActionBusy(true);
@@ -625,7 +979,6 @@ export function EducationResourceScreen() {
     }
   }
 
-  // Eliminar copia local con verificación física previa
   async function handleDeleteCopy() {
     if (!repository || !patientId || !effectiveResource || busy) return;
     setActionBusy(true);
@@ -633,19 +986,12 @@ export function EducationResourceScreen() {
 
     try {
       await runSave(async () => {
-        if (localCopy?.rutaRelativa) {
-          const physicallyDeleted = await deleteResourceFile(
-            patientId,
-            effectiveResource.id,
-            localCopy.rutaRelativa,
-          );
-          if (!physicallyDeleted) {
-            throw new Error(
-              'No se pudo confirmar la eliminación física del archivo del almacenamiento local.',
-            );
-          }
-        }
-        await repository.education.removeLocalCopy(effectiveResource.id);
+        await removeLocalInfographicCopy({
+          contentId: effectiveResource.id,
+          patientId,
+          repository,
+          localCopy,
+        });
       });
       setReadingContent(null);
       setImageLoaded(false);
@@ -662,7 +1008,6 @@ export function EducationResourceScreen() {
     }
   }
 
-  // Leer guía de texto
   async function handleReadGuide() {
     if (!patientId || !effectiveResource || busy) return;
     setActionBusy(true);
@@ -734,7 +1079,7 @@ export function EducationResourceScreen() {
         </InfoCard>
       ) : null}
 
-      {/* Visor de infografía (PNG) con control onLoad/onError, texto accesible y recuperación */}
+      {/* Visor de infografía (PNG) */}
       {effectiveResource.type === 'infografia' && isDownloaded && localCopy?.rutaRelativa ? (
         <InfoCard>
           <SectionTitle>Infografía guardada en disco</SectionTitle>
@@ -780,8 +1125,7 @@ export function EducationResourceScreen() {
             </View>
           ) : null}
           <BodyText>
-            {Math.max(1, Math.round(localCopy.tamanoBytes / 1024))} KB · SHA-256:{' '}
-            {localCopy.metadataLocal?.sha256?.slice(0, 16)}…
+            {Math.max(1, Math.round(localCopy.tamanoBytes / 1024))} KB · Guardado en el dispositivo
           </BodyText>
         </InfoCard>
       ) : null}
@@ -833,12 +1177,11 @@ export function EducationResourceScreen() {
             <VisualButton
               label="Ver en pantalla completa"
               onPress={() =>
-                router.push('/educacion/visor?recurso=' + encodeURIComponent(effectiveResource.id))
+                router.push('/visor-infografia?recurso=' + encodeURIComponent(effectiveResource.id))
               }
             />
           ) : null}
 
-          {/* Para infografías: botón deshabilitado hasta que la imagen haya terminado de cargar sin errores */}
           {!localCopy?.revisionDeclarada ? (
             <VisualButton
               label={busy ? 'Confirmando…' : 'Declarar material revisado'}
@@ -851,7 +1194,7 @@ export function EducationResourceScreen() {
           ) : null}
 
           <VisualButton
-            label={busy ? 'Eliminando…' : 'Eliminar copia local'}
+            label={busy ? 'Quitando…' : 'Quitar descarga'}
             secondary
             disabled={busy}
             onPress={() => void handleDeleteCopy()}
@@ -872,7 +1215,7 @@ export function EducationResourceScreen() {
             onPress={() => void handleSaveOfflineCopy()}
           />
           <VisualButton
-            label={busy ? 'Eliminando…' : 'Eliminar registro'}
+            label={busy ? 'Quitando…' : 'Quitar descarga'}
             secondary
             disabled={busy || !repository}
             onPress={() => void handleDeleteCopy()}
@@ -1006,6 +1349,90 @@ function useStyles() {
     },
     filterChipTextActive: {
       color: appTheme.colors.onPrimary,
+    },
+    cardContainer: {
+      minHeight: 72,
+      flexDirection: 'row',
+      alignItems: 'center',
+      borderRadius: theme.radius.md,
+      backgroundColor: appTheme.colors.surface,
+      borderWidth: 1,
+      borderColor: appTheme.colors.border,
+      padding: theme.spacing.sm,
+      gap: theme.spacing.sm,
+      marginBottom: theme.spacing.sm,
+    },
+    cardMainPressable: {
+      flex: 1,
+      minHeight: 56,
+      flexDirection: 'row',
+      alignItems: 'center',
+      gap: theme.spacing.md,
+      padding: theme.spacing.xs,
+    },
+    cardContent: {
+      flex: 1,
+      gap: 4,
+    },
+    chipsRow: {
+      flexDirection: 'row',
+      flexWrap: 'wrap',
+      gap: 6,
+      marginTop: 2,
+    },
+    cardInfoButton: {
+      minWidth: 48,
+      minHeight: 48,
+      paddingHorizontal: 8,
+      paddingVertical: 6,
+      borderRadius: theme.radius.sm,
+      backgroundColor: appTheme.colors.mutedSurface,
+      borderWidth: 1,
+      borderColor: appTheme.colors.border,
+      justifyContent: 'center',
+      alignItems: 'center',
+      gap: 2,
+    },
+    cardInfoButtonText: {
+      fontSize: 11,
+      fontWeight: '600',
+      color: appTheme.colors.primary,
+    },
+    modalOverlay: {
+      flex: 1,
+      backgroundColor: 'rgba(0, 0, 0, 0.65)',
+      justifyContent: 'center',
+      alignItems: 'center',
+      padding: 16,
+    },
+    modalCard: {
+      width: '100%',
+      maxWidth: 540,
+      maxHeight: '85%',
+      backgroundColor: appTheme.colors.surface,
+      borderRadius: theme.radius.md,
+      padding: 20,
+      borderWidth: 1,
+      borderColor: appTheme.colors.border,
+    },
+    modalHeader: {
+      flexDirection: 'row',
+      justifyContent: 'space-between',
+      alignItems: 'flex-start',
+      marginBottom: 12,
+    },
+    modalCloseIcon: {
+      minWidth: 48,
+      minHeight: 48,
+      justifyContent: 'center',
+      alignItems: 'center',
+    },
+    modalScroll: {
+      marginVertical: 12,
+    },
+    modalFooter: {
+      marginTop: 8,
+      gap: 8,
     },
   });
 }
