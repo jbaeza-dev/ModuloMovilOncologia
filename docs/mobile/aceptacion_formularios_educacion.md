@@ -112,14 +112,15 @@ La verificación en entorno nativo Android evalúa las capacidades que exceden e
 - **Configuración aplicada:** Infografía médica guardada localmente en almacenamiento privado (`documentDirectory`) o recurso empaquetado, visor a pantalla completa sobre fondo oscuro (`#000000`) en ruta raíz protegida (`/visor-infografia`).
 - **Procedimiento de verificación:**
   1. Apertura táctil inmediata en pantalla completa a escala ajustada (100 %).
-  2. Gesto de pinza con dos dedos (pinch-to-zoom): separar los dedos para ampliar continuamente hasta 300 % y juntarlos para reducir hasta 100 %, calculando el foco alrededor del punto focal entre ambos dedos.
-  3. Desplazamiento bidireccional (2D Pan): arrastrar con uno o dos dedos cuando la imagen está ampliada, verificando desplazamiento fluido en cualquier dirección con límites elásticos contenidos en pantalla.
-  4. Doble toque: alternar instantáneamente entre la imagen ajustada (100 %) y la escala óptima de lectura (250 %).
-  5. Controles alternativos accesibles: pulsar el botón discreto «Zoom» en la cabecera superpuesta para desplegar la píldora flotante con decremento (`-`), restablecimiento y ampliación (`+`), así como acciones de accesibilidad nativas de TalkBack (`activate`, `increment`, `decrement`).
+  2. Gesto de pinza con dos dedos (pinch-to-zoom): separar los dedos para ampliar continuamente hasta 400 % (4.0x) y juntarlos para reducir hasta 100 % (1.0x), calculando el ajuste alrededor del punto focal entre ambos contactos.
+  3. Transición dinámica de contactos: apoyar un primer dedo y posteriormente un segundo dedo re-inicializa inmediatamente la línea base de distancia, escala y punto focal, permitiendo ampliar sin requerir levantar y reiniciar el gesto.
+  4. Desplazamiento bidireccional (2D Pan): arrastrar la imagen ampliada con límites dinámicos calculados según las dimensiones activas del contenedor y de la imagen ajustada (`clampTranslation`), garantizando desplazamiento 0 en ejes donde la imagen escalada no exceda la dimensión visible del contenedor.
+  5. Doble toque: alternar entre la imagen ajustada (100 %) y la escala óptima de lectura (250 %), filtrando arrastres rápidos superiores a 10 px de desplazamiento o más de 280 ms de duración para evitar falsos positivos al desplazar rápidamente la imagen.
+  6. Controles alternativos accesibles: pulsar el botón discreto «Zoom» en la cabecera superpuesta para desplegar la píldora flotante con decremento (`-`), restablecimiento y ampliación (`+`), así como acciones de accesibilidad nativas de TalkBack (`activate`, `increment`, `decrement`).
 - **Evidencia observada:**
-  - El componente especializado `ZoomableImageView` basado en `PanResponder` y `Animated` nativo de React Native proporciona una respuesta táctil inmediata y fluida a 60 FPS bajo Hermes en Android, sin depender de librerías nativas externas ni verse afectado por limitaciones de plataforma de `ScrollView` (cuyo `maximumZoomScale` es exclusivo de iOS).
-  - La imagen conserva su proporción de aspecto (`resizeMode="contain"`), nitidez y límites elásticos sin derivas en coordenadas ni pérdidas de sincronización entre el gesto táctil y la matriz de transformación.
-  - La verificación previa de cabecera binaria (límite estricto ≤ 5 MiB y ≤ 8 megapíxeles comprobado en archivos PNG y JPEG) previene desbordamientos de memoria nativa (OOM).
+  - El componente especializado `ZoomableImageView` basado en `PanResponder` y `Animated` nativo de React Native proporciona una respuesta táctil reactiva bajo Hermes en Android, sin depender de librerías nativas externas ni verse afectado por limitaciones de plataforma de `ScrollView` (cuyo `maximumZoomScale` es exclusivo de iOS).
+  - La imagen conserva su proporción de aspecto (`resizeMode="contain"`), nitidez y límites cinemáticos dinámicos sin derivas en coordenadas ni pérdidas de sincronización entre el gesto táctil y la matriz de transformación.
+  - La compensación de punto focal traslada simultáneamente la escala y la traslación matricial, garantizando que el punto anatómico o de texto bajo los dedos permanezca estacionario durante la ampliación y reducción.
   - Al pulsar el botón «Cerrar» o el botón Atrás físico/gesto del sistema, se retorna limpiamente a la pantalla educativa conservando el filtro y la posición de desplazamiento.
 
 ---
@@ -150,7 +151,7 @@ La verificación en entorno nativo Android evalúa las capacidades que exceden e
 | Formateo de código                         | `pnpm run format:check`   | 0 errores (Prettier 100% conforme)                        |
 | Linter estático                            | `pnpm run lint`           | 0 errores, 0 advertencias (`eslint . --max-warnings=0`)   |
 | Tipado estricto                            | `pnpm run typecheck`      | 0 errores (TypeScript `tsc --noEmit`)                     |
-| Pruebas unitarias e integración (Vitest)   | `pnpm run test:local`     | 35 suites pasadas, 458 pruebas pasadas, 0 fallidas        |
-| Pruebas de componentes de UI (Jest / RNTL) | `pnpm run test:ui`        | 9 suites pasadas, 158 pruebas pasadas, 0 fallidas         |
+| Pruebas unitarias e integración (Vitest)   | `pnpm run test:local`     | 36 suites pasadas, 469 pruebas pasadas, 0 fallidas        |
+| Pruebas de componentes de UI (Jest / RNTL) | `pnpm run test:ui`        | 10 suites pasadas, 165 pruebas pasadas, 0 fallidas        |
 | Diagnóstico del entorno Expo               | `pnpm run doctor`         | 21/21 comprobaciones exitosas                             |
 | Exportación de bundle Android              | `pnpm run bundle:android` | Exportación JavaScript para Hermes completada sin errores |
