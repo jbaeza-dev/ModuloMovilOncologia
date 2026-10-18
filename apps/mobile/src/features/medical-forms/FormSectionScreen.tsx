@@ -1,6 +1,14 @@
 import { router, useLocalSearchParams } from 'expo-router';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { AccessibilityInfo, Alert, ScrollView, StyleSheet, Text, View } from 'react-native';
+import {
+  AccessibilityInfo,
+  Alert,
+  findNodeHandle,
+  ScrollView,
+  StyleSheet,
+  Text,
+  View,
+} from 'react-native';
 
 import { Screen } from '../../components/Screen';
 import {
@@ -50,6 +58,7 @@ export function FormSectionScreen() {
 
   const scrollRef = useRef<ScrollView>(null);
   const headerRef = useRef<View>(null);
+  const questionRefs = useRef<Map<string, View>>(new Map());
   const controllerRef = useRef<FormDraftController | null>(null);
 
   // Carga inicial de definición y borrador
@@ -289,6 +298,23 @@ export function FormSectionScreen() {
     }
 
     setValidationErrors(errors);
+
+    const firstErrorId = Object.keys(errors)[0];
+    if (firstErrorId) {
+      setTimeout(() => {
+        const targetNode = questionRefs.current.get(firstErrorId);
+        if (targetNode) {
+          const reactTag = findNodeHandle(targetNode);
+          if (reactTag) {
+            AccessibilityInfo.setAccessibilityFocus(reactTag);
+          }
+        }
+      }, 50);
+      AccessibilityInfo.announceForAccessibility(
+        `Hay preguntas obligatorias sin responder en esta sección: ${errors[firstErrorId]}`,
+      );
+    }
+
     return Object.keys(errors).length === 0;
   }, [visibleSectionQuestions, answers]);
 
@@ -308,6 +334,14 @@ export function FormSectionScreen() {
       AccessibilityInfo.announceForAccessibility(
         `Sección ${nextIndex + 1} de ${sections.length}: ${nextSection.titulo}`,
       );
+      setTimeout(() => {
+        if (headerRef.current) {
+          const reactTag = findNodeHandle(headerRef.current);
+          if (reactTag) {
+            AccessibilityInfo.setAccessibilityFocus(reactTag);
+          }
+        }
+      }, 50);
     } else {
       // Última sección: ir al resumen de revisión
       void (async () => {
@@ -343,6 +377,14 @@ export function FormSectionScreen() {
       AccessibilityInfo.announceForAccessibility(
         `Sección ${currentSectionIndex} de ${sections.length}: ${prevSection.titulo}`,
       );
+      setTimeout(() => {
+        if (headerRef.current) {
+          const reactTag = findNodeHandle(headerRef.current);
+          if (reactTag) {
+            AccessibilityInfo.setAccessibilityFocus(reactTag);
+          }
+        }
+      }, 50);
     }
   }, [currentSectionIndex, sections, answers]);
 
@@ -388,7 +430,12 @@ export function FormSectionScreen() {
         )}
 
         {/* Encabezado dinámico de sección */}
-        <View ref={headerRef} accessibilityRole="header" style={styles.sectionHeaderCard}>
+        <View
+          ref={headerRef}
+          collapsable={false}
+          accessibilityRole="header"
+          style={styles.sectionHeaderCard}
+        >
           <Text style={styles.stepperIndicator}>
             Sección {currentSectionIndex + 1} de {sections.length}
           </Text>
@@ -406,20 +453,31 @@ export function FormSectionScreen() {
           </View>
         ) : (
           visibleSectionQuestions.map((q) => (
-            <QuestionInput
+            <View
               key={q.pregunta_id}
-              question={{
-                id: q.pregunta_id,
-                pregunta: q.texto,
-                descripcion: q.descripcion,
-                tipo: q.tipo,
-                requerida: q.requerida === 1,
-                configuracion: q.configuracion as QuestionConfiguration,
+              ref={(node) => {
+                if (node) {
+                  questionRefs.current.set(q.pregunta_id, node);
+                } else {
+                  questionRefs.current.delete(q.pregunta_id);
+                }
               }}
-              value={answers[q.pregunta_id]}
-              onChange={(val) => handleAnswerChange(q.pregunta_id, val)}
-              error={validationErrors[q.pregunta_id]}
-            />
+              collapsable={false}
+            >
+              <QuestionInput
+                question={{
+                  id: q.pregunta_id,
+                  pregunta: q.texto,
+                  descripcion: q.descripcion,
+                  tipo: q.tipo,
+                  requerida: q.requerida === 1,
+                  configuracion: q.configuracion as QuestionConfiguration,
+                }}
+                value={answers[q.pregunta_id]}
+                onChange={(val) => handleAnswerChange(q.pregunta_id, val)}
+                error={validationErrors[q.pregunta_id]}
+              />
+            </View>
           ))
         )}
 

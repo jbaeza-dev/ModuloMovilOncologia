@@ -5,6 +5,7 @@ import { useCallback, useEffect, useRef, useState } from 'react';
 import {
   ActivityIndicator,
   AccessibilityInfo,
+  findNodeHandle,
   Image,
   Modal,
   Platform,
@@ -59,6 +60,7 @@ export function InfographicViewerScreen() {
   const [retryNonce, setRetryNonce] = useState(0);
 
   const textButtonRef = useRef<View>(null);
+  const modalTitleRef = useRef<View>(null);
 
   const loadResourceData = useCallback(async () => {
     if (!recurso) return null;
@@ -158,10 +160,26 @@ export function InfographicViewerScreen() {
 
   function handleOpenModal() {
     setIsTextModalVisible(true);
+    setTimeout(() => {
+      if (modalTitleRef.current) {
+        const reactTag = findNodeHandle(modalTitleRef.current);
+        if (reactTag) {
+          AccessibilityInfo.setAccessibilityFocus(reactTag);
+        }
+      }
+    }, 100);
   }
 
   function handleCloseModal() {
     setIsTextModalVisible(false);
+    setTimeout(() => {
+      if (textButtonRef.current) {
+        const reactTag = findNodeHandle(textButtonRef.current);
+        if (reactTag) {
+          AccessibilityInfo.setAccessibilityFocus(reactTag);
+        }
+      }
+    }, 100);
   }
 
   if (loadingCatalog || loadingCopy) {
@@ -229,6 +247,7 @@ export function InfographicViewerScreen() {
 
         <Pressable
           ref={textButtonRef}
+          collapsable={false}
           accessibilityRole="button"
           accessibilityLabel="Leer texto alternativo accesible de la infografía"
           onPress={handleOpenModal}
@@ -331,7 +350,14 @@ export function InfographicViewerScreen() {
         <View style={styles.modalOverlay}>
           <View style={styles.modalCard}>
             <View style={styles.modalHeader}>
-              <SectionTitle>Texto alternativo accesible</SectionTitle>
+              <View
+                ref={modalTitleRef}
+                collapsable={false}
+                accessible={true}
+                accessibilityRole="header"
+              >
+                <SectionTitle>Texto alternativo accesible</SectionTitle>
+              </View>
               <Pressable
                 accessibilityRole="button"
                 accessibilityLabel="Cerrar texto accesible"
