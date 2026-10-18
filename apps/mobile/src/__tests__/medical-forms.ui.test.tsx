@@ -250,7 +250,7 @@ describe('Pruebas de UI: Componentes y Pantallas de Formularios Médicos', () =>
       });
     });
 
-    it('muestra "Continuar mi registro de hoy" cuando existe un borrador activo', async () => {
+    it('muestra "Continuar mi registro" cuando existe un borrador activo', async () => {
       mockRepository.listAssignedForms.mockResolvedValue([
         {
           formulario_id: 'seguimiento-domiciliario',
@@ -287,11 +287,11 @@ describe('Pruebas de UI: Componentes y Pantallas de Formularios Médicos', () =>
       await render(<DailyFollowUpScreen />);
 
       await waitFor(() => {
-        expect(screen.getByText('Continuar mi registro de hoy')).toBeTruthy();
+        expect(screen.getByText('Continuar mi registro')).toBeTruthy();
       });
     });
 
-    it('muestra "Ver mi registro de hoy" cuando el paciente ya confirmó su seguimiento', async () => {
+    it('muestra "Ver mis respuestas de hoy" cuando el paciente ya confirmó su seguimiento', async () => {
       mockRepository.listAssignedForms.mockResolvedValue([
         {
           formulario_id: 'seguimiento-domiciliario',
@@ -324,8 +324,8 @@ describe('Pruebas de UI: Componentes y Pantallas de Formularios Médicos', () =>
       await render(<DailyFollowUpScreen />);
 
       await waitFor(() => {
-        expect(screen.getByText('Ver mi registro de hoy')).toBeTruthy();
-        expect(screen.getByText('Registrar una nueva actualización')).toBeTruthy();
+        expect(screen.getByText('Ver mis respuestas de hoy')).toBeTruthy();
+        expect(screen.getByText('Registrar otra actualización')).toBeTruthy();
       });
     });
 
@@ -417,12 +417,12 @@ describe('Pruebas de UI: Componentes y Pantallas de Formularios Médicos', () =>
         expect(
           screen.getByText(/Tienes un registro en progreso de una versión anterior/),
         ).toBeTruthy();
-        expect(screen.getByText('Continuar mi registro de hoy')).toBeTruthy();
+        expect(screen.getByText('Continuar mi registro')).toBeTruthy();
         expect(screen.getByText('Descartar este borrador')).toBeTruthy();
       });
 
       // Al presionar continuar, navega con la identidad del borrador (1.0.0)
-      const btnContinue = screen.getByText('Continuar mi registro de hoy');
+      const btnContinue = screen.getByText('Continuar mi registro');
       await fireEvent.press(btnContinue);
 
       await waitFor(() => {
@@ -570,6 +570,95 @@ describe('Pruebas de UI: Componentes y Pantallas de Formularios Médicos', () =>
         '1.0.0',
         'dia:2026-10-17',
       );
+    });
+
+    it('presenta las etiquetas contextuales correctas y confirmación horaria para los tres estados del seguimiento', async () => {
+      mockRepository.listAssignedForms.mockResolvedValue([
+        {
+          formulario_id: 'seguimiento-domiciliario',
+          version: '1.1.0',
+          titulo: 'Seguimiento domiciliario',
+          descripcion: 'Cuestionario diario',
+          estado_conocido: 'activa',
+          periodicidad: 'daily',
+        },
+      ]);
+
+      mockRepository.getFormDefinition.mockResolvedValue({
+        formulario_id: 'seguimiento-domiciliario',
+        version: '1.1.0',
+        titulo: 'Seguimiento domiciliario',
+        descripcion: 'Cuestionario diario',
+        duracion_estimada_min: 5,
+        preguntas: [],
+      });
+
+      // 1. Estado: Completado hoy
+      mockRepository.getDailyFormStatus.mockResolvedValueOnce({
+        hasSubmittedToday: true,
+        hasActiveDraft: false,
+        hasOlderDraft: false,
+        activeDraft: null,
+        olderDraft: null,
+        lastSubmission: {
+          id: 'sub-today-1',
+          fecha_confirmacion: '2026-10-18T12:30:00Z',
+        },
+        todayTrackingDate: '2026-10-18',
+      });
+
+      const { unmount: unmount1 } = await render(<DailyFollowUpScreen />);
+
+      await waitFor(() => {
+        expect(screen.getByText('Ver mis respuestas de hoy')).toBeTruthy();
+        expect(screen.getByText('Registrar otra actualización')).toBeTruthy();
+        expect(screen.getByText(/Registro de hoy guardado ·/)).toBeTruthy();
+      });
+
+      await unmount1();
+
+      // 2. Estado: Sin responder hoy (pendiente)
+      mockRepository.getDailyFormStatus.mockResolvedValueOnce({
+        hasSubmittedToday: false,
+        hasActiveDraft: false,
+        hasOlderDraft: false,
+        activeDraft: null,
+        olderDraft: null,
+        lastSubmission: null,
+        todayTrackingDate: '2026-10-18',
+      });
+
+      const { unmount: unmount2 } = await render(<DailyFollowUpScreen />);
+
+      await waitFor(() => {
+        expect(screen.getByText('Responder seguimiento de hoy')).toBeTruthy();
+      });
+
+      await unmount2();
+
+      // 3. Estado: Borrador en curso
+      mockRepository.getDailyFormStatus.mockResolvedValueOnce({
+        hasSubmittedToday: false,
+        hasActiveDraft: true,
+        hasOlderDraft: false,
+        activeDraft: {
+          formulario_id: 'seguimiento-domiciliario',
+          version: '1.1.0',
+          periodo_clave: 'dia:2026-10-18',
+          entrega_id: 'draft-active-1',
+        },
+        olderDraft: null,
+        lastSubmission: null,
+        todayTrackingDate: '2026-10-18',
+      });
+
+      const { unmount: unmount3 } = await render(<DailyFollowUpScreen />);
+
+      await waitFor(() => {
+        expect(screen.getByText('Continuar mi registro')).toBeTruthy();
+      });
+
+      await unmount3();
     });
   });
 
@@ -879,7 +968,7 @@ describe('Pruebas de UI: Componentes y Pantallas de Formularios Médicos', () =>
   });
 
   describe('MedicalFormSubmissionDetailScreen', () => {
-    it('renderiza el detalle de la entrega sin violaciones de Hooks tras completar la carga', async () => {
+    it('renderiza el detalle de la entrega con etiquetas comprensibles y sin identificadores técnicos', async () => {
       mockUseLocalSearchParams.mockReturnValue({ id: 'sub-test-123' });
 
       mockRepository.getSubmission.mockResolvedValue({
@@ -889,7 +978,7 @@ describe('Pruebas de UI: Componentes y Pantallas de Formularios Médicos', () =>
         titulo: SAMPLE_DECOUPLED_FORM.titulo,
         respuestas: {
           Q_ANIMO: 'si',
-          Q_DETALLE_ANIMO: 'Caminé por el parque',
+          Q_DETALLE_ANIMO: 'paseo',
         },
         fecha_confirmacion: '2026-10-18T14:30:00Z',
         fecha_seguimiento: '2026-10-18',
@@ -927,8 +1016,19 @@ describe('Pruebas de UI: Componentes y Pantallas de Formularios Médicos', () =>
 
       expect(screen.getByText('Respuestas registradas')).toBeTruthy();
       expect(screen.getByText('¿Te has sentido con buen ánimo hoy?')).toBeTruthy();
+      // Debe mostrar la etiqueta humana de la opción, no el valor slug 'si'
+      expect(screen.getByText('Sí')).toBeTruthy();
+
       expect(screen.getByText('¿Qué actividad te ayudó a sentirte mejor?')).toBeTruthy();
-      expect(screen.getByText('Caminé por el parque')).toBeTruthy();
+      // Debe mostrar la etiqueta humana 'Caminar o tomar aire fresco' en vez de 'paseo'
+      expect(screen.getByText('Caminar o tomar aire fresco')).toBeTruthy();
+
+      // No debe exponer el UUID técnico ni el rótulo de Identificador local
+      expect(screen.queryByText('sub-test-123')).toBeNull();
+      expect(screen.queryByText('Identificador local')).toBeNull();
+
+      // Versión en bloque informativo secundario
+      expect(screen.getByText('Versión del cuestionario: 1.0.0')).toBeTruthy();
 
       await unmount();
     });

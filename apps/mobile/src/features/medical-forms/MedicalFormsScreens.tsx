@@ -35,6 +35,7 @@ import type {
   MedicalFormDefinition,
   MedicalFormQuestion,
 } from './medical-form-types';
+import { formatFormAnswer } from './form-answer-formatter';
 
 export function toMedicalFormDefinition(fullDef: FullFormDefinition): MedicalFormDefinition {
   return {
@@ -897,8 +898,6 @@ export function MedicalFormSubmissionDetailScreen() {
         {submission.ventana_desde ? (
           <DetailRow label="Ventana evaluada" value="Últimas 24 horas" />
         ) : null}
-        <DetailRow label="Versión evaluada" value={submission.version} />
-        <DetailRow label="Identificador local" value={submission.id} />
       </InfoCard>
 
       <SectionTitle>Respuestas registradas</SectionTitle>
@@ -910,25 +909,56 @@ export function MedicalFormSubmissionDetailScreen() {
       ) : (
         visibleQuestions.map((q, idx) => {
           const val = submission.respuestas[q.id];
-          let displayVal = 'Sin respuesta (opcional)';
-          if (val !== undefined && val !== null && val !== '') {
-            if (Array.isArray(val)) {
-              displayVal = val.length ? val.join(', ') : 'Ninguna seleccionada';
-            } else {
-              displayVal = String(val);
-            }
-          }
+          const qDef = formDef.preguntas.find((p) => p.pregunta_id === q.id);
+          const formatted = formatFormAnswer(
+            {
+              tipo: q.tipo,
+              obligatoria: q.requerida ?? (qDef ? qDef.requerida === 1 : false),
+              configuracion: qDef?.configuracion as QuestionConfiguration | undefined,
+              opciones: q.opciones,
+            },
+            val,
+          );
+
           return (
             <InfoCard key={q.id}>
               <Text style={styles.questionNumber}>
                 Pregunta {idx + 1} de {visibleQuestions.length}
               </Text>
               <Text style={styles.questionTitle}>{q.pregunta}</Text>
-              <DetailRow label="Respuesta" value={displayVal} />
+              <View style={styles.answerBlock}>
+                <Text style={styles.answerLabel}>Tu respuesta:</Text>
+                {formatted.items && formatted.items.length > 0 ? (
+                  <View style={styles.answerList}>
+                    {formatted.items.map((item, itemIdx) => (
+                      <View key={itemIdx} style={styles.answerListItem}>
+                        <Text style={styles.answerBullet}>•</Text>
+                        <Text style={styles.answerValueText}>{item}</Text>
+                      </View>
+                    ))}
+                  </View>
+                ) : (
+                  <Text
+                    style={[
+                      styles.answerValueText,
+                      formatted.isUnanswered && styles.answerUnanswered,
+                    ]}
+                  >
+                    {formatted.text}
+                  </Text>
+                )}
+                {formatted.scaleContext ? (
+                  <Text style={styles.scaleContextText}>{formatted.scaleContext}</Text>
+                ) : null}
+              </View>
             </InfoCard>
           );
         })
       )}
+
+      <View style={styles.secondaryMetaCard}>
+        <Text style={styles.secondaryMetaText}>Versión del cuestionario: {submission.version}</Text>
+      </View>
 
       <View style={styles.actions}>
         <VisualButton
@@ -1094,6 +1124,61 @@ function createStyles(colors: ReturnType<typeof useAppTheme>['theme']['colors'])
       color: colors.error,
       marginTop: theme.spacing.xs,
       fontWeight: '500',
+    },
+    answerBlock: {
+      marginTop: theme.spacing.xs,
+      paddingTop: theme.spacing.xs,
+      borderTopWidth: 1,
+      borderTopColor: colors.border,
+      gap: 4,
+    },
+    answerLabel: {
+      fontSize: 13,
+      fontWeight: '600',
+      color: colors.secondary,
+    },
+    answerValueText: {
+      fontSize: 15,
+      fontWeight: '600',
+      color: colors.text,
+      textAlign: 'left',
+      lineHeight: 22,
+    },
+    answerUnanswered: {
+      fontWeight: '400',
+      color: colors.secondary,
+      fontStyle: 'italic',
+    },
+    answerList: {
+      gap: 6,
+      marginTop: 2,
+    },
+    answerListItem: {
+      flexDirection: 'row',
+      alignItems: 'flex-start',
+      gap: theme.spacing.xs,
+    },
+    answerBullet: {
+      fontSize: 15,
+      lineHeight: 22,
+      color: colors.primary,
+      fontWeight: '700',
+    },
+    scaleContextText: {
+      fontSize: 12,
+      color: colors.secondary,
+      marginTop: 2,
+    },
+    secondaryMetaCard: {
+      marginTop: theme.spacing.xs,
+      padding: theme.spacing.sm,
+      borderRadius: theme.radius.sm,
+      backgroundColor: colors.mutedSurface,
+      alignItems: 'center',
+    },
+    secondaryMetaText: {
+      fontSize: 12,
+      color: colors.secondary,
     },
   });
 }

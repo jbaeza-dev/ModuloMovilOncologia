@@ -27,6 +27,7 @@ import {
 import type { FormConfiguration, QuestionConfiguration } from '../../data/local/forms/form-types';
 import { validateConditionIntegrity } from '../../services/forms/form-conditions';
 import { parseDailyPeriodKey } from '../../services/forms/daily-form-context';
+import { theme } from '../../theme';
 
 export function DailyFollowUpScreen() {
   const { theme: appTheme } = useAppTheme();
@@ -316,8 +317,20 @@ export function DailyFollowUpScreen() {
 
               {dailyStatus?.hasSubmittedToday ? (
                 <View style={styles.actionContainer}>
+                  <View style={styles.submittedBanner}>
+                    <Feather
+                      name="check-circle"
+                      size={18}
+                      color={appTheme.colors.primary}
+                      accessible={false}
+                    />
+                    <Text style={styles.submittedBannerText}>
+                      Registro de hoy guardado ·{' '}
+                      {formatSubmissionTime(dailyStatus.lastSubmission?.fecha_confirmacion)}
+                    </Text>
+                  </View>
                   <VisualButton
-                    label="Ver mi registro de hoy"
+                    label="Ver mis respuestas de hoy"
                     onPress={() => {
                       if (dailyStatus.lastSubmission) {
                         router.push({
@@ -328,7 +341,7 @@ export function DailyFollowUpScreen() {
                     }}
                   />
                   <VisualButton
-                    label="Registrar una nueva actualización"
+                    label="Registrar otra actualización"
                     secondary
                     onPress={handleStartOrContinue}
                   />
@@ -343,10 +356,7 @@ export function DailyFollowUpScreen() {
                       registrarlo, o descartarlo para comenzar la versión actualizada.
                     </BodyText>
                   ) : null}
-                  <VisualButton
-                    label="Continuar mi registro de hoy"
-                    onPress={handleStartOrContinue}
-                  />
+                  <VisualButton label="Continuar mi registro" onPress={handleStartOrContinue} />
                   {dailyStatus.activeDraft &&
                   mainForm &&
                   dailyStatus.activeDraft.version !== mainForm.version ? (
@@ -382,16 +392,33 @@ export function DailyFollowUpScreen() {
   );
 }
 
-function createStyles(colors: {
-  background: string;
-  surface: string;
-  primary: string;
-  secondary: string;
-  text: string;
-  border: string;
-  warning: string;
-}) {
+function formatSubmissionTime(iso?: string | null): string {
+  if (!iso) return 'Hoy';
+  try {
+    const d = new Date(iso);
+    return d.toLocaleTimeString('es-CL', { hour: '2-digit', minute: '2-digit' });
+  } catch {
+    return 'Hoy';
+  }
+}
+
+function createStyles(colors: ReturnType<typeof useAppTheme>['theme']['colors']) {
   return StyleSheet.create({
+    submittedBanner: {
+      flexDirection: 'row',
+      alignItems: 'center',
+      gap: 8,
+      paddingVertical: 10,
+      paddingHorizontal: 12,
+      borderRadius: theme.radius.sm,
+      backgroundColor: colors.primaryContainer,
+    },
+    submittedBannerText: {
+      fontSize: 14,
+      fontWeight: '600',
+      color: colors.onPrimaryContainer,
+      flexShrink: 1,
+    },
     todayCard: {
       gap: 12,
     },

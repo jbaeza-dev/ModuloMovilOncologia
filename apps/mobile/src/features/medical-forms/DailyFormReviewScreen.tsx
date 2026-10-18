@@ -7,7 +7,6 @@ import { Screen } from '../../components/Screen';
 import {
   BodyText,
   DemoBadge,
-  DetailRow,
   InfoCard,
   SectionTitle,
   StatusPill,
@@ -21,6 +20,7 @@ import {
 import { useLocalData } from '../../providers/LocalDataProvider';
 import { useAppTheme } from '../../providers/ThemeProvider';
 import { computeVisibleQuestions } from '../../services/forms/form-conditions';
+import { formatFormAnswer } from './form-answer-formatter';
 
 export function DailyFormReviewScreen() {
   const { theme: appTheme } = useAppTheme();
@@ -223,37 +223,15 @@ export function DailyFormReviewScreen() {
         ) : (
           visibleQuestions.map((q, idx) => {
             const val = answers[q.pregunta_id];
-            let displayVal = 'Sin respuesta (opcional)';
-
-            if (val !== undefined && val !== null && val !== '') {
-              if (Array.isArray(val)) {
-                if (val.length === 0) {
-                  displayVal = 'Ninguna seleccionada';
-                } else {
-                  // Mapear a etiquetas legibles si están definidas
-                  const opciones = q.configuracion?.opciones;
-                  if (Array.isArray(opciones)) {
-                    displayVal = val
-                      .map((item) => opciones.find((o) => o.valor === item)?.etiqueta ?? item)
-                      .join(', ');
-                  } else {
-                    displayVal = val.join(', ');
-                  }
-                }
-              } else if (typeof val === 'string') {
-                const opciones = q.configuracion?.opciones;
-                if (Array.isArray(opciones)) {
-                  displayVal = opciones.find((o) => o.valor === val)?.etiqueta ?? val;
-                } else {
-                  displayVal = val;
-                }
-              } else if (typeof val === 'number') {
-                displayVal = String(val);
-                if (q.tipo === 'scale_0_10') {
-                  displayVal = `${val} / 10`;
-                }
-              }
-            }
+            const formatted = formatFormAnswer(
+              {
+                tipo: q.tipo,
+                obligatoria: q.requerida === 1,
+                configuracion: q.configuracion as QuestionConfiguration | undefined,
+                opciones: q.configuracion?.opciones,
+              },
+              val,
+            );
 
             return (
               <InfoCard key={q.pregunta_id}>
@@ -261,7 +239,31 @@ export function DailyFormReviewScreen() {
                   Pregunta {idx + 1} de {visibleQuestions.length}
                 </Text>
                 <Text style={styles.questionText}>{q.texto}</Text>
-                <DetailRow label="Tu respuesta" value={displayVal} />
+                <View style={styles.answerBlock}>
+                  <Text style={styles.answerLabel}>Tu respuesta:</Text>
+                  {formatted.items && formatted.items.length > 0 ? (
+                    <View style={styles.answerList}>
+                      {formatted.items.map((item, itemIdx) => (
+                        <View key={itemIdx} style={styles.answerListItem}>
+                          <Text style={styles.answerBullet}>•</Text>
+                          <Text style={styles.answerValueText}>{item}</Text>
+                        </View>
+                      ))}
+                    </View>
+                  ) : (
+                    <Text
+                      style={[
+                        styles.answerValueText,
+                        formatted.isUnanswered && styles.answerUnanswered,
+                      ]}
+                    >
+                      {formatted.text}
+                    </Text>
+                  )}
+                  {formatted.scaleContext ? (
+                    <Text style={styles.scaleContextText}>{formatted.scaleContext}</Text>
+                  ) : null}
+                </View>
               </InfoCard>
             );
           })
@@ -353,6 +355,50 @@ function createStyles(colors: {
     actions: {
       gap: 12,
       marginTop: 16,
+    },
+    answerBlock: {
+      marginTop: 8,
+      paddingTop: 8,
+      borderTopWidth: 1,
+      borderTopColor: colors.border,
+      gap: 4,
+    },
+    answerLabel: {
+      fontSize: 13,
+      fontWeight: '600',
+      color: colors.secondary,
+    },
+    answerValueText: {
+      fontSize: 15,
+      fontWeight: '600',
+      color: colors.text,
+      textAlign: 'left',
+      lineHeight: 22,
+    },
+    answerUnanswered: {
+      fontWeight: '400',
+      color: colors.secondary,
+      fontStyle: 'italic',
+    },
+    answerList: {
+      gap: 6,
+      marginTop: 2,
+    },
+    answerListItem: {
+      flexDirection: 'row',
+      alignItems: 'flex-start',
+      gap: 8,
+    },
+    answerBullet: {
+      fontSize: 15,
+      lineHeight: 22,
+      color: colors.primary,
+      fontWeight: '700',
+    },
+    scaleContextText: {
+      fontSize: 12,
+      color: colors.secondary,
+      marginTop: 2,
     },
   });
 }
