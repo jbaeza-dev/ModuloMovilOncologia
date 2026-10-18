@@ -609,10 +609,15 @@ describe('Pruebas de UI: Componentes y Pantallas de Formularios Médicos', () =>
 
       const { unmount: unmount1 } = await render(<DailyFollowUpScreen />);
 
+      const expectedTime = new Date('2026-10-18T12:30:00Z').toLocaleTimeString('es-CL', {
+        hour: '2-digit',
+        minute: '2-digit',
+      });
+
       await waitFor(() => {
         expect(screen.getByText('Ver mis respuestas de hoy')).toBeTruthy();
         expect(screen.getByText('Registrar otra actualización')).toBeTruthy();
-        expect(screen.getByText(/Registro de hoy guardado ·/)).toBeTruthy();
+        expect(screen.getByText(`Registro de hoy guardado · ${expectedTime}`)).toBeTruthy();
       });
 
       await unmount1();

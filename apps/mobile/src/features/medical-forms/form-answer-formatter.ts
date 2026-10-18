@@ -58,10 +58,8 @@ export function formatFormAnswer(
 
   switch (question.tipo) {
     case 'single_choice': {
-      const stringVal = String(value).trim();
-      const match = availableOptions.find(
-        (opt) => String(opt.valor).trim().toLowerCase() === stringVal.toLowerCase(),
-      );
+      const stringVal = String(value);
+      const match = availableOptions.find((opt) => opt.valor === stringVal);
       if (match) {
         return { text: match.etiqueta, isUnanswered: false };
       }
@@ -82,10 +80,8 @@ export function formatFormAnswer(
       }
 
       const items = validItems.map((item) => {
-        const itemStr = String(item).trim();
-        const match = availableOptions.find(
-          (opt) => String(opt.valor).trim().toLowerCase() === itemStr.toLowerCase(),
-        );
+        const itemStr = String(item);
+        const match = availableOptions.find((opt) => opt.valor === itemStr);
         return match ? match.etiqueta : FALLBACK_UNKNOWN_OPTION_LABEL;
       });
 
@@ -107,9 +103,7 @@ export function formatFormAnswer(
       const baseText = `${numVal} de ${max}`;
 
       // Verificar si existe una etiqueta explícita para este número concreto en las opciones
-      const discreteMatch = availableOptions.find(
-        (opt) => String(opt.valor).trim() === String(numVal),
-      );
+      const discreteMatch = availableOptions.find((opt) => opt.valor === String(numVal));
 
       if (discreteMatch && discreteMatch.etiqueta) {
         return {

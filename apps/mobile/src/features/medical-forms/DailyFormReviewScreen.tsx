@@ -246,7 +246,9 @@ export function DailyFormReviewScreen() {
                       {formatted.items.map((item, itemIdx) => (
                         <View key={itemIdx} style={styles.answerListItem}>
                           <Text style={styles.answerBullet}>•</Text>
-                          <Text style={styles.answerValueText}>{item}</Text>
+                          <Text style={[styles.answerValueText, styles.answerListText]}>
+                            {item}
+                          </Text>
                         </View>
                       ))}
                     </View>
@@ -388,6 +390,10 @@ function createStyles(colors: {
       flexDirection: 'row',
       alignItems: 'flex-start',
       gap: 8,
+    },
+    answerListText: {
+      flex: 1,
+      minWidth: 0,
     },
     answerBullet: {
       fontSize: 15,

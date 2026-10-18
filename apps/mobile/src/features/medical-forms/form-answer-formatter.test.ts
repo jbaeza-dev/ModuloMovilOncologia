@@ -29,20 +29,32 @@ describe('formatFormAnswer', () => {
       });
     });
 
-    it('tolera diferencias de mayúsculas y espacios en el valor', () => {
-      const result = formatFormAnswer(question, '  TODO_NORMAL  ');
-      expect(result).toEqual({
-        text: 'Todo normal, sin molestias',
-        isUnanswered: false,
-      });
+    it('distingue mayúsculas y minúsculas cuando la definición tiene alternativas diferenciadas (ej. A y a)', () => {
+      const caseSensitiveQuestion = {
+        tipo: 'single_choice' as const,
+        obligatoria: true,
+        configuracion: {
+          opciones: [
+            { valor: 'A', etiqueta: 'Opción A (Mayúscula)' },
+            { valor: 'a', etiqueta: 'Opción a (Minúscula)' },
+          ],
+        },
+      };
+
+      expect(formatFormAnswer(caseSensitiveQuestion, 'A').text).toBe('Opción A (Mayúscula)');
+      expect(formatFormAnswer(caseSensitiveQuestion, 'a').text).toBe('Opción a (Minúscula)');
+      expect(formatFormAnswer(caseSensitiveQuestion, 'B').text).toBe(FALLBACK_UNKNOWN_OPTION_LABEL);
     });
 
-    it('retorna el fallback de descripción no disponible si el valor no existe en la definición', () => {
+    it('retorna el fallback de descripción no disponible si el valor no coincide exactamente con la definición', () => {
       const result = formatFormAnswer(question, 'opcion_antigua_descontinuada');
       expect(result).toEqual({
         text: FALLBACK_UNKNOWN_OPTION_LABEL,
         isUnanswered: false,
       });
+
+      // Con espacios o mayúsculas no coincidentes con la clave definida en minúsculas
+      expect(formatFormAnswer(question, 'TODO_NORMAL').text).toBe(FALLBACK_UNKNOWN_OPTION_LABEL);
     });
   });
 
@@ -76,6 +88,22 @@ describe('formatFormAnswer', () => {
         'Cansancio extremo',
       ]);
       expect(result.isUnanswered).toBe(false);
+    });
+
+    it('distingue mayúsculas y minúsculas en selección múltiple conservando etiquetas independientes', () => {
+      const caseSensitiveQuestion = {
+        tipo: 'multiple_choice' as const,
+        obligatoria: true,
+        configuracion: {
+          opciones: [
+            { valor: 'X', etiqueta: 'Factor X' },
+            { valor: 'x', etiqueta: 'Factor x' },
+          ],
+        },
+      };
+
+      const result = formatFormAnswer(caseSensitiveQuestion, ['X', 'x', 'Z']);
+      expect(result.items).toEqual(['Factor X', 'Factor x', FALLBACK_UNKNOWN_OPTION_LABEL]);
     });
 
     it('maneja arreglo vacío como no respondido opcional', () => {

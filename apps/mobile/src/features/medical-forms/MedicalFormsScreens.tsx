@@ -933,7 +933,7 @@ export function MedicalFormSubmissionDetailScreen() {
                     {formatted.items.map((item, itemIdx) => (
                       <View key={itemIdx} style={styles.answerListItem}>
                         <Text style={styles.answerBullet}>•</Text>
-                        <Text style={styles.answerValueText}>{item}</Text>
+                        <Text style={[styles.answerValueText, styles.answerListText]}>{item}</Text>
                       </View>
                     ))}
                   </View>
@@ -1157,6 +1157,10 @@ function createStyles(colors: ReturnType<typeof useAppTheme>['theme']['colors'])
       flexDirection: 'row',
       alignItems: 'flex-start',
       gap: theme.spacing.xs,
+    },
+    answerListText: {
+      flex: 1,
+      minWidth: 0,
     },
     answerBullet: {
       fontSize: 15,
