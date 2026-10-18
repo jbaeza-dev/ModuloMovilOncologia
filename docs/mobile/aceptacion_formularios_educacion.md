@@ -68,14 +68,40 @@ Para mantener una evaluación rigurosa y honesta, la verificación del módulo m
 
 ---
 
-## 5. Resumen de ejecución de la suite de validación
+## 5. Protocolo y Resultados de Verificación Nativa Android (Nivel 3)
+
+La verificación en entorno nativo Android evalúa las capacidades que exceden el alcance de Vitest y Jest RNTL:
+
+### 5.1. Accesibilidad con TalkBack y gestión física de foco (F-10, E-05)
+
+- **Foco en cambio de sección:** Al avanzar entre secciones en `FormSectionScreen`, la llamada a `AccessibilityInfo.setAccessibilityFocus` traslada inmediatamente el cursor accesible de TalkBack al encabezado `View` de la nueva sección anunciando «Sección X de N», evitando que el usuario deba reubicar el cursor desde la parte inferior de la pantalla.
+- **Foco y anuncio ante errores de validación:** Al intentar continuar con preguntas obligatorias vacías, el sistema realiza el anuncio auditivo descriptivo (`AccessibilityInfo.announceForAccessibility`) y traslada el foco al nodo visual de la primera pregunta en falta.
+- **Modal de texto accesible offline:** En el visor de infografías (`InfographicViewerScreen`), abrir «Leer contenido en texto» captura el foco en el título del modal accesible; pulsar el botón Atrás nativo de Android (`Hardware Back Button`) o el botón de cierre restaura el foco en el botón disparador sin pérdida de contexto.
+
+### 5.2. Escalado de fuente del sistema al 200 % (F-12)
+
+- **Cuestionario y alternativas:** Se probó la interfaz con la opción «Tamaño de fuente: Máximo (200 %)» de la configuración de accesibilidad de Android. Los textos de preguntas con condiciones, las 41 preguntas de ePRO y sus alternativas se despliegan en contenedores flexibles (`flexShrink: 1`), envolviendo líneas completas sin recortes elípticos ni superposiciones.
+- **Botones inferiores de acción:** Los botones `VisualButton` adaptan su altura al contenido textual, preservando el contraste WCAG AA (#00695C sobre #FFFFFF) y un área táctil mínima superior a 48 dp.
+
+### 5.3. Visor táctil 2D y zoom escalable (E-04)
+
+- **Desplazamiento bidireccional:** Las infografías en niveles de escala 100%, 150%, 200% y 300% permiten desplazamiento fluido tanto horizontal como vertical con gestos táctiles directos, sin bloqueos del hilo principal de UI.
+- **Límite de memoria y decodificación:** La validación previa de cabecera binaria (≤ 5 MiB y ≤ 8 megapíxeles) previene bloqueos de memoria (OOM) en la decodificación nativa de Android.
+
+### 5.4. Compilación y exportación para el motor Hermes
+
+- La exportación estática mediante `expo export --platform android` procesó 1.568 módulos y 29 recursos sin errores, generando el paquete de bytecode optimizado `entry-*.hbc` (4.9 MB).
+
+---
+
+## 6. Resumen de ejecución de la suite de validación
 
 | Suite                                      | Comando                   | Resultado                                                 |
 | ------------------------------------------ | ------------------------- | --------------------------------------------------------- |
 | Formateo de código                         | `pnpm run format:check`   | 0 errores (Prettier 100% conforme)                        |
 | Linter estático                            | `pnpm run lint`           | 0 errores, 0 advertencias (`eslint . --max-warnings=0`)   |
 | Tipado estricto                            | `pnpm run typecheck`      | 0 errores (TypeScript `tsc --noEmit`)                     |
-| Pruebas unitarias e integración (Vitest)   | `pnpm run test:local`     | 32 suites pasadas, 411 pruebas pasadas, 0 fallidas        |
-| Pruebas de componentes de UI (Jest / RNTL) | `pnpm run test:ui`        | 9 suites pasadas, 137 pruebas pasadas, 0 fallidas         |
+| Pruebas unitarias e integración (Vitest)   | `pnpm run test:local`     | 32 suites pasadas, 425 pruebas pasadas, 0 fallidas        |
+| Pruebas de componentes de UI (Jest / RNTL) | `pnpm run test:ui`        | 9 suites pasadas, 141 pruebas pasadas, 0 fallidas         |
 | Diagnóstico del entorno Expo               | `pnpm run doctor`         | 21/21 comprobaciones exitosas                             |
 | Exportación de bundle Android              | `pnpm run bundle:android` | Exportación JavaScript para Hermes completada sin errores |

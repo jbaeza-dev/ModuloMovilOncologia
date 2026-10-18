@@ -166,7 +166,7 @@ export function DailyFollowUpScreen() {
 
     const title = isToday ? 'Descartar borrador' : 'Descartar borrador anterior';
     const message = isToday
-      ? '¿Deseas descartar el borrador en progreso de la versión anterior e iniciar el nuevo cuestionario de hoy?'
+      ? '¿Deseas descartar el borrador en progreso de la versión anterior?'
       : '¿Deseas descartar las respuestas que no completaste en días anteriores?';
 
     Alert.alert(title, message, [
@@ -351,7 +351,7 @@ export function DailyFollowUpScreen() {
                   mainForm &&
                   dailyStatus.activeDraft.version !== mainForm.version ? (
                     <VisualButton
-                      label="Descartar e iniciar versión actualizada"
+                      label="Descartar este borrador"
                       secondary
                       disabled={discardingOlder}
                       onPress={() => handleDiscardDraft(dailyStatus.activeDraft!, true)}

@@ -418,7 +418,7 @@ describe('Pruebas de UI: Componentes y Pantallas de Formularios Médicos', () =>
           screen.getByText(/Tienes un registro en progreso de una versión anterior/),
         ).toBeTruthy();
         expect(screen.getByText('Continuar mi registro de hoy')).toBeTruthy();
-        expect(screen.getByText('Descartar e iniciar versión actualizada')).toBeTruthy();
+        expect(screen.getByText('Descartar este borrador')).toBeTruthy();
       });
 
       // Al presionar continuar, navega con la identidad del borrador (1.0.0)
@@ -484,10 +484,10 @@ describe('Pruebas de UI: Componentes y Pantallas de Formularios Médicos', () =>
       await render(<DailyFollowUpScreen />);
 
       await waitFor(() => {
-        expect(screen.getByText('Descartar e iniciar versión actualizada')).toBeTruthy();
+        expect(screen.getByText('Descartar este borrador')).toBeTruthy();
       });
 
-      const btnDiscard = screen.getByText('Descartar e iniciar versión actualizada');
+      const btnDiscard = screen.getByText('Descartar este borrador');
       await fireEvent.press(btnDiscard);
 
       expect(alertSpy).toHaveBeenCalled();

@@ -1494,4 +1494,140 @@ describe('formularios y persistencia clínica en SQLite', () => {
     const statusAfter = await repoA.getDailyFormStatus('seguimiento-domiciliario', today);
     expect(statusAfter.hasOlderDraft).toBe(false);
   });
+
+  it('confirmSubmission mantiene idempotencia al repetir la confirmación de un borrador retirado', async () => {
+    const database = open();
+    await migrateDatabase(database);
+    await seedPatientContextIfEmpty(database, patientA, patientB);
+
+    await ingestMedicalFormBundle(database, {
+      formularios: [SEGUIMIENTO_DOMICILIARIO_V1_0_0_BUNDLE_ITEM],
+      asignaciones: [
+        {
+          pacienteId: patientA,
+          formularioId: 'seguimiento-domiciliario',
+          version: '1.0.0',
+          estado: 'activa',
+        },
+      ],
+    });
+
+    const repoA = createPatientRepository(database, patientA, ids());
+    const deliveryId = 'del-retired-idempotent';
+
+    const answers = {
+      'P0.1': 'no',
+      P1: 'no',
+      P2: 'no',
+      'P3.A': 'no',
+      'P3.B': 'no',
+      P4: 'no',
+      P5: 'no',
+      P6: 'no',
+      P7: 'no',
+      P8: 'no',
+      'P9.A': 'no',
+      'P9.B': 'no',
+      P10: 'Seguimiento retirado idempotente',
+    };
+
+    // Guardar borrador en 1.0.0
+    await repoA.saveDraft('seguimiento-domiciliario', '1.0.0', answers, deliveryId);
+
+    // Upgrade: retira la asignación 1.0.0
+    await seedMedicalFormsDemo(database, patientA, patientB);
+
+    // Primera confirmación: consume el borrador y crea la respuesta
+    const firstResult = await repoA.confirmSubmission(
+      'seguimiento-domiciliario',
+      '1.0.0',
+      answers,
+      deliveryId,
+    );
+    expect(firstResult).toBe(deliveryId);
+
+    // Segunda confirmación (reintento idéntico): debe devolver el mismo ID idempotentemente
+    const retryResult = await repoA.confirmSubmission(
+      'seguimiento-domiciliario',
+      '1.0.0',
+      answers,
+      deliveryId,
+    );
+    expect(retryResult).toBe(deliveryId);
+
+    // Verificar que solo existe 1 registro en respuesta_formulario
+    const subs = await database.all('SELECT * FROM respuesta_formulario WHERE id = ?', [
+      deliveryId,
+    ]);
+    expect(subs).toHaveLength(1);
+
+    // Verificar que solo existe 1 registro en cola_envio
+    const queue = await database.all('SELECT * FROM cola_envio WHERE registro_id = ?', [
+      deliveryId,
+    ]);
+    expect(queue).toHaveLength(1);
+  });
+
+  it('saveDraft rechaza cambiar el UUID de un borrador con asignación retirada y preserva el borrador original intacto', async () => {
+    const database = open();
+    await migrateDatabase(database);
+    await seedPatientContextIfEmpty(database, patientA, patientB);
+
+    await ingestMedicalFormBundle(database, {
+      formularios: [SEGUIMIENTO_DOMICILIARIO_V1_0_0_BUNDLE_ITEM],
+      asignaciones: [
+        {
+          pacienteId: patientA,
+          formularioId: 'seguimiento-domiciliario',
+          version: '1.0.0',
+          estado: 'activa',
+        },
+      ],
+    });
+
+    const repoA = createPatientRepository(database, patientA, ids());
+    const originalDeliveryId = 'del-original-uuid';
+
+    const originalAnswers = {
+      'P0.1': 'no',
+      P10: 'Texto borrador original',
+    };
+
+    // Guardar borrador inicial en 1.0.0 con originalDeliveryId
+    await repoA.saveDraft('seguimiento-domiciliario', '1.0.0', originalAnswers, originalDeliveryId);
+
+    // Upgrade: retira la asignación 1.0.0
+    await seedMedicalFormsDemo(database, patientA, patientB);
+
+    // Intentar cambiar el deliveryId sobre la asignación retirada debe ser rechazado
+    const otherDeliveryId = 'del-other-uuid';
+    await expect(
+      repoA.saveDraft(
+        'seguimiento-domiciliario',
+        '1.0.0',
+        { 'P0.1': 'no', P10: 'Intento de sustitución de UUID' },
+        otherDeliveryId,
+      ),
+    ).rejects.toThrow('No existe una asignación activa para este cuestionario.');
+
+    // Verificar que el borrador original permanece intacto en SQLite
+    const draft = await repoA.getDraft('seguimiento-domiciliario', '1.0.0');
+    expect(draft).not.toBeNull();
+    expect(draft?.entregaId).toBe(originalDeliveryId);
+    expect(draft?.respuestas.P10).toBe('Texto borrador original');
+
+    // Modificar con el mismo originalDeliveryId sí está permitido
+    await expect(
+      repoA.saveDraft(
+        'seguimiento-domiciliario',
+        '1.0.0',
+        { 'P0.1': 'no', P10: 'Texto modificado legalmente' },
+        originalDeliveryId,
+      ),
+    ).resolves.not.toThrow();
+
+    const updatedDraft = await repoA.getDraft('seguimiento-domiciliario', '1.0.0');
+    expect(updatedDraft?.entregaId).toBe(originalDeliveryId);
+    expect(updatedDraft?.respuestas.P10).toBe('Texto modificado legalmente');
+  });
 });

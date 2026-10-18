@@ -305,7 +305,8 @@ export function createFormRepository(
         [patientId, formId, version, periodoClave],
       );
       const hasActiveAssignment = assignment?.estado_conocido === 'activa';
-      const hasRetiredDraftContinuity = Boolean(existingDraft) && Boolean(assignment);
+      const hasRetiredDraftContinuity =
+        Boolean(existingDraft) && Boolean(assignment) && existingDraft?.entrega_id === deliveryId;
 
       if (!hasActiveAssignment && !hasRetiredDraftContinuity) {
         throw new Error('No existe una asignación activa para este cuestionario.');
@@ -394,25 +395,7 @@ export function createFormRepository(
       const queueId = newId();
 
       await database.transaction(async (tx) => {
-        // 1. Verificar asignación activa o continuidad de borrador existente
-        const assignment = await tx.first<{ estado_conocido: string }>(
-          `SELECT estado_conocido FROM formulario_asignacion_cache
-           WHERE paciente_id = ? AND formulario_id = ? AND version = ?`,
-          [patientId, formId, version],
-        );
-        const existingDraft = await tx.first<FormDraftRecord>(
-          `SELECT * FROM borrador_formulario
-           WHERE paciente_id = ? AND formulario_id = ? AND version = ? AND entrega_id = ?`,
-          [patientId, formId, version, deliveryId],
-        );
-        const hasActiveAssignment = assignment?.estado_conocido === 'activa';
-        const hasRetiredDraftContinuity = Boolean(existingDraft) && Boolean(assignment);
-
-        if (!hasActiveAssignment && !hasRetiredDraftContinuity) {
-          throw new Error('No existe una asignación activa para este cuestionario.');
-        }
-
-        // 2. Obtener preguntas para validación y normalización
+        // 1. Obtener preguntas para validación y normalización
         const questions = await tx.all<FormQuestionRecord>(
           `SELECT * FROM pregunta_cache
            WHERE formulario_id = ? AND version = ?
@@ -420,7 +403,7 @@ export function createFormRepository(
           [formId, version],
         );
 
-        // 3. Validar preguntas y respuestas frente a la definición
+        // 2. Validar preguntas y respuestas frente a la definición
         const validation = validateFormQuestionsRecords(questions, answers);
         if (!validation.isValid) {
           const firstError = Object.values(validation.errors)[0];
@@ -431,7 +414,7 @@ export function createFormRepository(
           onlyVisible: true,
         });
 
-        // 4. Comprobar si ya existe una entrega con este deliveryId
+        // 3. Comprobar si ya existe una entrega con este deliveryId (idempotencia ante reintentos)
         const existingSubmission = await tx.first<FormSubmissionRecord>(
           'SELECT * FROM respuesta_formulario WHERE id = ?',
           [deliveryId],
@@ -458,6 +441,24 @@ export function createFormRepository(
           throw new ConflictoEntregaError(
             `El identificador de entrega '${deliveryId}' ya existe con datos diferentes.`,
           );
+        }
+
+        // 4. Verificar asignación activa o continuidad de borrador existente (sólo para nuevas entregas)
+        const assignment = await tx.first<{ estado_conocido: string }>(
+          `SELECT estado_conocido FROM formulario_asignacion_cache
+           WHERE paciente_id = ? AND formulario_id = ? AND version = ?`,
+          [patientId, formId, version],
+        );
+        const existingDraft = await tx.first<FormDraftRecord>(
+          `SELECT * FROM borrador_formulario
+           WHERE paciente_id = ? AND formulario_id = ? AND version = ? AND entrega_id = ?`,
+          [patientId, formId, version, deliveryId],
+        );
+        const hasActiveAssignment = assignment?.estado_conocido === 'activa';
+        const hasRetiredDraftContinuity = Boolean(existingDraft) && Boolean(assignment);
+
+        if (!hasActiveAssignment && !hasRetiredDraftContinuity) {
+          throw new Error('No existe una asignación activa para este cuestionario.');
         }
 
         // 5. Inserción en respuesta_formulario
