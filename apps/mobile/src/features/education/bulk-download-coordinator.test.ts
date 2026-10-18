@@ -385,4 +385,163 @@ describe('Coordinador de descargas masivas de infografías (bulk-download-coordi
     expect(result.pendingResources[0].id).toBe('info-fail');
     expect(result.message).toContain('Se guardaron 1 de 2 infografías. 1 pendiente.');
   });
+
+  it('conecta la cancelación y el progreso del segundo consumidor a la sesión activa', async () => {
+    const catalog = new InMemoryEducationalCatalogReader([
+      {
+        id: 'info-c1',
+        title: 'Infografía Uno',
+        category: 1,
+        categoryName: 'General',
+        description: 'Desc',
+        type: 'infografia',
+        version: '1.0.0',
+      },
+      {
+        id: 'info-c2',
+        title: 'Infografía Dos',
+        category: 1,
+        categoryName: 'General',
+        description: 'Desc',
+        type: 'infografia',
+        version: '1.0.0',
+      },
+    ]);
+
+    const repo = createMockRepo([]);
+    vi.spyOn(resourceStorage, 'resourceFileExists').mockReturnValue(false);
+
+    let resolveFirstDownload!: () => void;
+    let signalDownloadStarted!: () => void;
+    const downloadStartedPromise = new Promise<void>((res) => {
+      signalDownloadStarted = res;
+    });
+    const firstDownloadPromise = new Promise<void>((res) => {
+      resolveFirstDownload = res;
+    });
+
+    const abortController2 = new AbortController();
+    const progressUpdates2: BulkDownloadProgress[] = [];
+
+    const downloadSpy = vi
+      .spyOn(storageService, 'downloadAndSaveInfographic')
+      .mockImplementation(async ({ resource }) => {
+        if (resource.id === 'info-c1') {
+          signalDownloadStarted();
+          await firstDownloadPromise;
+        }
+      });
+
+    // Primer consumidor inicia la descarga
+    const run1 = runBulkInfographicDownload({
+      patientId: 'paciente-cancel-share',
+      repository: repo,
+      database: mockDatabase,
+      catalogReader: catalog,
+    });
+
+    // Esperar a que el primer recurso esté en vuelo
+    await downloadStartedPromise;
+
+    // Segundo consumidor se une con su propio AbortController y callback de progreso
+    const run2 = runBulkInfographicDownload({
+      patientId: 'paciente-cancel-share',
+      repository: repo,
+      database: mockDatabase,
+      catalogReader: catalog,
+      signal: abortController2.signal,
+      onProgress: (p) => progressUpdates2.push({ ...p }),
+    });
+
+    // El segundo consumidor solicita cancelar mientras el primer recurso está en vuelo
+    abortController2.abort();
+
+    // Se completa el primer recurso que estaba en vuelo
+    resolveFirstDownload();
+
+    const [res1, res2] = await Promise.all([run1, run2]);
+
+    expect(res1).toBe(res2);
+    expect(res1.cancelled).toBe(true);
+    expect(res1.downloaded).toBe(1);
+    expect(res1.pendingResources.length).toBe(1);
+    expect(res1.pendingResources[0].id).toBe('info-c2');
+    expect(downloadSpy).toHaveBeenCalledTimes(1); // No intentó info-c2 tras la cancelación del segundo consumidor
+    expect(progressUpdates2.length).toBeGreaterThanOrEqual(1); // El segundo consumidor recibió eventos de progreso
+  });
+
+  it('el porcentaje de progreso nunca retrocede cuando ocurren fallos en las descargas', async () => {
+    const catalog = new InMemoryEducationalCatalogReader([
+      {
+        id: 'f-1',
+        title: 'Infografía 1',
+        category: 1,
+        categoryName: 'General',
+        description: 'D',
+        type: 'infografia',
+        version: '1.0.0',
+      },
+      {
+        id: 'f-2',
+        title: 'Infografía 2',
+        category: 1,
+        categoryName: 'General',
+        description: 'D',
+        type: 'infografia',
+        version: '1.0.0',
+      },
+      {
+        id: 'f-3',
+        title: 'Infografía 3',
+        category: 1,
+        categoryName: 'General',
+        description: 'D',
+        type: 'infografia',
+        version: '1.0.0',
+      },
+      {
+        id: 'f-4',
+        title: 'Infografía 4',
+        category: 1,
+        categoryName: 'General',
+        description: 'D',
+        type: 'infografia',
+        version: '1.0.0',
+      },
+    ]);
+
+    const repo = createMockRepo([]);
+    vi.spyOn(resourceStorage, 'resourceFileExists').mockReturnValue(false);
+
+    vi.spyOn(storageService, 'downloadAndSaveInfographic').mockImplementation(
+      async ({ resource }) => {
+        // Fallan los tres primeros recursos; solo el cuarto tiene éxito
+        if (resource.id === 'f-1' || resource.id === 'f-2' || resource.id === 'f-3') {
+          throw new Error('Fallo de red en descarga');
+        }
+      },
+    );
+
+    const progressHistory: number[] = [];
+    const result = await runBulkInfographicDownload({
+      patientId: 'paciente-progreso-no-decreciente',
+      repository: repo,
+      database: mockDatabase,
+      catalogReader: catalog,
+      onProgress: (p) => {
+        progressHistory.push(p.percent);
+      },
+    });
+
+    // Comprobar monotonicidad: cada porcentaje emitido debe ser mayor o igual al anterior
+    for (let i = 1; i < progressHistory.length; i++) {
+      expect(progressHistory[i]).toBeGreaterThanOrEqual(progressHistory[i - 1]);
+    }
+
+    // Al finalizar todos los intentos, el progreso de procesamiento alcanza el 100%
+    expect(progressHistory[progressHistory.length - 1]).toBe(100);
+    expect(result.downloaded).toBe(1);
+    expect(result.failed).toBe(3);
+    expect(result.message).toBe('Se guardaron 1 de 4 infografías. 3 pendientes.');
+  });
 });

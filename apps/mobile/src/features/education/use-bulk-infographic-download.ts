@@ -2,6 +2,8 @@ import { useCallback, useEffect, useRef, useState } from 'react';
 
 import { useLocalData } from '../../providers/LocalDataProvider';
 import {
+  cancelActiveBulkDownload,
+  getActiveBulkDownload,
   runBulkInfographicDownload,
   type BulkDownloadProgress,
   type BulkDownloadResult,
@@ -34,28 +36,72 @@ export function useBulkInfographicDownload(
 
   const abortControllerRef = useRef<AbortController | null>(null);
 
-  // Vincular la ejecución al ciclo de vida del paciente: abortar si el contexto entra en cierre
+  // Al montar o cambiar de paciente: si ya existe una descarga en curso para este paciente,
+  // suscribirse a su progreso y recuperar su estado para dar continuidad a la pantalla
   useEffect(() => {
-    if (isClosing && abortControllerRef.current) {
-      abortControllerRef.current.abort();
+    if (!patientId) {
+      setIsDownloading(false);
+      setProgress(null);
+      return;
     }
-  }, [isClosing]);
 
-  // Al desmontar o al cambiar de paciente, abortar cualquier descarga activa
-  useEffect(() => {
+    const activeSession = getActiveBulkDownload(patientId);
+    if (!activeSession) {
+      return;
+    }
+
+    setIsDownloading(true);
+    setIsCancelling(activeSession.isCancelled());
+    const currentProg = activeSession.getProgress();
+    if (currentProg) {
+      setProgress(currentProg);
+    }
+
+    const unsubscribe = activeSession.subscribe((p) => {
+      setProgress(p);
+      setIsCancelling(activeSession.isCancelled());
+    });
+
+    activeSession.promise
+      .then((res) => {
+        setLastResult(res);
+        setSummaryMessage(res.message);
+        onComplete?.();
+      })
+      .catch((err) => {
+        setError(err instanceof Error ? err.message : 'Error en la descarga de infografías.');
+      })
+      .finally(() => {
+        setIsDownloading(false);
+        setIsCancelling(false);
+        setProgress(null);
+      });
+
     return () => {
+      unsubscribe();
+    };
+  }, [patientId, onComplete]);
+
+  // Si el contexto del paciente entra en proceso de cierre (logout o cambio de paciente),
+  // solicitar la cancelación limpia de cualquier descarga activa
+  useEffect(() => {
+    if (isClosing && patientId) {
+      cancelActiveBulkDownload(patientId);
       if (abortControllerRef.current) {
         abortControllerRef.current.abort();
       }
-    };
-  }, [patientId]);
+    }
+  }, [isClosing, patientId]);
 
   const cancelDownload = useCallback(() => {
+    setIsCancelling(true);
+    if (patientId) {
+      cancelActiveBulkDownload(patientId);
+    }
     if (abortControllerRef.current) {
-      setIsCancelling(true);
       abortControllerRef.current.abort();
     }
-  }, []);
+  }, [patientId]);
 
   const clearSummary = useCallback(() => {
     setSummaryMessage(null);

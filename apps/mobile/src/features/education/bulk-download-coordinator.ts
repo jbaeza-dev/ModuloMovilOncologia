@@ -13,6 +13,8 @@ export interface BulkDownloadProgress {
   total: number;
   percent: number;
   currentTitle: string;
+  downloaded?: number;
+  failed?: number;
 }
 
 export interface BulkDownloadErrorItem {
@@ -42,22 +44,31 @@ export interface RunBulkDownloadOptions {
   onProgress?: (progress: BulkDownloadProgress) => void;
 }
 
-interface ActiveDownloadEntry {
+export interface ActiveBulkDownloadSession {
   patientId: string;
-  abortController: AbortController;
   promise: Promise<BulkDownloadResult>;
+  cancel: () => void;
+  isCancelled: () => boolean;
+  getProgress: () => BulkDownloadProgress | null;
+  subscribe: (onProgress: (progress: BulkDownloadProgress) => void) => () => void;
 }
 
-const activeDownloadsByPatient = new Map<string, ActiveDownloadEntry>();
+interface ActiveDownloadInternalEntry extends ActiveBulkDownloadSession {
+  abortController: AbortController;
+  lastProgress: BulkDownloadProgress | null;
+  progressListeners: Set<(progress: BulkDownloadProgress) => void>;
+}
 
-export function getActiveBulkDownload(patientId: string): ActiveDownloadEntry | undefined {
+const activeDownloadsByPatient = new Map<string, ActiveDownloadInternalEntry>();
+
+export function getActiveBulkDownload(patientId: string): ActiveBulkDownloadSession | undefined {
   return activeDownloadsByPatient.get(patientId);
 }
 
 export function cancelActiveBulkDownload(patientId: string): boolean {
-  const active = activeDownloadsByPatient.get(patientId);
-  if (active) {
-    active.abortController.abort();
+  const session = activeDownloadsByPatient.get(patientId);
+  if (session) {
+    session.cancel();
     return true;
   }
   return false;
@@ -71,41 +82,104 @@ export function resetActiveBulkDownloadsForTesting(): void {
  * Coordina la descarga masiva de infografías del catálogo para el paciente actual.
  * Procesa en serie, verifica versiones y existencia física de archivos, omite recursos no descargables,
  * previene ejecuciones simultáneas para el mismo paciente y soporta cancelación limpia sin dejar archivos huérfanos.
+ * Permite que múltiples consumidores compartan la misma ejecución, reciban progreso y puedan solicitar cancelación.
  */
 export function runBulkInfographicDownload(
   options: RunBulkDownloadOptions,
 ): Promise<BulkDownloadResult> {
   const { patientId } = options;
 
-  const existingActive = activeDownloadsByPatient.get(patientId);
-  if (existingActive) {
-    // Si ya existe una descarga en curso para este paciente, une la llamada a la promesa en vuelo
-    // para prevenir ejecuciones simultáneas y condiciones de carrera sobre el disco y SQLite.
-    return existingActive.promise;
+  const existingSession = activeDownloadsByPatient.get(patientId);
+  if (existingSession) {
+    // Si ya existe una descarga en curso para este paciente:
+    // 1. Conectar la señal de cancelación del segundo consumidor para que pueda abortar la ejecución compartida
+    if (options.signal) {
+      if (options.signal.aborted) {
+        existingSession.cancel();
+      } else {
+        const onAbort = () => existingSession.cancel();
+        options.signal.addEventListener('abort', onAbort, { once: true });
+        existingSession.promise.finally(() => {
+          options.signal?.removeEventListener('abort', onAbort);
+        });
+      }
+    }
+
+    // 2. Conectar el callback de progreso del segundo consumidor a la sesión compartida
+    if (options.onProgress) {
+      const unsubscribe = existingSession.subscribe(options.onProgress);
+      existingSession.promise.finally(unsubscribe);
+    }
+
+    return existingSession.promise;
   }
 
   const internalController = new AbortController();
+  const progressListeners = new Set<(progress: BulkDownloadProgress) => void>();
+  if (options.onProgress) {
+    progressListeners.add(options.onProgress);
+  }
+
+  let currentProgress: BulkDownloadProgress | null = null;
+
+  const notifyProgress = (progress: BulkDownloadProgress) => {
+    currentProgress = progress;
+    for (const listener of progressListeners) {
+      try {
+        listener(progress);
+      } catch {
+        // Evitar que errores en un callback de UI rompan la ejecución principal
+      }
+    }
+  };
+
+  const cancel = () => {
+    internalController.abort();
+  };
+
   if (options.signal) {
     if (options.signal.aborted) {
       internalController.abort();
     } else {
-      options.signal.addEventListener('abort', () => internalController.abort(), { once: true });
+      const onAbort = () => cancel();
+      options.signal.addEventListener('abort', onAbort, { once: true });
     }
   }
 
-  const executionPromise = executeBulkDownload({
+  const executionPromise: Promise<BulkDownloadResult> = executeBulkDownload({
     ...options,
     signal: internalController.signal,
+    onProgress: notifyProgress,
   }).finally(() => {
     activeDownloadsByPatient.delete(patientId);
   });
 
-  // Reserva sincrónica antes del primer await
-  activeDownloadsByPatient.set(patientId, {
+  const sessionEntry: ActiveDownloadInternalEntry = {
     patientId,
     abortController: internalController,
     promise: executionPromise,
-  });
+    lastProgress: null,
+    progressListeners,
+    cancel,
+    isCancelled: () => internalController.signal.aborted,
+    getProgress: () => currentProgress,
+    subscribe: (listener: (progress: BulkDownloadProgress) => void) => {
+      progressListeners.add(listener);
+      if (currentProgress) {
+        try {
+          listener(currentProgress);
+        } catch {
+          // Ignorar errores de suscriptores individuales
+        }
+      }
+      return () => {
+        progressListeners.delete(listener);
+      };
+    },
+  };
+
+  // Reserva sincrónica antes del primer await
+  activeDownloadsByPatient.set(patientId, sessionEntry);
 
   return executionPromise;
 }
@@ -213,13 +287,16 @@ async function executeBulkDownload(options: RunBulkDownloadOptions): Promise<Bul
 
     const currentResource = pendingToDownload[i];
     const currentNumber = i + 1;
-    const percent = Math.round((i / totalToDownload) * 100);
+    // Porcentaje según cantidad de recursos ya procesados al inicio de este intento
+    const startPercent = Math.round((i / totalToDownload) * 100);
 
     onProgress?.({
       current: currentNumber,
       total: totalToDownload,
-      percent,
+      percent: startPercent,
       currentTitle: currentResource.title,
+      downloaded: downloadedCount,
+      failed: failedCount,
     });
 
     try {
@@ -233,14 +310,6 @@ async function executeBulkDownload(options: RunBulkDownloadOptions): Promise<Bul
       });
 
       downloadedCount++;
-      const updatedPercent = Math.round((downloadedCount / totalToDownload) * 100);
-
-      onProgress?.({
-        current: currentNumber,
-        total: totalToDownload,
-        percent: updatedPercent,
-        currentTitle: currentResource.title,
-      });
     } catch (err) {
       failedCount++;
       const errorMessage =
@@ -251,6 +320,21 @@ async function executeBulkDownload(options: RunBulkDownloadOptions): Promise<Bul
         message: errorMessage,
       });
       failedResources.push(currentResource);
+    } finally {
+      // El porcentaje de progreso se calcula estrictamente sobre el total de recursos procesados
+      // (exitosos o fallidos). Esto asegura que el porcentaje avance de forma monótona no decreciente
+      // y alcance el 100% al finalizar todos los intentos, sin retroceder jamás ante fallos.
+      const processedCount = i + 1;
+      const endPercent = Math.round((processedCount / totalToDownload) * 100);
+
+      onProgress?.({
+        current: currentNumber,
+        total: totalToDownload,
+        percent: endPercent,
+        currentTitle: currentResource.title,
+        downloaded: downloadedCount,
+        failed: failedCount,
+      });
     }
   }
 

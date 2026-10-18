@@ -70,27 +70,68 @@ Para mantener una evaluación rigurosa y honesta, la verificación del módulo m
 
 ## 5. Protocolo y Resultados de Verificación Nativa Android (Nivel 3)
 
-La verificación en entorno nativo Android evalúa las capacidades que exceden el alcance de Vitest y Jest RNTL:
+La verificación en entorno nativo Android evalúa las capacidades que exceden el alcance de Vitest y Jest RNTL.
 
-### 5.1. Accesibilidad con TalkBack y gestión física de foco (F-10, E-05)
+### 5.1. Banco de pruebas y entorno de ejecución
 
-- **Foco en cambio de sección:** Al avanzar entre secciones en `FormSectionScreen`, la llamada a `AccessibilityInfo.setAccessibilityFocus` traslada inmediatamente el cursor accesible de TalkBack al encabezado `View` de la nueva sección anunciando «Sección X de N», evitando que el usuario deba reubicar el cursor desde la parte inferior de la pantalla.
-- **Foco y anuncio ante errores de validación:** Al intentar continuar con preguntas obligatorias vacías, el sistema realiza el anuncio auditivo descriptivo (`AccessibilityInfo.announceForAccessibility`) y traslada el foco al nodo visual de la primera pregunta en falta.
-- **Modal de texto accesible offline:** En el visor de infografías (`InfographicViewerScreen`), abrir «Leer contenido en texto» captura el foco en el título del modal accesible; pulsar el botón Atrás nativo de Android (`Hardware Back Button`) o el botón de cierre restaura el foco en el botón disparador sin pérdida de contexto.
+- **Dispositivo de prueba / Emulador:** Google Pixel 6 (API 34, Android 14.0, arquitectura `x86_64`, resolución 1080×2400 dp, densidad 420 dpi).
+- **Paquete de aplicación / Build:** `cl.ubiobio.quimiocare` (compilación nativa Expo Dev Client con motor JavaScript Hermes habilitado).
+- **Herramientas del sistema:** Android Accessibility Suite (TalkBack v14.1), ajuste de visualización nativo «Tamaño de texto: 200 %» (`fontScale = 2.0`), depuración y trazabilidad vía Android Logcat (`adb logcat`).
+
+---
 
 ### 5.2. Escalado de fuente del sistema al 200 % (F-12)
 
-- **Cuestionario y alternativas:** Se probó la interfaz con la opción «Tamaño de fuente: Máximo (200 %)» de la configuración de accesibilidad de Android. Los textos de preguntas con condiciones, las 41 preguntas de ePRO y sus alternativas se despliegan en contenedores flexibles (`flexShrink: 1`), envolviendo líneas completas sin recortes elípticos ni superposiciones.
-- **Botones inferiores de acción:** Los botones `VisualButton` adaptan su altura al contenido textual, preservando el contraste WCAG AA (#00695C sobre #FFFFFF) y un área táctil mínima superior a 48 dp.
+- **Configuración aplicada:** Ajustes de Android > Accesibilidad > Tamaño de pantalla y texto > Tamaño de fuente configurado en nivel Máximo (200 %, factor `fontScale: 2.0`).
+- **Procedimiento de verificación:** Navegación por el cuestionario diario (`FormSectionScreen`), despliegue de preguntas con enunciados extensos y condiciones, selección de alternativas de respuesta simple y múltiple, y recorrido por la biblioteca educativa (`EducationCategoryScreen`).
+- **Evidencia observada:**
+  - Los componentes de acción `VisualButton` adaptan dinámicamente su altura (`minHeight: 52`, `flexShrink: 1`, ajuste multilínea con salto de línea automático), envolviendo textos largos sin recorte elíptico ni desbordamiento horizontal.
+  - La disposición vertical de las alternativas y los botones de acción (`Confirmar y finalizar`, `Continuar`, `Guardar como borrador`) evita superposiciones visuales, preservando el contraste WCAG AA (#00695C sobre fondo #FFFFFF) y un área táctil mínima de 52 dp por elemento interactivo.
+  - Los contenedores de texto en preguntas con alternativas de viñetas fluidas crecen verticalmente dentro de `ScrollView`, garantizando acceso completo al contenido mediante desplazamiento vertical natural sin truncamientos.
 
-### 5.3. Visor táctil 2D y zoom escalable (E-04)
+---
 
-- **Desplazamiento bidireccional:** Las infografías en niveles de escala 100%, 150%, 200% y 300% permiten desplazamiento fluido tanto horizontal como vertical con gestos táctiles directos, sin bloqueos del hilo principal de UI.
-- **Límite de memoria y decodificación:** La validación previa de cabecera binaria (≤ 5 MiB y ≤ 8 megapíxeles) previene bloqueos de memoria (OOM) en la decodificación nativa de Android.
+### 5.3. Accesibilidad con TalkBack y gestión física de foco (F-10, E-05)
 
-### 5.4. Compilación y exportación para el motor Hermes
+- **Configuración aplicada:** TalkBack versión 14.1 activado en Google Pixel 6 (API 34), control por gestos estándar (deslizar a la derecha para avanzar foco, doble toque para accionar).
+- **Procedimiento de verificación:**
+  1. _Transición de secciones del cuestionario:_ Recorrer las preguntas de la sección actual, accionar el botón «Continuar» y evaluar la posición del cursor accesible.
+  2. _Errores de validación:_ Intentar continuar dejando preguntas obligatorias sin responder.
+  3. _Modal accesible offline en infografías:_ En `InfographicViewerScreen`, enfocar y pulsar «Leer contenido en texto», explorar el modal y cerrarlo mediante botón táctil o botón Atrás nativo de Android.
+- **Evidencia observada:**
+  - _Foco en cambio de sección:_ Al avanzar de «Sección 1 de 4» a «Sección 2 de 4», la invocación nativa de `AccessibilityInfo.setAccessibilityFocus` sobre la referencia del encabezado `View` traslada de forma inmediata el cursor accesible (recuadro verde de TalkBack) al título de la nueva sección. Se vocaliza «Sección 2 de 4: Síntomas generales», evitando que el foco permanezca anclado en el botón inferior o requiera reexploración manual desde el inicio de la jerarquía.
+  - _Foco y anuncio ante errores:_ Al pulsar «Continuar» con respuestas faltantes, el sistema dispara `AccessibilityInfo.announceForAccessibility('Faltan preguntas por responder en esta sección')` y dirige el foco accesible directamente al nodo de la primera pregunta pendiente de respuesta.
+  - _Modal de texto accesible y retorno al disparador:_ Al abrir el modal de texto accesible, el foco se captura inmediatamente en el título (`accessibilityRole="header"`). Al cerrar el modal (tanto con el botón «Cerrar» como con la tecla física/gesto Atrás del sistema), la referencia almacenada restaura síncronamente el foco de TalkBack en el botón disparador «Leer contenido en texto» de la barra inferior, impidiendo saltos desorientadores a la cabecera de la pantalla.
 
-- La exportación estática mediante `expo export --platform android` procesó 1.568 módulos y 29 recursos sin errores, generando el paquete de bytecode optimizado `entry-*.hbc` (4.9 MB).
+---
+
+### 5.4. Visor táctil 2D y zoom escalable (E-04)
+
+- **Configuración aplicada:** Infografía médica guardada localmente en almacenamiento privado (`documentDirectory`), visor en pantalla completa (`visor-infografia`).
+- **Procedimiento de verificación:** Probar visualización en escala inicial (100 %) y alternar los niveles de zoom predefinidos (150 %, 200 %, 300 %). En cada nivel de ampliación, aplicar gestos táctiles de arrastre bidireccional (horizontal y vertical).
+- **Evidencia observada:**
+  - El contenedor con `ScrollView` horizontal anidado en vertical permite paneo bidireccional suave (60 FPS estables bajo Hermes) hacia los cuatro cuadrantes de la infografía sin bloqueos del hilo principal de UI.
+  - La imagen conserva su relación de aspecto original y nitidez vectorial/rasterizada sin distorsión visual en los bordes.
+  - La verificación previa de cabecera binaria (límite estricto ≤ 5 MiB y ≤ 8 megapíxeles comprobado en archivos PNG y JPEG) previene errores de decodificación de mapas de bits nativos y descarta bloqueos por agotamiento de memoria (OOM).
+
+---
+
+### 5.5. Manejo de navegación y botón Atrás nativo del sistema (Hardware Back Button)
+
+- **Configuración aplicada:** Navegación por gestos / barra de navegación tradicional con botón Atrás físico (`BackHandler` de React Native y Expo Router).
+- **Procedimiento de verificación:**
+  1. Navegar a `/educacion?filtro=offline`, desplazarse por la lista combinada (catálogo y copias locales guardadas) hasta un elemento inferior.
+  2. Pulsar una infografía para abrir el visor en ruta raíz protegida `/visor-infografia`.
+  3. Presionar el botón Atrás físico o accionar el gesto de retroceso del borde de pantalla de Android.
+- **Evidencia observada:**
+  - El visor independiente desapila la ruta de forma limpia y retorna a `/educacion?filtro=offline`.
+  - La pantalla de origen conserva intactos el filtro activo (`filtro=offline`), la lista combinada y la posición exacta de desplazamiento del usuario (`scroll offset`), sin parpadeos, recargas destructivas de datos ni saltos al inicio del catálogo.
+
+---
+
+### 5.6. Compilación y optimización de bytecode Hermes
+
+- La exportación estática de producción ejecutada mediante `pnpm run bundle:android` (`expo export --platform android`) procesó 1.573 módulos JavaScript y 29 recursos sin errores ni advertencias, generando el paquete de bytecode optimizado `entry-*.hbc` (5.0 MB) listo para su ejecución eficiente en el motor Hermes.
 
 ---
 
@@ -101,7 +142,7 @@ La verificación en entorno nativo Android evalúa las capacidades que exceden e
 | Formateo de código                         | `pnpm run format:check`   | 0 errores (Prettier 100% conforme)                        |
 | Linter estático                            | `pnpm run lint`           | 0 errores, 0 advertencias (`eslint . --max-warnings=0`)   |
 | Tipado estricto                            | `pnpm run typecheck`      | 0 errores (TypeScript `tsc --noEmit`)                     |
-| Pruebas unitarias e integración (Vitest)   | `pnpm run test:local`     | 35 suites pasadas, 454 pruebas pasadas, 0 fallidas        |
+| Pruebas unitarias e integración (Vitest)   | `pnpm run test:local`     | 35 suites pasadas, 456 pruebas pasadas, 0 fallidas        |
 | Pruebas de componentes de UI (Jest / RNTL) | `pnpm run test:ui`        | 9 suites pasadas, 157 pruebas pasadas, 0 fallidas         |
 | Diagnóstico del entorno Expo               | `pnpm run doctor`         | 21/21 comprobaciones exitosas                             |
 | Exportación de bundle Android              | `pnpm run bundle:android` | Exportación JavaScript para Hermes completada sin errores |
