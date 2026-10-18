@@ -39,7 +39,7 @@ describe('migraciones SQLite', () => {
     await migrateDatabase(second);
     expect(
       (await second.first<{ user_version: number }>('PRAGMA user_version'))?.user_version,
-    ).toBe(8);
+    ).toBe(9);
     expect(
       (await createPatientRepository(second, patientA, ids()).vitals('2026-01-01', 30, 0)).map(
         (row) => row.id,
@@ -146,11 +146,11 @@ describe('migraciones SQLite', () => {
 
   it('rechaza una versión de base posterior sin modificarla', async () => {
     const database = open();
-    await database.exec('PRAGMA user_version = 9');
+    await database.exec('PRAGMA user_version = 10');
     await expect(migrateDatabase(database)).rejects.toThrow('versión más reciente');
     expect(
       (await database.first<{ user_version: number }>('PRAGMA user_version'))?.user_version,
-    ).toBe(9);
+    ).toBe(10);
   });
 
   it('migra de versión 3 a 4 preservando registros previos de cola_envio y ampliando CHECK para nuevos tipos', async () => {
@@ -281,7 +281,7 @@ describe('migraciones SQLite', () => {
     // 2. Aplicar todas las migraciones (hasta v8)
     await migrateDatabase(database);
     const v7 = await database.first<{ user_version: number }>('PRAGMA user_version');
-    expect(v7?.user_version).toBe(8);
+    expect(v7?.user_version).toBe(9);
 
     // Verificar que los datos previos se conservaron intactos
     const vital = await database.first<{ id: string }>(
@@ -321,7 +321,7 @@ describe('migraciones SQLite', () => {
     // 2. Aplicar todas las migraciones (hasta v8)
     await migrateDatabase(database);
     const v = await database.first<{ user_version: number }>('PRAGMA user_version');
-    expect(v?.user_version).toBe(8);
+    expect(v?.user_version).toBe(9);
 
     // 3. Comprobar que la descarga previa conserva sus valores y tiene los nuevos defaults
     const prev = await database.first<{
@@ -495,5 +495,111 @@ describe('migraciones SQLite', () => {
         ['job-duplicate', patientA],
       ),
     ).rejects.toThrow();
+  });
+
+  it('migración 009: reconstruye borrador_formulario con periodo_clave y añade columnas temporales a respuesta_formulario', async () => {
+    const database = open();
+
+    // 1. Migrar hasta v8
+    const { migrations } = await import('./migrations');
+    const v1To8 = migrations.filter((m) => m.version <= 8);
+    await migrateDatabase(database, v1To8);
+
+    // 2. Sembrar datos previos en v8
+    await database.run(
+      `INSERT INTO paciente_cache (paciente_id, nombre, rut, obtenido_en)
+       VALUES (?, 'Paciente Demo', '12.345.678-9', '2026-10-18T10:00:00Z')`,
+      [patientA],
+    );
+
+    await database.run(
+      `INSERT INTO formulario_cache (formulario_id, version, titulo, descripcion, obtenido_en)
+       VALUES ('form-test', '1.0.0', 'Formulario Test', 'Desc', '2026-10-18T10:00:00Z')`,
+    );
+
+    await database.run(
+      `INSERT INTO borrador_formulario (paciente_id, formulario_id, version, entrega_id, respuestas_json, guardado_en, version_payload)
+       VALUES (?, 'form-test', '1.0.0', 'draft-uuid-legacy-123', '{"P1":"si"}', '2026-10-17T20:00:00Z', 1)`,
+      [patientA],
+    );
+
+    await database.run(
+      `INSERT INTO respuesta_formulario (id, paciente_id, formulario_id, version, respuestas_json, fecha_confirmacion, creado_localmente_en)
+       VALUES ('resp-prev-1', ?, 'form-test', '1.0.0', '{"P1":"si"}', '2026-10-16T15:00:00Z', '2026-10-16T15:00:00Z')`,
+      [patientA],
+    );
+
+    // 3. Aplicar migración 009
+    await migrateDatabase(database);
+
+    const versionRow = await database.first<{ user_version: number }>('PRAGMA user_version');
+    expect(versionRow?.user_version).toBe(9);
+
+    // 4. Verificar integridad referencial completa
+    const fkErrors = await database.all('PRAGMA foreign_key_check');
+    expect(fkErrors).toEqual([]);
+
+    // 5. Verificar que el borrador migró a periodo_clave = 'legacy' conservando sus datos
+    const legacyDraft = await database.first<{
+      paciente_id: string;
+      formulario_id: string;
+      version: string;
+      periodo_clave: string;
+      entrega_id: string;
+      respuestas_json: string;
+      guardado_en: string;
+      version_payload: number;
+      fecha_seguimiento: string | null;
+      paso_actual: string | null;
+    }>(
+      'SELECT * FROM borrador_formulario WHERE paciente_id = ? AND formulario_id = ? AND version = ?',
+      [patientA, 'form-test', '1.0.0'],
+    );
+
+    expect(legacyDraft).not.toBeNull();
+    expect(legacyDraft?.periodo_clave).toBe('legacy');
+    expect(legacyDraft?.entrega_id).toBe('draft-uuid-legacy-123');
+    expect(legacyDraft?.respuestas_json).toBe('{"P1":"si"}');
+    expect(legacyDraft?.version_payload).toBe(1);
+
+    // 6. Verificar que se puede insertar un borrador diario para el mismo formulario sin conflicto
+    await database.run(
+      `INSERT INTO borrador_formulario (
+        paciente_id, formulario_id, version, periodo_clave,
+        fecha_seguimiento, zona_horaria, iniciado_en, ventana_desde, ventana_hasta, paso_actual,
+        entrega_id, respuestas_json, guardado_en, version_payload
+      ) VALUES (?, 'form-test', '1.0.0', 'dia:2026-10-18', '2026-10-18', 'America/Santiago', '2026-10-18T12:00:00Z', '2026-10-18T00:00:00-03:00', '2026-10-18T23:59:59-03:00', 'sec-general', 'draft-uuid-daily-456', '{"P1":"no"}', '2026-10-18T12:05:00Z', 2)`,
+      [patientA],
+    );
+
+    const allDrafts = await database.all<{ periodo_clave: string }>(
+      'SELECT periodo_clave FROM borrador_formulario WHERE paciente_id = ? ORDER BY periodo_clave ASC',
+      [patientA],
+    );
+    expect(allDrafts.map((d) => d.periodo_clave)).toEqual(['dia:2026-10-18', 'legacy']);
+
+    // 7. Verificar columnas nuevas en respuesta_formulario
+    const updatedResp = await database.first<{
+      id: string;
+      fecha_seguimiento: string | null;
+      zona_horaria: string | null;
+    }>('SELECT id, fecha_seguimiento, zona_horaria FROM respuesta_formulario WHERE id = ?', [
+      'resp-prev-1',
+    ]);
+    expect(updatedResp).not.toBeNull();
+    expect(updatedResp?.fecha_seguimiento).toBeNull();
+
+    // Actualizar con metadatos diarios
+    await database.run(
+      `UPDATE respuesta_formulario
+       SET fecha_seguimiento = '2026-10-16', zona_horaria = 'America/Santiago'
+       WHERE id = ?`,
+      ['resp-prev-1'],
+    );
+    const reloadedResp = await database.first<{ fecha_seguimiento: string }>(
+      'SELECT fecha_seguimiento FROM respuesta_formulario WHERE id = ?',
+      ['resp-prev-1'],
+    );
+    expect(reloadedResp?.fecha_seguimiento).toBe('2026-10-16');
   });
 });

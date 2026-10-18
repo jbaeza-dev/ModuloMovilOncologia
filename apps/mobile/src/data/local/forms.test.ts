@@ -644,4 +644,125 @@ describe('formularios y persistencia clínica en SQLite', () => {
     const payload = JSON.parse(queue!.payload_json);
     expect(payload.record.respuestas).toEqual(storedAnswers);
   });
+
+  it('gestiona ciclo de vida diario: persiste sin recalcular metadatos temporales al continuar y limpia borrador', async () => {
+    const database = open();
+    await migrateDatabase(database);
+    await seedPatientContextIfEmpty(database, patientA, patientB);
+
+    const repoA = createPatientRepository(database, patientA, ids());
+
+    // 1. Estado inicial del día: sin entrega ni borrador
+    const statusBefore = await repoA.getDailyFormStatus('form-esas-muestra', '2026-10-18');
+    expect(statusBefore.hasSubmittedToday).toBe(false);
+    expect(statusBefore.hasActiveDraft).toBe(false);
+    expect(statusBefore.hasOlderDraft).toBe(false);
+
+    // 2. Crear borrador diario para 2026-10-18 con fecha fija
+    const draft1 = await repoA.getOrCreateDailyDraft('form-esas-muestra', '1.0', {
+      fechaSeguimiento: '2026-10-18',
+      periodoClave: 'dia:2026-10-18',
+      zonaHoraria: 'America/Santiago',
+      iniciadoEn: '2026-10-18T10:00:00.000Z',
+      ventanaDesde: '2026-10-17T10:00:00.000Z',
+      ventanaHasta: '2026-10-18T10:00:00.000Z',
+    });
+
+    expect(draft1.periodoClave).toBe('dia:2026-10-18');
+    expect(draft1.iniciadoEn).toBe('2026-10-18T10:00:00.000Z');
+    expect(draft1.ventanaDesde).toBe('2026-10-17T10:00:00.000Z');
+
+    // 3. Guardar avance parcial y sección
+    await repoA.saveDailyDraft(
+      { formId: 'form-esas-muestra', version: '1.0', periodoClave: 'dia:2026-10-18' },
+      { esas_dolor: 4 },
+      'sec-dolor',
+    );
+
+    // 4. Reabrir el borrador (incluso simulando que transcurrieron horas o días):
+    // CRÍTICO: los metadatos temporales (iniciadoEn, ventanaDesde, ventanaHasta, pasoActual)
+    // NO DEBEN recalcularse.
+    const draft2 = await repoA.getOrCreateDailyDraft('form-esas-muestra', '1.0', {
+      fechaSeguimiento: '2026-10-18',
+      periodoClave: 'dia:2026-10-18',
+      zonaHoraria: 'America/Santiago',
+      iniciadoEn: '2026-10-19T99:99:99.999Z', // Contexto nuevo con fecha distinta que NO debe sobreescribir
+      ventanaDesde: '2026-10-19T00:00:00.000Z',
+      ventanaHasta: '2026-10-19T23:59:59.000Z',
+    });
+
+    expect(draft2.entregaId).toBe(draft1.entregaId);
+    expect(draft2.iniciadoEn).toBe('2026-10-18T10:00:00.000Z'); // conserva original
+    expect(draft2.ventanaDesde).toBe('2026-10-17T10:00:00.000Z'); // conserva original
+    expect(draft2.pasoActual).toBe('sec-dolor'); // conserva sección
+    expect(draft2.respuestas).toEqual({ esas_dolor: 4 });
+
+    // 5. Confirmar entrega diaria
+    const deliveryId = await repoA.confirmDailySubmission(
+      {
+        formId: 'form-esas-muestra',
+        version: '1.0',
+        periodoClave: 'dia:2026-10-18',
+        deliveryId: draft1.entregaId,
+      },
+      { esas_dolor: 4, esas_fatiga: 2, esas_nauseas: 0 },
+    );
+
+    expect(deliveryId).toBe(draft1.entregaId);
+
+    // 6. Verificar que el borrador fue eliminado de SQLite
+    const draftAfterConfirm = await database.first(
+      'SELECT * FROM borrador_formulario WHERE paciente_id = ? AND periodo_clave = ?',
+      [patientA, 'dia:2026-10-18'],
+    );
+    expect(draftAfterConfirm).toBeNull();
+
+    // 7. Verificar que respuesta_formulario contiene los metadatos temporales heredados del borrador
+    const storedSubmission = await database.first<{
+      id: string;
+      fecha_seguimiento: string;
+      zona_horaria: string;
+      iniciado_en: string;
+      ventana_desde: string;
+      ventana_hasta: string;
+    }>('SELECT * FROM respuesta_formulario WHERE id = ?', [deliveryId]);
+
+    expect(storedSubmission).not.toBeNull();
+    expect(storedSubmission?.fecha_seguimiento).toBe('2026-10-18');
+    expect(storedSubmission?.zona_horaria).toBe('America/Santiago');
+    expect(storedSubmission?.iniciado_en).toBe('2026-10-18T10:00:00.000Z');
+    expect(storedSubmission?.ventana_desde).toBe('2026-10-17T10:00:00.000Z');
+
+    // 8. Estado del día después de confirmar
+    const statusAfter = await repoA.getDailyFormStatus('form-esas-muestra', '2026-10-18');
+    expect(statusAfter.hasSubmittedToday).toBe(true);
+    expect(statusAfter.hasActiveDraft).toBe(false);
+  });
+
+  it('listAssignedForms no duplica filas cuando coexisten borrador diario y borrador legacy', async () => {
+    const database = open();
+    await migrateDatabase(database);
+    await seedPatientContextIfEmpty(database, patientA, patientB);
+
+    const repoA = createPatientRepository(database, patientA, ids());
+
+    // Crear borrador legacy
+    await repoA.saveDraft('form-esas-muestra', '1.0', { esas_dolor: 1 }, 'del-legacy-1', 'legacy');
+
+    // Crear borrador diario
+    await repoA.getOrCreateDailyDraft('form-esas-muestra', '1.0', {
+      fechaSeguimiento: '2026-10-18',
+      periodoClave: 'dia:2026-10-18',
+      zonaHoraria: 'America/Santiago',
+      iniciadoEn: '2026-10-18T12:00:00.000Z',
+      ventanaDesde: '2026-10-17T12:00:00.000Z',
+      ventanaHasta: '2026-10-18T12:00:00.000Z',
+    });
+
+    // listAssignedForms sin duplicación
+    const assigned = await repoA.listAssignedForms('dia:2026-10-18');
+    const esasList = assigned.filter((f) => f.formulario_id === 'form-esas-muestra');
+    expect(esasList).toHaveLength(1);
+    expect(esasList[0].borrador_periodo_clave).toBe('dia:2026-10-18');
+  });
 });

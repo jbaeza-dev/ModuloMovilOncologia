@@ -1062,8 +1062,8 @@ describe('importación legacy de borradores y respuestas a SQLite', () => {
     // Insertar previamente borrador en SQLite
     await db.run(
       `INSERT INTO borrador_formulario (
-        paciente_id, formulario_id, version, entrega_id, respuestas_json, guardado_en, version_payload
-      ) VALUES (?, ?, ?, ?, ?, ?, 1)`,
+        paciente_id, formulario_id, version, periodo_clave, entrega_id, respuestas_json, guardado_en, version_payload
+      ) VALUES (?, ?, ?, 'legacy', ?, ?, ?, 1)`,
       [
         patientA,
         'form-esas-muestra',
@@ -1120,8 +1120,8 @@ describe('importación legacy de borradores y respuestas a SQLite', () => {
     // Insertar borrador en SQLite
     await db.run(
       `INSERT INTO borrador_formulario (
-        paciente_id, formulario_id, version, entrega_id, respuestas_json, guardado_en, version_payload
-      ) VALUES (?, ?, ?, ?, ?, ?, 1)`,
+        paciente_id, formulario_id, version, periodo_clave, entrega_id, respuestas_json, guardado_en, version_payload
+      ) VALUES (?, ?, ?, 'legacy', ?, ?, ?, 1)`,
       [
         patientA,
         'form-esas-muestra',

@@ -113,6 +113,13 @@ export type FormDraftRecord = {
   paciente_id: string;
   formulario_id: string;
   version: string;
+  periodo_clave: string;
+  fecha_seguimiento: string | null;
+  zona_horaria: string | null;
+  iniciado_en: string | null;
+  ventana_desde: string | null;
+  ventana_hasta: string | null;
+  paso_actual: string | null;
   entrega_id: string;
   respuestas_json: string;
   guardado_en: string;
@@ -127,6 +134,36 @@ export type FormSubmissionRecord = {
   respuestas_json: string;
   fecha_confirmacion: string;
   creado_localmente_en: string;
+  fecha_seguimiento: string | null;
+  zona_horaria: string | null;
+  iniciado_en: string | null;
+  ventana_desde: string | null;
+  ventana_hasta: string | null;
+};
+
+export type DailyFormStatus = {
+  hasSubmittedToday: boolean;
+  hasActiveDraft: boolean;
+  hasOlderDraft: boolean;
+  activeDraft: FormDraftRecord | null;
+  olderDraft: FormDraftRecord | null;
+  lastSubmission: FormSubmissionRecord | null;
+  todayTrackingDate: string;
+};
+
+export type DailyDraftData = {
+  formId: string;
+  version: string;
+  periodoClave: string;
+  entregaId: string;
+  fechaSeguimiento: string;
+  zonaHoraria: string;
+  iniciadoEn: string;
+  ventanaDesde: string;
+  ventanaHasta: string;
+  pasoActual: string | null;
+  respuestas: Record<string, FormAnswerValue>;
+  guardadoEn: string;
 };
 
 export type FormLegacyImportRecord = {
