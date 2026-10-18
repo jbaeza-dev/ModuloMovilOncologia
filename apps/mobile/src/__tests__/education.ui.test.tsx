@@ -624,7 +624,7 @@ describe('Pruebas de interfaz (UI) para módulo de Educación', () => {
   });
 
   describe('Visor ampliado de infografías (InfographicViewerScreen)', () => {
-    it('renderiza título, controles de zoom (100% a 300%) y botón de texto alternativo', async () => {
+    it('renderiza título, botón de cierre superpuesto, imagen a pantalla completa y controles de accesibilidad', async () => {
       mockUseLocalSearchParams.mockReturnValue({ recurso: 'edu-infografia-alimentacion' });
 
       await render(<InfographicViewerScreen />);
@@ -633,40 +633,106 @@ describe('Pruebas de interfaz (UI) para módulo de Educación', () => {
         expect(screen.getByText('Infografía: Guía nutricional en quimioterapia')).toBeTruthy();
       });
 
-      // Controles de zoom con áreas táctiles accesibles
-      expect(screen.getByText('100%')).toBeTruthy();
-      expect(screen.getByText('150%')).toBeTruthy();
-      expect(screen.getByText('200%')).toBeTruthy();
-      expect(screen.getByText('300%')).toBeTruthy();
+      // Botón accesible de cierre superpuesto
+      expect(screen.getByLabelText('Cerrar visor de infografía')).toBeTruthy();
+      expect(screen.getByText('Cerrar')).toBeTruthy();
 
       // Botón de texto alternativo
+      expect(
+        screen.getByLabelText('Leer contenido en texto accesible de la infografía'),
+      ).toBeTruthy();
       expect(screen.getByText('Texto accesible')).toBeTruthy();
 
-      // Botón accesible de cierre
-      expect(screen.getByText('Cerrar')).toBeTruthy();
+      // Botón de opciones accesibles de zoom
+      expect(screen.getByLabelText('Opciones accesibles de zoom')).toBeTruthy();
+      expect(screen.getByText('Zoom')).toBeTruthy();
+
+      // Componente interactivo de imagen a pantalla completa
+      expect(
+        screen.getByLabelText(/Infografía a pantalla completa:.*Guía nutricional en quimioterapia/),
+      ).toBeTruthy();
     });
 
-    it('permite cambiar el nivel de zoom y actualiza el anuncio de accesibilidad', async () => {
+    it('permite desplegar opciones de zoom accesibles y ajustar el nivel de ampliación con anuncios para TalkBack', async () => {
       mockUseLocalSearchParams.mockReturnValue({ recurso: 'edu-infografia-alimentacion' });
 
       await render(<InfographicViewerScreen />);
 
       await waitFor(() => {
-        expect(screen.getByText('150%')).toBeTruthy();
+        expect(screen.getByLabelText('Opciones accesibles de zoom')).toBeTruthy();
       });
 
-      const button150 = screen.getByText('150%');
-      fireEvent.press(button150);
+      // Abrir controles accesibles de zoom
+      const zoomOptionsBtn = screen.getByLabelText('Opciones accesibles de zoom');
+      fireEvent.press(zoomOptionsBtn);
 
       await waitFor(() => {
-        expect(screen.getByText('Nivel de zoom al 150%')).toBeTruthy();
+        expect(screen.getByLabelText('Aumentar zoom')).toBeTruthy();
+        expect(screen.getByLabelText('Reducir zoom')).toBeTruthy();
+        expect(screen.getByLabelText('Restablecer tamaño normal')).toBeTruthy();
       });
 
-      const button300 = screen.getByText('300%');
-      fireEvent.press(button300);
+      // Aumentar zoom (+): pasa de 100% a 175%
+      const zoomInBtn = screen.getByLabelText('Aumentar zoom');
+      fireEvent.press(zoomInBtn);
 
       await waitFor(() => {
-        expect(screen.getByText('Nivel de zoom al 300%')).toBeTruthy();
+        expect(screen.getByText('Nivel de zoom al 175%')).toBeTruthy();
+      });
+
+      // Aumentar zoom (+) nuevamente: pasa a 250%
+      fireEvent.press(zoomInBtn);
+
+      await waitFor(() => {
+        expect(screen.getByText('Nivel de zoom al 250%')).toBeTruthy();
+      });
+
+      // Reducir zoom (-): regresa a 175%
+      const zoomOutBtn = screen.getByLabelText('Reducir zoom');
+      fireEvent.press(zoomOutBtn);
+
+      await waitFor(() => {
+        expect(screen.getByText('Nivel de zoom al 175%')).toBeTruthy();
+      });
+
+      // Restablecer tamaño normal
+      const resetBtn = screen.getByLabelText('Restablecer tamaño normal');
+      fireEvent.press(resetBtn);
+
+      await waitFor(() => {
+        expect(screen.getByText('Imagen ajustada a la pantalla (100%)')).toBeTruthy();
+      });
+    });
+
+    it('admite acciones de accesibilidad TalkBack (activate, increment, decrement) directamente sobre la imagen', async () => {
+      mockUseLocalSearchParams.mockReturnValue({ recurso: 'edu-infografia-alimentacion' });
+
+      await render(<InfographicViewerScreen />);
+
+      await waitFor(() => {
+        expect(
+          screen.getByLabelText(
+            /Infografía a pantalla completa:.*Guía nutricional en quimioterapia/,
+          ),
+        ).toBeTruthy();
+      });
+
+      const imageNode = screen.getByLabelText(
+        /Infografía a pantalla completa:.*Guía nutricional en quimioterapia/,
+      );
+
+      // Doble toque accesible / activate: conmuta a 250%
+      fireEvent(imageNode, 'accessibilityAction', { nativeEvent: { actionName: 'activate' } });
+
+      await waitFor(() => {
+        expect(screen.getByText('Imagen ampliada al 250%')).toBeTruthy();
+      });
+
+      // Segundo activate: regresa a 100%
+      fireEvent(imageNode, 'accessibilityAction', { nativeEvent: { actionName: 'activate' } });
+
+      await waitFor(() => {
+        expect(screen.getByText('Imagen ajustada a la pantalla (100%)')).toBeTruthy();
       });
     });
 
