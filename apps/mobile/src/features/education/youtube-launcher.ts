@@ -13,6 +13,10 @@ export interface ExecuteYouTubeLaunchOptions {
   repository: AppRepository | null;
   runSave?: <T>(fn: () => Promise<T>) => Promise<T>;
   onPersistenceError?: (err: unknown) => void;
+  expectedPatientId?: string | null;
+  getCurrentPatientId?: () => string | null;
+  expectedEpoch?: number;
+  getCurrentEpoch?: () => number;
 }
 
 export interface ExecuteYouTubeLaunchResult {
@@ -32,6 +36,7 @@ export function resetYouTubeLaunchDebounceForTesting(): void {
 /**
  * Lanza un video educativo de YouTube previa comprobación de conectividad a internet,
  * protegiendo contra pulsaciones dobles y desacoplando la persistencia de la apertura física.
+ * Verifica la vigencia del contexto del paciente y su época antes de persistir en SQLite.
  */
 export async function executeYouTubeLaunch(
   options: ExecuteYouTubeLaunchOptions,
@@ -75,11 +80,42 @@ export async function executeYouTubeLaunch(
     result = await launchYouTubeVideo(options.youtubeVideoId);
   }
 
-  // 3. Persistencia rastreada si la apertura fue exitosa
+  // 3. Persistencia rastreada si la apertura fue exitosa y el contexto sigue vigente
   if (result.success && options.patientId && options.repository) {
+    const expectedPatientId = options.expectedPatientId ?? options.patientId;
+    const currentPatientId = options.getCurrentPatientId
+      ? options.getCurrentPatientId()
+      : options.patientId;
+
+    if (expectedPatientId && currentPatientId !== expectedPatientId) {
+      return result;
+    }
+
+    if (
+      options.expectedEpoch !== undefined &&
+      typeof options.getCurrentEpoch === 'function' &&
+      options.getCurrentEpoch() !== options.expectedEpoch
+    ) {
+      return result;
+    }
+
     const targetRepository = options.repository;
 
     const persistTask = async () => {
+      const activePatientId = options.getCurrentPatientId
+        ? options.getCurrentPatientId()
+        : options.patientId;
+      if (expectedPatientId && activePatientId !== expectedPatientId) {
+        return;
+      }
+      if (
+        options.expectedEpoch !== undefined &&
+        typeof options.getCurrentEpoch === 'function' &&
+        options.getCurrentEpoch() !== options.expectedEpoch
+      ) {
+        return;
+      }
+
       await targetRepository.education.recordYouTubeInteraction({
         contentId: options.resourceId,
         youtubeVideoId: options.youtubeVideoId ?? 'demo',

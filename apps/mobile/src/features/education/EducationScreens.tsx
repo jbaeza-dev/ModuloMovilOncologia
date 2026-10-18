@@ -1,5 +1,4 @@
 import Feather from '@expo/vector-icons/Feather';
-import * as Linking from 'expo-linking';
 import * as Network from 'expo-network';
 import { router, useLocalSearchParams } from 'expo-router';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
@@ -30,7 +29,6 @@ import type {
   EducationalLocalCopy,
   EducationalResource,
 } from '../../data/local/education/education-types';
-import { launchYouTubeVideo } from '../../data/local/education/youtube';
 import {
   readResourceFile,
   reconcileResourceCopies,
@@ -39,7 +37,6 @@ import {
 import { formatDate } from '../../data/local/repository';
 import { useFocusedList, useFocusedValue } from '../../hooks/use-local-query';
 import { useLocalData } from '../../providers/LocalDataProvider';
-import { isDemoMode } from '../../utils/environment';
 import { useAppTheme } from '../../providers/ThemeProvider';
 import { theme } from '../../theme';
 import {
@@ -82,8 +79,17 @@ export function EducationScreen() {
 
   const { items: categories } = useFocusedList(loadCategories);
 
-  const { isDownloading, progress, summaryMessage, startDownload, cancelDownload, clearSummary } =
-    useBulkInfographicDownload(refreshCopies);
+  const {
+    isDownloading,
+    isCancelling,
+    progress,
+    summaryMessage,
+    error: bulkError,
+    hasPending,
+    startDownload,
+    cancelDownload,
+    clearSummary,
+  } = useBulkInfographicDownload(refreshCopies);
 
   // Copias físicas válidas existentes en disco
   const physicallyPresentCopies = useMemo(() => {
@@ -340,33 +346,70 @@ export function EducationScreen() {
       </BodyText>
 
       {/* Banner de progreso o estado de descarga masiva */}
-      {isDownloading && progress ? (
+      {isDownloading ? (
         <View style={styles.downloadBanner} accessibilityLiveRegion="polite">
           <View style={styles.downloadBannerHeader}>
             <ActivityIndicator size="small" color={appTheme.colors.primary} />
             <Text style={styles.downloadBannerTitle}>
-              Guardando {progress.current} de {progress.total}… ({progress.percent}%)
+              {isCancelling
+                ? 'Cancelando…'
+                : progress
+                  ? `Guardando ${progress.current} de ${progress.total}… (${progress.percent}%)`
+                  : 'Iniciando descarga…'}
             </Text>
           </View>
-          <Text style={styles.downloadBannerSubtitle} numberOfLines={1}>
-            {progress.currentTitle}
-          </Text>
-          <VisualButton label="Cancelar descarga" secondary onPress={cancelDownload} />
+          {progress ? (
+            <Text style={styles.downloadBannerSubtitle} numberOfLines={1}>
+              {progress.currentTitle}
+            </Text>
+          ) : null}
+          <VisualButton
+            label={isCancelling ? 'Cancelando…' : 'Cancelar descarga'}
+            secondary
+            disabled={isCancelling}
+            onPress={cancelDownload}
+          />
         </View>
-      ) : summaryMessage ? (
+      ) : null}
+
+      {bulkError ? (
+        <View style={styles.errorBanner} accessibilityRole="alert">
+          <Feather name="alert-circle" size={20} color={appTheme.colors.error} />
+          <Text style={styles.errorBannerText}>{bulkError}</Text>
+        </View>
+      ) : null}
+
+      {!isDownloading && summaryMessage ? (
         <View style={styles.summaryBanner} accessibilityLiveRegion="polite">
-          <Feather name="check-circle" size={20} color={appTheme.colors.primary} />
-          <Text style={styles.summaryBannerText}>{summaryMessage}</Text>
-          <Pressable
-            accessibilityRole="button"
-            accessibilityLabel="Cerrar aviso"
-            onPress={clearSummary}
-            style={styles.summaryCloseIcon}
-          >
-            <Feather name="x" size={18} color={appTheme.colors.text} />
-          </Pressable>
+          <View style={styles.summaryBannerContentRow}>
+            <Feather
+              name={hasPending ? 'alert-triangle' : 'check-circle'}
+              size={20}
+              color={hasPending ? appTheme.colors.warning : appTheme.colors.primary}
+            />
+            <Text style={styles.summaryBannerText}>{summaryMessage}</Text>
+            <Pressable
+              accessibilityRole="button"
+              accessibilityLabel="Cerrar aviso"
+              onPress={clearSummary}
+              style={styles.summaryCloseIcon}
+            >
+              <Feather name="x" size={18} color={appTheme.colors.text} />
+            </Pressable>
+          </View>
+          {hasPending ? (
+            <View style={styles.summaryRetryContainer}>
+              <VisualButton
+                label="Reintentar pendientes"
+                secondary
+                onPress={() => void startDownload()}
+              />
+            </View>
+          ) : null}
         </View>
-      ) : (
+      ) : null}
+
+      {!isDownloading && !summaryMessage ? (
         <View style={styles.bulkDownloadCard}>
           <VisualButton
             label="Guardar todas las infografías sin conexión"
@@ -374,7 +417,7 @@ export function EducationScreen() {
             onPress={() => void startDownload()}
           />
         </View>
-      )}
+      ) : null}
 
       {/* Acceso a copias locales descargadas unificadas */}
       <Pressable
@@ -418,7 +461,7 @@ export function EducationScreen() {
 
 export function EducationCategoryScreen() {
   const { theme: appTheme } = useAppTheme();
-  const { repository, patientId, runSave, database } = useLocalData();
+  const { repository, patientId, runSave, database, manager } = useLocalData();
   const styles = useStyles();
 
   const [formatFilter, setFormatFilter] = useState<EducationalFormatFilter>('all');
@@ -485,6 +528,10 @@ export function EducationCategoryScreen() {
         patientId,
         repository,
         runSave,
+        expectedPatientId: patientId,
+        getCurrentPatientId: () => manager.getPatientId(),
+        expectedEpoch: manager.getContextEpoch(),
+        getCurrentEpoch: () => manager.getContextEpoch(),
       });
       if (!res.success && res.error) {
         Alert.alert('Video online', res.error);
@@ -929,7 +976,7 @@ export function EducationCategoryScreen() {
 
 export function EducationResourceScreen() {
   const { theme: appTheme } = useAppTheme();
-  const { patientId, repository, runSave, saving, database } = useLocalData();
+  const { patientId, repository, runSave, saving, database, manager } = useLocalData();
   const styles = useStyles();
   const { recurso } = useLocalSearchParams<{ recurso?: string }>();
 
@@ -1045,25 +1092,21 @@ export function EducationResourceScreen() {
         return;
       }
 
-      await runSave(async () => {
-        await repository.education.recordYouTubeInteraction({
-          contentId: effectiveResource.id,
-          youtubeVideoId: effectiveResource.youtubeVideoId!,
-          versionOrigen: effectiveResource.version,
-        });
+      const res = await executeYouTubeLaunch({
+        resourceId: effectiveResource.id,
+        youtubeVideoId: effectiveResource.youtubeVideoId,
+        version: effectiveResource.version,
+        patientId,
+        repository,
+        runSave,
+        expectedPatientId: patientId,
+        getCurrentPatientId: () => manager.getPatientId(),
+        expectedEpoch: manager.getContextEpoch(),
+        getCurrentEpoch: () => manager.getContextEpoch(),
       });
 
-      if (isDemoMode()) {
-        try {
-          await Linking.openURL('https://www.youtube.com');
-        } catch {
-          setOpError('No se pudo abrir YouTube en este dispositivo.');
-        }
-      } else {
-        const launchResult = await launchYouTubeVideo(effectiveResource.youtubeVideoId);
-        if (!launchResult.success) {
-          setOpError(launchResult.error || 'No se pudo abrir YouTube en este dispositivo.');
-        }
+      if (!res.success && res.error) {
+        setOpError(res.error);
       }
       refreshStatus();
     } catch {
@@ -1663,15 +1706,21 @@ function useStyles() {
       color: appTheme.colors.secondary,
     },
     summaryBanner: {
-      flexDirection: 'row',
-      alignItems: 'center',
-      gap: 8,
+      flexDirection: 'column',
+      alignItems: 'flex-start',
       padding: theme.spacing.md,
       borderRadius: theme.radius.md,
       backgroundColor: appTheme.colors.mutedSurface,
       borderWidth: 1,
       borderColor: appTheme.colors.primary,
       marginVertical: theme.spacing.sm,
+      gap: theme.spacing.xs,
+    },
+    summaryBannerContentRow: {
+      flexDirection: 'row',
+      alignItems: 'center',
+      gap: 8,
+      width: '100%',
     },
     summaryBannerText: {
       flex: 1,
@@ -1684,6 +1733,27 @@ function useStyles() {
       minHeight: 48,
       justifyContent: 'center',
       alignItems: 'center',
+    },
+    summaryRetryContainer: {
+      width: '100%',
+      marginTop: 4,
+    },
+    errorBanner: {
+      flexDirection: 'row',
+      alignItems: 'center',
+      gap: 8,
+      padding: theme.spacing.md,
+      borderRadius: theme.radius.md,
+      backgroundColor: appTheme.colors.errorContainer,
+      borderWidth: 1,
+      borderColor: appTheme.colors.error,
+      marginVertical: theme.spacing.xs,
+    },
+    errorBannerText: {
+      flex: 1,
+      fontSize: 14,
+      fontWeight: '600',
+      color: appTheme.colors.onErrorContainer,
     },
     bulkDownloadCard: {
       marginVertical: theme.spacing.xs,

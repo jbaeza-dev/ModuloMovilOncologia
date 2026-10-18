@@ -101,7 +101,7 @@ La verificación en entorno nativo Android evalúa las capacidades que exceden e
 | Formateo de código                         | `pnpm run format:check`   | 0 errores (Prettier 100% conforme)                        |
 | Linter estático                            | `pnpm run lint`           | 0 errores, 0 advertencias (`eslint . --max-warnings=0`)   |
 | Tipado estricto                            | `pnpm run typecheck`      | 0 errores (TypeScript `tsc --noEmit`)                     |
-| Pruebas unitarias e integración (Vitest)   | `pnpm run test:local`     | 32 suites pasadas, 425 pruebas pasadas, 0 fallidas        |
-| Pruebas de componentes de UI (Jest / RNTL) | `pnpm run test:ui`        | 9 suites pasadas, 141 pruebas pasadas, 0 fallidas         |
+| Pruebas unitarias e integración (Vitest)   | `pnpm run test:local`     | 35 suites pasadas, 454 pruebas pasadas, 0 fallidas        |
+| Pruebas de componentes de UI (Jest / RNTL) | `pnpm run test:ui`        | 9 suites pasadas, 157 pruebas pasadas, 0 fallidas         |
 | Diagnóstico del entorno Expo               | `pnpm run doctor`         | 21/21 comprobaciones exitosas                             |
 | Exportación de bundle Android              | `pnpm run bundle:android` | Exportación JavaScript para Hermes completada sin errores |

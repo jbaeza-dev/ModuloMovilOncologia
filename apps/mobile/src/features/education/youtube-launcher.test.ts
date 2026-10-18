@@ -147,4 +147,52 @@ describe('executeYouTubeLaunch', () => {
     expect(second.success).toBe(false);
     expect(second.error).toContain('Apertura en curso');
   });
+
+  it('no persiste la interacción si el paciente cambió durante la comprobación o apertura de red', async () => {
+    vi.spyOn(EnvModule, 'isDemoMode').mockReturnValue(true);
+
+    let activePatientId = 'patient-1';
+    vi.mocked(Linking.openURL).mockImplementation(async () => {
+      activePatientId = 'patient-2';
+      return true as never;
+    });
+
+    const result = await executeYouTubeLaunch({
+      resourceId: 'res-vid-5',
+      youtubeVideoId: 'dQw4w9WgXcQ',
+      version: '1.0.0',
+      patientId: 'patient-1',
+      expectedPatientId: 'patient-1',
+      getCurrentPatientId: () => activePatientId,
+      repository: mockRepo,
+    });
+
+    expect(result.success).toBe(true);
+    expect(Linking.openURL).toHaveBeenCalled();
+    expect(mockRepo.education.recordYouTubeInteraction).not.toHaveBeenCalled();
+  });
+
+  it('no persiste la interacción si la época del contexto expiró durante la apertura', async () => {
+    vi.spyOn(EnvModule, 'isDemoMode').mockReturnValue(true);
+
+    let currentEpoch = 1;
+    vi.mocked(Linking.openURL).mockImplementation(async () => {
+      currentEpoch = 2;
+      return true as never;
+    });
+
+    const result = await executeYouTubeLaunch({
+      resourceId: 'res-vid-6',
+      youtubeVideoId: 'dQw4w9WgXcQ',
+      version: '1.0.0',
+      patientId: 'patient-1',
+      expectedEpoch: 1,
+      getCurrentEpoch: () => currentEpoch,
+      repository: mockRepo,
+    });
+
+    expect(result.success).toBe(true);
+    expect(Linking.openURL).toHaveBeenCalled();
+    expect(mockRepo.education.recordYouTubeInteraction).not.toHaveBeenCalled();
+  });
 });

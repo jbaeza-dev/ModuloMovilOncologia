@@ -100,6 +100,9 @@ describe('Coordinador de descargas masivas de infografías (bulk-download-coordi
         descargadoEn: '2026-10-18T10:00:00Z',
         estado: 'descargado',
         revisionDeclarada: false,
+        metadataLocal: {
+          versionOrigen: '1.0.0',
+        },
       },
     ];
 
@@ -220,5 +223,166 @@ describe('Coordinador de descargas masivas de infografías (bulk-download-coordi
     expect(result.downloaded).toBe(1);
     expect(result.message).toContain('cancelada');
     expect(result.message).toContain('1 infografía completada');
+    expect(result.pendingResources.length).toBe(2);
+    expect(result.pendingResources.map((r) => r.id)).toEqual(['info-2', 'info-3']);
+  });
+
+  it('actualiza infografías cuando la versión del catálogo es superior a la copia local existente', async () => {
+    const catalog = new InMemoryEducationalCatalogReader([
+      {
+        id: 'info-upgrade',
+        title: 'Guía de cuidados v2',
+        category: 1,
+        categoryName: 'General',
+        description: 'Nueva versión actualizada',
+        type: 'infografia',
+        version: '2.0.0',
+      },
+    ]);
+
+    const existingCopy: EducationalLocalCopy = {
+      patientId: 'paciente-1',
+      contentId: 'info-upgrade',
+      rutaRelativa: 'info-upgrade.v1.png',
+      formato: 'png',
+      tamanoBytes: 2048,
+      descargadoEn: '2026-10-01T10:00:00Z',
+      estado: 'descargado',
+      revisionDeclarada: false,
+      metadataLocal: {
+        versionOrigen: '1.0.0',
+        titulo: 'Guía de cuidados v1',
+      },
+    };
+
+    const repo = createMockRepo([existingCopy]);
+    const downloadSpy = vi
+      .spyOn(storageService, 'downloadAndSaveInfographic')
+      .mockResolvedValue(undefined);
+    vi.spyOn(resourceStorage, 'resourceFileExists').mockReturnValue(true);
+
+    const result = await runBulkInfographicDownload({
+      patientId: 'paciente-1',
+      repository: repo,
+      database: mockDatabase,
+      catalogReader: catalog,
+    });
+
+    expect(result.alreadyUpToDate).toBe(false);
+    expect(result.downloaded).toBe(1);
+    expect(result.skipped).toBe(0);
+    expect(downloadSpy).toHaveBeenCalledTimes(1);
+    // Debe pasar localCopy para asegurar compensación atómica conservando el archivo previo hasta el commit
+    expect(downloadSpy).toHaveBeenCalledWith(
+      expect.objectContaining({
+        resource: expect.objectContaining({ id: 'info-upgrade', version: '2.0.0' }),
+        localCopy: expect.objectContaining({
+          contentId: 'info-upgrade',
+          metadataLocal: expect.objectContaining({ versionOrigen: '1.0.0' }),
+        }),
+      }),
+    );
+  });
+
+  it('previene ejecuciones simultáneas para el mismo paciente uniendo la segunda llamada a la promesa en curso', async () => {
+    const catalog = new InMemoryEducationalCatalogReader([
+      {
+        id: 'info-slow',
+        title: 'Infografía pesada',
+        category: 1,
+        categoryName: 'General',
+        description: 'Desc',
+        type: 'infografia',
+        version: '1.0.0',
+      },
+    ]);
+
+    const repo = createMockRepo([]);
+    vi.spyOn(resourceStorage, 'resourceFileExists').mockReturnValue(false);
+
+    let resolveDownload!: () => void;
+    const downloadPromise = new Promise<void>((res) => {
+      resolveDownload = res;
+    });
+
+    const downloadSpy = vi
+      .spyOn(storageService, 'downloadAndSaveInfographic')
+      .mockImplementation(async () => downloadPromise);
+
+    // Lanzar dos descargas concurrentes para el mismo paciente
+    const run1 = runBulkInfographicDownload({
+      patientId: 'paciente-concurrente',
+      repository: repo,
+      database: mockDatabase,
+      catalogReader: catalog,
+    });
+
+    const run2 = runBulkInfographicDownload({
+      patientId: 'paciente-concurrente',
+      repository: repo,
+      database: mockDatabase,
+      catalogReader: catalog,
+    });
+
+    // Desbloquear la descarga
+    resolveDownload();
+
+    const [res1, res2] = await Promise.all([run1, run2]);
+
+    expect(res1).toBe(res2);
+    expect(res1.downloaded).toBe(1);
+    expect(downloadSpy).toHaveBeenCalledTimes(1);
+  });
+
+  it('registra fallos parciales, capturando errores y recursos pendientes para reintento', async () => {
+    const catalog = new InMemoryEducationalCatalogReader([
+      {
+        id: 'info-ok',
+        title: 'Infografía Exitosa',
+        category: 1,
+        categoryName: 'General',
+        description: 'Desc',
+        type: 'infografia',
+        version: '1.0.0',
+      },
+      {
+        id: 'info-fail',
+        title: 'Infografía con Fallo',
+        category: 1,
+        categoryName: 'General',
+        description: 'Desc',
+        type: 'infografia',
+        version: '1.0.0',
+      },
+    ]);
+
+    const repo = createMockRepo([]);
+    vi.spyOn(resourceStorage, 'resourceFileExists').mockReturnValue(false);
+    vi.spyOn(storageService, 'downloadAndSaveInfographic').mockImplementation(
+      async ({ resource }) => {
+        if (resource.id === 'info-fail') {
+          throw new Error('Disco lleno al guardar archivo');
+        }
+      },
+    );
+
+    const result = await runBulkInfographicDownload({
+      patientId: 'paciente-1',
+      repository: repo,
+      database: mockDatabase,
+      catalogReader: catalog,
+    });
+
+    expect(result.downloaded).toBe(1);
+    expect(result.failed).toBe(1);
+    expect(result.errors.length).toBe(1);
+    expect(result.errors[0]).toEqual({
+      resourceId: 'info-fail',
+      title: 'Infografía con Fallo',
+      message: 'Disco lleno al guardar archivo',
+    });
+    expect(result.pendingResources.length).toBe(1);
+    expect(result.pendingResources[0].id).toBe('info-fail');
+    expect(result.message).toContain('Se guardaron 1 de 2 infografías. 1 pendiente.');
   });
 });

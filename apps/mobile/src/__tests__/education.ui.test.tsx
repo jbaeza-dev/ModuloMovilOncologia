@@ -94,9 +94,14 @@ const mockUseLocalData = jest.fn().mockReturnValue({
   patientId: 'paciente-a',
   repository: mockRepository,
   runSave: jest.fn().mockImplementation((fn: () => Promise<unknown>) => fn()),
+  trackOperation: jest.fn().mockImplementation((fn: () => Promise<unknown>) => fn()),
   saving: false,
   database: {},
   isClosing: false,
+  manager: {
+    getPatientId: () => 'paciente-a',
+    getContextEpoch: () => 1,
+  },
 });
 
 jest.mock('../providers/LocalDataProvider', () => ({
@@ -131,6 +136,7 @@ import {
 } from '../features/education/EducationScreens';
 import { InfographicViewerScreen } from '../features/education/InfographicViewerScreen';
 import { resetYouTubeLaunchDebounceForTesting } from '../features/education/youtube-launcher';
+import * as bulkCoordinator from '../features/education/bulk-download-coordinator';
 
 describe('Pruebas de interfaz (UI) para módulo de Educación', () => {
   beforeEach(() => {
@@ -809,6 +815,151 @@ describe('Pruebas de interfaz (UI) para módulo de Educación', () => {
 
       await waitFor(() => {
         expect(screen.getByText('Guardar todas las infografías sin conexión')).toBeTruthy();
+      });
+    });
+
+    it('al presionar guardar todas, reporta resultados parciales y permite reintentar pendientes', async () => {
+      mockUseLocalSearchParams.mockReturnValue({});
+      const runBulkSpy = jest
+        .spyOn(bulkCoordinator, 'runBulkInfographicDownload')
+        .mockResolvedValueOnce({
+          total: 2,
+          downloaded: 1,
+          skipped: 0,
+          failed: 1,
+          pendingResources: [
+            {
+              id: 'fail-info',
+              title: 'Infografía con error',
+              category: 1,
+              categoryName: 'General',
+              description: 'Desc',
+              type: 'infografia',
+              version: '1.0.0',
+            },
+          ],
+          errors: [
+            { resourceId: 'fail-info', title: 'Infografía con error', message: 'Disco lleno' },
+          ],
+          cancelled: false,
+          alreadyUpToDate: false,
+          message: 'Se guardaron 1 de 2 infografías. 1 pendiente.',
+        });
+
+      await render(<EducationScreen />);
+
+      const saveAllBtn = await screen.findByText('Guardar todas las infografías sin conexión');
+      await fireEvent.press(saveAllBtn);
+
+      await waitFor(() => {
+        expect(screen.getByText('Se guardaron 1 de 2 infografías. 1 pendiente.')).toBeTruthy();
+        expect(screen.getByText('Reintentar pendientes')).toBeTruthy();
+      });
+
+      // Presionar reintentar pendientes invoca nuevamente la descarga masiva
+      runBulkSpy.mockResolvedValueOnce({
+        total: 1,
+        downloaded: 1,
+        skipped: 0,
+        failed: 0,
+        pendingResources: [],
+        errors: [],
+        cancelled: false,
+        alreadyUpToDate: false,
+        message: '1 infografía guardada para ver sin conexión.',
+      });
+
+      const retryBtn = screen.getByText('Reintentar pendientes');
+      await fireEvent.press(retryBtn);
+
+      await waitFor(() => {
+        expect(screen.getByText('1 infografía guardada para ver sin conexión.')).toBeTruthy();
+        expect(screen.queryByText('Reintentar pendientes')).toBeNull();
+      });
+    });
+
+    it('muestra estado Cancelando… mientras se interrumpe la descarga masiva', async () => {
+      mockUseLocalSearchParams.mockReturnValue({});
+      let resolveRun!: (val: bulkCoordinator.BulkDownloadResult) => void;
+      const runningPromise = new Promise<bulkCoordinator.BulkDownloadResult>((res) => {
+        resolveRun = res;
+      });
+
+      jest.spyOn(bulkCoordinator, 'runBulkInfographicDownload').mockImplementation(async (opts) => {
+        opts.onProgress?.({
+          current: 1,
+          total: 2,
+          percent: 50,
+          currentTitle: 'Infografía en curso',
+        });
+        return runningPromise;
+      });
+
+      await render(<EducationScreen />);
+
+      const saveAllBtn = await screen.findByText('Guardar todas las infografías sin conexión');
+      await fireEvent.press(saveAllBtn);
+
+      await waitFor(() => {
+        expect(screen.getByText(/Guardando 1 de 2/)).toBeTruthy();
+        expect(screen.getByText('Cancelar descarga')).toBeTruthy();
+      });
+
+      // Presionar cancelar
+      const cancelBtn = screen.getByText('Cancelar descarga');
+      await fireEvent.press(cancelBtn);
+
+      await waitFor(() => {
+        expect(screen.getAllByText('Cancelando…').length).toBeGreaterThanOrEqual(1);
+      });
+
+      // Resolver la descarga cancelada
+      resolveRun({
+        total: 2,
+        downloaded: 1,
+        skipped: 0,
+        failed: 0,
+        pendingResources: [],
+        errors: [],
+        cancelled: true,
+        alreadyUpToDate: false,
+        message: 'Descarga cancelada. Se conservaron 1 infografía completada.',
+      });
+
+      await waitFor(() => {
+        expect(screen.getByText(/Descarga cancelada/)).toBeTruthy();
+      });
+    });
+
+    it('en Educación, el toque en tarjeta de video invoca executeYouTubeLaunch con guardas de época y paciente', async () => {
+      mockUseLocalSearchParams.mockReturnValue({ categoria: '1' });
+      setEducationalCatalogReader(
+        new InMemoryEducationalCatalogReader([
+          {
+            id: 'test-vid-guard',
+            title: 'Video cuidados especiales',
+            category: 1,
+            categoryName: 'General',
+            description: 'Desc',
+            type: 'video',
+            version: '1.0.0',
+            youtubeVideoId: 'xyz123',
+          },
+        ]),
+      );
+
+      await render(<EducationCategoryScreen />);
+
+      const videoCard = await screen.findByLabelText(
+        'Video cuidados especiales, Video · Requiere internet',
+      );
+      await fireEvent.press(videoCard);
+
+      expect(mockOpenURL).toHaveBeenCalledWith('https://www.youtube.com');
+      expect(mockRepository.education.recordYouTubeInteraction).toHaveBeenCalledWith({
+        contentId: 'test-vid-guard',
+        youtubeVideoId: 'xyz123',
+        versionOrigen: '1.0.0',
       });
     });
   });
