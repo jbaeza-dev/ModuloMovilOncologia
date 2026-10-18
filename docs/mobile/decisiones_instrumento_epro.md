@@ -1,8 +1,8 @@
 # Registro de Decisiones y Ambigüedades del Instrumento ePRO
 
 **Documento fuente revisado:** `Cuestionario de Seguimiento Domiciliario en Quimioterapia.docx`  
-**Estado:** Fixtures técnicos demostrativos provisionales (sin validación clínica ni diagnóstico médico automatizado).  
-**Fecha:** 17 de octubre de 2026.
+**Estado:** Fixtures técnicos demostrativos v1.1.0 alineados al 100% con el Word (v1.0.0 preservada para inmutabilidad y entregas históricas en SQLite).  
+**Fecha:** 18 de octubre de 2026.
 
 ---
 

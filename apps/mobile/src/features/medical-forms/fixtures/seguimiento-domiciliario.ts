@@ -3,16 +3,25 @@ import type {
   MedicalFormBundleQuestion,
 } from '../../../data/local/forms/form-types';
 
+export {
+  SEGUIMIENTO_DOMICILIARIO_V1_0_0_BUNDLE_ITEM,
+  SEGUIMIENTO_DOMICILIARIO_V1_0_0_FORM_ID,
+  SEGUIMIENTO_DOMICILIARIO_V1_0_0_PREGUNTAS,
+  SEGUIMIENTO_DOMICILIARIO_V1_0_0_SECCIONES,
+  SEGUIMIENTO_DOMICILIARIO_V1_0_0_VERSION,
+} from './seguimiento-domiciliario-v1';
+
 /**
- * Fixture técnico provisional del instrumento suministrado (Cuestionario de Seguimiento Domiciliario ePRO).
- * Incorpora las 41 preguntas definidas en 11 módulos, preservando textos, alternativas y códigos de referencia.
+ * Fixture del instrumento clínico suministrado (Cuestionario de Seguimiento Domiciliario ePRO v1.1.0).
+ * Incorpora las 41 preguntas definidas en 11 módulos, con enunciados, alternativas y condiciones
+ * 100% fieles al documento original de monitoreo domiciliario de pacientes en quimioterapia.
  *
  * AVISO ARQUITECTÓNICO:
  * Este instrumento constituye un caso de compatibilidad y prueba técnica demostrativa en modo demo.
  * No atribuye diagnóstico médico, clasificación automática de gravedad ni atención clínica en tiempo real.
  */
 export const SEGUIMIENTO_DOMICILIARIO_FORM_ID = 'seguimiento-domiciliario';
-export const SEGUIMIENTO_DOMICILIARIO_VERSION = '1.0.0';
+export const SEGUIMIENTO_DOMICILIARIO_VERSION = '1.1.0';
 
 export const SEGUIMIENTO_DOMICILIARIO_SECCIONES = [
   { id: 'sec-modulo-0', titulo: 'Contexto y dispositivos', orden: 0 },
@@ -235,16 +244,17 @@ export const SEGUIMIENTO_DOMICILIARIO_PREGUNTAS: MedicalFormBundleQuestion[] = [
       opciones: [
         {
           valor: 'leves',
-          etiqueta: 'Leves: Tengo un poco de asco, pero puedo comer y tomar líquidos normalmente.',
+          etiqueta: 'Leves: Siento asco, pero puedo comer y tomar líquidos casi normal.',
         },
         {
           valor: 'moderadas',
-          etiqueta: 'Moderadas: Me cuesta comer, tomo menos líquidos de lo normal, pero no vomito.',
+          etiqueta:
+            'Moderadas: Me cuesta comer, he comido bastante menos de lo habitual, pero logro tomar líquidos.',
         },
         {
           valor: 'severas',
           etiqueta:
-            'Severas: El asco es constante, no puedo comer casi nada y apenas tolero el agua.',
+            'Severas: El asco es constante y no me permite comer ni tomar casi nada de líquido.',
         },
       ],
     },
@@ -326,12 +336,12 @@ export const SEGUIMIENTO_DOMICILIARIO_PREGUNTAS: MedicalFormBundleQuestion[] = [
       },
       opciones: [
         {
-          valor: 'alimentos',
-          etiqueta: 'No, solo comida, saliva o líquido amarillo/transparente.',
+          valor: 'normal_comida_liquido',
+          etiqueta: 'No, era solo comida o líquido normal/amarillento.',
         },
         {
-          valor: 'sangre_cafe',
-          etiqueta: 'Sí, vi sangre roja fresca o tenía aspecto oscuro como borra de café.',
+          valor: 'sangre_granos_cafe',
+          etiqueta: 'Sí, tenía sangre roja o parecía tener "granos de café" oscuros.',
         },
       ],
     },
@@ -495,7 +505,7 @@ export const SEGUIMIENTO_DOMICILIARIO_PREGUNTAS: MedicalFormBundleQuestion[] = [
   {
     preguntaId: 'P4',
     texto:
-      '¿Sientes molestias, ardor, dolor o heridas en la boca, encías, lengua o garganta (mucositis)?',
+      '¿Sientes dolor, ardor, enrojecimiento o tienes llagas (heridas) dentro de la boca, lengua, encías o al tragar?',
     tipo: 'single_choice',
     orden: 19,
     requerida: true,
@@ -510,7 +520,7 @@ export const SEGUIMIENTO_DOMICILIARIO_PREGUNTAS: MedicalFormBundleQuestion[] = [
   },
   {
     preguntaId: 'P4.1',
-    texto: '¿Cómo se ven y se sienten las molestias en tu boca?',
+    texto: '¿Qué observas dentro de tu boca?',
     tipo: 'multiple_choice',
     orden: 20,
     requerida: true,
@@ -520,27 +530,27 @@ export const SEGUIMIENTO_DOMICILIARIO_PREGUNTAS: MedicalFormBundleQuestion[] = [
       visibleWhen: { op: 'eq', questionId: 'P4', value: 'si' },
       opciones: [
         {
-          valor: 'rojo_ardor',
-          etiqueta: 'Boca o encías rojas, me arde con comidas ácidas, saladas o calientes.',
+          valor: 'roja_seca_sensible',
+          etiqueta: 'Solo está roja, seca o sensible, sin heridas visibles.',
         },
         {
-          valor: 'aftas',
-          etiqueta: 'Tengo llagas, aftas o pequeñas heridas dolorosas en la lengua o labios.',
+          valor: 'llagas_ulceras_pequenas',
+          etiqueta: 'Tengo llagas o úlceras pequeñas.',
         },
         {
-          valor: 'manchas_blancas',
-          etiqueta: 'Tengo placas o manchas blancas como leche cortada en la lengua o mejillas.',
+          valor: 'placas_blancas',
+          etiqueta: 'Tengo placas blancas (como leche cortada) en la lengua o mejillas.',
         },
         {
-          valor: 'sangrado',
-          etiqueta: 'Me sangran las encías o las heridas de la boca espontáneamente.',
+          valor: 'heridas_sangran',
+          etiqueta: 'Las heridas sangran solas o al comer.',
         },
       ],
     },
   },
   {
     preguntaId: 'P4.2',
-    texto: '¿Qué tanto te impide este dolor comer o beber?',
+    texto: '¿Cómo afecta esto a tu alimentación hoy?',
     tipo: 'single_choice',
     orden: 21,
     requerida: true,
@@ -550,20 +560,23 @@ export const SEGUIMIENTO_DOMICILIARIO_PREGUNTAS: MedicalFormBundleQuestion[] = [
       visibleWhen: { op: 'eq', questionId: 'P4', value: 'si' },
       opciones: [
         {
-          valor: 'como_bien',
-          etiqueta: 'Puedo comer y tragar alimentos normales sin gran dificultad.',
+          valor: 'normales_blandos',
+          etiqueta:
+            'Me molesta un poco, pero puedo comer alimentos normales o blandos sin problema.',
         },
         {
-          valor: 'solo_blandos',
-          etiqueta: 'Solo puedo tragar alimentos blandos o molidos; los sólidos me duelen mucho.',
+          valor: 'papillas_sopas_liquidos',
+          etiqueta:
+            'Me duele bastante; solo puedo comer papillas, sopas o líquidos, pero logro alimentarme.',
         },
         {
-          valor: 'solo_liquidos',
-          etiqueta: 'Solo puedo tragar líquidos; no tolero ningún alimento sólido.',
+          valor: 'poco_agua_dificultad',
+          etiqueta:
+            'El dolor es tan intenso que solo puedo pasar un poco de agua o líquidos con mucha dificultad.',
         },
         {
-          valor: 'no_pasa_agua',
-          etiqueta: 'No puedo tragar ni siquiera mi propia saliva o el agua del dolor tan intenso.',
+          valor: 'no_tragar_nada',
+          etiqueta: 'No puedo tragar absolutamente nada, ni agua ni mis medicamentos en pastillas.',
         },
       ],
     },
@@ -573,7 +586,7 @@ export const SEGUIMIENTO_DOMICILIARIO_PREGUNTAS: MedicalFormBundleQuestion[] = [
   {
     preguntaId: 'P5',
     texto:
-      '¿Has sentido hormigueo, adormecimiento, sensación de pinchazos o dolor en las manos o en los pies?',
+      '¿Sientes hormigueo, adormecimiento, "corrientazos" o dolor en los dedos de las manos o de los pies?',
     tipo: 'single_choice',
     orden: 22,
     requerida: true,
@@ -588,7 +601,7 @@ export const SEGUIMIENTO_DOMICILIARIO_PREGUNTAS: MedicalFormBundleQuestion[] = [
   },
   {
     preguntaId: 'P5.1',
-    texto: '¿Qué tanto interfiere esta molestia en tus manos o pies para hacer tus cosas?',
+    texto: '¿Cómo afecta esta sensación a tus actividades diarias?',
     tipo: 'single_choice',
     orden: 23,
     requerida: true,
@@ -598,19 +611,18 @@ export const SEGUIMIENTO_DOMICILIARIO_PREGUNTAS: MedicalFormBundleQuestion[] = [
       visibleWhen: { op: 'eq', questionId: 'P5', value: 'si' },
       opciones: [
         {
-          valor: 'leve',
-          etiqueta:
-            'Molestia leve: Lo siento, pero no me impide abotonarme la ropa, escribir o caminar.',
+          valor: 'leve_hormigueo',
+          etiqueta: 'Es solo un hormigueo leve que no me molesta para hacer mis cosas.',
         },
         {
-          valor: 'moderada',
+          valor: 'cosas_finas_manos',
           etiqueta:
-            'Molestia moderada: Me cuesta tomar cosas pequeñas, abotonarme o siento los pies acolchados al caminar.',
+            'Me cuesta hacer cosas finas con las manos (como abrocharme botones, escribir, abrir frascos o sostener una taza sin que se caiga).',
         },
         {
-          valor: 'severa',
+          valor: 'caminar_equilibrio_pies',
           etiqueta:
-            'Molestia severa: Se me caen las cosas de las manos, tropiezo o pierdo el equilibrio al caminar.',
+            'Me cuesta caminar bien, siento que no piso firme, tropiezo o pierdo el equilibrio por tener los pies dormidos.',
         },
       ],
     },
@@ -618,7 +630,7 @@ export const SEGUIMIENTO_DOMICILIARIO_PREGUNTAS: MedicalFormBundleQuestion[] = [
   {
     preguntaId: 'P5.2',
     texto:
-      'Al tocar objetos fríos, abrir el refrigerador o tomar agua fría, ¿sientes dolor o calambres en las manos o garganta?',
+      '¿Sientes calambres o dolor en la garganta o en las manos cuando tocas cosas frías o tomas líquidos fríos?',
     tipo: 'single_choice',
     orden: 24,
     requerida: true,
@@ -627,23 +639,22 @@ export const SEGUIMIENTO_DOMICILIARIO_PREGUNTAS: MedicalFormBundleQuestion[] = [
       sourceCode: 'P5.2',
       visibleWhen: { op: 'eq', questionId: 'P5', value: 'si' },
       opciones: [
-        { valor: 'no', etiqueta: 'No me molesta el frío.' },
+        { valor: 'no', etiqueta: 'No.' },
         {
-          valor: 'un_poco',
-          etiqueta: 'Sí, siento pinchazos molestos, pero se pasa rápido al alejar el frío.',
+          valor: 'molestia_frio_pasa_rapido',
+          etiqueta: 'Sí, me da molestia o dolor con el frío, pero pasa rápido al calentarme.',
         },
         {
-          valor: 'intenso_espasmo',
+          valor: 'cierra_garganta_cuesta_respirar',
           etiqueta:
-            'Sí, el dolor es muy intenso o siento que se me cierra la garganta al respirar aire frío o tomar agua helada.',
+            'Sí, siento que se me cierra la garganta o me cuesta respirar al tomar o respirar algo frío.',
         },
       ],
     },
   },
   {
     preguntaId: 'P5.3',
-    texto:
-      'Comparado con el ciclo anterior de quimioterapia, ¿esta molestia en manos/pies ha empeorado?',
+    texto: 'En comparación con tu ciclo anterior de quimioterapia, ¿esta sensación ha cambiado?',
     tipo: 'single_choice',
     orden: 25,
     requerida: true,
@@ -653,12 +664,12 @@ export const SEGUIMIENTO_DOMICILIARIO_PREGUNTAS: MedicalFormBundleQuestion[] = [
       visibleWhen: { op: 'eq', questionId: 'P5', value: 'si' },
       opciones: [
         {
-          valor: 'igual_o_mejor',
-          etiqueta: 'Está igual que antes o ha ido mejorando con los días.',
+          valor: 'igual_o_suave',
+          etiqueta: 'Está igual o es más suave.',
         },
         {
-          valor: 'peor_o_nueva',
-          etiqueta: 'Está claramente peor, dura más días o es la primera vez que me pasa.',
+          valor: 'nueva_empeorado_no_quita',
+          etiqueta: 'Es nueva o ha empeorado y ya no se quita entre un ciclo y otro.',
         },
       ],
     },
@@ -693,21 +704,23 @@ export const SEGUIMIENTO_DOMICILIARIO_PREGUNTAS: MedicalFormBundleQuestion[] = [
       visibleWhen: { op: 'eq', questionId: 'P6', value: 'si' },
       opciones: [
         {
-          valor: 'enrojecimiento_leve',
-          etiqueta: 'Enrojecimiento leve o sensación de hormigueo, sin dolor.',
+          valor: 'nada',
+          etiqueta: 'No tengo nada en las palmas ni plantas.',
         },
         {
-          valor: 'enrojecimiento_dolor',
+          valor: 'rojas_secas_sin_dolor',
           etiqueta:
-            'Enrojecimiento con hinchazón y dolor que me molesta para caminar o tomar cosas.',
+            'Están un poco rojas o secas, pero no me duelen al caminar ni al usar las manos.',
         },
         {
-          valor: 'ampollas_descamacion',
-          etiqueta: 'Ampollas, descamación de la piel, heridas abiertas o dolor severo.',
+          valor: 'rojas_hinchadas_pelando_dolor',
+          etiqueta:
+            'Están rojas, hinchadas, se están pelando y me duelen al caminar o al sostener objetos.',
         },
         {
-          valor: 'sin_molestias_manos_pies',
-          etiqueta: 'No tengo molestias en manos ni pies (la molestia es en el brazo del suero).',
+          valor: 'ampollas_heridas_dolor_severo',
+          etiqueta:
+            'Tienen ampollas, heridas abiertas o costras, y el dolor no me deja caminar ni usar mis manos.',
         },
       ],
     },
@@ -730,15 +743,15 @@ export const SEGUIMIENTO_DOMICILIARIO_PREGUNTAS: MedicalFormBundleQuestion[] = [
         ],
       },
       opciones: [
-        { valor: 'normal', etiqueta: 'La piel y la vena se ven normales.' },
+        { valor: 'todo_normal', etiqueta: 'Todo normal.' },
         {
-          valor: 'dura_oscura',
-          etiqueta: 'La vena se siente como un cordón duro o se puso de color oscuro/morado.',
+          valor: 'morado_pinchazo_sin_dolor',
+          etiqueta: 'Está un poco morado por el pinchazo, pero sin dolor importante.',
         },
         {
-          valor: 'roja_caliente_ardor',
+          valor: 'hinchado_rojo_duro_caliente_arde',
           etiqueta:
-            'La zona donde estuvo la aguja está roja, caliente, muy hinchada o con ardor/dolor intenso.',
+            'Está muy hinchado, rojo, duro, caliente o me arde/duele mucho esa zona del brazo.',
         },
       ],
     },
@@ -748,7 +761,7 @@ export const SEGUIMIENTO_DOMICILIARIO_PREGUNTAS: MedicalFormBundleQuestion[] = [
   {
     preguntaId: 'P7',
     texto:
-      '¿Has notado moretones nuevos sin haberte golpeado, puntos rojos en la piel o sangrado por la nariz, encías, orina o deposiciones?',
+      '¿Has tenido algún tipo de sangrado o te han salido moretones o puntitos rojos en la piel sin haberte golpeado?',
     tipo: 'single_choice',
     orden: 29,
     requerida: true,
@@ -763,7 +776,7 @@ export const SEGUIMIENTO_DOMICILIARIO_PREGUNTAS: MedicalFormBundleQuestion[] = [
   },
   {
     preguntaId: 'P7.1',
-    texto: '¿Dónde o cómo has notado este sangrado o manchas en la piel?',
+    texto: '¿Qué tipo de sangrado o marcas has notado?',
     tipo: 'multiple_choice',
     orden: 30,
     requerida: true,
@@ -773,26 +786,27 @@ export const SEGUIMIENTO_DOMICILIARIO_PREGUNTAS: MedicalFormBundleQuestion[] = [
       visibleWhen: { op: 'eq', questionId: 'P7', value: 'si' },
       opciones: [
         {
-          valor: 'moretones',
-          etiqueta: 'Moretones en brazos o piernas que aparecieron solos.',
-        },
-        {
-          valor: 'puntos_rojos',
-          etiqueta: 'Puntos rojos o morados pequeños en las piernas o brazos (petequias).',
-        },
-        {
-          valor: 'sangrado_nariz_encias',
+          valor: 'pequeno_sangrado_menos_5min',
           etiqueta:
-            'Sangrado de encías al lavarme los dientes o sangre por la nariz que para en pocos minutos.',
+            'Pequeño sangrado de encías al cepillarme los dientes o gotitas de sangre al sonarme la nariz, que se detiene en menos de 5 minutos.',
         },
         {
-          valor: 'orina_deposiciones_rojas',
-          etiqueta: 'Orina rosada/roja, o deposiciones negras como carbón o con sangre visible.',
-        },
-        {
-          valor: 'sangrado_abundante',
+          valor: 'moretones_petequias',
           etiqueta:
-            'Sangrado por la nariz o una herida que no para después de 10 minutos de presionar.',
+            'Me salieron varios moretones nuevos sin golpearme o muchos puntitos rojos pequeños en las piernas o brazos (petequias).',
+        },
+        {
+          valor: 'sangrado_nariz_encias_10_15min',
+          etiqueta:
+            'Sangrado de nariz o encías abundante que no se detiene después de apretar durante 10 a 15 minutos.',
+        },
+        {
+          valor: 'orina_sangre_ardor',
+          etiqueta: 'Orina de color rojo o rosado (con sangre) o ardor fuerte al orinar.',
+        },
+        {
+          valor: 'sangrado_vaginal_tos_sangre',
+          etiqueta: 'Sangrado vaginal abundante fuera de mi regla normal, o tos con sangre.',
         },
       ],
     },
@@ -802,7 +816,7 @@ export const SEGUIMIENTO_DOMICILIARIO_PREGUNTAS: MedicalFormBundleQuestion[] = [
   {
     preguntaId: 'P8',
     texto:
-      '¿Has sentido falta de aire, ahogo, palpitaciones en el pecho o dolor en las piernas en las últimas 24 horas?',
+      '¿Sientes falta de aire al respirar, dolor en el pecho, palpitaciones o se te ha hinchado alguna pierna?',
     tipo: 'single_choice',
     orden: 31,
     requerida: true,
@@ -817,7 +831,7 @@ export const SEGUIMIENTO_DOMICILIARIO_PREGUNTAS: MedicalFormBundleQuestion[] = [
   },
   {
     preguntaId: 'P8.1',
-    texto: '¿En qué momento sientes que te falta el aire o te ahogas?',
+    texto: '¿Cómo es la falta de aire o dificultad para respirar?',
     tipo: 'single_choice',
     orden: 32,
     requerida: true,
@@ -827,28 +841,29 @@ export const SEGUIMIENTO_DOMICILIARIO_PREGUNTAS: MedicalFormBundleQuestion[] = [
       visibleWhen: { op: 'eq', questionId: 'P8', value: 'si' },
       opciones: [
         {
-          valor: 'esfuerzo',
-          etiqueta:
-            'Solo cuando hago esfuerzos grandes (subir escaleras rápido, caminar apurado/a).',
-        },
-        {
-          valor: 'caminar',
-          etiqueta: 'Al caminar lento en plano o al vestirme y hacer cosas cotidianas.',
-        },
-        {
-          valor: 'reposo',
-          etiqueta: 'Estando sentado/a o acostado/a sin moverme, siento que no me entra el aire.',
-        },
-        {
           valor: 'no_falta_aire',
-          etiqueta: 'No siento falta de aire (el síntoma es en el pecho o en las piernas).',
+          etiqueta: 'No tengo falta de aire.',
+        },
+        {
+          valor: 'canso_escaleras_rapido',
+          etiqueta:
+            'Me canso un poco más de lo normal al subir escaleras o caminar rápido, pero se me pasa al descansar.',
+        },
+        {
+          valor: 'falta_aire_minimas_almohadas',
+          etiqueta:
+            'Me falta el aire haciendo cosas mínimas (como vestirme o ir al baño) o necesito dormir con más almohadas para no ahogarme.',
+        },
+        {
+          valor: 'falta_aire_reposo',
+          etiqueta: 'Me falta el aire estando totalmente quieto/a y en reposo.',
         },
       ],
     },
   },
   {
     preguntaId: 'P8.2',
-    texto: '¿Sientes alguno de estos problemas en el pecho?',
+    texto: '¿Tienes alguno de estos síntomas en el pecho?',
     tipo: 'multiple_choice',
     orden: 33,
     requerida: true,
@@ -858,24 +873,25 @@ export const SEGUIMIENTO_DOMICILIARIO_PREGUNTAS: MedicalFormBundleQuestion[] = [
       visibleWhen: { op: 'eq', questionId: 'P8', value: 'si' },
       opciones: [
         {
-          valor: 'ninguno_pecho',
-          etiqueta: 'Ninguno de los anteriores en el pecho.',
+          valor: 'ninguno',
+          etiqueta: 'Ninguno.',
           esExcluyente: true,
         },
         {
-          valor: 'dolor_opresion',
-          etiqueta: 'Dolor o sensación de opresión fuerte en el centro del pecho que se aprieta.',
+          valor: 'dolor_presion_pesadez',
+          etiqueta: 'Dolor, presión o pesadez en el centro del pecho.',
         },
         {
-          valor: 'palpitaciones',
-          etiqueta: 'El corazón late muy rápido, desordenado o siento brincos en el pecho.',
+          valor: 'palpitaciones_reposo',
+          etiqueta:
+            'Siento que el corazón me late muy rápido o desordenado (palpitaciones) estando en reposo.',
         },
       ],
     },
   },
   {
     preguntaId: 'P8.3',
-    texto: '¿Has notado hinchazón o dolor en una sola pierna?',
+    texto: '¿Se te han hinchado las piernas o los tobillos?',
     tipo: 'single_choice',
     orden: 34,
     requerida: true,
@@ -884,15 +900,15 @@ export const SEGUIMIENTO_DOMICILIARIO_PREGUNTAS: MedicalFormBundleQuestion[] = [
       sourceCode: 'P8.3',
       visibleWhen: { op: 'eq', questionId: 'P8', value: 'si' },
       opciones: [
-        { valor: 'no_piernas', etiqueta: 'No, mis piernas están normales.' },
+        { valor: 'no', etiqueta: 'No.' },
         {
-          valor: 'hinchazon_ambas',
-          etiqueta: 'Tengo ambas piernas un poco hinchadas por igual (al final del día).',
+          valor: 'tobillos_hinchados_final_dia',
+          etiqueta: 'Sí, ambos tobillos están un poco hinchados al final del día.',
         },
         {
-          valor: 'hinchazon_dolor_una',
+          valor: 'una_pierna_repente_duele_caliente',
           etiqueta:
-            'Una sola pierna (pantorrilla o muslo) está hinchada, roja, caliente o muy dolorosa.',
+            'Sí, una sola pierna (o pantorrilla) se hinchó de repente, me duele, está roja o caliente.',
         },
       ],
     },
@@ -1022,7 +1038,7 @@ export const SEGUIMIENTO_DOMICILIARIO_PREGUNTAS: MedicalFormBundleQuestion[] = [
   {
     preguntaId: 'P10',
     texto:
-      '¿Hay algo más sobre cómo te sientes hoy que quieras registrar o comentarle a tu equipo de salud?',
+      '¿Hay algún otro síntoma, duda o comentario que quieras contarle a tu equipo médico o de enfermería y que no hayamos preguntado arriba?',
     tipo: 'text',
     orden: 40,
     requerida: false,

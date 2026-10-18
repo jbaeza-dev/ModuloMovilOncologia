@@ -4,6 +4,7 @@ import { ingestMedicalFormBundle, type Clock } from './form-ingestion';
 import {
   SEGUIMIENTO_DOMICILIARIO_BUNDLE_ITEM,
   SEGUIMIENTO_DOMICILIARIO_FORM_ID,
+  SEGUIMIENTO_DOMICILIARIO_V1_0_0_BUNDLE_ITEM,
   SEGUIMIENTO_DOMICILIARIO_VERSION,
 } from '../../../features/medical-forms/fixtures/seguimiento-domiciliario';
 
@@ -14,6 +15,7 @@ export async function seedMedicalFormsDemo(
   now: Clock = () => new Date().toISOString(),
 ): Promise<void> {
   const demoForms: MedicalFormBundle['formularios'] = [
+    SEGUIMIENTO_DOMICILIARIO_V1_0_0_BUNDLE_ITEM,
     SEGUIMIENTO_DOMICILIARIO_BUNDLE_ITEM,
     {
       formularioId: 'form-qlq30-muestra',
@@ -178,6 +180,14 @@ export async function seedMedicalFormsDemo(
 
   const demoAssignments: MedicalFormBundle['asignaciones'] = [];
   for (const target of targetAssignments) {
+    // Retirar versiones previas activas del mismo formulario para este paciente
+    await connection.run(
+      `UPDATE formulario_asignacion_cache
+       SET estado_conocido = 'retirada'
+       WHERE paciente_id = ? AND formulario_id = ? AND version != ? AND estado_conocido = 'activa'`,
+      [target.pacienteId, target.formularioId, target.version],
+    );
+
     const existing = await connection.first<{ estado_conocido: string }>(
       'SELECT estado_conocido FROM formulario_asignacion_cache WHERE paciente_id = ? AND formulario_id = ? AND version = ?',
       [target.pacienteId, target.formularioId, target.version],

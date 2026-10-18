@@ -11,6 +11,10 @@ import {
 } from './forms/form-types';
 import { createPatientRepository, seedPatientContextIfEmpty } from './repository';
 import { SAMPLE_MEDICAL_FORMS } from '../../features/medical-forms/sample-medical-forms';
+import {
+  SEGUIMIENTO_DOMICILIARIO_VERSION,
+  SEGUIMIENTO_DOMICILIARIO_V1_0_0_BUNDLE_ITEM,
+} from '../../features/medical-forms/fixtures/seguimiento-domiciliario';
 import { createSqliteTestHarness, ids, patientA, patientB } from './testing/sqlite-test-harness';
 
 const harness = createSqliteTestHarness();
@@ -862,14 +866,18 @@ describe('formularios y persistencia clínica en SQLite', () => {
 
     const repoA = createPatientRepository(database, patientA, ids());
 
-    const draft = await repoA.getOrCreateDailyDraft('seguimiento-domiciliario', '1.0.0', {
-      fechaSeguimiento: '2026-10-18',
-      periodoClave: 'dia:2026-10-18',
-      zonaHoraria: 'America/Santiago',
-      iniciadoEn: '2026-10-18T12:00:00.000Z',
-      ventanaDesde: '2026-10-17T12:00:00.000Z',
-      ventanaHasta: '2026-10-18T12:00:00.000Z',
-    });
+    const draft = await repoA.getOrCreateDailyDraft(
+      'seguimiento-domiciliario',
+      SEGUIMIENTO_DOMICILIARIO_VERSION,
+      {
+        fechaSeguimiento: '2026-10-18',
+        periodoClave: 'dia:2026-10-18',
+        zonaHoraria: 'America/Santiago',
+        iniciadoEn: '2026-10-18T12:00:00.000Z',
+        ventanaDesde: '2026-10-17T12:00:00.000Z',
+        ventanaHasta: '2026-10-18T12:00:00.000Z',
+      },
+    );
 
     // P1 está en 'no', por lo que P1.1 (síntomas de fiebre) está OCULTA.
     // Si answers contiene P1.1 con un valor, este debe filtrarse antes de persistir.
@@ -892,7 +900,7 @@ describe('formularios y persistencia clínica en SQLite', () => {
     const confirmedId = await repoA.confirmDailySubmission(
       {
         formId: 'seguimiento-domiciliario',
-        version: '1.0.0',
+        version: SEGUIMIENTO_DOMICILIARIO_VERSION,
         periodoClave: 'dia:2026-10-18',
         deliveryId: draft.entregaId,
       },
@@ -1026,14 +1034,18 @@ describe('formularios y persistencia clínica en SQLite', () => {
 
     const repoA = createPatientRepository(database, patientA, ids());
 
-    const draft = await repoA.getOrCreateDailyDraft('seguimiento-domiciliario', '1.0.0', {
-      fechaSeguimiento: '2026-10-18',
-      periodoClave: 'dia:2026-10-18',
-      zonaHoraria: 'America/Santiago',
-      iniciadoEn: '2026-10-18T10:00:00.000Z',
-      ventanaDesde: '2026-10-17T10:00:00.000Z',
-      ventanaHasta: '2026-10-18T10:00:00.000Z',
-    });
+    const draft = await repoA.getOrCreateDailyDraft(
+      'seguimiento-domiciliario',
+      SEGUIMIENTO_DOMICILIARIO_VERSION,
+      {
+        fechaSeguimiento: '2026-10-18',
+        periodoClave: 'dia:2026-10-18',
+        zonaHoraria: 'America/Santiago',
+        iniciadoEn: '2026-10-18T10:00:00.000Z',
+        ventanaDesde: '2026-10-17T10:00:00.000Z',
+        ventanaHasta: '2026-10-18T10:00:00.000Z',
+      },
+    );
 
     const answersFirst = {
       'P0.1': 'no',
@@ -1054,7 +1066,7 @@ describe('formularios y persistencia clínica en SQLite', () => {
     const firstResult = await repoA.confirmDailySubmission(
       {
         formId: 'seguimiento-domiciliario',
-        version: '1.0.0',
+        version: SEGUIMIENTO_DOMICILIARIO_VERSION,
         periodoClave: 'dia:2026-10-18',
         deliveryId: draft.entregaId,
       },
@@ -1085,7 +1097,7 @@ describe('formularios y persistencia clínica en SQLite', () => {
     const retryResult = await repoA.confirmDailySubmission(
       {
         formId: 'seguimiento-domiciliario',
-        version: '1.0.0',
+        version: SEGUIMIENTO_DOMICILIARIO_VERSION,
         periodoClave: 'dia:2026-10-18',
         deliveryId: draft.entregaId,
       },
@@ -1093,5 +1105,82 @@ describe('formularios y persistencia clínica en SQLite', () => {
     );
 
     expect(retryResult).toBe(draft.entregaId);
+  });
+
+  it('migración y upgrade: una base con 1.0.0 se actualiza a 1.1.0 sin VersionInmutableError, retira asignación 1.0.0 y preserva entregas históricas', async () => {
+    const database = open();
+    await migrateDatabase(database);
+    await seedPatientContextIfEmpty(database, patientA, patientB);
+
+    // Simular estado previo: paciente tiene asignación activa de 1.0.0
+    await ingestMedicalFormBundle(database, {
+      formularios: [SEGUIMIENTO_DOMICILIARIO_V1_0_0_BUNDLE_ITEM],
+      asignaciones: [
+        {
+          pacienteId: patientA,
+          formularioId: 'seguimiento-domiciliario',
+          version: '1.0.0',
+          estado: 'activa',
+        },
+      ],
+    });
+
+    const repoA = createPatientRepository(database, patientA, ids());
+
+    // Entrega histórica en 1.0.0
+    const historicalAnswers = {
+      'P0.1': 'no',
+      P1: 'no',
+      P2: 'no',
+      'P3.A': 'no',
+      'P3.B': 'no',
+      P4: 'no',
+      P5: 'no',
+      P6: 'no',
+      P7: 'no',
+      P8: 'no',
+      'P9.A': 'no',
+      'P9.B': 'no',
+      P10: 'Reporte en v1.0.0',
+    };
+    await repoA.confirmSubmission(
+      'seguimiento-domiciliario',
+      '1.0.0',
+      historicalAnswers,
+      'sub-v1-hist',
+    );
+
+    // Ejecutar seedMedicalFormsDemo (debe promover a 1.1.0 de forma idempotente y sin error)
+    await expect(seedMedicalFormsDemo(database, patientA, patientB)).resolves.not.toThrow();
+
+    // Comprobar estado de asignaciones
+    const assignV1 = await database.first<{ estado_conocido: string }>(
+      'SELECT estado_conocido FROM formulario_asignacion_cache WHERE paciente_id = ? AND formulario_id = ? AND version = ?',
+      [patientA, 'seguimiento-domiciliario', '1.0.0'],
+    );
+    expect(assignV1?.estado_conocido).toBe('retirada');
+
+    const assignV11 = await database.first<{ estado_conocido: string }>(
+      'SELECT estado_conocido FROM formulario_asignacion_cache WHERE paciente_id = ? AND formulario_id = ? AND version = ?',
+      [patientA, 'seguimiento-domiciliario', '1.1.0'],
+    );
+    expect(assignV11?.estado_conocido).toBe('activa');
+
+    // La entrega histórica 1.0.0 se recupera intacta
+    const pastSub = await repoA.getSubmission('sub-v1-hist');
+    expect(pastSub).toBeTruthy();
+    expect(pastSub?.version).toBe('1.0.0');
+    expect(pastSub?.respuestas.P10).toBe('Reporte en v1.0.0');
+
+    // La definición 1.0.0 sigue existiendo en el caché
+    const defV1 = await repoA.getFormDefinition('seguimiento-domiciliario', '1.0.0');
+    expect(defV1).toBeTruthy();
+    expect(defV1?.version).toBe('1.0.0');
+
+    // La definición 1.1.0 existe y tiene las 41 preguntas actualizadas
+    const defV11 = await repoA.getFormDefinition('seguimiento-domiciliario', '1.1.0');
+    expect(defV11).toBeTruthy();
+    expect(defV11?.version).toBe('1.1.0');
+    expect(defV11?.preguntas).toHaveLength(41);
   });
 });
