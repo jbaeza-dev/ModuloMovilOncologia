@@ -130,13 +130,21 @@ export function DailyFollowUpScreen() {
 
   const handleStartOrContinue = async () => {
     if (!mainForm || !repository) return;
+    const targetFormId = dailyStatus?.activeDraft?.formulario_id ?? mainForm.formulario_id;
+    const targetVersion = dailyStatus?.activeDraft?.version ?? mainForm.version;
+    const targetPeriodoClave = dailyStatus?.activeDraft?.periodo_clave;
+
     try {
       await runTracked(async () => {
-        return repository.getOrCreateDailyDraft(mainForm.formulario_id, mainForm.version);
+        return repository.getOrCreateDailyDraft(targetFormId, targetVersion, targetPeriodoClave);
       });
       router.push({
         pathname: '/formulario/cuestionario',
-        params: { id: mainForm.formulario_id, version: mainForm.version },
+        params: {
+          id: targetFormId,
+          version: targetVersion,
+          ...(targetPeriodoClave ? { periodoClave: targetPeriodoClave } : {}),
+        },
       });
     } catch (error) {
       Alert.alert(
@@ -146,40 +154,48 @@ export function DailyFollowUpScreen() {
     }
   };
 
-  const handleDiscardOlderDraft = async (periodoClave: string) => {
-    if (!repository || !mainForm) return;
+  const handleDiscardDraft = async (
+    draft: {
+      formulario_id: string;
+      version: string;
+      periodo_clave: string;
+    },
+    isToday = false,
+  ) => {
+    if (!repository) return;
 
-    Alert.alert(
-      'Descartar borrador anterior',
-      '¿Deseas descartar las respuestas que no completaste en días anteriores?',
-      [
-        { text: 'Cancelar', style: 'cancel' },
-        {
-          text: 'Descartar',
-          style: 'destructive',
-          onPress: async () => {
-            setDiscardingOlder(true);
-            try {
-              await runTracked(async () => {
-                await repository.discardDraft(
-                  mainForm.formulario_id,
-                  mainForm.version,
-                  periodoClave,
-                );
-              });
-              refresh();
-            } catch (error) {
-              Alert.alert(
-                'Error',
-                error instanceof Error ? error.message : 'No se pudo descartar el borrador.',
+    const title = isToday ? 'Descartar borrador' : 'Descartar borrador anterior';
+    const message = isToday
+      ? '¿Deseas descartar el borrador en progreso de la versión anterior e iniciar el nuevo cuestionario de hoy?'
+      : '¿Deseas descartar las respuestas que no completaste en días anteriores?';
+
+    Alert.alert(title, message, [
+      { text: 'Cancelar', style: 'cancel' },
+      {
+        text: 'Descartar',
+        style: 'destructive',
+        onPress: async () => {
+          setDiscardingOlder(true);
+          try {
+            await runTracked(async () => {
+              await repository.discardDraft(
+                draft.formulario_id,
+                draft.version,
+                draft.periodo_clave,
               );
-            } finally {
-              setDiscardingOlder(false);
-            }
-          },
+            });
+            refresh();
+          } catch (error) {
+            Alert.alert(
+              'Error',
+              error instanceof Error ? error.message : 'No se pudo descartar el borrador.',
+            );
+          } finally {
+            setDiscardingOlder(false);
+          }
         },
-      ],
-    );
+      },
+    ]);
   };
 
   const primaryAssigned = selectDailyFormAssignment(assigned);
@@ -262,7 +278,7 @@ export function DailyFollowUpScreen() {
                     label="Descartar borrador anterior"
                     secondary
                     disabled={discardingOlder}
-                    onPress={() => handleDiscardOlderDraft(dailyStatus.olderDraft!.periodo_clave)}
+                    onPress={() => handleDiscardDraft(dailyStatus.olderDraft!)}
                   />
                 </View>
               </View>
@@ -319,10 +335,28 @@ export function DailyFollowUpScreen() {
                 </View>
               ) : dailyStatus?.hasActiveDraft ? (
                 <View style={styles.actionContainer}>
+                  {dailyStatus.activeDraft &&
+                  mainForm &&
+                  dailyStatus.activeDraft.version !== mainForm.version ? (
+                    <BodyText style={styles.versionNotice}>
+                      Tienes un registro en progreso de una versión anterior. Puedes continuarlo y
+                      registrarlo, o descartarlo para comenzar la versión actualizada.
+                    </BodyText>
+                  ) : null}
                   <VisualButton
                     label="Continuar mi registro de hoy"
                     onPress={handleStartOrContinue}
                   />
+                  {dailyStatus.activeDraft &&
+                  mainForm &&
+                  dailyStatus.activeDraft.version !== mainForm.version ? (
+                    <VisualButton
+                      label="Descartar e iniciar versión actualizada"
+                      secondary
+                      disabled={discardingOlder}
+                      onPress={() => handleDiscardDraft(dailyStatus.activeDraft!, true)}
+                    />
+                  ) : null}
                 </View>
               ) : (
                 <View style={styles.actionContainer}>
@@ -415,6 +449,11 @@ function createStyles(colors: {
       fontSize: 16,
       fontWeight: '700',
       color: colors.text,
+    },
+    versionNotice: {
+      fontSize: 14,
+      color: colors.secondary,
+      lineHeight: 20,
     },
   });
 }

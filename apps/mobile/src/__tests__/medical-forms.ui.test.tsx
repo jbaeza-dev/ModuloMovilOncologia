@@ -1,6 +1,6 @@
 /// <reference types="jest" />
 
-import { fireEvent, render, screen, waitFor } from '@testing-library/react-native';
+import { act, fireEvent, render, screen, waitFor } from '@testing-library/react-native';
 import React from 'react';
 import { Alert } from 'react-native';
 
@@ -372,6 +372,204 @@ describe('Pruebas de UI: Componentes y Pantallas de Formularios Médicos', () =>
         expect(screen.getByText('Continuar borrador anterior')).toBeTruthy();
         expect(screen.getByText('Descartar borrador anterior')).toBeTruthy();
       });
+    });
+
+    it('muestra aviso y opciones para borrador de hoy de versión previa (1.0.0 frente a 1.1.0 asignada)', async () => {
+      mockRepository.listAssignedForms.mockResolvedValue([
+        {
+          formulario_id: 'seguimiento-domiciliario',
+          version: '1.1.0',
+          titulo: 'Seguimiento domiciliario',
+          descripcion: 'Cuestionario diario',
+          estado_conocido: 'activa',
+          periodicidad: 'daily',
+        },
+      ]);
+
+      mockRepository.getDailyFormStatus.mockResolvedValue({
+        hasSubmittedToday: false,
+        hasActiveDraft: true,
+        hasOlderDraft: false,
+        activeDraft: {
+          formulario_id: 'seguimiento-domiciliario',
+          version: '1.0.0',
+          periodo_clave: 'dia:2026-10-18',
+          fecha_seguimiento: '2026-10-18',
+          entrega_id: 'draft-today-v1',
+        },
+        olderDraft: null,
+        lastSubmission: null,
+        todayTrackingDate: '2026-10-18',
+      });
+
+      mockRepository.getFormDefinition.mockResolvedValue({
+        formulario_id: 'seguimiento-domiciliario',
+        version: '1.1.0',
+        titulo: 'Seguimiento domiciliario',
+        descripcion: 'Cuestionario diario',
+        duracion_estimada_min: 5,
+        preguntas: [],
+      });
+
+      await render(<DailyFollowUpScreen />);
+
+      await waitFor(() => {
+        expect(
+          screen.getByText(/Tienes un registro en progreso de una versión anterior/),
+        ).toBeTruthy();
+        expect(screen.getByText('Continuar mi registro de hoy')).toBeTruthy();
+        expect(screen.getByText('Descartar e iniciar versión actualizada')).toBeTruthy();
+      });
+
+      // Al presionar continuar, navega con la identidad del borrador (1.0.0)
+      const btnContinue = screen.getByText('Continuar mi registro de hoy');
+      await fireEvent.press(btnContinue);
+
+      await waitFor(() => {
+        expect(mockRepository.getOrCreateDailyDraft).toHaveBeenCalledWith(
+          'seguimiento-domiciliario',
+          '1.0.0',
+          'dia:2026-10-18',
+        );
+        expect(mockRouterPush).toHaveBeenCalledWith({
+          pathname: '/formulario/cuestionario',
+          params: {
+            id: 'seguimiento-domiciliario',
+            version: '1.0.0',
+            periodoClave: 'dia:2026-10-18',
+          },
+        });
+      });
+    });
+
+    it('descartar borrador de hoy de versión previa (1.0.0) invoca discardDraft con la versión y período del borrador activo', async () => {
+      const alertSpy = jest.spyOn(Alert, 'alert');
+
+      mockRepository.listAssignedForms.mockResolvedValue([
+        {
+          formulario_id: 'seguimiento-domiciliario',
+          version: '1.1.0',
+          titulo: 'Seguimiento domiciliario',
+          descripcion: 'Cuestionario diario',
+          estado_conocido: 'activa',
+          periodicidad: 'daily',
+        },
+      ]);
+
+      mockRepository.getDailyFormStatus.mockResolvedValue({
+        hasSubmittedToday: false,
+        hasActiveDraft: true,
+        hasOlderDraft: false,
+        activeDraft: {
+          formulario_id: 'seguimiento-domiciliario',
+          version: '1.0.0',
+          periodo_clave: 'dia:2026-10-18',
+          fecha_seguimiento: '2026-10-18',
+          entrega_id: 'draft-today-v1',
+        },
+        olderDraft: null,
+        lastSubmission: null,
+        todayTrackingDate: '2026-10-18',
+      });
+
+      mockRepository.getFormDefinition.mockResolvedValue({
+        formulario_id: 'seguimiento-domiciliario',
+        version: '1.1.0',
+        titulo: 'Seguimiento domiciliario',
+        descripcion: 'Cuestionario diario',
+        duracion_estimada_min: 5,
+        preguntas: [],
+      });
+
+      await render(<DailyFollowUpScreen />);
+
+      await waitFor(() => {
+        expect(screen.getByText('Descartar e iniciar versión actualizada')).toBeTruthy();
+      });
+
+      const btnDiscard = screen.getByText('Descartar e iniciar versión actualizada');
+      await fireEvent.press(btnDiscard);
+
+      expect(alertSpy).toHaveBeenCalled();
+      const alertCall = alertSpy.mock.calls[0];
+      const buttons = alertCall[2];
+      const discardBtn = buttons?.find((b: { text?: string }) => b.text === 'Descartar');
+      expect(discardBtn).toBeTruthy();
+
+      await act(async () => {
+        await discardBtn?.onPress?.();
+      });
+
+      expect(mockRepository.discardDraft).toHaveBeenCalledWith(
+        'seguimiento-domiciliario',
+        '1.0.0',
+        'dia:2026-10-18',
+      );
+    });
+
+    it('descartar borrador anterior utiliza la versión y período del registro (1.0.0)', async () => {
+      const alertSpy = jest.spyOn(Alert, 'alert');
+
+      mockRepository.listAssignedForms.mockResolvedValue([
+        {
+          formulario_id: 'seguimiento-domiciliario',
+          version: '1.1.0',
+          titulo: 'Seguimiento domiciliario',
+          descripcion: 'Cuestionario diario',
+          estado_conocido: 'activa',
+          periodicidad: 'daily',
+        },
+      ]);
+
+      mockRepository.getDailyFormStatus.mockResolvedValue({
+        hasSubmittedToday: false,
+        hasActiveDraft: false,
+        hasOlderDraft: true,
+        activeDraft: null,
+        olderDraft: {
+          formulario_id: 'seguimiento-domiciliario',
+          version: '1.0.0',
+          periodo_clave: 'dia:2026-10-17',
+          fecha_seguimiento: '2026-10-17',
+          entrega_id: 'draft-older-v1',
+        },
+        lastSubmission: null,
+        todayTrackingDate: '2026-10-18',
+      });
+
+      mockRepository.getFormDefinition.mockResolvedValue({
+        formulario_id: 'seguimiento-domiciliario',
+        version: '1.1.0',
+        titulo: 'Seguimiento domiciliario',
+        descripcion: 'Cuestionario diario',
+        duracion_estimada_min: 5,
+        preguntas: [],
+      });
+
+      await render(<DailyFollowUpScreen />);
+
+      await waitFor(() => {
+        expect(screen.getByText('Descartar borrador anterior')).toBeTruthy();
+      });
+
+      const btnDiscard = screen.getByText('Descartar borrador anterior');
+      await fireEvent.press(btnDiscard);
+
+      expect(alertSpy).toHaveBeenCalled();
+      const alertCall = alertSpy.mock.calls[0];
+      const buttons = alertCall[2];
+      const discardBtn = buttons?.find((b: { text?: string }) => b.text === 'Descartar');
+      expect(discardBtn).toBeTruthy();
+
+      await act(async () => {
+        await discardBtn?.onPress?.();
+      });
+
+      expect(mockRepository.discardDraft).toHaveBeenCalledWith(
+        'seguimiento-domiciliario',
+        '1.0.0',
+        'dia:2026-10-17',
+      );
     });
   });
 

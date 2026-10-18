@@ -1183,4 +1183,315 @@ describe('formularios y persistencia clínica en SQLite', () => {
     expect(defV11?.version).toBe('1.1.0');
     expect(defV11?.preguntas).toHaveLength(41);
   });
+
+  it('upgrade con borrador de hoy en 1.0.0: continuar recupera respuestas e identidad de 1.0.0, y confirmarlo persiste en 1.0.0 sin error pese al retiro de asignación', async () => {
+    const database = open();
+    await migrateDatabase(database);
+    await seedPatientContextIfEmpty(database, patientA, patientB);
+
+    // Estado inicial: 1.0.0 activo
+    await ingestMedicalFormBundle(database, {
+      formularios: [SEGUIMIENTO_DOMICILIARIO_V1_0_0_BUNDLE_ITEM],
+      asignaciones: [
+        {
+          pacienteId: patientA,
+          formularioId: 'seguimiento-domiciliario',
+          version: '1.0.0',
+          estado: 'activa',
+        },
+      ],
+    });
+
+    const repoA = createPatientRepository(database, patientA, ids());
+    const today = '2026-10-18';
+    const periodKey = `dia:${today}`;
+
+    // Paciente crea un borrador de hoy en 1.0.0
+    const draftV1 = await repoA.getOrCreateDailyDraft('seguimiento-domiciliario', '1.0.0', {
+      fechaSeguimiento: today,
+      periodoClave: periodKey,
+      zonaHoraria: 'America/Santiago',
+      iniciadoEn: `${today}T09:00:00.000Z`,
+      ventanaDesde: '2026-10-17T09:00:00.000Z',
+      ventanaHasta: `${today}T09:00:00.000Z`,
+    });
+
+    await repoA.saveDailyDraft(
+      { formId: 'seguimiento-domiciliario', version: '1.0.0', periodoClave: periodKey },
+      { 'P0.1': 'no', P1: 'no' },
+      'sec-cateter',
+    );
+
+    // Se produce la actualización a 1.1.0 (seedMedicalFormsDemo retira la asignación 1.0.0)
+    await seedMedicalFormsDemo(database, patientA, patientB);
+
+    // getDailyFormStatus reporta que existe un borrador activo y conserva versión 1.0.0
+    const status = await repoA.getDailyFormStatus('seguimiento-domiciliario', today);
+    expect(status.hasActiveDraft).toBe(true);
+    expect(status.activeDraft?.version).toBe('1.0.0');
+    expect(status.activeDraft?.periodo_clave).toBe(periodKey);
+    expect(status.activeDraft?.entrega_id).toBe(draftV1.entregaId);
+
+    // Continuar el borrador usando la identidad detectada
+    const continuedDraft = await repoA.getOrCreateDailyDraft(
+      status.activeDraft!.formulario_id,
+      status.activeDraft!.version,
+      status.activeDraft!.periodo_clave,
+    );
+    expect(continuedDraft.entregaId).toBe(draftV1.entregaId);
+    expect(continuedDraft.version).toBe('1.0.0');
+    expect(continuedDraft.respuestas['P0.1']).toBe('no');
+
+    // Confirmar la entrega en 1.0.0 debe tener éxito gracias a la regla de continuidad de borrador retirado
+    const validV1Answers = {
+      'P0.1': 'no',
+      P1: 'no',
+      P2: 'no',
+      'P3.A': 'no',
+      'P3.B': 'no',
+      P4: 'no',
+      P5: 'no',
+      P6: 'no',
+      P7: 'no',
+      P8: 'no',
+      'P9.A': 'no',
+      'P9.B': 'no',
+      P10: 'Confirmación exitosa de borrador 1.0.0 tras upgrade',
+    };
+
+    const confirmedId = await repoA.confirmDailySubmission(
+      {
+        formId: continuedDraft.formId,
+        version: continuedDraft.version,
+        periodoClave: continuedDraft.periodoClave,
+        deliveryId: continuedDraft.entregaId,
+      },
+      validV1Answers,
+    );
+    expect(confirmedId).toBe(draftV1.entregaId);
+
+    // El borrador fue eliminado de borrador_formulario
+    const remainingDraft = await repoA.getDraft('seguimiento-domiciliario', '1.0.0', periodKey);
+    expect(remainingDraft).toBeNull();
+
+    // La entrega quedó registrada en 1.0.0
+    const submission = await repoA.getSubmission(confirmedId);
+    expect(submission).toBeTruthy();
+    expect(submission?.version).toBe('1.0.0');
+    expect(submission?.fecha_seguimiento).toBe(today);
+
+    // El estado del día ahora es entregado y sin borrador activo
+    const finalStatus = await repoA.getDailyFormStatus('seguimiento-domiciliario', today);
+    expect(finalStatus.hasSubmittedToday).toBe(true);
+    expect(finalStatus.hasActiveDraft).toBe(false);
+  });
+
+  it('upgrade con borrador de hoy en 1.0.0: descartar elimina el borrador 1.0.0 y permite comenzar de cero en 1.1.0', async () => {
+    const database = open();
+    await migrateDatabase(database);
+    await seedPatientContextIfEmpty(database, patientA, patientB);
+
+    await ingestMedicalFormBundle(database, {
+      formularios: [SEGUIMIENTO_DOMICILIARIO_V1_0_0_BUNDLE_ITEM],
+      asignaciones: [
+        {
+          pacienteId: patientA,
+          formularioId: 'seguimiento-domiciliario',
+          version: '1.0.0',
+          estado: 'activa',
+        },
+      ],
+    });
+
+    const repoA = createPatientRepository(database, patientA, ids());
+    const today = '2026-10-18';
+    const periodKey = `dia:${today}`;
+
+    // Crear borrador en 1.0.0
+    const draftV1 = await repoA.getOrCreateDailyDraft('seguimiento-domiciliario', '1.0.0', {
+      fechaSeguimiento: today,
+      periodoClave: periodKey,
+      zonaHoraria: 'America/Santiago',
+      iniciadoEn: `${today}T09:00:00.000Z`,
+      ventanaDesde: '2026-10-17T09:00:00.000Z',
+      ventanaHasta: `${today}T09:00:00.000Z`,
+    });
+
+    // Actualizar a 1.1.0
+    await seedMedicalFormsDemo(database, patientA, patientB);
+
+    // Obtener estado con el borrador 1.0.0
+    const status = await repoA.getDailyFormStatus('seguimiento-domiciliario', today);
+    expect(status.hasActiveDraft).toBe(true);
+    expect(status.activeDraft?.version).toBe('1.0.0');
+
+    // Descartar utilizando la identidad exacta del borrador (1.0.0, periodKey)
+    await repoA.discardDraft(
+      status.activeDraft!.formulario_id,
+      status.activeDraft!.version,
+      status.activeDraft!.periodo_clave,
+    );
+
+    // En SQLite el borrador ya no existe
+    const draftAfterDiscard = await repoA.getDraft('seguimiento-domiciliario', '1.0.0', periodKey);
+    expect(draftAfterDiscard).toBeNull();
+
+    const statusAfterDiscard = await repoA.getDailyFormStatus('seguimiento-domiciliario', today);
+    expect(statusAfterDiscard.hasActiveDraft).toBe(false);
+
+    // Ahora puede iniciar un nuevo seguimiento limpio con la versión activa 1.1.0
+    const newDraftV11 = await repoA.getOrCreateDailyDraft(
+      'seguimiento-domiciliario',
+      SEGUIMIENTO_DOMICILIARIO_VERSION,
+      {
+        fechaSeguimiento: today,
+        periodoClave: periodKey,
+        zonaHoraria: 'America/Santiago',
+        iniciadoEn: `${today}T10:00:00.000Z`,
+        ventanaDesde: '2026-10-17T10:00:00.000Z',
+        ventanaHasta: `${today}T10:00:00.000Z`,
+      },
+    );
+    expect(newDraftV11.version).toBe(SEGUIMIENTO_DOMICILIARIO_VERSION);
+    expect(newDraftV11.entregaId).not.toBe(draftV1.entregaId);
+  });
+
+  it('upgrade con borrador de ayer en 1.0.0: continuar y confirmar tiene éxito pese a que 1.0.0 fue retirada', async () => {
+    const database = open();
+    await migrateDatabase(database);
+    await seedPatientContextIfEmpty(database, patientA, patientB);
+
+    await ingestMedicalFormBundle(database, {
+      formularios: [SEGUIMIENTO_DOMICILIARIO_V1_0_0_BUNDLE_ITEM],
+      asignaciones: [
+        {
+          pacienteId: patientA,
+          formularioId: 'seguimiento-domiciliario',
+          version: '1.0.0',
+          estado: 'activa',
+        },
+      ],
+    });
+
+    const repoA = createPatientRepository(database, patientA, ids());
+    const yesterday = '2026-10-17';
+    const yesterdayPeriodKey = `dia:${yesterday}`;
+
+    // Paciente dejó un borrador incompleto ayer en 1.0.0
+    const draftYesterday = await repoA.getOrCreateDailyDraft('seguimiento-domiciliario', '1.0.0', {
+      fechaSeguimiento: yesterday,
+      periodoClave: yesterdayPeriodKey,
+      zonaHoraria: 'America/Santiago',
+      iniciadoEn: `${yesterday}T15:00:00.000Z`,
+      ventanaDesde: '2026-10-16T15:00:00.000Z',
+      ventanaHasta: `${yesterday}T15:00:00.000Z`,
+    });
+
+    // Upgrade hoy
+    await seedMedicalFormsDemo(database, patientA, patientB);
+
+    // Consulta de hoy: detecta olderDraft en 1.0.0
+    const today = '2026-10-18';
+    const status = await repoA.getDailyFormStatus('seguimiento-domiciliario', today);
+    expect(status.hasOlderDraft).toBe(true);
+    expect(status.olderDraft?.version).toBe('1.0.0');
+    expect(status.olderDraft?.periodo_clave).toBe(yesterdayPeriodKey);
+
+    // Continuar el borrador anterior
+    const recovered = await repoA.getOrCreateDailyDraft(
+      status.olderDraft!.formulario_id,
+      status.olderDraft!.version,
+      status.olderDraft!.periodo_clave,
+    );
+    expect(recovered.entregaId).toBe(draftYesterday.entregaId);
+    expect(recovered.version).toBe('1.0.0');
+
+    // Confirmar el borrador de ayer en 1.0.0
+    const validV1Answers = {
+      'P0.1': 'no',
+      P1: 'no',
+      P2: 'no',
+      'P3.A': 'no',
+      'P3.B': 'no',
+      P4: 'no',
+      P5: 'no',
+      P6: 'no',
+      P7: 'no',
+      P8: 'no',
+      'P9.A': 'no',
+      'P9.B': 'no',
+      P10: 'Seguimiento de ayer completado tras upgrade',
+    };
+
+    const confirmedId = await repoA.confirmDailySubmission(
+      {
+        formId: recovered.formId,
+        version: recovered.version,
+        periodoClave: recovered.periodoClave,
+        deliveryId: recovered.entregaId,
+      },
+      validV1Answers,
+    );
+    expect(confirmedId).toBe(draftYesterday.entregaId);
+
+    // Comprobar que se guardó con fecha de ayer y versión 1.0.0
+    const sub = await repoA.getSubmission(confirmedId);
+    expect(sub?.version).toBe('1.0.0');
+    expect(sub?.fecha_seguimiento).toBe(yesterday);
+
+    // Y el borrador anterior fue removido
+    const checkStatus = await repoA.getDailyFormStatus('seguimiento-domiciliario', today);
+    expect(checkStatus.hasOlderDraft).toBe(false);
+  });
+
+  it('upgrade con borrador de ayer en 1.0.0: descartar elimina el borrador anterior de 1.0.0', async () => {
+    const database = open();
+    await migrateDatabase(database);
+    await seedPatientContextIfEmpty(database, patientA, patientB);
+
+    await ingestMedicalFormBundle(database, {
+      formularios: [SEGUIMIENTO_DOMICILIARIO_V1_0_0_BUNDLE_ITEM],
+      asignaciones: [
+        {
+          pacienteId: patientA,
+          formularioId: 'seguimiento-domiciliario',
+          version: '1.0.0',
+          estado: 'activa',
+        },
+      ],
+    });
+
+    const repoA = createPatientRepository(database, patientA, ids());
+    const yesterday = '2026-10-17';
+    const yesterdayPeriodKey = `dia:${yesterday}`;
+
+    await repoA.getOrCreateDailyDraft('seguimiento-domiciliario', '1.0.0', {
+      fechaSeguimiento: yesterday,
+      periodoClave: yesterdayPeriodKey,
+      zonaHoraria: 'America/Santiago',
+      iniciadoEn: `${yesterday}T15:00:00.000Z`,
+      ventanaDesde: '2026-10-16T15:00:00.000Z',
+      ventanaHasta: `${yesterday}T15:00:00.000Z`,
+    });
+
+    await seedMedicalFormsDemo(database, patientA, patientB);
+
+    const today = '2026-10-18';
+    const status = await repoA.getDailyFormStatus('seguimiento-domiciliario', today);
+    expect(status.hasOlderDraft).toBe(true);
+
+    // Descartar borrador anterior
+    await repoA.discardDraft(
+      status.olderDraft!.formulario_id,
+      status.olderDraft!.version,
+      status.olderDraft!.periodo_clave,
+    );
+
+    // Verificar en SQLite que borrador 1.0.0 fue eliminado
+    const draft = await repoA.getDraft('seguimiento-domiciliario', '1.0.0', yesterdayPeriodKey);
+    expect(draft).toBeNull();
+
+    const statusAfter = await repoA.getDailyFormStatus('seguimiento-domiciliario', today);
+    expect(statusAfter.hasOlderDraft).toBe(false);
+  });
 });

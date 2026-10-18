@@ -299,7 +299,15 @@ export function createFormRepository(
          WHERE paciente_id = ? AND formulario_id = ? AND version = ?`,
         [patientId, formId, version],
       );
-      if (!assignment || assignment.estado_conocido !== 'activa') {
+      const existingDraft = await database.first<FormDraftRecord>(
+        `SELECT * FROM borrador_formulario
+         WHERE paciente_id = ? AND formulario_id = ? AND version = ? AND periodo_clave = ?`,
+        [patientId, formId, version, periodoClave],
+      );
+      const hasActiveAssignment = assignment?.estado_conocido === 'activa';
+      const hasRetiredDraftContinuity = Boolean(existingDraft) && Boolean(assignment);
+
+      if (!hasActiveAssignment && !hasRetiredDraftContinuity) {
         throw new Error('No existe una asignación activa para este cuestionario.');
       }
 
@@ -386,13 +394,21 @@ export function createFormRepository(
       const queueId = newId();
 
       await database.transaction(async (tx) => {
-        // 1. Verificar asignación activa
+        // 1. Verificar asignación activa o continuidad de borrador existente
         const assignment = await tx.first<{ estado_conocido: string }>(
           `SELECT estado_conocido FROM formulario_asignacion_cache
            WHERE paciente_id = ? AND formulario_id = ? AND version = ?`,
           [patientId, formId, version],
         );
-        if (!assignment || assignment.estado_conocido !== 'activa') {
+        const existingDraft = await tx.first<FormDraftRecord>(
+          `SELECT * FROM borrador_formulario
+           WHERE paciente_id = ? AND formulario_id = ? AND version = ? AND entrega_id = ?`,
+          [patientId, formId, version, deliveryId],
+        );
+        const hasActiveAssignment = assignment?.estado_conocido === 'activa';
+        const hasRetiredDraftContinuity = Boolean(existingDraft) && Boolean(assignment);
+
+        if (!hasActiveAssignment && !hasRetiredDraftContinuity) {
           throw new Error('No existe una asignación activa para este cuestionario.');
         }
 
@@ -835,13 +851,16 @@ export function createFormRepository(
           );
         }
 
-        // 6. Verificar asignación activa
+        // 6. Verificar asignación activa o continuidad de borrador existente
         const assignment = await tx.first<{ estado_conocido: string }>(
           `SELECT estado_conocido FROM formulario_asignacion_cache
            WHERE paciente_id = ? AND formulario_id = ? AND version = ?`,
           [patientId, formId, version],
         );
-        if (!assignment || assignment.estado_conocido !== 'activa') {
+        const hasActiveAssignment = assignment?.estado_conocido === 'activa';
+        const hasRetiredDraftContinuity = Boolean(draft) && Boolean(assignment);
+
+        if (!hasActiveAssignment && !hasRetiredDraftContinuity) {
           throw new Error('No existe una asignación activa para este cuestionario.');
         }
 
