@@ -117,6 +117,7 @@ jest.mock('../data/local/files/resource-storage', () => ({
 
 import { router } from 'expo-router';
 import LegacyVisorRedirect from '../app/(tabs)/educacion/visor';
+import LegacyCopiesRedirect from '../app/(tabs)/educacion/copias';
 import { EducationCopiesScreen } from '../features/education/EducationCopiesScreen';
 import {
   getEducationalCatalogReader,
@@ -720,6 +721,95 @@ describe('Pruebas de interfaz (UI) para módulo de Educación', () => {
       fireEvent.press(closeBtn);
 
       expect(router.replace).toHaveBeenCalledWith('/educacion');
+    });
+  });
+
+  describe('Biblioteca unificada y descargas masivas (Bloque 3)', () => {
+    it('la ruta legacy /educacion/copias redirige a /educacion?filtro=offline', async () => {
+      await render(<LegacyCopiesRedirect />);
+
+      expect(mockRedirect).toHaveBeenCalledWith(
+        expect.objectContaining({
+          href: '/educacion?filtro=offline',
+        }),
+      );
+    });
+
+    it('el botón Mis copias guardadas en la portada educativa navega a /educacion?filtro=offline', async () => {
+      mockUseLocalSearchParams.mockReturnValue({});
+
+      await render(<EducationScreen />);
+
+      await waitFor(() => {
+        expect(screen.getByText('Mis copias guardadas')).toBeTruthy();
+      });
+
+      const copiesCard = screen.getByLabelText('Ver mis copias guardadas sin conexión');
+      fireEvent.press(copiesCard);
+
+      expect(router.navigate).toHaveBeenCalledWith('/educacion?filtro=offline');
+    });
+
+    it('al acceder con filtro=offline, muestra la biblioteca unificada con las copias físicas válidas', async () => {
+      mockUseLocalSearchParams.mockReturnValue({ filtro: 'offline' });
+      mockRepository.education.listLocalCopies.mockResolvedValueOnce([
+        {
+          patientId: 'paciente-a',
+          contentId: 'edu-infografia-alimentacion',
+          rutaRelativa: 'edu-infografia-alimentacion.12345.png',
+          formato: 'png',
+          tamanoBytes: 4096,
+          estado: 'descargado',
+          revisionDeclarada: true,
+          revisionDeclaradaEn: '2026-10-18T10:00:00Z',
+          titulo: 'Guía nutricional en quimioterapia',
+        },
+      ]);
+      mockResourceFileExists.mockReturnValue(true);
+
+      await render(<EducationScreen />);
+
+      await waitFor(() => {
+        expect(screen.getByText('Filtro: Sin conexión')).toBeTruthy();
+        expect(screen.getByText('Guía nutricional en quimioterapia')).toBeTruthy();
+        expect(screen.getByText('Infografía · Disponible sin internet')).toBeTruthy();
+      });
+
+      // Tocar la tarjeta abre el visor a pantalla completa en 1 toque
+      const copyCard = screen.getByLabelText(
+        'Guía nutricional en quimioterapia, Infografía · Disponible sin internet',
+      );
+      fireEvent.press(copyCard);
+
+      expect(router.push).toHaveBeenCalledWith(
+        '/visor-infografia?recurso=' + encodeURIComponent('edu-infografia-alimentacion'),
+      );
+    });
+
+    it('en la biblioteca offline, muestra estado vacío cuando el paciente no tiene copias', async () => {
+      mockUseLocalSearchParams.mockReturnValue({ filtro: 'offline' });
+      mockRepository.education.listLocalCopies.mockResolvedValueOnce([]);
+
+      await render(<EducationScreen />);
+
+      await waitFor(() => {
+        expect(screen.getByText('Sin copias guardadas')).toBeTruthy();
+      });
+
+      const returnBtn = screen.getByLabelText('Ver todas las categorías');
+      fireEvent.press(returnBtn);
+
+      expect(router.navigate).toHaveBeenCalledWith('/educacion');
+    });
+
+    it('muestra el botón para guardar todas las infografías sin conexión en la portada', async () => {
+      mockUseLocalSearchParams.mockReturnValue({});
+
+      await render(<EducationScreen />);
+
+      await waitFor(() => {
+        expect(screen.getByText('Guardar todas las infografías sin conexión')).toBeTruthy();
+      });
     });
   });
 });

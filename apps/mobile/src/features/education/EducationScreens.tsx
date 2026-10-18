@@ -1,6 +1,4 @@
 import Feather from '@expo/vector-icons/Feather';
-import { Asset } from 'expo-asset';
-import { File } from 'expo-file-system';
 import * as Linking from 'expo-linking';
 import * as Network from 'expo-network';
 import { router, useLocalSearchParams } from 'expo-router';
@@ -27,17 +25,13 @@ import {
   StatusPill,
   VisualButton,
 } from '../../components/Visual';
-import type { SqlConnection } from '../../data/local/core/sql';
 import type {
-  ActiveEducationalCopyFormat,
   EducationalInteraction,
   EducationalLocalCopy,
   EducationalResource,
 } from '../../data/local/education/education-types';
 import { launchYouTubeVideo } from '../../data/local/education/youtube';
-import { saveEducationalMediaWithCompensation } from '../../data/local/files/educational-storage';
 import {
-  deleteResourceFile,
   readResourceFile,
   reconcileResourceCopies,
   resourceFileExists,
@@ -54,145 +48,33 @@ import {
   type EducationalFormatFilter,
 } from './educational-catalog-service';
 import { getCategoryByIdOrSlug } from './educational-categories';
+import {
+  downloadAndSaveInfographic,
+  removeLocalInfographicCopy,
+} from './infographic-storage-service';
+import { useBulkInfographicDownload } from './use-bulk-infographic-download';
 import { executeYouTubeLaunch } from './youtube-launcher';
 
-const BUNDLED_ASSETS: Record<string, number> = {
-  // eslint-disable-next-line @typescript-eslint/no-require-imports
-  infografia_alimentacion_quimio: require('../../../assets/education/infografia_alimentacion_quimio.png'),
-};
-
-/**
- * Guarda o actualiza físicamente una infografía en el almacenamiento local
- * y persiste el registro en SQLite de forma atómica.
- */
-export async function downloadAndSaveInfographic({
-  resource,
-  patientId,
-  repository,
-  database,
-  localCopy,
-}: {
-  resource: EducationalResource;
-  patientId: string;
-  repository: NonNullable<ReturnType<typeof useLocalData>['repository']>;
-  database: SqlConnection;
-  localCopy?: EducationalLocalCopy | null;
-}): Promise<void> {
-  if (resource.type !== 'infografia') {
-    throw new Error('Solo se permite la descarga de infografías en formato de imagen.');
-  }
-
-  const isJpeg =
-    resource.asset?.extension === 'jpg' ||
-    resource.asset?.extension === 'jpeg' ||
-    Boolean(resource.asset?.mimeType?.toLowerCase().includes('jpeg'));
-  const formato: ActiveEducationalCopyFormat = isJpeg ? 'jpeg' : 'png';
-  const mimeType = isJpeg ? 'image/jpeg' : (resource.asset?.mimeType ?? 'image/png');
-
-  const assetKey = resource.asset?.type === 'bundled' ? resource.asset.assetKey : '';
-  const assetModule = BUNDLED_ASSETS[assetKey];
-
-  if (!assetModule) {
-    throw new Error('El archivo de la infografía no se encuentra empaquetado en este dispositivo.');
-  }
-
-  const [loadedAsset] = await Asset.loadAsync(assetModule);
-  if (
-    loadedAsset &&
-    (!loadedAsset.localUri ||
-      (!loadedAsset.localUri.startsWith('file://') && !loadedAsset.localUri.startsWith('/'))) &&
-    typeof loadedAsset.downloadAsync === 'function'
-  ) {
-    loadedAsset.downloaded = false;
-    await loadedAsset.downloadAsync();
-  }
-
-  const rawUri = loadedAsset?.localUri ?? loadedAsset?.uri;
-  if (!rawUri) {
-    throw new Error(
-      'No se pudo resolver la ruta local de la infografía empaquetada. Se cancela la operación para conservar la integridad del almacenamiento.',
-    );
-  }
-
-  const absoluteUri = rawUri.startsWith('file://')
-    ? rawUri
-    : rawUri.startsWith('/')
-      ? `file://${rawUri}`
-      : rawUri;
-  const fileObj = new File(absoluteUri);
-  const contentToSave = await fileObj.bytes();
-
-  await saveEducationalMediaWithCompensation({
-    pacienteId: patientId,
-    contenidoId: resource.id,
-    formato,
-    content: contentToSave,
-    versionOrigen: resource.version,
-    mimeType,
-    titulo: resource.title,
-    tipo: resource.type,
-    descripcion: resource.description,
-    textoAccesible: resource.textoAccesible,
-    previousRutaLocal: localCopy?.rutaRelativa ?? localCopy?.rutaAbsoluta,
-    getPreviousRutaLocal: async () => {
-      const current = await repository.education.getLocalCopy(resource.id);
-      return current?.rutaAbsoluta ?? current?.rutaRelativa ?? null;
-    },
-    persistCopyInTx: async (params) => {
-      await database.transaction(async (tx: SqlConnection) => {
-        await repository.education.persistCopyInTx(tx, {
-          contentId: resource.id,
-          rutaLocal: params.rutaLocal,
-          formato: params.formato,
-          tamanoBytes: params.tamanoBytes,
-          nowIso: new Date().toISOString(),
-          metadataLocal: params.metadataLocal,
-        });
-      });
-    },
-  });
-}
-
-/**
- * Elimina una copia física comprobando su eliminación antes de limpiar SQLite.
- */
-export async function removeLocalInfographicCopy({
-  contentId,
-  patientId,
-  repository,
-  localCopy,
-}: {
-  contentId: string;
-  patientId: string;
-  repository: NonNullable<ReturnType<typeof useLocalData>['repository']>;
-  localCopy?: EducationalLocalCopy | null;
-}): Promise<void> {
-  if (localCopy?.rutaRelativa) {
-    const physicallyDeleted = await deleteResourceFile(
-      patientId,
-      contentId,
-      localCopy.rutaRelativa,
-    );
-    if (!physicallyDeleted) {
-      throw new Error(
-        'No se pudo confirmar la eliminación física del archivo del almacenamiento local.',
-      );
-    }
-  }
-  await repository.education.removeLocalCopy(contentId);
-}
+export { downloadAndSaveInfographic, removeLocalInfographicCopy };
 
 export function EducationScreen() {
   const { theme: appTheme } = useAppTheme();
-  const { repository, patientId } = useLocalData();
+  const { repository, patientId, runSave } = useLocalData();
   const styles = useStyles();
+  const params = useLocalSearchParams<{ filtro?: string }>();
+  const isOfflineFilter = params.filtro === 'offline';
+
+  // Modal para acciones individuales en biblioteca sin conexión
+  const [infoResource, setInfoResource] = useState<EducationalResource | null>(null);
+  const [modalActionBusy, setModalActionBusy] = useState(false);
+  const [modalError, setModalError] = useState<string | null>(null);
 
   const loadCopies = useCallback(async (): Promise<EducationalLocalCopy[]> => {
     if (!repository || !patientId) return [];
     return repository.education.listLocalCopies();
   }, [repository, patientId]);
 
-  const { items: copies } = useFocusedList(loadCopies);
+  const { items: copies, refresh: refreshCopies } = useFocusedList(loadCopies);
 
   const loadCategories = useCallback(async (): Promise<EducationalCategory[]> => {
     return getEducationalCatalogReader().getCategories();
@@ -200,6 +82,255 @@ export function EducationScreen() {
 
   const { items: categories } = useFocusedList(loadCategories);
 
+  const { isDownloading, progress, summaryMessage, startDownload, cancelDownload, clearSummary } =
+    useBulkInfographicDownload(refreshCopies);
+
+  // Copias físicas válidas existentes en disco
+  const physicallyPresentCopies = useMemo(() => {
+    if (!patientId) return [];
+    return copies.filter(
+      (c) =>
+        c.rutaRelativa &&
+        resourceFileExists(patientId, c.contentId, c.rutaRelativa) &&
+        c.estado !== 'error',
+    );
+  }, [copies, patientId]);
+
+  // Acciones individuales en modal de biblioteca sin conexión
+  async function handleDeleteFromModal(
+    targetResource: EducationalResource,
+    copy?: EducationalLocalCopy | null,
+  ) {
+    if (!repository || !patientId || modalActionBusy) return;
+    setModalActionBusy(true);
+    setModalError(null);
+    try {
+      await runSave(async () => {
+        await removeLocalInfographicCopy({
+          contentId: targetResource.id,
+          patientId,
+          repository,
+          localCopy: copy,
+        });
+      });
+      refreshCopies();
+      setInfoResource(null);
+    } catch (err) {
+      setModalError(
+        err instanceof Error
+          ? err.message
+          : 'No se pudo eliminar el archivo local en el dispositivo.',
+      );
+    } finally {
+      setModalActionBusy(false);
+    }
+  }
+
+  async function handleDeclareReviewedFromModal(targetResource: EducationalResource) {
+    if (!repository || modalActionBusy) return;
+    setModalActionBusy(true);
+    setModalError(null);
+    try {
+      await runSave(async () => {
+        await repository.education.declareCopyReviewed(targetResource.id);
+      });
+      refreshCopies();
+    } catch {
+      setModalError('No se pudo registrar la revisión del material.');
+    } finally {
+      setModalActionBusy(false);
+    }
+  }
+
+  // Vista unificada de biblioteca sin conexión (/educacion?filtro=offline)
+  if (isOfflineFilter) {
+    return (
+      <Screen isRoot title="Mis copias guardadas">
+        <DemoBadge />
+        <BodyText>
+          Materiales guardados en este dispositivo para lectura y consulta sin conexión.
+        </BodyText>
+
+        {/* Barra de control para salir del filtro sin conexión */}
+        <View style={styles.offlineFilterHeader}>
+          <View style={styles.activeFilterChip}>
+            <Feather name="check" size={16} color={appTheme.colors.onPrimary} />
+            <Text style={styles.activeFilterChipText}>Filtro: Sin conexión</Text>
+          </View>
+          <Pressable
+            accessibilityRole="button"
+            accessibilityLabel="Ver todas las categorías"
+            onPress={() => router.navigate('/educacion')}
+            style={styles.exitFilterButton}
+          >
+            <Text style={styles.exitFilterButtonText}>Ver categorías</Text>
+          </Pressable>
+        </View>
+
+        {physicallyPresentCopies.length === 0 ? (
+          <EmptyState
+            icon="folder"
+            title="Sin copias guardadas"
+            description="Aún no has guardado infografías en este dispositivo."
+          />
+        ) : (
+          physicallyPresentCopies.map((copy) => {
+            const formatChipLabel = 'Infografía · Disponible sin internet';
+            const isReviewed = Boolean(copy.revisionDeclarada);
+            const reviewedDate = copy.revisionDeclaradaEn
+              ? formatDate(copy.revisionDeclaradaEn)
+              : null;
+            const resourceItem: EducationalResource = {
+              id: copy.contentId,
+              title: copy.titulo ?? copy.metadataLocal?.titulo ?? 'Infografía guardada',
+              category: 0,
+              categoryName: 'Material guardado',
+              description:
+                copy.descripcion ??
+                copy.metadataLocal?.descripcion ??
+                'Infografía disponible sin conexión.',
+              type: 'infografia',
+              version: copy.metadataLocal?.versionOrigen ?? 'local',
+              textoAccesible: copy.metadataLocal?.textoAccesible,
+            };
+
+            return (
+              <View key={copy.contentId} style={styles.cardContainer}>
+                {/* 1 toque abre directamente el visor a pantalla completa */}
+                <Pressable
+                  accessibilityRole="button"
+                  accessibilityLabel={`${resourceItem.title}, ${formatChipLabel}`}
+                  onPress={() =>
+                    router.push('/visor-infografia?recurso=' + encodeURIComponent(copy.contentId))
+                  }
+                  style={styles.cardMainPressable}
+                >
+                  <Feather name="image" size={28} color={appTheme.colors.primary} />
+                  <View style={styles.cardContent}>
+                    <Text style={styles.heading}>{resourceItem.title}</Text>
+                    <View style={styles.chipsRow}>
+                      <StatusPill>{formatChipLabel}</StatusPill>
+                      {isReviewed && reviewedDate ? (
+                        <StatusPill>{`Revisado el ${reviewedDate}`}</StatusPill>
+                      ) : null}
+                    </View>
+                  </View>
+                </Pressable>
+
+                {/* Botón aislado para información y acciones individuales */}
+                <Pressable
+                  accessibilityRole="button"
+                  accessibilityLabel={`Información de ${resourceItem.title}`}
+                  onPress={() => {
+                    setModalError(null);
+                    setInfoResource(resourceItem);
+                  }}
+                  style={styles.cardInfoButton}
+                >
+                  <Feather name="info" size={20} color={appTheme.colors.primary} />
+                  <Text style={styles.cardInfoButtonText}>Info</Text>
+                </Pressable>
+              </View>
+            );
+          })
+        )}
+
+        {/* Modal de información y acciones individuales para la biblioteca sin conexión */}
+        {infoResource ? (
+          <Modal
+            visible={Boolean(infoResource)}
+            transparent={true}
+            animationType="fade"
+            onRequestClose={() => {
+              setInfoResource(null);
+              setModalError(null);
+            }}
+            accessibilityViewIsModal={true}
+          >
+            {(() => {
+              const currentCopy = physicallyPresentCopies.find(
+                (c) => c.contentId === infoResource.id,
+              );
+              return (
+                <View style={styles.modalOverlay}>
+                  <View style={styles.modalCard}>
+                    <View style={styles.modalHeader}>
+                      <View style={{ flex: 1 }}>
+                        <SectionTitle>{infoResource.title}</SectionTitle>
+                      </View>
+                      <Pressable
+                        accessibilityRole="button"
+                        accessibilityLabel="Cerrar información"
+                        onPress={() => {
+                          setInfoResource(null);
+                          setModalError(null);
+                        }}
+                        style={styles.modalCloseIcon}
+                      >
+                        <Feather name="x" size={24} color={appTheme.colors.text} />
+                      </Pressable>
+                    </View>
+
+                    <ScrollView style={styles.modalScroll} contentContainerStyle={{ gap: 12 }}>
+                      <BodyText>{infoResource.description}</BodyText>
+                      <View style={styles.noticeBox}>
+                        <StatusPill>
+                          {currentCopy?.revisionDeclarada
+                            ? `Material revisado el ${currentCopy.revisionDeclaradaEn ? formatDate(currentCopy.revisionDeclaradaEn) : 'sí'}`
+                            : 'Guardado en este dispositivo'}
+                        </StatusPill>
+                      </View>
+                      {modalError ? (
+                        <Text accessibilityRole="alert" style={styles.errorText}>
+                          {modalError}
+                        </Text>
+                      ) : null}
+                    </ScrollView>
+
+                    <View style={styles.modalFooter}>
+                      <VisualButton
+                        label="Ver en pantalla completa"
+                        disabled={modalActionBusy}
+                        onPress={() => {
+                          setInfoResource(null);
+                          router.push(
+                            '/visor-infografia?recurso=' + encodeURIComponent(infoResource.id),
+                          );
+                        }}
+                      />
+                      {!currentCopy?.revisionDeclarada ? (
+                        <VisualButton
+                          label={modalActionBusy ? 'Confirmando…' : 'Marcar como visto'}
+                          disabled={modalActionBusy}
+                          onPress={() => void handleDeclareReviewedFromModal(infoResource)}
+                        />
+                      ) : null}
+                      <VisualButton
+                        label={modalActionBusy ? 'Quitando…' : 'Quitar descarga'}
+                        secondary
+                        disabled={modalActionBusy}
+                        onPress={() => void handleDeleteFromModal(infoResource, currentCopy)}
+                      />
+                      <VisualButton
+                        label="Cerrar"
+                        secondary
+                        onPress={() => {
+                          setInfoResource(null);
+                          setModalError(null);
+                        }}
+                      />
+                    </View>
+                  </View>
+                </View>
+              );
+            })()}
+          </Modal>
+        ) : null}
+      </Screen>
+    );
+  }
+
+  // Vista principal de biblioteca (/educacion)
   return (
     <Screen isRoot title="Contenido educativo">
       <DemoBadge />
@@ -208,20 +339,57 @@ export function EducationScreen() {
         educativos online.
       </BodyText>
 
-      {/* Acceso a copias locales descargadas */}
+      {/* Banner de progreso o estado de descarga masiva */}
+      {isDownloading && progress ? (
+        <View style={styles.downloadBanner} accessibilityLiveRegion="polite">
+          <View style={styles.downloadBannerHeader}>
+            <ActivityIndicator size="small" color={appTheme.colors.primary} />
+            <Text style={styles.downloadBannerTitle}>
+              Guardando {progress.current} de {progress.total}… ({progress.percent}%)
+            </Text>
+          </View>
+          <Text style={styles.downloadBannerSubtitle} numberOfLines={1}>
+            {progress.currentTitle}
+          </Text>
+          <VisualButton label="Cancelar descarga" secondary onPress={cancelDownload} />
+        </View>
+      ) : summaryMessage ? (
+        <View style={styles.summaryBanner} accessibilityLiveRegion="polite">
+          <Feather name="check-circle" size={20} color={appTheme.colors.primary} />
+          <Text style={styles.summaryBannerText}>{summaryMessage}</Text>
+          <Pressable
+            accessibilityRole="button"
+            accessibilityLabel="Cerrar aviso"
+            onPress={clearSummary}
+            style={styles.summaryCloseIcon}
+          >
+            <Feather name="x" size={18} color={appTheme.colors.text} />
+          </Pressable>
+        </View>
+      ) : (
+        <View style={styles.bulkDownloadCard}>
+          <VisualButton
+            label="Guardar todas las infografías sin conexión"
+            secondary
+            onPress={() => void startDownload()}
+          />
+        </View>
+      )}
+
+      {/* Acceso a copias locales descargadas unificadas */}
       <Pressable
         accessibilityRole="button"
         accessibilityLabel="Ver mis copias guardadas sin conexión"
-        onPress={() => router.navigate('/educacion/copias')}
+        onPress={() => router.navigate('/educacion?filtro=offline')}
         style={[styles.row, styles.copiesCard]}
       >
         <Feather name="folder" size={28} color={appTheme.colors.primary} />
         <View style={styles.copy}>
           <Text style={styles.heading}>Mis copias guardadas</Text>
           <BodyText>
-            {copies.length === 1
+            {physicallyPresentCopies.length === 1
               ? '1 material disponible sin conexión'
-              : `${copies.length} materiales disponibles sin conexión`}
+              : `${physicallyPresentCopies.length} materiales disponibles sin conexión`}
           </BodyText>
         </View>
         <Feather name="chevron-right" size={22} color={appTheme.colors.text} />
@@ -1433,6 +1601,92 @@ function useStyles() {
     modalFooter: {
       marginTop: 8,
       gap: 8,
+    },
+    offlineFilterHeader: {
+      flexDirection: 'row',
+      justifyContent: 'space-between',
+      alignItems: 'center',
+      marginVertical: theme.spacing.sm,
+      gap: theme.spacing.sm,
+    },
+    activeFilterChip: {
+      flexDirection: 'row',
+      alignItems: 'center',
+      gap: 6,
+      paddingHorizontal: 12,
+      paddingVertical: 6,
+      borderRadius: 9999,
+      backgroundColor: appTheme.colors.primary,
+    },
+    activeFilterChipText: {
+      fontSize: 13,
+      fontWeight: '600',
+      color: appTheme.colors.onPrimary,
+    },
+    exitFilterButton: {
+      minHeight: 48,
+      minWidth: 48,
+      paddingHorizontal: 12,
+      justifyContent: 'center',
+      alignItems: 'center',
+      borderRadius: theme.radius.sm,
+      borderWidth: 1,
+      borderColor: appTheme.colors.border,
+      backgroundColor: appTheme.colors.surface,
+    },
+    exitFilterButtonText: {
+      fontSize: 13,
+      fontWeight: '600',
+      color: appTheme.colors.text,
+    },
+    downloadBanner: {
+      padding: theme.spacing.md,
+      borderRadius: theme.radius.md,
+      backgroundColor: appTheme.colors.surface,
+      borderWidth: 1,
+      borderColor: appTheme.colors.primary,
+      gap: theme.spacing.sm,
+      marginVertical: theme.spacing.sm,
+    },
+    downloadBannerHeader: {
+      flexDirection: 'row',
+      alignItems: 'center',
+      gap: 8,
+    },
+    downloadBannerTitle: {
+      fontSize: 15,
+      fontWeight: '700',
+      color: appTheme.colors.text,
+    },
+    downloadBannerSubtitle: {
+      fontSize: 13,
+      color: appTheme.colors.secondary,
+    },
+    summaryBanner: {
+      flexDirection: 'row',
+      alignItems: 'center',
+      gap: 8,
+      padding: theme.spacing.md,
+      borderRadius: theme.radius.md,
+      backgroundColor: appTheme.colors.mutedSurface,
+      borderWidth: 1,
+      borderColor: appTheme.colors.primary,
+      marginVertical: theme.spacing.sm,
+    },
+    summaryBannerText: {
+      flex: 1,
+      fontSize: 14,
+      fontWeight: '600',
+      color: appTheme.colors.text,
+    },
+    summaryCloseIcon: {
+      minWidth: 48,
+      minHeight: 48,
+      justifyContent: 'center',
+      alignItems: 'center',
+    },
+    bulkDownloadCard: {
+      marginVertical: theme.spacing.xs,
     },
   });
 }
