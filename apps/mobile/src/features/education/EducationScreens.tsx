@@ -4,7 +4,7 @@ import { File } from 'expo-file-system';
 import * as Linking from 'expo-linking';
 import * as Network from 'expo-network';
 import { router, useLocalSearchParams } from 'expo-router';
-import { useCallback, useEffect, useRef, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { ActivityIndicator, Image, Pressable, StyleSheet, Text, View } from 'react-native';
 
 import { Screen } from '../../components/Screen';
@@ -123,7 +123,7 @@ export function EducationCategoryScreen() {
   const [expanded, setExpanded] = useState<string | null>(null);
   const [formatFilter, setFormatFilter] = useState<EducationalFormatFilter>('all');
   const { categoria } = useLocalSearchParams<{ categoria?: string }>();
-  const resolvedCategory = getCategoryByIdOrSlug(categoria);
+  const resolvedCategory = useMemo(() => getCategoryByIdOrSlug(categoria), [categoria]);
   const categoryIndex = resolvedCategory.id;
 
   const loadData = useCallback(async () => {
@@ -155,11 +155,16 @@ export function EducationCategoryScreen() {
     value,
     loading: loadingData,
     error: dataError,
-  } = useFocusedValue(loadData, {
-    currentCategory: undefined as EducationalCategory | undefined,
-    resources: [] as EducationalResource[],
-    copies: [] as EducationalLocalCopy[],
-    interactions: [] as EducationalInteraction[],
+  } = useFocusedValue<{
+    currentCategory?: EducationalCategory;
+    resources: EducationalResource[];
+    copies: EducationalLocalCopy[];
+    interactions: EducationalInteraction[];
+  }>(loadData, {
+    currentCategory: undefined,
+    resources: [],
+    copies: [],
+    interactions: [],
   });
 
   const copyMap = new Map((value?.copies ?? []).map((c) => [c.contentId, c]));
@@ -513,8 +518,12 @@ export function EducationResourceScreen() {
           throw new Error('Solo se permite la descarga de infografías en formato de imagen.');
         }
 
-        const mimeType = 'image/png';
-        const formato: ActiveEducationalCopyFormat = 'png';
+        const isJpeg =
+          resource.asset?.extension === 'jpg' ||
+          resource.asset?.extension === 'jpeg' ||
+          Boolean(resource.asset?.mimeType?.toLowerCase().includes('jpeg'));
+        const formato: ActiveEducationalCopyFormat = isJpeg ? 'jpeg' : 'png';
+        const mimeType = isJpeg ? 'image/jpeg' : (resource.asset?.mimeType ?? 'image/png');
 
         const assetKey = resource.asset?.type === 'bundled' ? resource.asset.assetKey : '';
         const assetModule = BUNDLED_ASSETS[assetKey];

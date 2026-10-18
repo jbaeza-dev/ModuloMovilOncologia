@@ -114,16 +114,26 @@ export async function cleanupRetiredEducationalCopies(
       }
 
       // Comprobar existencia física
-      let fileExists = false;
+      let fileExists: boolean;
       try {
         fileExists = await adapter.exists(rutaLocal);
-      } catch {
-        // Ignorar error al comprobar existencia
+      } catch (err) {
+        const errorMsg = `Error al consultar existencia del archivo: ${err instanceof Error ? err.message : String(err)}`;
+        await database.run(
+          `UPDATE descarga
+           SET ultimo_error_retiro = ?
+           WHERE paciente_id = ? AND contenido_id = ? AND retirado_en IS NOT NULL AND ruta_local = ?`,
+          [errorMsg, patientId, row.contenido_id, rutaLocal],
+        );
+        failed++;
+        errors.push({ contentId: row.contenido_id, error: errorMsg });
+        continue;
       }
 
       if (fileExists) {
+        let deleteOk: boolean;
         try {
-          await adapter.deleteFile(rutaLocal);
+          deleteOk = await adapter.deleteFile(rutaLocal);
         } catch (err) {
           const errorMsg = err instanceof Error ? err.message : String(err);
           await database.run(
@@ -136,9 +146,53 @@ export async function cleanupRetiredEducationalCopies(
           errors.push({ contentId: row.contenido_id, error: errorMsg });
           continue;
         }
+
+        if (deleteOk === false) {
+          const errorMsg =
+            'El adaptador de almacenamiento devolvió false al intentar eliminar el archivo.';
+          await database.run(
+            `UPDATE descarga
+             SET ultimo_error_retiro = ?
+             WHERE paciente_id = ? AND contenido_id = ? AND retirado_en IS NOT NULL AND ruta_local = ?`,
+            [errorMsg, patientId, row.contenido_id, rutaLocal],
+          );
+          failed++;
+          errors.push({ contentId: row.contenido_id, error: errorMsg });
+          continue;
+        }
+
+        // Comprobar ausencia física confirmada tras la eliminación
+        let stillExists: boolean;
+        try {
+          stillExists = await adapter.exists(rutaLocal);
+        } catch (err) {
+          const errorMsg = `Error al confirmar ausencia del archivo tras eliminación: ${err instanceof Error ? err.message : String(err)}`;
+          await database.run(
+            `UPDATE descarga
+             SET ultimo_error_retiro = ?
+             WHERE paciente_id = ? AND contenido_id = ? AND retirado_en IS NOT NULL AND ruta_local = ?`,
+            [errorMsg, patientId, row.contenido_id, rutaLocal],
+          );
+          failed++;
+          errors.push({ contentId: row.contenido_id, error: errorMsg });
+          continue;
+        }
+
+        if (stillExists) {
+          const errorMsg = 'El archivo físico sigue existiendo tras el intento de eliminación.';
+          await database.run(
+            `UPDATE descarga
+             SET ultimo_error_retiro = ?
+             WHERE paciente_id = ? AND contenido_id = ? AND retirado_en IS NOT NULL AND ruta_local = ?`,
+            [errorMsg, patientId, row.contenido_id, rutaLocal],
+          );
+          failed++;
+          errors.push({ contentId: row.contenido_id, error: errorMsg });
+          continue;
+        }
       }
 
-      // Borrado físico exitoso o archivo ya no existía en disco: eliminar de SQLite
+      // Borrado físico exitoso comprobado o archivo ya no existía en disco: eliminar de SQLite
       await database.run(
         `DELETE FROM descarga
          WHERE paciente_id = ? AND contenido_id = ? AND retirado_en IS NOT NULL AND ruta_local = ?`,

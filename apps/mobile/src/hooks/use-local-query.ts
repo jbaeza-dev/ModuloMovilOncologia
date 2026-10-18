@@ -6,15 +6,21 @@ export function useFocusedValue<T>(load: () => Promise<T>, initial: T) {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(false);
   const [revision, setRevision] = useState(0);
+  const hasLoadedRef = useRef(false);
   useFocusEffect(
     useCallback(() => {
       let active = true;
-      setLoading(true);
+      if (!hasLoadedRef.current) {
+        setLoading(true);
+      }
       setError(false);
       void load()
         .then(
           (result) => {
-            if (active) setValue(result);
+            if (active) {
+              setValue(result);
+              hasLoadedRef.current = true;
+            }
           },
           () => {
             if (active) setError(true);

@@ -252,4 +252,99 @@ describe('cleanupRetiredEducationalCopies - limpieza física recuperable de Mark
     expect(existsSync(alienFile)).toBe(true);
     expect(readFileSync(alienFile, 'utf8')).toBe('# Archivo de paciente B');
   });
+
+  it('si deleteFile devuelve false, conserva la fila en SQLite y registra el error para reintento', async () => {
+    const database = open();
+    await migrateDatabase(database);
+    await seedPatientContextIfEmpty(database, patientA, patientB);
+
+    const tempBase = harness.createTempDir('cleanup-false-');
+    const baseDirResolver = (pid: string) => join(tempBase, 'recursos', pid).replace(/\\/g, '/');
+
+    const patientDir = baseDirResolver(patientA);
+    mkdirSync(patientDir, { recursive: true });
+
+    const filePath = join(patientDir, 'edu-false.md').replace(/\\/g, '/');
+    writeFileSync(filePath, '# Contenido no borrado', 'utf8');
+
+    await database.run(
+      `INSERT INTO descarga (
+        paciente_id, contenido_id, ruta_local, estado, fecha_descarga,
+        formato, retirado_en
+      ) VALUES (?, 'edu-false', ?, 'descargado', '2026-10-10T10:00:00Z', 'markdown', '2026-10-17T12:00:00Z')`,
+      [patientA, filePath],
+    );
+
+    const mockAdapter = {
+      async exists(path: string) {
+        return existsSync(path);
+      },
+      async deleteFile() {
+        // Devuelve false simulando fallo sin excepción
+        return false;
+      },
+    } as unknown as NodeFileStorageAdapter;
+
+    const result = await cleanupRetiredEducationalCopies(database, patientA, {
+      adapter: mockAdapter,
+      baseDirResolver,
+    });
+
+    expect(result.failed).toBe(1);
+    expect(result.deleted).toBe(0);
+    expect(existsSync(filePath)).toBe(true);
+
+    const row = await database.first<{ ultimo_error_retiro: string | null }>(
+      'SELECT ultimo_error_retiro FROM descarga WHERE paciente_id = ? AND contenido_id = ?',
+      [patientA, 'edu-false'],
+    );
+    expect(row?.ultimo_error_retiro).toContain('false');
+  });
+
+  it('si adapter.exists lanza error, conserva la fila y registra el error de consulta', async () => {
+    const database = open();
+    await migrateDatabase(database);
+    await seedPatientContextIfEmpty(database, patientA, patientB);
+
+    const tempBase = harness.createTempDir('cleanup-exists-err-');
+    const baseDirResolver = (pid: string) => join(tempBase, 'recursos', pid).replace(/\\/g, '/');
+
+    const patientDir = baseDirResolver(patientA);
+    mkdirSync(patientDir, { recursive: true });
+
+    const filePath = join(patientDir, 'edu-exists-err.md').replace(/\\/g, '/');
+    writeFileSync(filePath, '# Archivo con error de disco', 'utf8');
+
+    await database.run(
+      `INSERT INTO descarga (
+        paciente_id, contenido_id, ruta_local, estado, fecha_descarga,
+        formato, retirado_en
+      ) VALUES (?, 'edu-exists-err', ?, 'descargado', '2026-10-10T10:00:00Z', 'markdown', '2026-10-17T12:00:00Z')`,
+      [patientA, filePath],
+    );
+
+    const mockAdapter = {
+      async exists() {
+        throw new Error('EIO: error de lectura de inodo');
+      },
+      async deleteFile() {
+        return true;
+      },
+    } as unknown as NodeFileStorageAdapter;
+
+    const result = await cleanupRetiredEducationalCopies(database, patientA, {
+      adapter: mockAdapter,
+      baseDirResolver,
+    });
+
+    expect(result.failed).toBe(1);
+    expect(result.deleted).toBe(0);
+    expect(existsSync(filePath)).toBe(true);
+
+    const row = await database.first<{ ultimo_error_retiro: string | null }>(
+      'SELECT ultimo_error_retiro FROM descarga WHERE paciente_id = ? AND contenido_id = ?',
+      [patientA, 'edu-exists-err'],
+    );
+    expect(row?.ultimo_error_retiro).toContain('EIO');
+  });
 });
