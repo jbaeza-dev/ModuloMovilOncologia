@@ -81,6 +81,69 @@ describe('Cuestionario de Seguimiento Domiciliario ePRO (Fixture)', () => {
     const p9_b_2 = SEGUIMIENTO_DOMICILIARIO_PREGUNTAS.find((q) => q.preguntaId === 'P9.B.2');
     const p9_b_2_vals = p9_b_2?.configuracion?.opciones?.map((o) => o.valor);
     expect(p9_b_2_vals).toEqual(['alivia_bien', 'alivia_parcial', 'no_se_pasa_o_subito']);
+
+    // Módulo 0: P0.1.1 contiene las 5 opciones literales del Word
+    const p0_1_1 = SEGUIMIENTO_DOMICILIARIO_PREGUNTAS.find((q) => q.preguntaId === 'P0.1.1');
+    expect(p0_1_1?.configuracion?.opciones).toHaveLength(5);
+    expect(p0_1_1?.configuracion?.opciones?.map((o) => o.valor)).toEqual([
+      'normal_sin_cambios',
+      'sensible_picazon',
+      'roja_caliente_hinchada',
+      'liquido_pus_sangre',
+      'dolor_cuello_hombro_brazo',
+    ]);
+    expect(p0_1_1?.configuracion?.opciones?.[0]?.esExcluyente).toBe(true);
+    expect(p0_1_1?.configuracion?.opciones?.[4]?.etiqueta).toContain(
+      'cuello, hombro o en todo el brazo',
+    );
+
+    // Módulo 3: P3.A.1 a P3.A.3 corresponden exactamente al Word
+    const p3_a = SEGUIMIENTO_DOMICILIARIO_PREGUNTAS.find((q) => q.preguntaId === 'P3.A');
+    expect(p3_a?.texto).toBe(
+      '¿Has tenido diarrea (deposiciones líquidas o sueltas) en las últimas 24 horas?',
+    );
+
+    const p3_a_1 = SEGUIMIENTO_DOMICILIARIO_PREGUNTAS.find((q) => q.preguntaId === 'P3.A.1');
+    expect(p3_a_1?.texto).toBe(
+      '¿Cuántas veces has tenido diarrea hoy (en comparación con tu ritmo normal)?',
+    );
+    expect(p3_a_1?.configuracion?.opciones?.map((o) => o.valor)).toEqual([
+      '1_a_3',
+      '4_a_6',
+      '7_mas',
+    ]);
+
+    const p3_a_2 = SEGUIMIENTO_DOMICILIARIO_PREGUNTAS.find((q) => q.preguntaId === 'P3.A.2');
+    expect(p3_a_2?.texto).toBe(
+      '¿Cómo se ven las deposiciones y qué otros síntomas sientes en el abdomen?',
+    );
+    expect(p3_a_2?.configuracion?.opciones?.map((o) => o.valor)).toEqual([
+      'liquidas_leves',
+      'mucosidad_sangre',
+      'negras_alquitran',
+      'retorcijones_dolor_fuerte',
+    ]);
+    expect(p3_a_2?.configuracion?.opciones?.[0]?.esExcluyente).toBe(true);
+
+    const p3_a_3 = SEGUIMIENTO_DOMICILIARIO_PREGUNTAS.find((q) => q.preguntaId === 'P3.A.3');
+    expect(p3_a_3?.texto).toBe('¿Has notado signos de deshidratación por la diarrea?');
+    expect(p3_a_3?.configuracion?.opciones?.map((o) => o.valor)).toEqual([
+      'bien_hidratado',
+      'mucha_sed_boca_seca',
+      'orina_poca_oscura',
+      'mareo_de_pie',
+    ]);
+    expect(p3_a_3?.configuracion?.opciones?.[0]?.esExcluyente).toBe(true);
+
+    const p3_b_1 = SEGUIMIENTO_DOMICILIARIO_PREGUNTAS.find((q) => q.preguntaId === 'P3.B.1');
+    expect(p3_b_1?.configuracion?.opciones?.map((o) => o.valor)).toEqual([
+      '1_a_2',
+      '3_a_4',
+      '5_mas',
+    ]);
+
+    const p3_b_2 = SEGUIMIENTO_DOMICILIARIO_PREGUNTAS.find((q) => q.preguntaId === 'P3.B.2');
+    expect(p3_b_2?.texto).toContain('¿Tienes el abdomen muy hinchado, duro');
   });
 
   it('cumple íntegramente la validación de integridad estructural sin errores ni referencias hacia adelante', () => {

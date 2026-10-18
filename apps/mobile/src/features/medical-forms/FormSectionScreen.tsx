@@ -19,7 +19,10 @@ import {
   VisualButton,
 } from '../../components/Visual';
 import type { FormAnswerValue, QuestionConfiguration } from '../../data/local/forms/form-types';
-import type { FullFormDefinition } from '../../data/local/forms/form-repository';
+import {
+  type FullFormDefinition,
+  selectDailyFormAssignment,
+} from '../../data/local/forms/form-repository';
 import { useLocalData } from '../../providers/LocalDataProvider';
 import { useAppTheme } from '../../providers/ThemeProvider';
 import { computeVisibleQuestions } from '../../services/forms/form-conditions';
@@ -74,12 +77,13 @@ export function FormSectionScreen() {
 
         if (!formId) {
           const assigned = await repository.listAssignedForms();
-          if (assigned.length === 0) {
+          const target = selectDailyFormAssignment(assigned);
+          if (!target) {
             router.replace('/formulario');
             return;
           }
-          formId = assigned[0].formulario_id;
-          version = assigned[0].version;
+          formId = target.formulario_id;
+          version = target.version;
         }
 
         const definition = await repository.getFormDefinition(formId, version);
@@ -345,16 +349,24 @@ export function FormSectionScreen() {
     } else {
       // Última sección: ir al resumen de revisión
       void (async () => {
-        await controllerRef.current?.flush();
-        router.push({
-          pathname: '/formulario/resumen',
-          params: {
-            id: formDef?.formulario_id,
-            version: formDef?.version,
-            periodoClave: activePeriod,
-            deliveryId,
-          },
-        });
+        try {
+          await controllerRef.current?.flush();
+          router.push({
+            pathname: '/formulario/resumen',
+            params: {
+              id: formDef?.formulario_id,
+              version: formDef?.version,
+              periodoClave: activePeriod,
+              deliveryId,
+            },
+          });
+        } catch {
+          setAutosaveError(true);
+          Alert.alert(
+            'Error al guardar',
+            'No se pudieron guardar las respuestas. Por favor, reintenta antes de continuar a la revisión.',
+          );
+        }
       })();
     }
   }, [
@@ -389,8 +401,16 @@ export function FormSectionScreen() {
   }, [currentSectionIndex, sections, answers]);
 
   const handleSaveAndExit = useCallback(async () => {
-    await controllerRef.current?.flush();
-    router.replace('/formulario');
+    try {
+      await controllerRef.current?.flush();
+      router.replace('/formulario');
+    } catch {
+      setAutosaveError(true);
+      Alert.alert(
+        'Error al guardar',
+        'No se pudieron guardar los cambios en el borrador. Revisa tu conexión o vuelve a intentar antes de salir.',
+      );
+    }
   }, []);
 
   const handleRetrySave = useCallback(() => {

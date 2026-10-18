@@ -3,6 +3,7 @@ import { afterEach, describe, expect, it } from 'vitest';
 import { migrateDatabase } from './migrations';
 import { ingestMedicalFormBundle } from './forms/form-ingestion';
 import { seedMedicalFormsDemo } from './forms/form-seed';
+import { selectDailyFormAssignment } from './forms/form-repository';
 import {
   ConflictoEntregaError,
   TipoPreguntaNoSoportadoError,
@@ -931,5 +932,166 @@ describe('formularios y persistencia clínica en SQLite', () => {
     // Y para el día 2026-10-19 civil, no debe reportar como entregado
     const statusNext = await repoA.getDailyFormStatus('form-esas-muestra', '2026-10-19');
     expect(statusNext.hasSubmittedToday).toBe(false);
+  });
+
+  it('listAssignedForms prioriza cuestionarios con periodicidad daily y selectDailyFormAssignment elige seguimiento-domiciliario sobre QLQ-C30', async () => {
+    const database = open();
+    await migrateDatabase(database);
+    await seedPatientContextIfEmpty(database, patientA, patientB);
+    await seedMedicalFormsDemo(database, patientA, patientB);
+
+    const repoA = createPatientRepository(database, patientA, ids());
+    const assigned = await repoA.listAssignedForms();
+
+    expect(assigned.length).toBeGreaterThanOrEqual(3);
+    // El primero debe ser 'seguimiento-domiciliario' por periodicidad daily
+    expect(assigned[0].formulario_id).toBe('seguimiento-domiciliario');
+    expect(assigned[0].periodicidad).toBe('daily');
+
+    // selectDailyFormAssignment debe resolver directamente a seguimiento-domiciliario
+    const selected = selectDailyFormAssignment(assigned);
+    expect(selected?.formulario_id).toBe('seguimiento-domiciliario');
+  });
+
+  it('getOrCreateDailyDraft con periodoClave = legacy recupera el borrador legacy preexistente con sus respuestas y entregaId', async () => {
+    const database = open();
+    await migrateDatabase(database);
+    await seedPatientContextIfEmpty(database, patientA, patientB);
+    await seedMedicalFormsDemo(database, patientA, patientB);
+
+    const repoA = createPatientRepository(database, patientA, ids());
+
+    // Insertar un borrador con periodo_clave = 'legacy'
+    await database.run(
+      `INSERT INTO borrador_formulario (
+        paciente_id, formulario_id, version, periodo_clave,
+        entrega_id, respuestas_json, guardado_en, version_payload, paso_actual
+      ) VALUES (?, 'seguimiento-domiciliario', '1.0.0', 'legacy', 'del-legacy-123', '{"P0.1":"si"}', '2026-10-18T10:00:00Z', 1, 'sec-modulo-0')`,
+      [patientA],
+    );
+
+    const legacyDraft = await repoA.getOrCreateDailyDraft(
+      'seguimiento-domiciliario',
+      '1.0.0',
+      'legacy',
+    );
+
+    expect(legacyDraft.entregaId).toBe('del-legacy-123');
+    expect(legacyDraft.periodoClave).toBe('legacy');
+    expect(legacyDraft.respuestas).toEqual({ 'P0.1': 'si' });
+    expect(legacyDraft.pasoActual).toBe('sec-modulo-0');
+  });
+
+  it('getDailyFormStatus detecta la entrega de hoy aunque existan 10 o más entregas de otros días en el historial', async () => {
+    const database = open();
+    await migrateDatabase(database);
+    await seedPatientContextIfEmpty(database, patientA, patientB);
+    await seedMedicalFormsDemo(database, patientA, patientB);
+
+    const repoA = createPatientRepository(database, patientA, ids());
+    const today = '2026-10-18';
+
+    // Insertar 1 entrega para hoy
+    await database.run(
+      `INSERT INTO respuesta_formulario (
+        id, paciente_id, formulario_id, version, respuestas_json, fecha_confirmacion, creado_localmente_en,
+        fecha_seguimiento, zona_horaria
+      ) VALUES (?, ?, 'seguimiento-domiciliario', '1.0.0', '{}', '2026-10-18T12:00:00Z', '2026-10-18T12:00:00Z', ?, 'America/Santiago')`,
+      ['del-today-1', patientA, today],
+    );
+
+    // Insertar 12 entregas para otros días posteriores que quedarían antes en un ORDER BY DESC
+    for (let i = 19; i <= 30; i++) {
+      const otherDay = `2026-10-${i}`;
+      await database.run(
+        `INSERT INTO respuesta_formulario (
+          id, paciente_id, formulario_id, version, respuestas_json, fecha_confirmacion, creado_localmente_en,
+          fecha_seguimiento, zona_horaria
+        ) VALUES (?, ?, 'seguimiento-domiciliario', '1.0.0', '{}', ?, ?, ?, 'America/Santiago')`,
+        [`del-future-${i}`, patientA, `${otherDay}T12:00:00Z`, `${otherDay}T12:00:00Z`, otherDay],
+      );
+    }
+
+    // getDailyFormStatus para today debe encontrar 'del-today-1' sin ser desplazado por el límite
+    const status = await repoA.getDailyFormStatus('seguimiento-domiciliario', today);
+    expect(status.hasSubmittedToday).toBe(true);
+    expect(status.lastSubmission?.id).toBe('del-today-1');
+  });
+
+  it('confirmDailySubmission es idempotente ante reintentos con respuestas normalizadas (espacios en blanco, preguntas ocultas)', async () => {
+    const database = open();
+    await migrateDatabase(database);
+    await seedPatientContextIfEmpty(database, patientA, patientB);
+    await seedMedicalFormsDemo(database, patientA, patientB);
+
+    const repoA = createPatientRepository(database, patientA, ids());
+
+    const draft = await repoA.getOrCreateDailyDraft('seguimiento-domiciliario', '1.0.0', {
+      fechaSeguimiento: '2026-10-18',
+      periodoClave: 'dia:2026-10-18',
+      zonaHoraria: 'America/Santiago',
+      iniciadoEn: '2026-10-18T10:00:00.000Z',
+      ventanaDesde: '2026-10-17T10:00:00.000Z',
+      ventanaHasta: '2026-10-18T10:00:00.000Z',
+    });
+
+    const answersFirst = {
+      'P0.1': 'no',
+      P1: 'no',
+      P2: 'no',
+      'P3.A': 'no',
+      'P3.B': 'no',
+      P4: 'no',
+      P5: 'no',
+      P6: 'no',
+      P7: 'no',
+      P8: 'no',
+      'P9.A': 'no',
+      'P9.B': 'no',
+      P10: '  Todo tranquilo hoy  ',
+    };
+
+    const firstResult = await repoA.confirmDailySubmission(
+      {
+        formId: 'seguimiento-domiciliario',
+        version: '1.0.0',
+        periodoClave: 'dia:2026-10-18',
+        deliveryId: draft.entregaId,
+      },
+      answersFirst,
+    );
+
+    expect(firstResult).toBe(draft.entregaId);
+
+    // Reintento: texto sin espacios adicionales o con P1.1 (oculta) añadida accidentalmente
+    const answersRetry = {
+      'P0.1': 'no',
+      P1: 'no',
+      'P1.1': 'calor_decaimiento', // oculta por P1=no
+      P2: 'no',
+      'P3.A': 'no',
+      'P3.B': 'no',
+      P4: 'no',
+      P5: 'no',
+      P6: 'no',
+      P7: 'no',
+      P8: 'no',
+      'P9.A': 'no',
+      'P9.B': 'no',
+      P10: 'Todo tranquilo hoy',
+    };
+
+    // No debe lanzar ConflictoEntregaError, debe retornar id idempotentemente
+    const retryResult = await repoA.confirmDailySubmission(
+      {
+        formId: 'seguimiento-domiciliario',
+        version: '1.0.0',
+        periodoClave: 'dia:2026-10-18',
+        deliveryId: draft.entregaId,
+      },
+      answersRetry,
+    );
+
+    expect(retryResult).toBe(draft.entregaId);
   });
 });

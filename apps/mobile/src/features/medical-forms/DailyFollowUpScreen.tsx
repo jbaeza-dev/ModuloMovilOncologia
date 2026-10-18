@@ -18,10 +18,11 @@ import { formatDate } from '../../data/local/repository';
 import { useFocusedValue } from '../../hooks/use-local-query';
 import { useLocalData } from '../../providers/LocalDataProvider';
 import { useAppTheme } from '../../providers/ThemeProvider';
-import type {
-  AssignedFormSummary,
-  DailyFormStatus,
-  FullFormDefinition,
+import {
+  type AssignedFormSummary,
+  type DailyFormStatus,
+  type FullFormDefinition,
+  selectDailyFormAssignment,
 } from '../../data/local/forms/form-repository';
 import type { FormConfiguration, QuestionConfiguration } from '../../data/local/forms/form-types';
 import { validateConditionIntegrity } from '../../services/forms/form-conditions';
@@ -55,7 +56,8 @@ export function DailyFollowUpScreen() {
     }
 
     const assigned = await repository.listAssignedForms();
-    if (assigned.length === 0) {
+    const primaryAssignment = selectDailyFormAssignment(assigned);
+    if (!primaryAssignment) {
       return {
         assigned: [],
         dailyStatus: null,
@@ -63,8 +65,6 @@ export function DailyFollowUpScreen() {
         isIncompatible: false,
       };
     }
-
-    const primaryAssignment = assigned[0];
     const dailyStatus = await repository.getDailyFormStatus(primaryAssignment.formulario_id);
     const mainForm = await repository.getFormDefinition(
       primaryAssignment.formulario_id,
@@ -182,7 +182,7 @@ export function DailyFollowUpScreen() {
     );
   };
 
-  const primaryAssigned = assigned[0];
+  const primaryAssigned = selectDailyFormAssignment(assigned);
 
   return (
     <Screen isRoot title="Cómo me siento hoy">

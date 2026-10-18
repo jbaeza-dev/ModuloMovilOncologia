@@ -94,6 +94,7 @@ describe('Pruebas de UI: Componentes y Pantallas de Formularios Médicos', () =>
   beforeEach(() => {
     jest.clearAllMocks();
     mockUseLocalSearchParams.mockReturnValue({});
+    mockRepository.saveDailyDraft.mockResolvedValue(undefined);
   });
 
   describe('QuestionInput', () => {
@@ -419,7 +420,7 @@ describe('Pruebas de UI: Componentes y Pantallas de Formularios Médicos', () =>
         guardadoEn: '2026-10-18T10:00:00Z',
       });
 
-      await render(<FormSectionScreen />);
+      const { unmount } = await render(<FormSectionScreen />);
 
       // Debe calcular dinámicamente "Sección 1 de 2" (no 11)
       await waitFor(() => {
@@ -435,7 +436,7 @@ describe('Pruebas de UI: Componentes y Pantallas de Formularios Médicos', () =>
 
       // Seleccionar opción "si"
       const optionSi = screen.getByLabelText('Sí');
-      fireEvent.press(optionSi);
+      await fireEvent.press(optionSi);
 
       // Ahora Q_DETALLE_ANIMO debe aparecer dinámicamente
       await waitFor(() => {
@@ -444,7 +445,7 @@ describe('Pruebas de UI: Componentes y Pantallas de Formularios Médicos', () =>
 
       // Avanzar a la sección 2
       const btnContinuar = screen.getByText('Continuar');
-      fireEvent.press(btnContinuar);
+      await fireEvent.press(btnContinuar);
 
       // Debe anunciar "Sección 2 de 2" y mostrar Q_COMENTARIO con límite de 200 caracteres
       await waitFor(() => {
@@ -453,6 +454,7 @@ describe('Pruebas de UI: Componentes y Pantallas de Formularios Médicos', () =>
       });
 
       expect(screen.getByText('0 de 200 caracteres')).toBeTruthy();
+      await unmount();
     });
 
     it('solicita confirmación contextual al cambiar una pregunta madre que oculta hijas respondidas', async () => {
@@ -502,7 +504,7 @@ describe('Pruebas de UI: Componentes y Pantallas de Formularios Médicos', () =>
         guardadoEn: '2026-10-18T10:00:00Z',
       });
 
-      await render(<FormSectionScreen />);
+      const { unmount } = await render(<FormSectionScreen />);
 
       await waitFor(() => {
         expect(screen.getByText('Sección 1 de 2')).toBeTruthy();
@@ -514,7 +516,7 @@ describe('Pruebas de UI: Componentes y Pantallas de Formularios Médicos', () =>
 
       // Cambiar la madre a "no"
       const optionNo = screen.getByLabelText('No');
-      fireEvent.press(optionNo);
+      await fireEvent.press(optionNo);
 
       // Debe haber invocado Alert.alert solicitando confirmación
       expect(alertSpy).toHaveBeenCalledWith(
@@ -524,6 +526,85 @@ describe('Pruebas de UI: Componentes y Pantallas de Formularios Médicos', () =>
       );
 
       alertSpy.mockRestore();
+      await unmount();
+    });
+
+    it('al fallar el guardado durante Guardar y salir, no navega fuera de la pantalla, conserva las respuestas y alerta del error', async () => {
+      const alertSpy = jest.spyOn(Alert, 'alert');
+
+      mockUseLocalSearchParams.mockReturnValue({
+        id: SAMPLE_DECOUPLED_FORM.formularioId,
+        version: SAMPLE_DECOUPLED_FORM.version,
+      });
+
+      mockRepository.getFormDefinition.mockResolvedValue({
+        formulario_id: SAMPLE_DECOUPLED_FORM.formularioId,
+        version: SAMPLE_DECOUPLED_FORM.version,
+        titulo: SAMPLE_DECOUPLED_FORM.titulo,
+        descripcion: SAMPLE_DECOUPLED_FORM.descripcion,
+        duracion_estimada_min: SAMPLE_DECOUPLED_FORM.duracionEstimadaMin,
+        configuracion: SAMPLE_DECOUPLED_FORM.configuracion,
+        preguntas: SAMPLE_DECOUPLED_FORM.preguntas.map((q) => ({
+          formulario_id: SAMPLE_DECOUPLED_FORM.formularioId,
+          version: SAMPLE_DECOUPLED_FORM.version,
+          pregunta_id: q.preguntaId,
+          texto: q.texto,
+          tipo: q.tipo,
+          orden: q.orden,
+          requerida: q.requerida ? 1 : 0,
+          configuracion: q.configuracion,
+          retirado: 0,
+        })),
+      });
+
+      mockRepository.getOrCreateDailyDraft.mockResolvedValue({
+        formId: SAMPLE_DECOUPLED_FORM.formularioId,
+        version: SAMPLE_DECOUPLED_FORM.version,
+        periodoClave: 'dia:2026-10-18',
+        entregaId: 'del-decoupled-1',
+        fechaSeguimiento: '2026-10-18',
+        zonaHoraria: 'America/Santiago',
+        iniciadoEn: '2026-10-18T10:00:00Z',
+        ventanaDesde: '2026-10-17T10:00:00Z',
+        ventanaHasta: '2026-10-18T10:00:00Z',
+        pasoActual: 'sec-animo',
+        respuestas: {},
+        guardadoEn: '2026-10-18T10:00:00Z',
+      });
+
+      // Simular fallo en saveDailyDraft únicamente en este intento
+      mockRepository.saveDailyDraft.mockRejectedValueOnce(new Error('Fallo simulado de disco'));
+
+      const { unmount } = await render(<FormSectionScreen />);
+
+      await waitFor(() => {
+        expect(screen.getByText('Sección 1 de 2')).toBeTruthy();
+      });
+
+      // Responder una pregunta
+      const optionSi = screen.getByLabelText('Sí');
+      await fireEvent.press(optionSi);
+
+      // Presionar "Guardar y salir"
+      const btnGuardarSalir = screen.getByText('Guardar y salir');
+      await fireEvent.press(btnGuardarSalir);
+
+      // Esperar a que se procese el flush fallido
+      await waitFor(() => {
+        expect(alertSpy).toHaveBeenCalledWith(
+          'Error al guardar',
+          expect.stringContaining('No se pudieron guardar los cambios en el borrador'),
+        );
+      });
+
+      // No debe haber navegado fuera de la pantalla
+      expect(mockRouterReplace).not.toHaveBeenCalled();
+
+      // La sección sigue visible
+      expect(screen.getByText('Sección 1 de 2')).toBeTruthy();
+
+      alertSpy.mockRestore();
+      await unmount();
     });
   });
 
@@ -567,7 +648,7 @@ describe('Pruebas de UI: Componentes y Pantallas de Formularios Médicos', () =>
 
       mockRepository.confirmDailySubmission.mockResolvedValue('del-rev-1');
 
-      await render(<DailyFormReviewScreen />);
+      const { unmount } = await render(<DailyFormReviewScreen />);
 
       await waitFor(() => {
         expect(screen.getByText('Revisa tus respuestas')).toBeTruthy();
@@ -588,12 +669,14 @@ describe('Pruebas de UI: Componentes y Pantallas de Formularios Médicos', () =>
 
       // Confirmar
       const btnConfirmar = screen.getByText('Confirmar y registrar seguimiento');
-      fireEvent.press(btnConfirmar);
+      await fireEvent.press(btnConfirmar);
 
       await waitFor(() => {
         expect(screen.getByText('Registro completado con éxito')).toBeTruthy();
         expect(screen.getByText('Guardado en este dispositivo · Pendiente de envío')).toBeTruthy();
       });
+
+      await unmount();
     });
   });
 
@@ -637,7 +720,7 @@ describe('Pruebas de UI: Componentes y Pantallas de Formularios Médicos', () =>
         })),
       });
 
-      await render(<MedicalFormSubmissionDetailScreen />);
+      const { unmount } = await render(<MedicalFormSubmissionDetailScreen />);
 
       // Esperar a que pase el estado de carga y renderice el detalle
       await waitFor(() => {
@@ -648,6 +731,8 @@ describe('Pruebas de UI: Componentes y Pantallas de Formularios Médicos', () =>
       expect(screen.getByText('¿Te has sentido con buen ánimo hoy?')).toBeTruthy();
       expect(screen.getByText('¿Qué actividad te ayudó a sentirte mejor?')).toBeTruthy();
       expect(screen.getByText('Caminé por el parque')).toBeTruthy();
+
+      await unmount();
     });
   });
 });

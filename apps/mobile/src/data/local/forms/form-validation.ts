@@ -317,7 +317,8 @@ export function normalizeFormQuestionsRecords(
 }
 
 /**
- * Normaliza y compara dos conjuntos de respuestas para verificar igualdad estricta de contenido.
+ * Normaliza y compara dos conjuntos de respuestas para verificar igualdad semántica de contenido.
+ * Descarta valores nulos, indefinidos o vacíos, recorta espacios en textos y ordena arrays de selecciones.
  */
 export function areAnswersEqual(
   a: Record<string, unknown> | null | undefined,
@@ -330,8 +331,24 @@ export function areAnswersEqual(
     const result: Record<string, unknown> = {};
     for (const key of Object.keys(obj).sort()) {
       const val = obj[key];
-      if (Array.isArray(val)) {
-        result[key] = [...val].sort();
+      if (val === undefined || val === null) {
+        continue;
+      }
+      if (typeof val === 'string') {
+        const trimmed = val.trim();
+        if (trimmed.length > 0) {
+          result[key] = trimmed;
+        }
+      } else if (Array.isArray(val)) {
+        const filtered = val
+          .filter(
+            (v) => v !== undefined && v !== null && (typeof v !== 'string' || v.trim().length > 0),
+          )
+          .map((v) => (typeof v === 'string' ? v.trim() : v))
+          .sort();
+        if (filtered.length > 0) {
+          result[key] = filtered;
+        }
       } else {
         result[key] = val;
       }

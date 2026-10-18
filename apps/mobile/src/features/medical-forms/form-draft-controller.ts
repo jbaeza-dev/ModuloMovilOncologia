@@ -47,6 +47,7 @@ export class FormDraftController {
   } | null = null;
 
   private inFlightPromise: Promise<void> | null = null;
+  private lastSaveError: unknown = null;
   private isConfirmed = false;
   private isDisposed = false;
 
@@ -74,6 +75,7 @@ export class FormDraftController {
     }
 
     this.pendingPayload = { answers, currentSection };
+    this.lastSaveError = null;
 
     if (this.debounceTimer !== null) {
       clearTimeout(this.debounceTimer);
@@ -105,7 +107,11 @@ export class FormDraftController {
 
     // Si ya hay una escritura en vuelo, encadenar la ejecución para cuando termine
     if (this.inFlightPromise) {
-      await this.inFlightPromise;
+      try {
+        await this.inFlightPromise;
+      } catch {
+        // el error se maneja en la promesa en vuelo
+      }
       if (this.isConfirmed || this.isDisposed) {
         this.pendingPayload = null;
         return;
@@ -127,25 +133,40 @@ export class FormDraftController {
           current.answers,
           current.currentSection,
         );
-        this.onSaveSuccess?.();
+        this.lastSaveError = null;
+        if (!this.isDisposed) {
+          this.onSaveSuccess?.();
+        }
       } catch (error) {
-        this.onSaveError?.(error);
+        this.lastSaveError = error;
+        if (!this.pendingPayload) {
+          this.pendingPayload = current;
+        }
+        if (!this.isDisposed) {
+          this.onSaveError?.(error);
+        }
+        throw error;
       } finally {
         this.inFlightPromise = null;
       }
     };
 
     this.inFlightPromise = saveOperation();
-    await this.inFlightPromise;
+    try {
+      await this.inFlightPromise;
+    } catch {
+      // Ignorar aquí para no romper el timer de fondo; el error queda registrado en lastSaveError
+    }
 
     // Si mientras guardaba llegó otra actualización pendiente, ejecutarla
-    if (this.pendingPayload && !this.isConfirmed && !this.isDisposed) {
+    if (this.pendingPayload && !this.isConfirmed && !this.isDisposed && !this.lastSaveError) {
       await this.executePendingSave();
     }
   }
 
   /**
    * Fuerza el vaciado inmediato de cualquier escritura pendiente o en curso.
+   * Rechaza si la escritura pendiente falló para evitar abandonar la pantalla con datos sin persistir.
    */
   async flush(): Promise<void> {
     if (this.debounceTimer !== null) {
@@ -158,7 +179,16 @@ export class FormDraftController {
     }
 
     if (this.inFlightPromise) {
-      await this.inFlightPromise;
+      try {
+        await this.inFlightPromise;
+      } catch {
+        // capturado abajo
+      }
+    }
+
+    if (this.lastSaveError) {
+      const err = this.lastSaveError;
+      throw err;
     }
   }
 
@@ -214,7 +244,11 @@ export class FormDraftController {
     return {
       isConfirmed: this.isConfirmed,
       isDisposed: this.isDisposed,
-      hasPending: this.pendingPayload !== null || this.debounceTimer !== null,
+      hasPending:
+        this.pendingPayload !== null ||
+        this.debounceTimer !== null ||
+        this.inFlightPromise !== null ||
+        this.lastSaveError !== null,
     };
   }
 }

@@ -14,7 +14,10 @@ import {
   VisualButton,
 } from '../../components/Visual';
 import type { FormAnswerValue, QuestionConfiguration } from '../../data/local/forms/form-types';
-import type { FullFormDefinition } from '../../data/local/forms/form-repository';
+import {
+  type FullFormDefinition,
+  selectDailyFormAssignment,
+} from '../../data/local/forms/form-repository';
 import { useLocalData } from '../../providers/LocalDataProvider';
 import { useAppTheme } from '../../providers/ThemeProvider';
 import { computeVisibleQuestions } from '../../services/forms/form-conditions';
@@ -61,12 +64,13 @@ export function DailyFormReviewScreen() {
 
         if (!formId) {
           const assigned = await repository.listAssignedForms();
-          if (assigned.length === 0) {
+          const target = selectDailyFormAssignment(assigned);
+          if (!target) {
             router.replace('/formulario');
             return;
           }
-          formId = assigned[0].formulario_id;
-          version = assigned[0].version;
+          formId = target.formulario_id;
+          version = target.version;
         }
 
         const definition = await repository.getFormDefinition(formId, version);

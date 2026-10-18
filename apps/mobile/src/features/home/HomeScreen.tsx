@@ -7,6 +7,7 @@ import { NavigationCard } from '../../components/NavigationCard';
 import { Screen } from '../../components/Screen';
 import { InfoCard, SectionTitle, StatusPill, VisualButton } from '../../components/Visual';
 import type { DailyFormStatus } from '../../data/local/forms/form-types';
+import { selectDailyFormAssignment } from '../../data/local/forms/form-repository';
 import type { PatientProfileRecord } from '../../data/local/repository';
 import { useFocusedValue } from '../../hooks/use-local-query';
 import { useReminderStatus } from '../../hooks/use-reminder-status';
@@ -78,8 +79,8 @@ export function HomeScreen() {
     if (!repository || typeof repository.listAssignedForms !== 'function') return null;
     try {
       const assigned = await repository.listAssignedForms();
-      if (assigned.length === 0) return null;
-      const primary = assigned[0];
+      const primary = selectDailyFormAssignment(assigned);
+      if (!primary) return null;
       return await repository.getDailyFormStatus(primary.formulario_id);
     } catch {
       return null;

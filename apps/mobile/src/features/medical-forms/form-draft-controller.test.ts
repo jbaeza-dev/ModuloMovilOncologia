@@ -178,4 +178,31 @@ describe('FormDraftController', () => {
     expect(onSaveError).toHaveBeenCalledTimes(1);
     expect(onSaveError).toHaveBeenCalledWith(expect.any(Error));
   });
+
+  it('flush rechaza si el guardado falla, conserva hasPending en true y permite reintentar con éxito', async () => {
+    const errorSqlite = new Error('Disk I/O error');
+    const onSave = vi.fn().mockRejectedValueOnce(errorSqlite).mockResolvedValueOnce(undefined);
+    const onConfirm = vi.fn().mockResolvedValue('del-uuid-1');
+
+    const controller = new FormDraftController({
+      identity,
+      onSave,
+      onConfirm,
+      debounceMs: 200,
+    });
+
+    controller.queueSave({ P10: 'Comentario no guardado' }, 'sec-10');
+    expect(controller.getStatus().hasPending).toBe(true);
+
+    // flush debe intentar la escritura pendiente y fallar arrojando el error
+    await expect(controller.flush()).rejects.toThrow('Disk I/O error');
+    expect(onSave).toHaveBeenCalledTimes(1);
+    expect(controller.getStatus().hasPending).toBe(true);
+
+    // Reintentar guardado exitosamente
+    controller.queueSave({ P10: 'Comentario no guardado' }, 'sec-10', true);
+    await controller.flush();
+    expect(onSave).toHaveBeenCalledTimes(2);
+    expect(controller.getStatus().hasPending).toBe(false);
+  });
 });

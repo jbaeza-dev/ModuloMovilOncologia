@@ -58,17 +58,26 @@ export const SEGUIMIENTO_DOMICILIARIO_PREGUNTAS: MedicalFormBundleQuestion[] = [
       visibleWhen: { op: 'eq', questionId: 'P0.1', value: 'si' },
       opciones: [
         {
-          valor: 'bien_sin_molestias',
-          etiqueta:
-            'Se ve sana, sin cambios, no me duele y no tengo secreción ni líquido saliendo.',
+          valor: 'normal_sin_cambios',
+          etiqueta: 'Se ve normal, sin dolor ni cambios.',
           esExcluyente: true,
         },
-        { valor: 'enrojecida', etiqueta: 'Está enrojecida o tibia al tacto.' },
-        { valor: 'hinchada', etiqueta: 'Está hinchada o la siento dura.' },
-        { valor: 'dolor', etiqueta: 'Me duele al tocarla o espontáneamente.' },
         {
-          valor: 'secrecion',
-          etiqueta: 'Sale líquido, pus o sangre alrededor del catéter.',
+          valor: 'sensible_picazon',
+          etiqueta: 'Está un poco sensible o con leve picazón, pero sin cambios en la piel.',
+        },
+        {
+          valor: 'roja_caliente_hinchada',
+          etiqueta: 'Está roja, caliente al tocarla o hinchada.',
+        },
+        {
+          valor: 'liquido_pus_sangre',
+          etiqueta: 'Sale líquido, pus o sangre por el sitio del catéter.',
+        },
+        {
+          valor: 'dolor_cuello_hombro_brazo',
+          etiqueta:
+            'Siento dolor o hinchazón en el cuello, hombro o en todo el brazo del lado del catéter.',
         },
       ],
     },
@@ -331,8 +340,7 @@ export const SEGUIMIENTO_DOMICILIARIO_PREGUNTAS: MedicalFormBundleQuestion[] = [
   // --- MÓDULO 3: Tránsito intestinal ---
   {
     preguntaId: 'P3.A',
-    texto:
-      '¿Has tenido diarrea (deposiciones sueltas, líquidas o más frecuentes de lo normal) en las últimas 24 horas?',
+    texto: '¿Has tenido diarrea (deposiciones líquidas o sueltas) en las últimas 24 horas?',
     tipo: 'single_choice',
     orden: 12,
     requerida: true,
@@ -347,7 +355,7 @@ export const SEGUIMIENTO_DOMICILIARIO_PREGUNTAS: MedicalFormBundleQuestion[] = [
   },
   {
     preguntaId: 'P3.A.1',
-    texto: '¿Cuántas veces más de lo que acostumbras fuiste al baño con diarrea hoy?',
+    texto: '¿Cuántas veces has tenido diarrea hoy (en comparación con tu ritmo normal)?',
     tipo: 'single_choice',
     orden: 13,
     requerida: true,
@@ -356,15 +364,19 @@ export const SEGUIMIENTO_DOMICILIARIO_PREGUNTAS: MedicalFormBundleQuestion[] = [
       sourceCode: 'P3.A.1',
       visibleWhen: { op: 'eq', questionId: 'P3.A', value: 'si' },
       opciones: [
-        { valor: '1_a_3', etiqueta: 'De 1 a 3 veces más de lo habitual.' },
-        { valor: '4_a_6', etiqueta: 'De 4 a 6 veces más de lo habitual.' },
-        { valor: '7_mas', etiqueta: '7 o más veces más de lo habitual.' },
+        { valor: '1_a_3', etiqueta: 'De 1 a 3 veces en el día (Leve).' },
+        { valor: '4_a_6', etiqueta: 'De 4 a 6 veces en el día (Moderada).' },
+        {
+          valor: '7_mas',
+          etiqueta:
+            '7 veces o más en el día, o me despierta por la noche / no alcanzo a llegar al baño (Severa).',
+        },
       ],
     },
   },
   {
     preguntaId: 'P3.A.2',
-    texto: '¿Acompaña a la diarrea alguno de estos síntomas?',
+    texto: '¿Cómo se ven las deposiciones y qué otros síntomas sientes en el abdomen?',
     tipo: 'multiple_choice',
     orden: 14,
     requerida: true,
@@ -374,28 +386,28 @@ export const SEGUIMIENTO_DOMICILIARIO_PREGUNTAS: MedicalFormBundleQuestion[] = [
       visibleWhen: { op: 'eq', questionId: 'P3.A', value: 'si' },
       opciones: [
         {
-          valor: 'ninguno',
-          etiqueta: 'Ninguno de los anteriores.',
+          valor: 'liquidas_leves',
+          etiqueta: 'Son solo líquidas, con molestias leves o sin dolor.',
           esExcluyente: true,
         },
         {
-          valor: 'sangre_moco',
-          etiqueta: 'Veo sangre o moco en las deposiciones.',
+          valor: 'mucosidad_sangre',
+          etiqueta: 'Tienen mucosidad o hilos de sangre roja.',
         },
         {
-          valor: 'dolor_retorcijones',
-          etiqueta: 'Tengo cólicos o retorcijones abdominales fuertes que no se calman.',
+          valor: 'negras_alquitran',
+          etiqueta: 'Son de color negro brillante (como alquitrán) y de olor muy fuerte.',
         },
         {
-          valor: 'mareo_boca_seca',
-          etiqueta: 'Siento la boca muy seca, mareos al ponerme de pie o orino muy poco.',
+          valor: 'retorcijones_dolor_fuerte',
+          etiqueta: 'Siento retorcijones o dolor abdominal muy fuerte que no se pasa.',
         },
       ],
     },
   },
   {
     preguntaId: 'P3.A.3',
-    texto: '¿Qué medidas o medicamentos has tomado para la diarrea?',
+    texto: '¿Has notado signos de deshidratación por la diarrea?',
     tipo: 'multiple_choice',
     orden: 15,
     requerida: true,
@@ -405,27 +417,28 @@ export const SEGUIMIENTO_DOMICILIARIO_PREGUNTAS: MedicalFormBundleQuestion[] = [
       visibleWhen: { op: 'eq', questionId: 'P3.A', value: 'si' },
       opciones: [
         {
-          valor: 'hidratacion',
-          etiqueta: 'Estoy tomando abundantes líquidos (sales de rehidratación, agua, caldos).',
+          valor: 'bien_hidratado',
+          etiqueta: 'No, me siento bien hidratado/a.',
+          esExcluyente: true,
         },
         {
-          valor: 'medicamento_indicado',
-          etiqueta: 'Tomé el antidiarreico que me indicó mi médico (por ejemplo, loperamida).',
+          valor: 'mucha_sed_boca_seca',
+          etiqueta: 'Tengo mucha sed y la boca muy seca o pastosa.',
         },
         {
-          valor: 'sin_medicacion',
-          etiqueta: 'No he tomado medicamentos para la diarrea.',
+          valor: 'orina_poca_oscura',
+          etiqueta: 'Orino muy poco y la orina es muy oscura (color té cargado).',
         },
         {
-          valor: 'automedicacion',
-          etiqueta: 'Tomé otro medicamento por mi cuenta.',
+          valor: 'mareo_de_pie',
+          etiqueta: 'Me mareo mucho cuando intento ponerme de pie.',
         },
       ],
     },
   },
   {
     preguntaId: 'P3.B',
-    texto: '¿Tienes estreñimiento (dificultad para defecar o llevas días sin poder ir al baño)?',
+    texto: '¿Has tenido estreñimiento (dificultad para ir al baño o deposiciones muy duras)?',
     tipo: 'single_choice',
     orden: 16,
     requerida: true,
@@ -440,7 +453,7 @@ export const SEGUIMIENTO_DOMICILIARIO_PREGUNTAS: MedicalFormBundleQuestion[] = [
   },
   {
     preguntaId: 'P3.B.1',
-    texto: '¿Cuántos días llevas sin poder evacuar el intestino?',
+    texto: '¿Cuántos días llevas sin poder hacer deposiciones?',
     tipo: 'single_choice',
     orden: 17,
     requerida: true,
@@ -449,16 +462,15 @@ export const SEGUIMIENTO_DOMICILIARIO_PREGUNTAS: MedicalFormBundleQuestion[] = [
       sourceCode: 'P3.B.1',
       visibleWhen: { op: 'eq', questionId: 'P3.B', value: 'si' },
       opciones: [
-        { valor: '1_a_2', etiqueta: '1 o 2 días más de lo habitual para mí.' },
-        { valor: '3_a_4', etiqueta: '3 o 4 días seguidos sin evacuar.' },
-        { valor: '5_mas', etiqueta: '5 días o más sin poder evacuar.' },
+        { valor: '1_a_2', etiqueta: '1 a 2 días.' },
+        { valor: '3_a_4', etiqueta: '3 a 4 días.' },
+        { valor: '5_mas', etiqueta: '5 días o más.' },
       ],
     },
   },
   {
     preguntaId: 'P3.B.2',
-    texto:
-      '¿Acompaña al estreñimiento dolor de guata fuerte, hinchazón dura o náuseas con vómitos?',
+    texto: '¿Tienes el abdomen muy hinchado, duro, con dolor fuerte o no puedes eliminar gases?',
     tipo: 'single_choice',
     orden: 18,
     requerida: true,
@@ -467,10 +479,13 @@ export const SEGUIMIENTO_DOMICILIARIO_PREGUNTAS: MedicalFormBundleQuestion[] = [
       sourceCode: 'P3.B.2',
       visibleWhen: { op: 'eq', questionId: 'P3.B', value: 'si' },
       opciones: [
-        { valor: 'no', etiqueta: 'No, solo la molestia de no poder ir al baño.' },
+        {
+          valor: 'no',
+          etiqueta: 'No, solo la molestia de no ir al baño.',
+        },
         {
           valor: 'si',
-          etiqueta: 'Sí, tengo dolor abdominal fuerte, vómitos o la guata muy hinchada y dura.',
+          etiqueta: 'Sí, tengo dolor fuerte, abdomen duro o vómitos junto con el estreñimiento.',
         },
       ],
     },
