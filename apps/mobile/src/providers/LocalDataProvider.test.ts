@@ -1,4 +1,4 @@
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it, vi } from 'vitest';
 
 import type { SqlValue } from '../data/local/core/sql';
 import { migrateDatabase } from '../data/local/migrations';
@@ -273,6 +273,12 @@ describe('LocalDataProvider Notification Processing', () => {
 import { PatientContextManager } from './patient-context-manager';
 import { DemoSessionAdapter } from '../services/session/demo-session-adapter';
 import { FakeAssistantAdapter } from '../services/assistant/fake-assistant-adapter';
+import type { PatientRepository } from '../data/local/repository';
+import type { SqlConnection } from '../data/local/core/sql';
+import * as resourceStorage from '../data/local/files/resource-storage';
+import * as storageService from '../features/education/infographic-storage-service';
+import { runBulkInfographicDownload } from '../features/education/bulk-download-coordinator';
+import type { EducationalCatalogReader } from '../features/education/educational-catalog-service';
 
 describe('LocalDataProvider Context Teardown and Operation Tracking', () => {
   it('trackOperation protege el contador frente a excepciones síncronas y asíncronas', async () => {
@@ -380,6 +386,119 @@ describe('LocalDataProvider Context Teardown and Operation Tracking', () => {
     expect(manager.getActiveOperations()).toBe(0);
     expect(manager.getIsClosing()).toBe(false);
     expect(sessionAdapter.getCurrentUser()).toBeNull();
+  });
+
+  it('cerrar contexto cancela la sesión de descarga en curso del paciente, drenando el primer archivo y evitando que comience el segundo', async () => {
+    const sessionAdapter = new DemoSessionAdapter();
+    const assistantAdapter = new FakeAssistantAdapter();
+    const router = { replace: () => undefined, push: () => undefined };
+
+    const manager = new PatientContextManager({
+      sessionAdapter,
+      assistantAdapter,
+      router,
+    });
+
+    await manager.selectPatient(patientA);
+
+    const catalog: EducationalCatalogReader = {
+      async getCategories() {
+        return [];
+      },
+      async getAllResources() {
+        return [
+          {
+            id: 'info-d1',
+            title: 'Infografía Uno',
+            category: 1,
+            categoryName: 'General',
+            description: 'D1',
+            type: 'infografia',
+            version: '1.0.0',
+          },
+          {
+            id: 'info-d2',
+            title: 'Infografía Dos',
+            category: 1,
+            categoryName: 'General',
+            description: 'D2',
+            type: 'infografia',
+            version: '1.0.0',
+          },
+        ];
+      },
+      async getResourcesByCategory() {
+        return [];
+      },
+      async getResourceById() {
+        return null;
+      },
+    };
+
+    const mockRepo = {
+      education: {
+        listLocalCopies: async () => [],
+      },
+    } as unknown as PatientRepository;
+
+    const mockDb = {} as unknown as SqlConnection;
+
+    vi.spyOn(resourceStorage, 'resourceFileExists').mockReturnValue(false);
+
+    let resolveFirstDownload!: () => void;
+    let signalFirstStarted!: () => void;
+    const firstStartedPromise = new Promise<void>((r) => {
+      signalFirstStarted = r;
+    });
+    const firstDownloadPromise = new Promise<void>((r) => {
+      resolveFirstDownload = r;
+    });
+
+    const downloadSpy = vi
+      .spyOn(storageService, 'downloadAndSaveInfographic')
+      .mockImplementation(async ({ resource }) => {
+        if (resource.id === 'info-d1') {
+          signalFirstStarted();
+          await firstDownloadPromise;
+        }
+      });
+
+    // Iniciar descarga registrada en trackOperation
+    const downloadPromise = manager.trackOperation(async () => {
+      return await runBulkInfographicDownload({
+        patientId: patientA,
+        repository: mockRepo,
+        database: mockDb,
+        catalogReader: catalog,
+      });
+    });
+
+    // Esperar a que el primer archivo esté efectivamente en vuelo
+    await firstStartedPromise;
+    expect(manager.getActiveOperations()).toBe(1);
+
+    // Solicitar el cierre del contexto mientras el primer archivo se guarda
+    const teardownPromise = manager.closeActiveContext('change_patient');
+
+    // Desbloquear el primer archivo para que termine su guardado
+    resolveFirstDownload();
+
+    // Aguardar tanto la descarga como el drenaje de cierre
+    const [downloadResult, teardownResult] = await Promise.all([downloadPromise, teardownPromise]);
+
+    // El resultado de la descarga debe reportar cancelación y 1 archivo guardado
+    expect(downloadResult.cancelled).toBe(true);
+    expect(downloadResult.downloaded).toBe(1);
+    expect(downloadResult.pendingResources).toHaveLength(1);
+    expect(downloadResult.pendingResources[0].id).toBe('info-d2');
+
+    // El teardown concluyó limpiamente para el paciente saliente
+    expect(teardownResult.success).toBe(true);
+    expect(teardownResult.cancelledPatientId).toBe(patientA);
+    expect(manager.getActiveOperations()).toBe(0);
+
+    // Verificación crítica: el segundo archivo NUNCA comenzó
+    expect(downloadSpy).toHaveBeenCalledTimes(1);
   });
 
   it('selectPatient fuerza y espera el cierre del contexto previo antes de activar el nuevo', async () => {

@@ -82,11 +82,21 @@ export function useBulkInfographicDownload(
     };
   }, [patientId, onComplete]);
 
+  const lastPatientIdRef = useRef<string | null>(patientId);
+  useEffect(() => {
+    if (patientId) {
+      lastPatientIdRef.current = patientId;
+    }
+  }, [patientId]);
+
   // Si el contexto del paciente entra en proceso de cierre (logout o cambio de paciente),
   // solicitar la cancelación limpia de cualquier descarga activa
   useEffect(() => {
-    if (isClosing && patientId) {
-      cancelActiveBulkDownload(patientId);
+    if (isClosing) {
+      const targetPatientId = patientId || lastPatientIdRef.current;
+      if (targetPatientId) {
+        cancelActiveBulkDownload(targetPatientId);
+      }
       if (abortControllerRef.current) {
         abortControllerRef.current.abort();
       }

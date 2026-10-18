@@ -7,6 +7,7 @@ import type { NotificationCoordinator } from '../services/reminders/notification
 import type { SessionAdapter } from '../services/session/session-adapter';
 import type { AssistantAdapter } from '../services/assistant/assistant-adapter';
 import { AssistantController } from '../services/assistant/assistant-controller';
+import { cancelActiveBulkDownload } from '../features/education/bulk-download-coordinator';
 
 export type CloseReason = 'change_patient' | 'manual_close' | 'session_required';
 
@@ -178,6 +179,14 @@ export class PatientContextManager {
     const outgoingPatientId = this.patientId;
     this.isClosing = true;
     this.patientId = null;
+
+    // Cancelar descargas masivas en curso para el paciente saliente de inmediato.
+    // Esto asegura que la descarga se interrumpa tras completar el archivo que
+    // esté en vuelo y no comience los siguientes, permitiendo que el drenaje
+    // no espere la cola completa y que funcione incluso si Educación está desmontada.
+    if (outgoingPatientId) {
+      cancelActiveBulkDownload(outgoingPatientId);
+    }
 
     // Invalidar asistente en vuelo y limpiar memoria
     this.assistantController.abort();

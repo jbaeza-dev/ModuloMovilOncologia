@@ -4,7 +4,10 @@ import type { SqlConnection } from '../../data/local/core/sql';
 import type { EducationalLocalCopy } from '../../data/local/education/education-types';
 import type { PatientRepository } from '../../data/local/repository';
 import { runBulkInfographicDownload, type BulkDownloadProgress } from './bulk-download-coordinator';
-import { InMemoryEducationalCatalogReader } from './educational-catalog-service';
+import {
+  InMemoryEducationalCatalogReader,
+  type EducationalCatalogReader,
+} from './educational-catalog-service';
 import * as storageService from './infographic-storage-service';
 import * as resourceStorage from '../../data/local/files/resource-storage';
 
@@ -543,5 +546,72 @@ describe('Coordinador de descargas masivas de infografías (bulk-download-coordi
     expect(result.downloaded).toBe(1);
     expect(result.failed).toBe(3);
     expect(result.message).toBe('Se guardaron 1 de 4 infografías. 3 pendientes.');
+  });
+
+  it('un segundo consumidor con señal y progreso no genera rechazos no manejados si la descarga compartida falla', async () => {
+    const unhandledRejections: unknown[] = [];
+    const handleUnhandled = (reason: unknown) => {
+      unhandledRejections.push(reason);
+    };
+    process.on('unhandledRejection', handleUnhandled);
+
+    try {
+      let failCatalogPromise!: () => void;
+      const catalogWait = new Promise<never>((_, reject) => {
+        failCatalogPromise = () => reject(new Error('Fallo crítico al cargar catálogo'));
+      });
+
+      const failingCatalog: EducationalCatalogReader = {
+        async getCategories() {
+          return [];
+        },
+        async getAllResources() {
+          return await catalogWait;
+        },
+        async getResourcesByCategory() {
+          return [];
+        },
+        async getResourceById() {
+          return null;
+        },
+      };
+
+      const repo = createMockRepo([]);
+      const abortController = new AbortController();
+      const progressUpdates: BulkDownloadProgress[] = [];
+
+      // Consumidor 1 inicia
+      const run1 = runBulkInfographicDownload({
+        patientId: 'paciente-error-compartido',
+        repository: repo,
+        database: mockDatabase,
+        catalogReader: failingCatalog,
+      });
+
+      // Consumidor 2 se une con señal y listener de progreso
+      const run2 = runBulkInfographicDownload({
+        patientId: 'paciente-error-compartido',
+        repository: repo,
+        database: mockDatabase,
+        catalogReader: failingCatalog,
+        signal: abortController.signal,
+        onProgress: (p) => progressUpdates.push(p),
+      });
+
+      // Desencadenar el fallo
+      failCatalogPromise();
+
+      // Ambos consumidores deben recibir el error original
+      await expect(run1).rejects.toThrow('Fallo crítico al cargar catálogo');
+      await expect(run2).rejects.toThrow('Fallo crítico al cargar catálogo');
+
+      // Dar tiempo para procesar cualquier rechazo asíncrono pendiente
+      await new Promise((r) => setTimeout(r, 50));
+
+      // No deben existir rechazos de promesas huérfanos o no manejados
+      expect(unhandledRejections).toHaveLength(0);
+    } finally {
+      process.off('unhandledRejection', handleUnhandled);
+    }
   });
 });

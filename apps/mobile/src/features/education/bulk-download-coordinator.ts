@@ -91,6 +91,29 @@ export function runBulkInfographicDownload(
 
   const existingSession = activeDownloadsByPatient.get(patientId);
   if (existingSession) {
+    // Función auxiliar para registrar limpiezas en la promesa compartida sin generar
+    // rechazos de promesa no manejados si la promesa original llega a fallar.
+    const attachCleanup = (cleanup: () => void) => {
+      existingSession.promise
+        .then(
+          () => {
+            try {
+              cleanup();
+            } catch {
+              // Ignorar errores en limpieza
+            }
+          },
+          () => {
+            try {
+              cleanup();
+            } catch {
+              // Ignorar errores en limpieza
+            }
+          },
+        )
+        .catch(() => {});
+    };
+
     // Si ya existe una descarga en curso para este paciente:
     // 1. Conectar la señal de cancelación del segundo consumidor para que pueda abortar la ejecución compartida
     if (options.signal) {
@@ -99,7 +122,7 @@ export function runBulkInfographicDownload(
       } else {
         const onAbort = () => existingSession.cancel();
         options.signal.addEventListener('abort', onAbort, { once: true });
-        existingSession.promise.finally(() => {
+        attachCleanup(() => {
           options.signal?.removeEventListener('abort', onAbort);
         });
       }
@@ -108,7 +131,7 @@ export function runBulkInfographicDownload(
     // 2. Conectar el callback de progreso del segundo consumidor a la sesión compartida
     if (options.onProgress) {
       const unsubscribe = existingSession.subscribe(options.onProgress);
-      existingSession.promise.finally(unsubscribe);
+      attachCleanup(unsubscribe);
     }
 
     return existingSession.promise;

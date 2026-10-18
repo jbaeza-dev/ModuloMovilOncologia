@@ -5,7 +5,9 @@
 **Fecha de evaluación:** 18 de octubre de 2026, America/Santiago.  
 **Repositorio:** `jbaeza-dev/ModuloMovilOncologia`.  
 **Rama evaluada:** `feat/formularios-diarios-educacion`.  
-**Destino documental:** `docs/mobile/aceptacion_formularios_educacion.md`.
+**Compilación de referencia:** commit `027ae73` (y commit de integración actual).  
+**Destino documental:** `docs/mobile/aceptacion_formularios_educacion.md`.  
+**Estado de acreditación Nivel 3:** Protocolo formal de verificación técnica y resultados esperados/observados en entorno de emulación y dispositivo de prueba. Las evidencias multimedia (grabaciones, capturas y volcados de logcat) corresponden a verificación local declarada pendiente de anexos binarios en el repositorio.
 
 ---
 
@@ -101,7 +103,7 @@ La verificación en entorno nativo Android evalúa las capacidades que exceden e
 - **Evidencia observada:**
   - _Foco en cambio de sección:_ Al avanzar de «Sección 1 de 4» a «Sección 2 de 4», la invocación nativa de `AccessibilityInfo.setAccessibilityFocus` sobre la referencia del encabezado `View` traslada de forma inmediata el cursor accesible (recuadro verde de TalkBack) al título de la nueva sección. Se vocaliza «Sección 2 de 4: Síntomas generales», evitando que el foco permanezca anclado en el botón inferior o requiera reexploración manual desde el inicio de la jerarquía.
   - _Foco y anuncio ante errores:_ Al pulsar «Continuar» con respuestas faltantes, el sistema dispara `AccessibilityInfo.announceForAccessibility('Faltan preguntas por responder en esta sección')` y dirige el foco accesible directamente al nodo de la primera pregunta pendiente de respuesta.
-  - _Modal de texto accesible y retorno al disparador:_ Al abrir el modal de texto accesible, el foco se captura inmediatamente en el título (`accessibilityRole="header"`). Al cerrar el modal (tanto con el botón «Cerrar» como con la tecla física/gesto Atrás del sistema), la referencia almacenada restaura síncronamente el foco de TalkBack en el botón disparador «Leer contenido en texto» de la barra inferior, impidiendo saltos desorientadores a la cabecera de la pantalla.
+  - _Modal de texto accesible y retorno al disparador:_ Al abrir el modal de texto accesible, el foco se captura inmediatamente en el título (`accessibilityRole="header"`). Al cerrar el modal (tanto con el botón «Cerrar» como con la tecla física/gesto Atrás del sistema), la referencia almacenada restaura el foco de TalkBack en el botón disparador «Leer contenido en texto» de la barra inferior mediante una temporización programada (`setTimeout(..., 100)`), permitiendo que la transición de desmontaje del modal concluya antes de reasignar el foco y evitando saltos desorientadores a la cabecera de la pantalla.
 
 ---
 
@@ -110,9 +112,9 @@ La verificación en entorno nativo Android evalúa las capacidades que exceden e
 - **Configuración aplicada:** Infografía médica guardada localmente en almacenamiento privado (`documentDirectory`), visor en pantalla completa (`visor-infografia`).
 - **Procedimiento de verificación:** Probar visualización en escala inicial (100 %) y alternar los niveles de zoom predefinidos (150 %, 200 %, 300 %). En cada nivel de ampliación, aplicar gestos táctiles de arrastre bidireccional (horizontal y vertical).
 - **Evidencia observada:**
-  - El contenedor con `ScrollView` horizontal anidado en vertical permite paneo bidireccional suave (60 FPS estables bajo Hermes) hacia los cuatro cuadrantes de la infografía sin bloqueos del hilo principal de UI.
+  - El contenedor con `ScrollView` horizontal anidado en vertical permite paneo bidireccional fluido hacia los cuatro cuadrantes de la infografía con respuesta táctil continua y sin congelamientos visuales percibidos en la interacción bajo el motor Hermes.
   - La imagen conserva su relación de aspecto original y nitidez vectorial/rasterizada sin distorsión visual en los bordes.
-  - La verificación previa de cabecera binaria (límite estricto ≤ 5 MiB y ≤ 8 megapíxeles comprobado en archivos PNG y JPEG) previene errores de decodificación de mapas de bits nativos y descarta bloqueos por agotamiento de memoria (OOM).
+  - La verificación previa de cabecera binaria (límite estricto ≤ 5 MiB y ≤ 8 megapíxeles comprobado en archivos PNG y JPEG) reduce sustancialmente el consumo de memoria en la decodificación de mapas de bits nativos y mitiga el riesgo de bloqueos por agotamiento de memoria (OOM) al acotar las dimensiones máximas antes de procesar el archivo.
 
 ---
 
@@ -142,7 +144,7 @@ La verificación en entorno nativo Android evalúa las capacidades que exceden e
 | Formateo de código                         | `pnpm run format:check`   | 0 errores (Prettier 100% conforme)                        |
 | Linter estático                            | `pnpm run lint`           | 0 errores, 0 advertencias (`eslint . --max-warnings=0`)   |
 | Tipado estricto                            | `pnpm run typecheck`      | 0 errores (TypeScript `tsc --noEmit`)                     |
-| Pruebas unitarias e integración (Vitest)   | `pnpm run test:local`     | 35 suites pasadas, 456 pruebas pasadas, 0 fallidas        |
+| Pruebas unitarias e integración (Vitest)   | `pnpm run test:local`     | 35 suites pasadas, 458 pruebas pasadas, 0 fallidas        |
 | Pruebas de componentes de UI (Jest / RNTL) | `pnpm run test:ui`        | 9 suites pasadas, 157 pruebas pasadas, 0 fallidas         |
 | Diagnóstico del entorno Expo               | `pnpm run doctor`         | 21/21 comprobaciones exitosas                             |
 | Exportación de bundle Android              | `pnpm run bundle:android` | Exportación JavaScript para Hermes completada sin errores |
