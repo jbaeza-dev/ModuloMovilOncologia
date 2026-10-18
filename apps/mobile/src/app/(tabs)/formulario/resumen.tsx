@@ -1,1 +1,1 @@
-export { FormSummaryScreen as default } from '../../../features/form/FormScreens';
+export { DailyFormReviewScreen as default } from '../../../features/medical-forms/DailyFormReviewScreen';

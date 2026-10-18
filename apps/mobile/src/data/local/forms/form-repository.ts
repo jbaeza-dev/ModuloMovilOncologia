@@ -42,7 +42,15 @@ export type AssignedFormSummary = {
   ultima_fecha_confirmacion: string | null;
 };
 
+export type { DailyFormStatus };
+
 export type FullFormDefinition = FormDefinitionRecord & {
+  configuracion?: {
+    secciones?: Array<{ id: string; titulo: string; orden: number; descripcion?: string }>;
+    periodicidad?: 'daily' | 'standalone';
+    schemaVersion?: number;
+    [key: string]: unknown;
+  };
   preguntas: Array<
     FormQuestionRecord & {
       configuracion?: {
@@ -206,8 +214,18 @@ export function createFormRepository(
         [def.formulario_id, def.version],
       );
 
+      let formConfig: Record<string, unknown> | undefined;
+      if (def.configuracion_json) {
+        try {
+          formConfig = JSON.parse(def.configuracion_json);
+        } catch {
+          formConfig = undefined;
+        }
+      }
+
       return {
         ...def,
+        configuracion: formConfig as FullFormDefinition['configuracion'],
         preguntas: questions.map((q) => {
           let configuracion: Record<string, unknown> | undefined;
           if (q.configuracion_json) {

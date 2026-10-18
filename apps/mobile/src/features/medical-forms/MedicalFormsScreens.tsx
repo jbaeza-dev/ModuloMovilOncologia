@@ -1,7 +1,7 @@
 import Feather from '@expo/vector-icons/Feather';
 import * as Crypto from 'expo-crypto';
 import { router, useLocalSearchParams } from 'expo-router';
-import { useCallback, useEffect, useState } from 'react';
+import { useCallback, useEffect, useMemo, useState } from 'react';
 import { StyleSheet, Text, TextInput, View } from 'react-native';
 
 import { NavigationCard } from '../../components/NavigationCard';
@@ -27,6 +27,8 @@ import { useFocusedValue } from '../../hooks/use-local-query';
 import { useLocalData } from '../../providers/LocalDataProvider';
 import { useAppTheme } from '../../providers/ThemeProvider';
 import { theme } from '../../theme';
+import { computeVisibleQuestions } from '../../services/forms/form-conditions';
+import type { QuestionConfiguration } from '../../data/local/forms/form-types';
 import { validateFormAnswers } from './medical-form-validation';
 import type {
   FormAnswerValue,
@@ -861,6 +863,21 @@ export function MedicalFormSubmissionDetailScreen() {
 
   const medicalForm = toMedicalFormDefinition(formDef);
 
+  const visibleQuestions = useMemo(() => {
+    const visibleIds = computeVisibleQuestions(
+      formDef.preguntas.map((q) => ({
+        preguntaId: q.pregunta_id,
+        configuracion: q.configuracion as QuestionConfiguration,
+      })),
+      submission.respuestas,
+    );
+    return medicalForm.preguntas.filter(
+      (q) =>
+        visibleIds.has(q.id) ||
+        (submission.respuestas[q.id] !== undefined && submission.respuestas[q.id] !== ''),
+    );
+  }, [formDef, medicalForm, submission.respuestas]);
+
   return (
     <Screen title={`Entrega: ${submission.titulo}`}>
       <DemoBadge />
@@ -870,32 +887,47 @@ export function MedicalFormSubmissionDetailScreen() {
           label="Fecha de confirmación"
           value={formatDate(submission.fecha_confirmacion)}
         />
+        {submission.fecha_seguimiento ? (
+          <DetailRow
+            label="Fecha de seguimiento"
+            value={formatDate(submission.fecha_seguimiento)}
+          />
+        ) : null}
+        {submission.ventana_desde ? (
+          <DetailRow label="Ventana evaluada" value="Últimas 24 horas" />
+        ) : null}
         <DetailRow label="Versión evaluada" value={submission.version} />
         <DetailRow label="Identificador local" value={submission.id} />
       </InfoCard>
 
       <SectionTitle>Respuestas registradas</SectionTitle>
 
-      {medicalForm.preguntas.map((q, idx) => {
-        const val = submission.respuestas[q.id];
-        let displayVal = 'Sin respuesta (opcional)';
-        if (val !== undefined && val !== null && val !== '') {
-          if (Array.isArray(val)) {
-            displayVal = val.length ? val.join(', ') : 'Ninguna seleccionada';
-          } else {
-            displayVal = String(val);
+      {visibleQuestions.length === 0 ? (
+        <InfoCard>
+          <BodyText>No hay respuestas registradas en esta entrega.</BodyText>
+        </InfoCard>
+      ) : (
+        visibleQuestions.map((q, idx) => {
+          const val = submission.respuestas[q.id];
+          let displayVal = 'Sin respuesta (opcional)';
+          if (val !== undefined && val !== null && val !== '') {
+            if (Array.isArray(val)) {
+              displayVal = val.length ? val.join(', ') : 'Ninguna seleccionada';
+            } else {
+              displayVal = String(val);
+            }
           }
-        }
-        return (
-          <InfoCard key={q.id}>
-            <Text style={styles.questionNumber}>
-              Pregunta {idx + 1} de {medicalForm.preguntas.length}
-            </Text>
-            <Text style={styles.questionTitle}>{q.pregunta}</Text>
-            <DetailRow label="Respuesta" value={displayVal} />
-          </InfoCard>
-        );
-      })}
+          return (
+            <InfoCard key={q.id}>
+              <Text style={styles.questionNumber}>
+                Pregunta {idx + 1} de {visibleQuestions.length}
+              </Text>
+              <Text style={styles.questionTitle}>{q.pregunta}</Text>
+              <DetailRow label="Respuesta" value={displayVal} />
+            </InfoCard>
+          );
+        })
+      )}
 
       <View style={styles.actions}>
         <VisualButton

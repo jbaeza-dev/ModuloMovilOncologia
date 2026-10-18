@@ -72,3 +72,5 @@ export const SAMPLE_DECOUPLED_BUNDLE_ITEM: MedicalFormBundleItem = {
   },
   preguntas: SAMPLE_DECOUPLED_FORM_PREGUNTAS,
 };
+
+export const SAMPLE_DECOUPLED_FORM = SAMPLE_DECOUPLED_BUNDLE_ITEM;
