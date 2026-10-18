@@ -10,7 +10,10 @@ import {
   StatusPill,
   VisualButton,
 } from '../../components/Visual';
-import { saveEducationalMediaWithCompensation } from '../../data/local/files/educational-storage';
+import {
+  createMinimalPng,
+  saveEducationalMediaWithCompensation,
+} from '../../data/local/files/educational-storage';
 import {
   getPatientResourceDirectory,
   readResourceFile,
@@ -165,7 +168,8 @@ export function DiagnosticsDemoModal({ visible, onClose }: DiagnosticsDemoModalP
           pacienteId: patientId,
           contenidoId: testContentId,
           formato: 'png',
-          content: new Uint8Array([137, 80, 78, 71, 13, 10, 26, 10]),
+          content: createMinimalPng(100, 100),
+          textoAccesible: 'Diagnóstico de compensación transaccional E-05',
           persistCopyInTx: async (params) => {
             await database.transaction(async (tx) => {
               // Inserción real de prueba dentro de la transacción antes del fallo

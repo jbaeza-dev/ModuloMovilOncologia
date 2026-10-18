@@ -508,8 +508,11 @@ describe('almacenamiento multimedia educativo y compensación de colisiones', ()
     const tempDir = createTempDir();
     const resolver = (p: string) => join(tempDir, 'recursos_educativos', p);
 
-    // PNG mock de 8 bytes
-    const pngBytes = new Uint8Array([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a]);
+    const { createMinimalPng, saveEducationalMediaWithCompensation } =
+      await import('./files/educational-storage');
+
+    // PNG válido de 33 bytes generado sintéticamente
+    const pngBytes = createMinimalPng(10, 10);
     const persistedMetaHolder: {
       current?: {
         tamanoBytes: number;
@@ -518,13 +521,12 @@ describe('almacenamiento multimedia educativo y compensación de colisiones', ()
       };
     } = {};
 
-    const { saveEducationalMediaWithCompensation } = await import('./files/educational-storage');
-
     const result = await saveEducationalMediaWithCompensation({
       pacienteId: patientA,
       contenidoId: 'edu-infografia-1',
       formato: 'png',
       content: pngBytes,
+      textoAccesible: 'Infografía descriptiva accesible',
       versionOrigen: '1.0.0',
       mimeType: 'image/png',
       persistCopyInTx: async (params) => {
@@ -534,9 +536,9 @@ describe('almacenamiento multimedia educativo y compensación de colisiones', ()
       baseDirResolver: resolver,
     });
 
-    expect(result.tamanoBytes).toBe(8);
+    expect(result.tamanoBytes).toBe(33);
     expect(result.sha256).toMatch(/^[a-f0-9]{64}$/);
-    expect(persistedMetaHolder.current?.tamanoBytes).toBe(8);
+    expect(persistedMetaHolder.current?.tamanoBytes).toBe(33);
     expect(persistedMetaHolder.current?.metadataLocal.sha256).toBe(result.sha256);
     expect(persistedMetaHolder.current?.formato).toBe('png');
     expect(adapter.exists(result.uri)).toBe(true);
@@ -549,7 +551,8 @@ describe('almacenamiento multimedia educativo y compensación de colisiones', ()
     const tempDir = createTempDir();
     const resolver = (p: string) => join(tempDir, 'recursos_educativos', p);
 
-    const { saveEducationalMediaWithCompensation } = await import('./files/educational-storage');
+    const { createMinimalPng, saveEducationalMediaWithCompensation } =
+      await import('./files/educational-storage');
 
     let createdUri = '';
 
@@ -558,7 +561,8 @@ describe('almacenamiento multimedia educativo y compensación de colisiones', ()
         pacienteId: patientA,
         contenidoId: 'edu-infografia-error',
         formato: 'png',
-        content: new Uint8Array([1, 2, 3]),
+        content: createMinimalPng(10, 10),
+        textoAccesible: 'Texto accesible de prueba',
         persistCopyInTx: async (params) => {
           createdUri = params.rutaLocal;
           throw new Error('Fallo de base de datos antes del commit');
@@ -578,12 +582,13 @@ describe('almacenamiento multimedia educativo y compensación de colisiones', ()
     const patientDir = resolver(patientA);
     await adapter.ensureDirectory(patientDir);
 
-    const { saveEducationalMediaWithCompensation } = await import('./files/educational-storage');
+    const { createMinimalPng, saveEducationalMediaWithCompensation } =
+      await import('./files/educational-storage');
 
     // Token determinista para forzar misma ruta destino
     const fixedToken = 'edu-infografia-colision.fixed-token';
-    const initialBytes = new Uint8Array([7, 8, 9]);
-    const collidingBytes = new Uint8Array([1, 2, 3]);
+    const initialBytes = createMinimalPng(10, 10);
+    const collidingBytes = createMinimalPng(20, 20);
 
     // 1. Guardar primer archivo legítimo en el destino
     const firstResult = await saveEducationalMediaWithCompensation({
@@ -591,6 +596,7 @@ describe('almacenamiento multimedia educativo y compensación de colisiones', ()
       contenidoId: 'edu-infografia-colision',
       formato: 'png',
       content: initialBytes,
+      textoAccesible: 'Texto accesible inicial',
       tokenGenerator: () => fixedToken,
       persistCopyInTx: async () => {},
       adapter,
@@ -599,7 +605,7 @@ describe('almacenamiento multimedia educativo y compensación de colisiones', ()
 
     expect(adapter.exists(firstResult.uri)).toBe(true);
     const readInitial = await adapter.readBinary!(firstResult.uri);
-    expect(Array.from(readInitial)).toEqual([7, 8, 9]);
+    expect(Array.from(readInitial)).toEqual(Array.from(initialBytes));
 
     // 2. Segundo intento sobre el mismo destino usando el adaptador real NodeFileStorageAdapter
     // Dado que overwrite es false, moveFile rechazará con error al detectar el destino
@@ -609,6 +615,7 @@ describe('almacenamiento multimedia educativo y compensación de colisiones', ()
         contenidoId: 'edu-infografia-colision',
         formato: 'png',
         content: collidingBytes,
+        textoAccesible: 'Texto accesible colisionante',
         tokenGenerator: () => fixedToken,
         persistCopyInTx: async () => {},
         adapter,
@@ -624,7 +631,7 @@ describe('almacenamiento multimedia educativo y compensación de colisiones', ()
     // - El destino original del primer intento se conservó intacto con sus bytes originales
     expect(adapter.exists(firstResult.uri)).toBe(true);
     const preservedBytes = await adapter.readBinary!(firstResult.uri);
-    expect(Array.from(preservedBytes)).toEqual([7, 8, 9]);
+    expect(Array.from(preservedBytes)).toEqual(Array.from(initialBytes));
   });
 
   it('compensación parcial: limpia el archivo temporal si la escritura falla antes de completarse', async () => {
@@ -633,7 +640,8 @@ describe('almacenamiento multimedia educativo y compensación de colisiones', ()
     const patientDir = resolver(patientA);
     await adapter.ensureDirectory(patientDir);
 
-    const { saveEducationalMediaWithCompensation } = await import('./files/educational-storage');
+    const { createMinimalPng, saveEducationalMediaWithCompensation } =
+      await import('./files/educational-storage');
 
     const fixedToken = 'edu-parcial.fixed-token';
     const tmpUri = join(patientDir, `${fixedToken}.tmp`);
@@ -652,7 +660,8 @@ describe('almacenamiento multimedia educativo y compensación de colisiones', ()
         pacienteId: patientA,
         contenidoId: 'edu-parcial',
         formato: 'png',
-        content: new Uint8Array([1, 2, 3, 4]),
+        content: createMinimalPng(10, 10),
+        textoAccesible: 'Texto descriptivo parcial',
         tokenGenerator: () => fixedToken,
         persistCopyInTx: async () => {},
         adapter: partialFailureAdapter,
@@ -739,14 +748,16 @@ describe('almacenamiento multimedia educativo y compensación de colisiones', ()
   it('saveEducationalMediaWithCompensation limpia copia anterior tras confirmar la nueva', async () => {
     const tempDir = createTempDir();
     const resolver = (p: string) => join(tempDir, 'recursos_educativos', p);
-    const { saveEducationalMediaWithCompensation } = await import('./files/educational-storage');
+    const { createMinimalPng, saveEducationalMediaWithCompensation } =
+      await import('./files/educational-storage');
 
     // Guardado 1: Primera versión
     const res1 = await saveEducationalMediaWithCompensation({
       pacienteId: patientA,
       contenidoId: 'edu-infografia',
       formato: 'png',
-      content: new Uint8Array([1, 2, 3]),
+      content: createMinimalPng(10, 10),
+      textoAccesible: 'Texto inicial',
       adapter,
       baseDirResolver: resolver,
       persistCopyInTx: async () => {},
@@ -758,7 +769,8 @@ describe('almacenamiento multimedia educativo y compensación de colisiones', ()
       pacienteId: patientA,
       contenidoId: 'edu-infografia',
       formato: 'png',
-      content: new Uint8Array([4, 5, 6]),
+      content: createMinimalPng(20, 20),
+      textoAccesible: 'Texto actualizado',
       previousRutaLocal: res1.uri,
       adapter,
       baseDirResolver: resolver,

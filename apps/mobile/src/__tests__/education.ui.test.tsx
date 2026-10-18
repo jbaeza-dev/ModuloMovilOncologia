@@ -393,7 +393,7 @@ describe('Pruebas de interfaz (UI) para módulo de Educación', () => {
       for (const cat of categories) {
         const expectedCount = allResources.filter((r) => r.category === cat.id).length;
         expect(cat.count).toBe(expectedCount);
-        expect(cat.countLabel).toBe(`${expectedCount} contenidos`);
+        expect(cat.countLabel).toBe(`${expectedCount} contenido${expectedCount === 1 ? '' : 's'}`);
       }
     });
 
@@ -401,26 +401,26 @@ describe('Pruebas de interfaz (UI) para módulo de Educación', () => {
       await render(<EducationScreen />);
 
       await waitFor(() => {
-        expect(screen.getByText('Proceso de quimioterapia')).toBeTruthy();
-        expect(screen.getByText('Manejo de síntomas')).toBeTruthy();
-        expect(screen.getByText('Nutrición e hidratación')).toBeTruthy();
-        expect(screen.getByText('Actividad física y descanso')).toBeTruthy();
-        expect(screen.getByText('Cuidado emocional')).toBeTruthy();
-        expect(screen.getByText('Sexualidad y salud reproductiva')).toBeTruthy();
-        expect(screen.getByText('Vida cotidiana y relaciones')).toBeTruthy();
-        expect(screen.getByText('Red de apoyo y recursos')).toBeTruthy();
-        expect(screen.getByText('Preguntas frecuentes')).toBeTruthy();
+        expect(screen.getByText('Conociendo la Unidad Oncológica')).toBeTruthy();
+        expect(screen.getByText('Conociendo el cáncer')).toBeTruthy();
+        expect(screen.getByText('Conociendo la quimioterapia')).toBeTruthy();
+        expect(screen.getByText('Dispositivos de tratamiento')).toBeTruthy();
+        expect(screen.getByText('Efectos secundarios')).toBeTruthy();
+        expect(screen.getByText('Salud mental')).toBeTruthy();
+        expect(screen.getByText('Alimentación')).toBeTruthy();
+        expect(screen.getByText('Signos de alarma')).toBeTruthy();
+        expect(screen.getByText('Gestoras de casos')).toBeTruthy();
       });
     });
 
     it('permite alternar filtros de formato (Todos, Videos, Infografías) en la pantalla de categoría', async () => {
-      mockUseLocalSearchParams.mockReturnValue({ categoria: 'nutricion-hidratacion' });
+      mockUseLocalSearchParams.mockReturnValue({ categoria: 'alimentacion' });
 
       await render(<EducationCategoryScreen />);
 
       // Debe mostrar el título de la categoría
       await waitFor(() => {
-        expect(screen.getByText('Nutrición e hidratación')).toBeTruthy();
+        expect(screen.getByText('Alimentación')).toBeTruthy();
       });
 
       // Debe contener los controles de filtro
@@ -454,7 +454,7 @@ describe('Pruebas de interfaz (UI) para módulo de Educación', () => {
 
       await waitFor(() => {
         expect(screen.getByText('Contenido explicativo accesible')).toBeTruthy();
-        expect(screen.getByText(/Tres pilares nutricionales durante el tratamiento/)).toBeTruthy();
+        expect(screen.getByText(/1\. HIDRATACIÓN CONSTANTE/)).toBeTruthy();
       });
     });
   });
@@ -521,7 +521,7 @@ describe('Pruebas de interfaz (UI) para módulo de Educación', () => {
 
       await waitFor(() => {
         expect(screen.getByText('Texto alternativo accesible')).toBeTruthy();
-        expect(screen.getByText(/Tres pilares nutricionales/)).toBeTruthy();
+        expect(screen.getByText(/1\. HIDRATACIÓN CONSTANTE/)).toBeTruthy();
       });
 
       // Cerrar modal

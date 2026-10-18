@@ -4,7 +4,10 @@ import { afterEach, describe, expect, it } from 'vitest';
 
 import { createSqliteTestHarness, patientA } from '../testing/sqlite-test-harness';
 import {
+  createMinimalJpeg,
+  createMinimalPng,
   MAX_EDUCATIONAL_MEDIA_BYTES,
+  parseImageHeader,
   saveEducationalMediaWithCompensation,
 } from './educational-storage';
 import { NodeFileStorageAdapter } from './node-file-storage-adapter';
@@ -15,7 +18,7 @@ afterEach(() => {
   harness.cleanup();
 });
 
-describe('educational-storage - validaciones y guardado seguro de medios', () => {
+describe('educational-storage - validaciones binarias y guardado seguro de medios', () => {
   it('rechaza formato markdown para nuevas descargas', async () => {
     const tempBase = harness.createTempDir('storage-test-');
     const adapter = new NodeFileStorageAdapter();
@@ -28,11 +31,32 @@ describe('educational-storage - validaciones y guardado seguro de medios', () =>
         // eslint-disable-next-line @typescript-eslint/no-explicit-any
         formato: 'markdown' as any,
         content: '# Guía markdown no permitida',
+        textoAccesible: 'Texto descriptivo',
         adapter,
         baseDirResolver,
         persistCopyInTx: async () => {},
       }),
     ).rejects.toThrow(/solo se admiten imágenes PNG y JPEG/i);
+  });
+
+  it('rechaza infografía si no incluye texto accesible o este es vacío', async () => {
+    const tempBase = harness.createTempDir('storage-alt-test-');
+    const adapter = new NodeFileStorageAdapter();
+    const baseDirResolver = (pid: string) => join(tempBase, 'recursos', pid).replace(/\\/g, '/');
+    const validPng = createMinimalPng(100, 100);
+
+    await expect(
+      saveEducationalMediaWithCompensation({
+        pacienteId: patientA,
+        contenidoId: 'edu-no-alt',
+        formato: 'png',
+        content: validPng,
+        textoAccesible: '   ',
+        adapter,
+        baseDirResolver,
+        persistCopyInTx: async () => {},
+      }),
+    ).rejects.toThrow(/requiere un texto accesible no vacío/i);
   });
 
   it('rechaza archivos que superen el límite máximo de 5 MiB', async () => {
@@ -49,6 +73,7 @@ describe('educational-storage - validaciones y guardado seguro de medios', () =>
         contenidoId: 'edu-oversized',
         formato: 'png',
         content: oversizedBytes,
+        textoAccesible: 'Texto accesible',
         adapter,
         baseDirResolver,
         persistCopyInTx: async () => {},
@@ -56,37 +81,64 @@ describe('educational-storage - validaciones y guardado seguro de medios', () =>
     ).rejects.toThrow(/supera el tamaño máximo permitido de 5 MB/i);
   });
 
-  it('rechaza imágenes que superen el límite de 8 megapíxeles', async () => {
+  it('rechaza archivos con cabecera binaria corrupta o desconocida', async () => {
+    const tempBase = harness.createTempDir('storage-corrupt-test-');
+    const adapter = new NodeFileStorageAdapter();
+    const baseDirResolver = (pid: string) => join(tempBase, 'recursos', pid).replace(/\\/g, '/');
+
+    const corruptBytes = new Uint8Array([1, 2, 3, 4, 5, 6, 7, 8]);
+
+    await expect(
+      saveEducationalMediaWithCompensation({
+        pacienteId: patientA,
+        contenidoId: 'edu-corrupt',
+        formato: 'png',
+        content: corruptBytes,
+        textoAccesible: 'Texto descriptivo',
+        adapter,
+        baseDirResolver,
+        persistCopyInTx: async () => {},
+      }),
+    ).rejects.toThrow(/Formato de imagen no reconocido/i);
+  });
+
+  it('rechaza imágenes que superen el límite de 8 megapíxeles directamente desde su cabecera binaria', async () => {
     const tempBase = harness.createTempDir('storage-pixels-test-');
     const adapter = new NodeFileStorageAdapter();
     const baseDirResolver = (pid: string) => join(tempBase, 'recursos', pid).replace(/\\/g, '/');
 
-    const validBytes = new Uint8Array(1024); // 1 KB
+    // 4000 x 2500 = 10,000,000 pixels > 8,000,000 pixels codificados en cabecera IHDR
+    const oversizedPng = createMinimalPng(4000, 2500);
 
-    // 4000 x 2500 = 10,000,000 pixels > 8,000,000 pixels
+    // Sin pasar anchoPx ni altoPx en los parámetros: debe rechazarse por análisis binario
     await expect(
       saveEducationalMediaWithCompensation({
         pacienteId: patientA,
         contenidoId: 'edu-high-res',
         formato: 'png',
-        content: validBytes,
-        anchoPx: 4000,
-        altoPx: 2500,
+        content: oversizedPng,
+        textoAccesible: 'Texto alternativo accesible de la infografía.',
         adapter,
         baseDirResolver,
         persistCopyInTx: async () => {},
       }),
     ).rejects.toThrow(/supera la resolución máxima permitida de 8 megapíxeles/i);
+  });
 
-    // 3000 x 2000 = 6,000,000 pixels <= 8,000,000 pixels (debe ser admitido)
+  it('admite imagen PNG válida de 3000x2000 extrayendo dimensiones de cabecera binaria', async () => {
+    const tempBase = harness.createTempDir('storage-valid-png-test-');
+    const adapter = new NodeFileStorageAdapter();
+    const baseDirResolver = (pid: string) => join(tempBase, 'recursos', pid).replace(/\\/g, '/');
+
+    // 3000 x 2000 = 6,000,000 pixels <= 8,000,000 pixels
+    const validPng = createMinimalPng(3000, 2000);
+
     let persistedMeta: Record<string, unknown> | null = null;
     await saveEducationalMediaWithCompensation({
       pacienteId: patientA,
       contenidoId: 'edu-valid-res',
       formato: 'png',
-      content: validBytes,
-      anchoPx: 3000,
-      altoPx: 2000,
+      content: validPng,
       textoAccesible: 'Texto alternativo accesible de la infografía.',
       adapter,
       baseDirResolver,
@@ -101,12 +153,44 @@ describe('educational-storage - validaciones y guardado seguro de medios', () =>
     expect(persistedMeta?.['textoAccesible']).toBe('Texto alternativo accesible de la infografía.');
   });
 
+  it('admite imagen JPEG válida extrayendo dimensiones de marcador SOF binario', async () => {
+    const tempBase = harness.createTempDir('storage-valid-jpg-test-');
+    const adapter = new NodeFileStorageAdapter();
+    const baseDirResolver = (pid: string) => join(tempBase, 'recursos', pid).replace(/\\/g, '/');
+
+    // JPEG 1920x1080 (2,073,600 px <= 8,000,000 px)
+    const validJpeg = createMinimalJpeg(1920, 1080);
+    const parsed = parseImageHeader(validJpeg);
+    expect(parsed.format).toBe('jpeg');
+    expect(parsed.width).toBe(1920);
+    expect(parsed.height).toBe(1080);
+
+    let persistedMeta: Record<string, unknown> | null = null;
+    await saveEducationalMediaWithCompensation({
+      pacienteId: patientA,
+      contenidoId: 'edu-valid-jpeg',
+      formato: 'jpeg',
+      content: validJpeg,
+      textoAccesible: 'Infografía en formato JPEG accesible.',
+      adapter,
+      baseDirResolver,
+      persistCopyInTx: async (params) => {
+        persistedMeta = params.metadataLocal as Record<string, unknown>;
+      },
+    });
+
+    expect(persistedMeta).not.toBeNull();
+    expect(persistedMeta?.['anchoPx']).toBe(1920);
+    expect(persistedMeta?.['altoPx']).toBe(1080);
+    expect(persistedMeta?.['textoAccesible']).toBe('Infografía en formato JPEG accesible.');
+  });
+
   it('ejecuta compensación atómica si falla la persistencia en base de datos', async () => {
     const tempBase = harness.createTempDir('storage-comp-test-');
     const adapter = new NodeFileStorageAdapter();
     const baseDirResolver = (pid: string) => join(tempBase, 'recursos', pid).replace(/\\/g, '/');
 
-    const validBytes = new Uint8Array([137, 80, 78, 71, 13, 10, 26, 10]); // Cabecera PNG
+    const validBytes = createMinimalPng(200, 200);
     let createdUri: string | null = null;
 
     await expect(
@@ -115,6 +199,7 @@ describe('educational-storage - validaciones y guardado seguro de medios', () =>
         contenidoId: 'edu-failing-tx',
         formato: 'png',
         content: validBytes,
+        textoAccesible: 'Texto descriptivo accesible',
         adapter,
         baseDirResolver,
         persistCopyInTx: async (params) => {
