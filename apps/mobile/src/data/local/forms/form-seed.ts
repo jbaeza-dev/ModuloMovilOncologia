@@ -1,6 +1,11 @@
 import type { SqlConnection } from '../core/sql';
 import { type MedicalFormBundle } from './form-types';
 import { ingestMedicalFormBundle, type Clock } from './form-ingestion';
+import {
+  SEGUIMIENTO_DOMICILIARIO_BUNDLE_ITEM,
+  SEGUIMIENTO_DOMICILIARIO_FORM_ID,
+  SEGUIMIENTO_DOMICILIARIO_VERSION,
+} from '../../../features/medical-forms/fixtures/seguimiento-domiciliario';
 
 export async function seedMedicalFormsDemo(
   connection: SqlConnection,
@@ -9,6 +14,7 @@ export async function seedMedicalFormsDemo(
   now: Clock = () => new Date().toISOString(),
 ): Promise<void> {
   const demoForms: MedicalFormBundle['formularios'] = [
+    SEGUIMIENTO_DOMICILIARIO_BUNDLE_ITEM,
     {
       formularioId: 'form-qlq30-muestra',
       version: '1.0',
@@ -155,6 +161,16 @@ export async function seedMedicalFormsDemo(
 
   // Consultar asignaciones existentes para no reactivar asignaciones retiradas
   const targetAssignments = [
+    {
+      pacienteId: patientAId,
+      formularioId: SEGUIMIENTO_DOMICILIARIO_FORM_ID,
+      version: SEGUIMIENTO_DOMICILIARIO_VERSION,
+    },
+    {
+      pacienteId: patientBId,
+      formularioId: SEGUIMIENTO_DOMICILIARIO_FORM_ID,
+      version: SEGUIMIENTO_DOMICILIARIO_VERSION,
+    },
     { pacienteId: patientAId, formularioId: 'form-qlq30-muestra', version: '1.0' },
     { pacienteId: patientAId, formularioId: 'form-esas-muestra', version: '1.0' },
     { pacienteId: patientBId, formularioId: 'form-esas-muestra', version: '1.0' },

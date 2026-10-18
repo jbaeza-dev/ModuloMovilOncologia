@@ -78,7 +78,7 @@ export const SEGUIMIENTO_DOMICILIARIO_PREGUNTAS: MedicalFormBundleQuestion[] = [
   {
     preguntaId: 'P1',
     texto:
-      'En las últimas 24 horas, ¿has sentido fiebre, escalofríos intensos o temblores con castañeo de dientes?',
+      '¿Has sentido fiebre, cuerpo cortado, sudoración fría o escalofríos (tiritones) en las últimas 24 horas?',
     tipo: 'single_choice',
     orden: 2,
     requerida: true,
@@ -93,7 +93,7 @@ export const SEGUIMIENTO_DOMICILIARIO_PREGUNTAS: MedicalFormBundleQuestion[] = [
   },
   {
     preguntaId: 'P1.1',
-    texto: 'Si te mediste la temperatura con un termómetro, ¿cuál fue la cifra más alta que marcó?',
+    texto: '¿Qué síntomas has tenido exactamente?',
     tipo: 'single_choice',
     orden: 3,
     requerida: true,
@@ -103,17 +103,24 @@ export const SEGUIMIENTO_DOMICILIARIO_PREGUNTAS: MedicalFormBundleQuestion[] = [
       visibleWhen: { op: 'eq', questionId: 'P1', value: 'si' },
       opciones: [
         {
-          valor: 'menos_38',
-          etiqueta: 'Menos de 38.0 °C (o no me la medí, pero sentí mucho frío o temblores).',
+          valor: 'calor_decaimiento',
+          etiqueta: 'Solo sensación de calor o decaimiento, sin tiritones.',
         },
-        { valor: '38_a_38_2', etiqueta: 'Entre 38.0 °C y 38.2 °C.' },
-        { valor: '38_3_mas', etiqueta: '38.3 °C o más.' },
+        {
+          valor: 'tiritones_suaves',
+          etiqueta: 'Escalofríos o tiritones suaves que pasaron rápido.',
+        },
+        {
+          valor: 'tiritones_fuertes',
+          etiqueta:
+            'Escalofríos o tiritones fuertes e incontrolables (aunque el termómetro marque temperatura normal).',
+        },
       ],
     },
   },
   {
     preguntaId: 'P1.2',
-    texto: 'Si tu temperatura estuvo entre 38.0 °C y 38.2 °C, ¿cuánto tiempo duró?',
+    texto: '¿Te tomaste la temperatura con un termómetro (en la axila o en la boca)?',
     tipo: 'single_choice',
     orden: 4,
     requerida: true,
@@ -123,26 +130,32 @@ export const SEGUIMIENTO_DOMICILIARIO_PREGUNTAS: MedicalFormBundleQuestion[] = [
       visibleWhen: { op: 'eq', questionId: 'P1', value: 'si' },
       opciones: [
         {
-          valor: 'no_aplica',
-          etiqueta: 'Mi temperatura fue menor a 38 °C o fue de 38.3 °C o más.',
-        },
-        { valor: 'bajo_rapido', etiqueta: 'Bajó rápido (duró menos de una hora).' },
-        {
-          valor: 'mantuvo_1_hora',
-          etiqueta: 'Se mantuvo en 38.0 °C o más durante 1 hora o más.',
+          valor: 'menos_37_5',
+          etiqueta: 'Menos de 37.5 (Normal).',
         },
         {
-          valor: 'repitio_dos_veces',
-          etiqueta: 'Se repitió 2 o más veces durante el día.',
+          valor: '37_5_a_37_9',
+          etiqueta: 'Entre 37.5 a 37.9 (Febrícula).',
         },
-        { valor: 'no_pude_medir', etiqueta: 'No pude volver a medirla.' },
+        {
+          valor: '38_a_38_2_mantenida',
+          etiqueta: 'Entre 38 a 38.2 y se ha mantenido así por más de 1 hora.',
+        },
+        {
+          valor: '38_3_mas',
+          etiqueta: '38.3 o más en una sola toma.',
+        },
+        {
+          valor: 'no_tomada',
+          etiqueta: 'No me he tomado la temperatura con termómetro.',
+        },
       ],
     },
   },
   {
     preguntaId: 'P1.3',
     texto:
-      '¿Tomaste algún medicamento para bajar la fiebre (como paracetamol) en las últimas 24 horas?',
+      '¿Tomaste algún medicamento que baja la fiebre o para el dolor (como Paracetamol, Dipirona/Metamizol o Ibuprofeno) en las últimas 6 horas?',
     tipo: 'single_choice',
     orden: 5,
     requerida: true,
@@ -151,14 +164,14 @@ export const SEGUIMIENTO_DOMICILIARIO_PREGUNTAS: MedicalFormBundleQuestion[] = [
       sourceCode: 'P1.3',
       visibleWhen: { op: 'eq', questionId: 'P1', value: 'si' },
       opciones: [
-        { valor: 'no', etiqueta: 'No tomé nada para la fiebre.' },
-        { valor: 'si', etiqueta: 'Sí, tomé medicamento para la fiebre.' },
+        { valor: 'no', etiqueta: 'No he tomado nada.' },
+        { valor: 'si', etiqueta: 'Sí, tomé un medicamento.' },
       ],
     },
   },
   {
     preguntaId: 'P1.4',
-    texto: '¿Sientes alguno de estos otros problemas acompañando al malestar o la fiebre?',
+    texto: '¿Tienes alguna otra molestia que pueda indicar resfrío o infección?',
     tipo: 'multiple_choice',
     orden: 6,
     requerida: true,
@@ -168,17 +181,17 @@ export const SEGUIMIENTO_DOMICILIARIO_PREGUNTAS: MedicalFormBundleQuestion[] = [
       visibleWhen: { op: 'eq', questionId: 'P1', value: 'si' },
       opciones: [
         {
-          valor: 'ninguno',
-          etiqueta: 'Ninguno de los anteriores, solo la fiebre o malestar general.',
-          esExcluyente: true,
+          valor: 'garganta_tos',
+          etiqueta: 'Dolor de garganta o tos nueva.',
         },
         {
           valor: 'ardor_orinar',
-          etiqueta: 'Ardor intenso al orinar o necesidad de orinar a cada rato.',
+          etiqueta: 'Ardor o dolor al orinar.',
         },
         {
-          valor: 'tos_flemas',
-          etiqueta: 'Tos con flemas de color amarillo, verde o con sangre.',
+          valor: 'ninguna',
+          etiqueta: 'Ninguna de las anteriores.',
+          esExcluyente: true,
         },
       ],
     },
@@ -264,20 +277,20 @@ export const SEGUIMIENTO_DOMICILIARIO_PREGUNTAS: MedicalFormBundleQuestion[] = [
       visibleWhen: { op: 'eq', questionId: 'P2', value: 'si' },
       opciones: [
         {
-          valor: 'bien',
-          etiqueta: 'Bien, me controlan las molestias casi por completo.',
+          valor: 'alivian_bien',
+          etiqueta: 'Me alivian bastante bien.',
         },
         {
-          valor: 'algo',
-          etiqueta: 'Me alivian un poco, pero sigo con molestias.',
+          valor: 'alivian_poco',
+          etiqueta: 'Me alivian muy poco, sigo con muchas molestias.',
         },
         {
-          valor: 'nada',
-          etiqueta: 'No me hacen ningún efecto, sigo igual de mal.',
+          valor: 'vomita_medicamentos',
+          etiqueta: 'No los puedo tomar porque los vomito apenas los trago.',
         },
         {
-          valor: 'no_indicados',
-          etiqueta: 'No me dejaron medicamentos indicados o no los tomé.',
+          valor: 'no_tomados',
+          etiqueta: 'Aún no los he tomado.',
         },
       ],
     },
@@ -976,15 +989,15 @@ export const SEGUIMIENTO_DOMICILIARIO_PREGUNTAS: MedicalFormBundleQuestion[] = [
       opciones: [
         {
           valor: 'alivia_bien',
-          etiqueta: 'El dolor se pasa o baja mucho con los medicamentos indicados.',
+          etiqueta: 'El dolor se pasa bien cuando tomo mis medicamentos.',
         },
         {
-          valor: 'alivia_poco',
-          etiqueta: 'El medicamento casi no me quita el dolor o el alivio dura muy poco rato.',
+          valor: 'alivia_parcial',
+          etiqueta: 'El dolor baja un poco, pero vuelve antes de que me toque la siguiente dosis.',
         },
         {
-          valor: 'no_indicados',
-          etiqueta: 'No me indicaron medicamentos para el dolor o no los he tomado.',
+          valor: 'no_se_pasa_o_subito',
+          etiqueta: 'El dolor no se pasa con nada o apareció de forma súbita y muy violenta.',
         },
       ],
     },
@@ -1019,3 +1032,5 @@ export const SEGUIMIENTO_DOMICILIARIO_BUNDLE_ITEM: MedicalFormBundleItem = {
   },
   preguntas: SEGUIMIENTO_DOMICILIARIO_PREGUNTAS,
 };
+
+export const SEGUIMIENTO_DOMICILIARIO_FIXTURE = SEGUIMIENTO_DOMICILIARIO_BUNDLE_ITEM;

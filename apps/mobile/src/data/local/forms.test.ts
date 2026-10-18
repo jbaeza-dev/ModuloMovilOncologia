@@ -144,7 +144,8 @@ describe('formularios y persistencia clínica en SQLite', () => {
 
     const repoA = createPatientRepository(database, patientA, ids());
     const assignedBefore = await repoA.listAssignedForms();
-    expect(assignedBefore.length).toBe(2);
+    expect(assignedBefore.length).toBe(3);
+    expect(assignedBefore.map((f) => f.formulario_id)).toContain('seguimiento-domiciliario');
 
     // Marcar manualmente la asignación de QLQ-C30 como retirada
     await database.run(
@@ -167,8 +168,10 @@ describe('formularios y persistencia clínica en SQLite', () => {
 
     // listAssignedForms solo devuelve activas, por lo que QLQ-C30 no debe listarse
     const assignedAfter = await repoA.listAssignedForms();
-    expect(assignedAfter.length).toBe(1);
-    expect(assignedAfter[0].formulario_id).toBe('form-esas-muestra');
+    expect(assignedAfter.length).toBe(2);
+    expect(assignedAfter.map((f) => f.formulario_id)).toContain('form-esas-muestra');
+    expect(assignedAfter.map((f) => f.formulario_id)).toContain('seguimiento-domiciliario');
+    expect(assignedAfter.map((f) => f.formulario_id)).not.toContain('form-qlq30-muestra');
   });
 
   it('evolución de plantillas: versión 2.0 coexiste con versión 1.0 histórica y sus entregas', async () => {
@@ -350,13 +353,15 @@ describe('formularios y persistencia clínica en SQLite', () => {
     const repoA = createPatientRepository(database, patientA, ids());
     const repoB = createPatientRepository(database, patientB, ids());
 
-    // Paciente A tiene 2 cuestionarios; Paciente B solo 1
+    // Paciente A tiene 3 cuestionarios; Paciente B tiene 2 (no tiene QLQ-C30)
     const formsA = await repoA.listAssignedForms();
     const formsB = await repoB.listAssignedForms();
     expect(formsA.map((f) => f.formulario_id).sort()).toEqual(
-      ['form-esas-muestra', 'form-qlq30-muestra'].sort(),
+      ['form-esas-muestra', 'form-qlq30-muestra', 'seguimiento-domiciliario'].sort(),
     );
-    expect(formsB.map((f) => f.formulario_id)).toEqual(['form-esas-muestra']);
+    expect(formsB.map((f) => f.formulario_id).sort()).toEqual(
+      ['form-esas-muestra', 'seguimiento-domiciliario'].sort(),
+    );
 
     // Paciente A guarda borrador y confirma entrega
     await repoA.saveDraft('form-qlq30-muestra', '1.0', { q1: 'nada' }, 'del-a-1');

@@ -42,6 +42,47 @@ describe('Cuestionario de Seguimiento Domiciliario ePRO (Fixture)', () => {
     expect(p9b?.texto).toContain('algún dolor en el cuerpo');
   });
 
+  it('preserva fidelidad con el instrumento Word en P1.1-P1.4, P2.3 y P9.B.2', () => {
+    const p1_1 = SEGUIMIENTO_DOMICILIARIO_PREGUNTAS.find((q) => q.preguntaId === 'P1.1');
+    expect(p1_1?.texto).toBe('¿Qué síntomas has tenido exactamente?');
+    expect(p1_1?.configuracion?.opciones?.map((o) => o.valor)).toEqual([
+      'calor_decaimiento',
+      'tiritones_suaves',
+      'tiritones_fuertes',
+    ]);
+
+    const p1_2 = SEGUIMIENTO_DOMICILIARIO_PREGUNTAS.find((q) => q.preguntaId === 'P1.2');
+    expect(p1_2?.texto).toBe(
+      '¿Te tomaste la temperatura con un termómetro (en la axila o en la boca)?',
+    );
+    expect(p1_2?.configuracion?.opciones?.map((o) => o.valor)).toEqual([
+      'menos_37_5',
+      '37_5_a_37_9',
+      '38_a_38_2_mantenida',
+      '38_3_mas',
+      'no_tomada',
+    ]);
+
+    const p1_3 = SEGUIMIENTO_DOMICILIARIO_PREGUNTAS.find((q) => q.preguntaId === 'P1.3');
+    expect(p1_3?.texto).toContain('últimas 6 horas');
+
+    const p1_4 = SEGUIMIENTO_DOMICILIARIO_PREGUNTAS.find((q) => q.preguntaId === 'P1.4');
+    expect(p1_4?.configuracion?.opciones?.find((o) => o.valor === 'ninguna')?.esExcluyente).toBe(
+      true,
+    );
+
+    const p2_3 = SEGUIMIENTO_DOMICILIARIO_PREGUNTAS.find((q) => q.preguntaId === 'P2.3');
+    const p2_3_vals = p2_3?.configuracion?.opciones?.map((o) => o.valor);
+    expect(p2_3_vals).toContain('vomita_medicamentos');
+    expect(p2_3_vals).toContain('alivian_bien');
+    expect(p2_3_vals).toContain('alivian_poco');
+    expect(p2_3_vals).toContain('no_tomados');
+
+    const p9_b_2 = SEGUIMIENTO_DOMICILIARIO_PREGUNTAS.find((q) => q.preguntaId === 'P9.B.2');
+    const p9_b_2_vals = p9_b_2?.configuracion?.opciones?.map((o) => o.valor);
+    expect(p9_b_2_vals).toEqual(['alivia_bien', 'alivia_parcial', 'no_se_pasa_o_subito']);
+  });
+
   it('cumple íntegramente la validación de integridad estructural sin errores ni referencias hacia adelante', () => {
     expect(() => validateConditionIntegrity(SEGUIMIENTO_DOMICILIARIO_BUNDLE_ITEM)).not.toThrow();
   });
