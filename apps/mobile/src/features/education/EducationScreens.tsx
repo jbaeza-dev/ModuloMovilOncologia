@@ -40,7 +40,9 @@ import { theme } from '../../theme';
 import {
   getEducationalCatalogReader,
   type EducationalCategory,
+  type EducationalFormatFilter,
 } from './educational-catalog-service';
+import { getCategoryByIdOrSlug } from './educational-categories';
 
 const BUNDLED_ASSETS: Record<string, number> = {
   // eslint-disable-next-line @typescript-eslint/no-require-imports
@@ -118,25 +120,35 @@ export function EducationCategoryScreen() {
   const { repository, patientId } = useLocalData();
   const styles = useStyles();
   const [expanded, setExpanded] = useState<string | null>(null);
+  const [formatFilter, setFormatFilter] = useState<EducationalFormatFilter>('all');
   const { categoria } = useLocalSearchParams<{ categoria?: string }>();
-  const categoryIndex = categoria === '1' || categoria === '2' ? Number(categoria) : 0;
+  const resolvedCategory = getCategoryByIdOrSlug(categoria);
+  const categoryIndex = resolvedCategory.id;
 
   const loadData = useCallback(async () => {
     const reader = getEducationalCatalogReader();
     const [categories, resources, copies, interactions] = await Promise.all([
       reader.getCategories(),
-      reader.getResourcesByCategory(categoryIndex),
+      reader.getResourcesByCategory(categoryIndex, formatFilter),
       repository && patientId ? repository.education.listLocalCopies() : Promise.resolve([]),
-      repository && patientId ? repository.education.listInteractions() : Promise.resolve([]),
+      repository && patientId && typeof repository.education.listInteractions === 'function'
+        ? repository.education.listInteractions()
+        : Promise.resolve([]),
     ]);
 
     if (repository && patientId) {
       await reconcileResourceCopies(patientId, repository).catch(() => undefined);
     }
 
-    const currentCategory = categories.find((c) => c.id === categoryIndex) ?? categories[0];
+    const currentCategory = categories.find((c) => c.id === categoryIndex) ?? {
+      id: resolvedCategory.id,
+      title: resolvedCategory.title,
+      icon: resolvedCategory.icon,
+      count: 0,
+      countLabel: '0 contenidos',
+    };
     return { currentCategory, resources, copies, interactions };
-  }, [categoryIndex, repository, patientId]);
+  }, [categoryIndex, formatFilter, repository, patientId, resolvedCategory]);
 
   const {
     value,
@@ -153,9 +165,59 @@ export function EducationCategoryScreen() {
   const interactionMap = new Map((value?.interactions ?? []).map((i) => [i.contentId, i]));
 
   return (
-    <Screen title={value?.currentCategory?.title ?? 'Categoría'}>
+    <Screen title={value?.currentCategory?.title ?? resolvedCategory.title}>
       <DemoBadge />
       <BodyText>Recursos y guías diseñadas para acompañarte en tu cuidado diario.</BodyText>
+
+      {/* Selector de formato: Todos, Videos, Infografías */}
+      <View
+        style={styles.filterRow}
+        accessibilityRole="toolbar"
+        accessibilityLabel="Filtro de formato"
+      >
+        <Pressable
+          accessibilityRole="button"
+          accessibilityLabel="Todos los formatos"
+          accessibilityState={{ selected: formatFilter === 'all' }}
+          style={[styles.filterChip, formatFilter === 'all' && styles.filterChipActive]}
+          onPress={() => setFormatFilter('all')}
+        >
+          <Text
+            style={[styles.filterChipText, formatFilter === 'all' && styles.filterChipTextActive]}
+          >
+            Todos
+          </Text>
+        </Pressable>
+        <Pressable
+          accessibilityRole="button"
+          accessibilityLabel="Filtrar videos online"
+          accessibilityState={{ selected: formatFilter === 'video' }}
+          style={[styles.filterChip, formatFilter === 'video' && styles.filterChipActive]}
+          onPress={() => setFormatFilter('video')}
+        >
+          <Text
+            style={[styles.filterChipText, formatFilter === 'video' && styles.filterChipTextActive]}
+          >
+            Videos
+          </Text>
+        </Pressable>
+        <Pressable
+          accessibilityRole="button"
+          accessibilityLabel="Filtrar infografías descargables"
+          accessibilityState={{ selected: formatFilter === 'infografia' }}
+          style={[styles.filterChip, formatFilter === 'infografia' && styles.filterChipActive]}
+          onPress={() => setFormatFilter('infografia')}
+        >
+          <Text
+            style={[
+              styles.filterChipText,
+              formatFilter === 'infografia' && styles.filterChipTextActive,
+            ]}
+          >
+            Infografías
+          </Text>
+        </Pressable>
+      </View>
 
       {loadingData ? (
         <BodyText>Cargando materiales de la categoría…</BodyText>
@@ -163,6 +225,12 @@ export function EducationCategoryScreen() {
         <InfoCard>
           <Text style={styles.errorText}>No se pudo cargar la información de la categoría.</Text>
         </InfoCard>
+      ) : value?.resources.length === 0 ? (
+        <EmptyState
+          icon="folder"
+          title="Sin contenidos en este formato"
+          description="No se encontraron recursos educativos con el filtro seleccionado en esta categoría."
+        />
       ) : (
         value?.resources.map((resource) => {
           const copy = copyMap.get(resource.id);
@@ -650,6 +718,14 @@ export function EducationResourceScreen() {
         ) : null}
       </InfoCard>
 
+      {/* Texto explicativo accesible para lectura offline / TalkBack */}
+      {effectiveResource.textoAccesible ? (
+        <InfoCard>
+          <SectionTitle>Contenido explicativo accesible</SectionTitle>
+          <BodyText style={{ lineHeight: 22 }}>{effectiveResource.textoAccesible}</BodyText>
+        </InfoCard>
+      ) : null}
+
       {/* Visor de infografía (PNG) con control onLoad/onError, texto accesible y recuperación */}
       {effectiveResource.type === 'infografia' && isDownloaded && localCopy?.rutaRelativa ? (
         <InfoCard>
@@ -885,5 +961,34 @@ function useStyles() {
       padding: theme.spacing.sm,
     },
     errorText: { color: appTheme.colors.error, fontSize: 14, fontWeight: '600' },
+    filterRow: {
+      flexDirection: 'row',
+      gap: theme.spacing.sm,
+      marginVertical: theme.spacing.sm,
+    },
+    filterChip: {
+      minHeight: 48,
+      minWidth: 48,
+      paddingHorizontal: theme.spacing.md,
+      paddingVertical: theme.spacing.sm,
+      borderRadius: 9999,
+      backgroundColor: appTheme.colors.mutedSurface,
+      borderWidth: 1,
+      borderColor: appTheme.colors.border,
+      justifyContent: 'center',
+      alignItems: 'center',
+    },
+    filterChipActive: {
+      backgroundColor: appTheme.colors.primary,
+      borderColor: appTheme.colors.primary,
+    },
+    filterChipText: {
+      fontSize: 14,
+      fontWeight: '600',
+      color: appTheme.colors.text,
+    },
+    filterChipTextActive: {
+      color: appTheme.colors.onPrimary,
+    },
   });
 }

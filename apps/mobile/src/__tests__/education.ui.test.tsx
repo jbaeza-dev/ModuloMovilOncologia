@@ -69,6 +69,7 @@ const mockRepository = {
     getLocalCopy: jest.fn().mockResolvedValue(null),
     getInteraction: jest.fn().mockResolvedValue(null),
     listLocalCopies: jest.fn().mockResolvedValue([]),
+    listInteractions: jest.fn().mockResolvedValue([]),
     declareCopyReviewed: jest.fn().mockResolvedValue({ updated: true }),
     declareYouTubeReviewed: jest.fn().mockResolvedValue({ updated: true }),
     recordYouTubeInteraction: jest.fn().mockResolvedValue({ id: '1' }),
@@ -106,7 +107,11 @@ import {
   InMemoryEducationalCatalogReader,
   setEducationalCatalogReader,
 } from '../features/education/educational-catalog-service';
-import { EducationResourceScreen } from '../features/education/EducationScreens';
+import {
+  EducationScreen,
+  EducationCategoryScreen,
+  EducationResourceScreen,
+} from '../features/education/EducationScreens';
 
 describe('Pruebas de interfaz (UI) para módulo de Educación', () => {
   beforeEach(() => {
@@ -377,18 +382,79 @@ describe('Pruebas de interfaz (UI) para módulo de Educación', () => {
     });
   });
 
-  describe('Catálogo educativo desacoplado', () => {
+  describe('Catálogo educativo desacoplado y 9 categorías', () => {
     it('calcula conteos dinámicamente según recursos reales sin números cableados', async () => {
       const reader = getEducationalCatalogReader();
       const categories = await reader.getCategories();
       const allResources = await reader.getAllResources();
 
-      expect(categories.length).toBeGreaterThan(0);
+      expect(categories.length).toBe(9);
       for (const cat of categories) {
         const expectedCount = allResources.filter((r) => r.category === cat.id).length;
         expect(cat.count).toBe(expectedCount);
         expect(cat.countLabel).toBe(`${expectedCount} contenidos`);
       }
+    });
+
+    it('renderiza las 9 categorías clínicas acordadas en la pantalla principal de educación', async () => {
+      await render(<EducationScreen />);
+
+      await waitFor(() => {
+        expect(screen.getByText('Proceso de quimioterapia')).toBeTruthy();
+        expect(screen.getByText('Manejo de síntomas')).toBeTruthy();
+        expect(screen.getByText('Nutrición e hidratación')).toBeTruthy();
+        expect(screen.getByText('Actividad física y descanso')).toBeTruthy();
+        expect(screen.getByText('Cuidado emocional')).toBeTruthy();
+        expect(screen.getByText('Sexualidad y salud reproductiva')).toBeTruthy();
+        expect(screen.getByText('Vida cotidiana y relaciones')).toBeTruthy();
+        expect(screen.getByText('Red de apoyo y recursos')).toBeTruthy();
+        expect(screen.getByText('Preguntas frecuentes')).toBeTruthy();
+      });
+    });
+
+    it('permite alternar filtros de formato (Todos, Videos, Infografías) en la pantalla de categoría', async () => {
+      mockUseLocalSearchParams.mockReturnValue({ categoria: 'nutricion-hidratacion' });
+
+      await render(<EducationCategoryScreen />);
+
+      // Debe mostrar el título de la categoría
+      await waitFor(() => {
+        expect(screen.getByText('Nutrición e hidratación')).toBeTruthy();
+      });
+
+      // Debe contener los controles de filtro
+      expect(screen.getByText('Todos')).toBeTruthy();
+      const filterVideos = screen.getByText('Videos');
+      const filterInfografias = screen.getByText('Infografías');
+
+      // Inicialmente en "Todos": ambos recursos están presentes
+      expect(screen.getByText('Infografía: Guía nutricional en quimioterapia')).toBeTruthy();
+      expect(screen.getByText('Video: Opciones de líquidos e hidratación diaria')).toBeTruthy();
+
+      // Filtrar por Videos
+      fireEvent.press(filterVideos);
+      await waitFor(() => {
+        expect(screen.getByText('Video: Opciones de líquidos e hidratación diaria')).toBeTruthy();
+        expect(screen.queryByText('Infografía: Guía nutricional en quimioterapia')).toBeNull();
+      });
+
+      // Filtrar por Infografías
+      fireEvent.press(filterInfografias);
+      await waitFor(() => {
+        expect(screen.getByText('Infografía: Guía nutricional en quimioterapia')).toBeTruthy();
+        expect(screen.queryByText('Video: Opciones de líquidos e hidratación diaria')).toBeNull();
+      });
+    });
+
+    it('muestra contenido explicativo accesible para infografías con texto alternativo completo', async () => {
+      mockUseLocalSearchParams.mockReturnValue({ recurso: 'edu-infografia-alimentacion' });
+
+      await render(<EducationResourceScreen />);
+
+      await waitFor(() => {
+        expect(screen.getByText('Contenido explicativo accesible')).toBeTruthy();
+        expect(screen.getByText(/Tres pilares nutricionales durante el tratamiento/)).toBeTruthy();
+      });
     });
   });
 });

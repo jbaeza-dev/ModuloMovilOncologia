@@ -21,6 +21,7 @@ export interface EducationalResource {
   title: string;
   category: number;
   categoryName: string;
+  categorySlug?: string;
   description: string;
   type: EducationalContentType;
   version: string;
@@ -28,6 +29,7 @@ export interface EducationalResource {
   youtubeVideoId?: string;
   asset?: EducationalAssetRef;
   contentMarkdown?: string;
+  textoAccesible?: string;
 }
 
 export interface EducationalInteraction {
@@ -49,6 +51,7 @@ export interface EducationalLocalCopyMetadata {
   titulo?: string;
   tipo?: EducationalContentType;
   descripcion?: string;
+  textoAccesible?: string;
   [key: string]: unknown;
 }
 
