@@ -1,1 +1,1 @@
-export { MedicalFormDetailScreen as default } from '../../../features/medical-forms/MedicalFormsScreens';
+export { FormSectionScreen as default } from '../../../features/medical-forms/FormSectionScreen';

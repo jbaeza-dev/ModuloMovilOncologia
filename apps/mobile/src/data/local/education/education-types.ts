@@ -1,6 +1,8 @@
 export type EducationalContentType = 'guia' | 'infografia' | 'video';
 
-export type EducationalCopyFormat = 'markdown' | 'png' | 'jpeg';
+export type ActiveEducationalCopyFormat = 'png' | 'jpeg';
+
+export type EducationalCopyFormat = ActiveEducationalCopyFormat | 'markdown';
 
 export type EducationalAssetRef =
   | {
@@ -21,6 +23,7 @@ export interface EducationalResource {
   title: string;
   category: number;
   categoryName: string;
+  categorySlug?: string;
   description: string;
   type: EducationalContentType;
   version: string;
@@ -28,6 +31,7 @@ export interface EducationalResource {
   youtubeVideoId?: string;
   asset?: EducationalAssetRef;
   contentMarkdown?: string;
+  textoAccesible?: string;
 }
 
 export interface EducationalInteraction {
@@ -49,6 +53,7 @@ export interface EducationalLocalCopyMetadata {
   titulo?: string;
   tipo?: EducationalContentType;
   descripcion?: string;
+  textoAccesible?: string;
   [key: string]: unknown;
 }
 
@@ -67,6 +72,8 @@ export interface EducationalLocalCopy {
   visualizadoEn?: string | null;
   revisionDeclarada: boolean;
   revisionDeclaradaEn?: string | null;
+  retiradoEn?: string | null;
+  ultimoErrorRetiro?: string | null;
   metadataLocal?: EducationalLocalCopyMetadata;
 }
 

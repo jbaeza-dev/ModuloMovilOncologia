@@ -353,8 +353,8 @@ export async function importLegacyDrafts(
         entrega_id: string;
         respuestas_json: string;
       }>(
-        'SELECT entrega_id, respuestas_json FROM borrador_formulario WHERE paciente_id = ? AND formulario_id = ? AND version = ?',
-        [patientId, parsed.formularioId, parsed.version],
+        'SELECT entrega_id, respuestas_json FROM borrador_formulario WHERE paciente_id = ? AND formulario_id = ? AND version = ? AND periodo_clave = ?',
+        [patientId, parsed.formularioId, parsed.version, 'legacy'],
       );
 
       // Si es un borrador y SQLite ya posee uno, comparar contenidos antes de omitir o limpiar
@@ -452,8 +452,8 @@ export async function importLegacyDrafts(
             destinoId = deliveryId;
             await tx.run(
               `INSERT INTO borrador_formulario (
-                paciente_id, formulario_id, version, entrega_id, respuestas_json, guardado_en, version_payload
-              ) VALUES (?, ?, ?, ?, ?, ?, 1)`,
+                paciente_id, formulario_id, version, periodo_clave, entrega_id, respuestas_json, guardado_en, version_payload
+              ) VALUES (?, ?, ?, 'legacy', ?, ?, ?, 1)`,
               [
                 patientId,
                 parsed.formularioId,

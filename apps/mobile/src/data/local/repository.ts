@@ -52,6 +52,9 @@ export type DownloadRecord = {
   fecha_descarga: string | null;
   visualizada: number;
   visualizada_en: string | null;
+  formato?: string;
+  retirado_en?: string | null;
+  ultimo_error_retiro?: string | null;
 };
 
 export type PatientProfileRecord = {
@@ -153,6 +156,10 @@ export function createPatientRepository(
       return id;
     },
 
+    /**
+     * @deprecated Retirado del flujo clínico principal en favor de los formularios de seguimiento diario ePRO.
+     * Conservado exclusivamente para compatibilidad regresiva, exportaciones históricas y pruebas de migración.
+     */
     async createSymptom(description: string): Promise<string> {
       const id = newId();
       const queueId = newId();
@@ -353,19 +360,39 @@ export function createPatientRepository(
       contenido_id: string;
       ruta_local: string;
       estado?: 'descargado';
+      formato?: string;
     }): Promise<void> {
       const timestamp = now();
+      const ext = data.ruta_local.split('.').pop()?.toLowerCase();
+      const inferredFormato =
+        data.formato ??
+        (ext === 'jpeg' || ext === 'jpg' ? 'jpeg' : ext === 'md' ? 'markdown' : 'png');
+      const isMarkdown = inferredFormato === 'markdown';
+      const retiradoEn = isMarkdown ? timestamp : null;
+
       await database.run(
         `INSERT INTO descarga (
-          paciente_id, contenido_id, ruta_local, estado, fecha_descarga, visualizada, visualizada_en
-        ) VALUES (?, ?, ?, ?, ?, 0, NULL)
+          paciente_id, contenido_id, ruta_local, estado, fecha_descarga, visualizada, visualizada_en,
+          formato, tamano_bytes, retirado_en, ultimo_error_retiro
+        ) VALUES (?, ?, ?, ?, ?, 0, NULL, ?, 0, ?, NULL)
         ON CONFLICT(paciente_id, contenido_id) DO UPDATE SET
           ruta_local = excluded.ruta_local,
           estado = excluded.estado,
           fecha_descarga = excluded.fecha_descarga,
           visualizada = 0,
-          visualizada_en = NULL`,
-        [patientId, data.contenido_id, data.ruta_local, data.estado ?? 'descargado', timestamp],
+          visualizada_en = NULL,
+          formato = excluded.formato,
+          retirado_en = excluded.retirado_en,
+          ultimo_error_retiro = excluded.ultimo_error_retiro`,
+        [
+          patientId,
+          data.contenido_id,
+          data.ruta_local,
+          data.estado ?? 'descargado',
+          timestamp,
+          inferredFormato,
+          retiradoEn,
+        ],
       );
     },
 
@@ -405,6 +432,7 @@ export function createPatientRepository(
 }
 
 export type PatientRepository = ReturnType<typeof createPatientRepository>;
+export type AppRepository = PatientRepository;
 
 export async function seedPatientContextIfEmpty(
   database: SqlConnection,
@@ -552,49 +580,6 @@ export async function seedDemoVitalsAndSymptoms(
       );
     }
 
-    const symptomsA = [
-      {
-        id: 'symp-a-1',
-        hours: 4,
-        desc: 'Náuseas leves después del desayuno, mejoraron con reposo y agua tibia.',
-      },
-      {
-        id: 'symp-a-2',
-        hours: 28,
-        desc: 'Sensación de fatiga al caminar distancias medias. Descanso adecuado por 30 minutos.',
-      },
-      {
-        id: 'symp-a-3',
-        hours: 76,
-        desc: 'Ligera molestia estomacal y poco apetito durante la tarde.',
-      },
-      {
-        id: 'symp-a-4',
-        hours: 124,
-        desc: 'Hipersensibilidad al frío en las manos al lavar platos. Se usaron guantes de protección.',
-      },
-      {
-        id: 'symp-a-5',
-        hours: 172,
-        desc: 'Dolor muscular leve en hombros y espalda. Buen descanso nocturno.',
-      },
-      {
-        id: 'symp-a-6',
-        hours: 244,
-        desc: 'Buen estado de ánimo general, caminata ligera de 20 minutos sin molestias.',
-      },
-    ];
-
-    for (const s of symptomsA) {
-      const regDate = isoHoursAgo(s.hours);
-      await tx.run(
-        `INSERT OR IGNORE INTO sintomas (
-          id, paciente_id, fecha_registro, descripcion, creado_localmente_en
-        ) VALUES (?, ?, ?, ?, ?)`,
-        [s.id, patientAId, regDate, s.desc, regDate],
-      );
-    }
-
     const vitalsB = [
       { id: 'vital-b-1', hours: 3, sis: 128, dia: 82, pulso: 68, temp: 36.5, sat: 99 },
       { id: 'vital-b-2', hours: 26, sis: 130, dia: 85, pulso: 72, temp: 36.7, sat: 98 },
@@ -612,39 +597,6 @@ export async function seedDemoVitalsAndSymptoms(
           pulso, temperatura, saturacion_o2, creado_localmente_en
         ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
         [v.id, patientBId, regDate, v.sis, v.dia, v.pulso, v.temp, v.sat, regDate],
-      );
-    }
-
-    const symptomsB = [
-      {
-        id: 'symp-b-1',
-        hours: 5,
-        desc: 'Cansancio matutino leve, se recuperó adecuadamente tras el almuerzo.',
-      },
-      {
-        id: 'symp-b-2',
-        hours: 78,
-        desc: 'Sensación de pesadez en las extremidades inferiores tras actividad diaria.',
-      },
-      {
-        id: 'symp-b-3',
-        hours: 170,
-        desc: 'Cefalea leve vespertina que cedió con reposo e hidratación.',
-      },
-      {
-        id: 'symp-b-4',
-        hours: 260,
-        desc: 'Digestión lenta y sensación de saciedad temprana.',
-      },
-    ];
-
-    for (const s of symptomsB) {
-      const regDate = isoHoursAgo(s.hours);
-      await tx.run(
-        `INSERT OR IGNORE INTO sintomas (
-          id, paciente_id, fecha_registro, descripcion, creado_localmente_en
-        ) VALUES (?, ?, ?, ?, ?)`,
-        [s.id, patientBId, regDate, s.desc, regDate],
       );
     }
   });

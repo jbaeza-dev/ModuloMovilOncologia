@@ -5,6 +5,7 @@ import React from 'react';
 
 // Mock expo-router
 const mockUseLocalSearchParams = jest.fn();
+const mockRedirect = jest.fn();
 jest.mock('expo-router', () => {
   // eslint-disable-next-line @typescript-eslint/no-require-imports
   const React = require('react');
@@ -13,7 +14,12 @@ jest.mock('expo-router', () => {
       push: jest.fn(),
       replace: jest.fn(),
       back: jest.fn(),
+      navigate: jest.fn(),
       canGoBack: jest.fn().mockReturnValue(true),
+    },
+    Redirect: (props: unknown) => {
+      mockRedirect(props);
+      return null;
     },
     useLocalSearchParams: () => mockUseLocalSearchParams(),
     useFocusEffect: (cb: () => void | (() => void)) => {
@@ -34,6 +40,13 @@ const mockGetNetworkStateAsync = jest
   .mockResolvedValue({ isConnected: true, isInternetReachable: true });
 jest.mock('expo-network', () => ({
   getNetworkStateAsync: () => mockGetNetworkStateAsync(),
+}));
+
+// Mock linking
+const mockOpenURL = jest.fn().mockResolvedValue(true);
+jest.mock('expo-linking', () => ({
+  openURL: (...args: unknown[]) => mockOpenURL(...args),
+  canOpenURL: jest.fn().mockResolvedValue(true),
 }));
 
 // Mock theme
@@ -69,6 +82,7 @@ const mockRepository = {
     getLocalCopy: jest.fn().mockResolvedValue(null),
     getInteraction: jest.fn().mockResolvedValue(null),
     listLocalCopies: jest.fn().mockResolvedValue([]),
+    listInteractions: jest.fn().mockResolvedValue([]),
     declareCopyReviewed: jest.fn().mockResolvedValue({ updated: true }),
     declareYouTubeReviewed: jest.fn().mockResolvedValue({ updated: true }),
     recordYouTubeInteraction: jest.fn().mockResolvedValue({ id: '1' }),
@@ -80,8 +94,14 @@ const mockUseLocalData = jest.fn().mockReturnValue({
   patientId: 'paciente-a',
   repository: mockRepository,
   runSave: jest.fn().mockImplementation((fn: () => Promise<unknown>) => fn()),
+  trackOperation: jest.fn().mockImplementation((fn: () => Promise<unknown>) => fn()),
   saving: false,
   database: {},
+  isClosing: false,
+  manager: {
+    getPatientId: () => 'paciente-a',
+    getContextEpoch: () => 1,
+  },
 });
 
 jest.mock('../providers/LocalDataProvider', () => ({
@@ -100,21 +120,33 @@ jest.mock('../data/local/files/resource-storage', () => ({
   reconcileResourceCopies: jest.fn().mockResolvedValue({}),
 }));
 
+import { router } from 'expo-router';
+import LegacyVisorRedirect from '../app/(tabs)/educacion/visor';
+import LegacyCopiesRedirect from '../app/(tabs)/educacion/copias';
 import { EducationCopiesScreen } from '../features/education/EducationCopiesScreen';
 import {
   getEducationalCatalogReader,
   InMemoryEducationalCatalogReader,
   setEducationalCatalogReader,
 } from '../features/education/educational-catalog-service';
-import { EducationResourceScreen } from '../features/education/EducationScreens';
+import {
+  EducationScreen,
+  EducationCategoryScreen,
+  EducationResourceScreen,
+} from '../features/education/EducationScreens';
+import { InfographicViewerScreen } from '../features/education/InfographicViewerScreen';
+import { resetYouTubeLaunchDebounceForTesting } from '../features/education/youtube-launcher';
+import * as bulkCoordinator from '../features/education/bulk-download-coordinator';
 
 describe('Pruebas de interfaz (UI) para módulo de Educación', () => {
   beforeEach(() => {
     jest.clearAllMocks();
+    resetYouTubeLaunchDebounceForTesting();
     mockGetNetworkStateAsync.mockResolvedValue({ isConnected: true, isInternetReachable: true });
     mockDeleteResourceFile.mockResolvedValue(true);
     mockResourceFileExists.mockReturnValue(true);
     mockReadResourceFile.mockResolvedValue('## Contenido');
+    mockOpenURL.mockResolvedValue(true);
     setEducationalCatalogReader(new InMemoryEducationalCatalogReader());
   });
 
@@ -194,7 +226,7 @@ describe('Pruebas de interfaz (UI) para módulo de Educación', () => {
 
       await render(<EducationResourceScreen />);
 
-      const deleteBtn = await screen.findByText('Eliminar copia local');
+      const deleteBtn = await screen.findByText('Quitar descarga');
       await fireEvent.press(deleteBtn);
 
       // No debe llamar a removeLocalCopy en la base de datos
@@ -377,18 +409,624 @@ describe('Pruebas de interfaz (UI) para módulo de Educación', () => {
     });
   });
 
-  describe('Catálogo educativo desacoplado', () => {
+  describe('Catálogo educativo desacoplado y 9 categorías', () => {
     it('calcula conteos dinámicamente según recursos reales sin números cableados', async () => {
       const reader = getEducationalCatalogReader();
       const categories = await reader.getCategories();
       const allResources = await reader.getAllResources();
 
-      expect(categories.length).toBeGreaterThan(0);
+      expect(categories.length).toBe(9);
       for (const cat of categories) {
         const expectedCount = allResources.filter((r) => r.category === cat.id).length;
         expect(cat.count).toBe(expectedCount);
-        expect(cat.countLabel).toBe(`${expectedCount} contenidos`);
+        expect(cat.countLabel).toBe(`${expectedCount} contenido${expectedCount === 1 ? '' : 's'}`);
       }
+    });
+
+    it('renderiza las 9 categorías clínicas acordadas en la pantalla principal de educación', async () => {
+      await render(<EducationScreen />);
+
+      await waitFor(() => {
+        expect(screen.getByText('Conociendo la Unidad Oncológica')).toBeTruthy();
+        expect(screen.getByText('Conociendo el cáncer')).toBeTruthy();
+        expect(screen.getByText('Conociendo la quimioterapia')).toBeTruthy();
+        expect(screen.getByText('Dispositivos de tratamiento')).toBeTruthy();
+        expect(screen.getByText('Efectos secundarios')).toBeTruthy();
+        expect(screen.getByText('Salud mental')).toBeTruthy();
+        expect(screen.getByText('Alimentación')).toBeTruthy();
+        expect(screen.getByText('Signos de alarma')).toBeTruthy();
+        expect(screen.getByText('Gestoras de casos')).toBeTruthy();
+      });
+    });
+
+    it('permite alternar filtros de formato (Todos, Videos, Infografías) en la pantalla de categoría', async () => {
+      mockUseLocalSearchParams.mockReturnValue({ categoria: 'alimentacion' });
+
+      await render(<EducationCategoryScreen />);
+
+      // Debe mostrar el título de la categoría
+      await waitFor(() => {
+        expect(screen.getByText('Alimentación')).toBeTruthy();
+      });
+
+      // Debe contener los controles de filtro
+      expect(screen.getByText('Todos')).toBeTruthy();
+      const filterVideos = screen.getByText('Videos');
+      const filterInfografias = screen.getByText('Infografías');
+
+      // Inicialmente en "Todos": ambos recursos están presentes
+      expect(screen.getByText('Infografía: Guía nutricional en quimioterapia')).toBeTruthy();
+      expect(screen.getByText('Video: Opciones de líquidos e hidratación diaria')).toBeTruthy();
+
+      // Filtrar por Videos
+      fireEvent.press(filterVideos);
+      await waitFor(() => {
+        expect(screen.getByText('Video: Opciones de líquidos e hidratación diaria')).toBeTruthy();
+        expect(screen.queryByText('Infografía: Guía nutricional en quimioterapia')).toBeNull();
+      });
+
+      // Filtrar por Infografías
+      fireEvent.press(filterInfografias);
+      await waitFor(() => {
+        expect(screen.getByText('Infografía: Guía nutricional en quimioterapia')).toBeTruthy();
+        expect(screen.queryByText('Video: Opciones de líquidos e hidratación diaria')).toBeNull();
+      });
+    });
+
+    it('muestra contenido explicativo accesible para infografías con texto alternativo completo', async () => {
+      mockUseLocalSearchParams.mockReturnValue({ recurso: 'edu-infografia-alimentacion' });
+
+      await render(<EducationResourceScreen />);
+
+      await waitFor(() => {
+        expect(screen.getByText('Contenido explicativo accesible')).toBeTruthy();
+        expect(screen.getByText(/1\. HIDRATACIÓN CONSTANTE/)).toBeTruthy();
+      });
+    });
+  });
+
+  describe('Acceso directo en 1 toque y modal de información (Bloque 2)', () => {
+    it('al pulsar la tarjeta de video, lanza directamente YouTube y registra interacción en segundo plano', async () => {
+      mockUseLocalSearchParams.mockReturnValue({ categoria: 'alimentacion' });
+
+      await render(<EducationCategoryScreen />);
+
+      await waitFor(() => {
+        expect(screen.getByText('Alimentación')).toBeTruthy();
+      });
+
+      // Tarjeta con chip de formato
+      expect(screen.getByText('Video · Requiere internet')).toBeTruthy();
+
+      const videoCard = screen.getByLabelText(
+        'Video: Opciones de líquidos e hidratación diaria, Video · Requiere internet',
+      );
+      await fireEvent.press(videoCard);
+
+      // Debe abrir enlace de YouTube en modo demo
+      expect(mockOpenURL).toHaveBeenCalledWith('https://www.youtube.com');
+
+      // Debe registrar la interacción en SQLite
+      expect(mockRepository.education.recordYouTubeInteraction).toHaveBeenCalledWith(
+        expect.objectContaining({
+          contentId: 'edu-video-hidratacion-facil',
+        }),
+      );
+    });
+
+    it('al pulsar la tarjeta de infografía, navega directamente a /visor-infografia a pantalla completa', async () => {
+      mockUseLocalSearchParams.mockReturnValue({ categoria: 'alimentacion' });
+
+      await render(<EducationCategoryScreen />);
+
+      await waitFor(() => {
+        expect(screen.getByText('Alimentación')).toBeTruthy();
+      });
+
+      // Tarjeta con chip de formato
+      expect(screen.getByText('Infografía · Disponible para guardar')).toBeTruthy();
+
+      const infoCard = screen.getByLabelText(
+        'Infografía: Guía nutricional en quimioterapia, Infografía · Disponible para guardar',
+      );
+      await fireEvent.press(infoCard);
+
+      // Debe navegar directamente al visor a pantalla completa
+      expect(router.push).toHaveBeenCalledWith(
+        '/visor-infografia?recurso=' + encodeURIComponent('edu-infografia-alimentacion'),
+      );
+    });
+
+    it('al pulsar Información en la tarjeta, abre el modal sin abrir YouTube ni navegar al visor', async () => {
+      mockUseLocalSearchParams.mockReturnValue({ categoria: 'alimentacion' });
+
+      await render(<EducationCategoryScreen />);
+
+      await waitFor(() => {
+        expect(screen.getByText('Alimentación')).toBeTruthy();
+      });
+
+      const infoBtn = screen.getByLabelText(
+        'Información de Infografía: Guía nutricional en quimioterapia',
+      );
+      await fireEvent.press(infoBtn);
+
+      // No debe navegar al visor ni abrir YouTube
+      expect(router.push).not.toHaveBeenCalled();
+      expect(mockOpenURL).not.toHaveBeenCalled();
+
+      // Debe estar visible el modal de información con sus acciones
+      expect(
+        screen.getByRole('header', { name: 'Infografía: Guía nutricional en quimioterapia' }),
+      ).toBeTruthy();
+      expect(screen.getByText('Guardar infografía sin conexión')).toBeTruthy();
+      expect(screen.getByText('Cerrar')).toBeTruthy();
+
+      // Cerrar modal
+      const closeBtn = screen.getByLabelText('Cerrar información');
+      await fireEvent.press(closeBtn);
+
+      await waitFor(() => {
+        expect(screen.queryByLabelText('Cerrar información')).toBeNull();
+      });
+    });
+
+    it('en el modal de información de una infografía descargada, permite quitar la descarga comprobando borrado físico', async () => {
+      mockUseLocalSearchParams.mockReturnValue({ categoria: 'alimentacion' });
+      mockRepository.education.listLocalCopies.mockResolvedValueOnce([
+        {
+          patientId: 'paciente-a',
+          contentId: 'edu-infografia-alimentacion',
+          rutaRelativa: 'edu-infografia-alimentacion.12345.png',
+          formato: 'png',
+          tamanoBytes: 4096,
+          estado: 'descargado',
+          revisionDeclarada: false,
+        },
+      ]);
+
+      await render(<EducationCategoryScreen />);
+
+      await waitFor(() => {
+        expect(screen.getByText('Infografía · Disponible sin internet')).toBeTruthy();
+      });
+
+      const infoBtn = screen.getByLabelText(
+        'Información de Infografía: Guía nutricional en quimioterapia',
+      );
+      await fireEvent.press(infoBtn);
+
+      // Dentro del modal se debe mostrar la opción de quitar descarga
+      const removeBtn = await screen.findByText('Quitar descarga');
+      await fireEvent.press(removeBtn);
+
+      // Debe confirmar la eliminación física antes de actualizar SQLite
+      expect(mockDeleteResourceFile).toHaveBeenCalled();
+      expect(mockRepository.education.removeLocalCopy).toHaveBeenCalledWith(
+        'edu-infografia-alimentacion',
+      );
+    });
+
+    it('la ruta legacy /educacion/visor redirige correctamente a /visor-infografia', async () => {
+      mockUseLocalSearchParams.mockReturnValue({ recurso: 'edu-infografia-alimentacion' });
+
+      await render(<LegacyVisorRedirect />);
+
+      expect(mockRedirect).toHaveBeenCalledWith(
+        expect.objectContaining({
+          href: {
+            pathname: '/visor-infografia',
+            params: { recurso: 'edu-infografia-alimentacion' },
+          },
+        }),
+      );
+    });
+  });
+
+  describe('Visor ampliado de infografías (InfographicViewerScreen)', () => {
+    it('renderiza título, botón de cierre superpuesto, imagen a pantalla completa y controles de accesibilidad', async () => {
+      mockUseLocalSearchParams.mockReturnValue({ recurso: 'edu-infografia-alimentacion' });
+
+      await render(<InfographicViewerScreen />);
+
+      await waitFor(() => {
+        expect(screen.getByText('Infografía: Guía nutricional en quimioterapia')).toBeTruthy();
+      });
+
+      // Botón accesible de cierre superpuesto
+      expect(screen.getByLabelText('Cerrar visor de infografía')).toBeTruthy();
+      expect(screen.getByText('Cerrar')).toBeTruthy();
+
+      // Botón de texto alternativo
+      expect(
+        screen.getByLabelText('Leer contenido en texto accesible de la infografía'),
+      ).toBeTruthy();
+      expect(screen.getByText('Texto accesible')).toBeTruthy();
+
+      // Botón de opciones accesibles de zoom
+      expect(screen.getByLabelText('Opciones accesibles de zoom')).toBeTruthy();
+      expect(screen.getByText('Zoom')).toBeTruthy();
+
+      // Componente interactivo de imagen a pantalla completa
+      expect(
+        screen.getByLabelText(/Infografía a pantalla completa:.*Guía nutricional en quimioterapia/),
+      ).toBeTruthy();
+    });
+
+    it('permite desplegar opciones de zoom accesibles y ajustar el nivel de ampliación con anuncios para TalkBack', async () => {
+      mockUseLocalSearchParams.mockReturnValue({ recurso: 'edu-infografia-alimentacion' });
+
+      await render(<InfographicViewerScreen />);
+
+      await waitFor(() => {
+        expect(screen.getByLabelText('Opciones accesibles de zoom')).toBeTruthy();
+      });
+
+      // Abrir controles accesibles de zoom
+      const zoomOptionsBtn = screen.getByLabelText('Opciones accesibles de zoom');
+      fireEvent.press(zoomOptionsBtn);
+
+      await waitFor(() => {
+        expect(screen.getByLabelText('Aumentar zoom')).toBeTruthy();
+        expect(screen.getByLabelText('Reducir zoom')).toBeTruthy();
+        expect(screen.getByLabelText('Restablecer tamaño normal')).toBeTruthy();
+      });
+
+      // Aumentar zoom (+): pasa de 100% a 175%
+      const zoomInBtn = screen.getByLabelText('Aumentar zoom');
+      fireEvent.press(zoomInBtn);
+
+      await waitFor(() => {
+        expect(screen.getByText('Nivel de zoom al 175%')).toBeTruthy();
+      });
+
+      // Aumentar zoom (+) nuevamente: pasa a 250%
+      fireEvent.press(zoomInBtn);
+
+      await waitFor(() => {
+        expect(screen.getByText('Nivel de zoom al 250%')).toBeTruthy();
+      });
+
+      // Reducir zoom (-): regresa a 175%
+      const zoomOutBtn = screen.getByLabelText('Reducir zoom');
+      fireEvent.press(zoomOutBtn);
+
+      await waitFor(() => {
+        expect(screen.getByText('Nivel de zoom al 175%')).toBeTruthy();
+      });
+
+      // Restablecer tamaño normal
+      const resetBtn = screen.getByLabelText('Restablecer tamaño normal');
+      fireEvent.press(resetBtn);
+
+      await waitFor(() => {
+        expect(screen.getByText('Imagen ajustada a la pantalla (100%)')).toBeTruthy();
+      });
+    });
+
+    it('admite acciones de accesibilidad TalkBack (activate, increment, decrement) directamente sobre la imagen', async () => {
+      mockUseLocalSearchParams.mockReturnValue({ recurso: 'edu-infografia-alimentacion' });
+
+      await render(<InfographicViewerScreen />);
+
+      await waitFor(() => {
+        expect(
+          screen.getByLabelText(
+            /Infografía a pantalla completa:.*Guía nutricional en quimioterapia/,
+          ),
+        ).toBeTruthy();
+      });
+
+      const imageNode = screen.getByLabelText(
+        /Infografía a pantalla completa:.*Guía nutricional en quimioterapia/,
+      );
+
+      // Doble toque accesible / activate: conmuta a 250%
+      fireEvent(imageNode, 'accessibilityAction', { nativeEvent: { actionName: 'activate' } });
+
+      await waitFor(() => {
+        expect(screen.getByText('Imagen ampliada al 250%')).toBeTruthy();
+      });
+
+      // Segundo activate: regresa a 100%
+      fireEvent(imageNode, 'accessibilityAction', { nativeEvent: { actionName: 'activate' } });
+
+      await waitFor(() => {
+        expect(screen.getByText('Imagen ajustada a la pantalla (100%)')).toBeTruthy();
+      });
+    });
+
+    it('abre el modal accesible de texto offline y lo cierra correctamente', async () => {
+      mockUseLocalSearchParams.mockReturnValue({ recurso: 'edu-infografia-alimentacion' });
+
+      await render(<InfographicViewerScreen />);
+
+      await waitFor(() => {
+        expect(screen.getByText('Texto accesible')).toBeTruthy();
+      });
+
+      // Abrir modal
+      const textBtn = screen.getByText('Texto accesible');
+      fireEvent.press(textBtn);
+
+      await waitFor(() => {
+        expect(screen.getByText('Texto alternativo accesible')).toBeTruthy();
+        expect(screen.getByText(/1\. HIDRATACIÓN CONSTANTE/)).toBeTruthy();
+      });
+
+      // Cerrar modal
+      const closeBtn = screen.getByText('Cerrar lectura');
+      fireEvent.press(closeBtn);
+
+      await waitFor(() => {
+        expect(screen.queryByText('Texto alternativo accesible')).toBeNull();
+      });
+    });
+
+    it('cierra el visor llamando a router.back cuando puede retroceder', async () => {
+      mockUseLocalSearchParams.mockReturnValue({ recurso: 'edu-infografia-alimentacion' });
+      (router.canGoBack as jest.Mock).mockReturnValue(true);
+
+      await render(<InfographicViewerScreen />);
+
+      await waitFor(() => {
+        expect(screen.getByText('Infografía: Guía nutricional en quimioterapia')).toBeTruthy();
+      });
+
+      const closeBtn = screen.getByLabelText('Cerrar visor de infografía');
+      fireEvent.press(closeBtn);
+
+      expect(router.back).toHaveBeenCalled();
+    });
+
+    it('redirige a /educacion si no hay historial para retroceder', async () => {
+      mockUseLocalSearchParams.mockReturnValue({ recurso: 'edu-infografia-alimentacion' });
+      (router.canGoBack as jest.Mock).mockReturnValue(false);
+
+      await render(<InfographicViewerScreen />);
+
+      await waitFor(() => {
+        expect(screen.getByText('Infografía: Guía nutricional en quimioterapia')).toBeTruthy();
+      });
+
+      const closeBtn = screen.getByLabelText('Cerrar visor de infografía');
+      fireEvent.press(closeBtn);
+
+      expect(router.replace).toHaveBeenCalledWith('/educacion');
+    });
+  });
+
+  describe('Biblioteca unificada y descargas masivas (Bloque 3)', () => {
+    it('la ruta legacy /educacion/copias redirige a /educacion?filtro=offline', async () => {
+      await render(<LegacyCopiesRedirect />);
+
+      expect(mockRedirect).toHaveBeenCalledWith(
+        expect.objectContaining({
+          href: '/educacion?filtro=offline',
+        }),
+      );
+    });
+
+    it('el botón Mis copias guardadas en la portada educativa navega a /educacion?filtro=offline', async () => {
+      mockUseLocalSearchParams.mockReturnValue({});
+
+      await render(<EducationScreen />);
+
+      await waitFor(() => {
+        expect(screen.getByText('Mis copias guardadas')).toBeTruthy();
+      });
+
+      const copiesCard = screen.getByLabelText('Ver mis copias guardadas sin conexión');
+      fireEvent.press(copiesCard);
+
+      expect(router.navigate).toHaveBeenCalledWith('/educacion?filtro=offline');
+    });
+
+    it('al acceder con filtro=offline, muestra la biblioteca unificada con las copias físicas válidas', async () => {
+      mockUseLocalSearchParams.mockReturnValue({ filtro: 'offline' });
+      mockRepository.education.listLocalCopies.mockResolvedValueOnce([
+        {
+          patientId: 'paciente-a',
+          contentId: 'edu-infografia-alimentacion',
+          rutaRelativa: 'edu-infografia-alimentacion.12345.png',
+          formato: 'png',
+          tamanoBytes: 4096,
+          estado: 'descargado',
+          revisionDeclarada: true,
+          revisionDeclaradaEn: '2026-10-18T10:00:00Z',
+          titulo: 'Guía nutricional en quimioterapia',
+        },
+      ]);
+      mockResourceFileExists.mockReturnValue(true);
+
+      await render(<EducationScreen />);
+
+      await waitFor(() => {
+        expect(screen.getByText('Filtro: Sin conexión')).toBeTruthy();
+        expect(screen.getByText('Guía nutricional en quimioterapia')).toBeTruthy();
+        expect(screen.getByText('Infografía · Disponible sin internet')).toBeTruthy();
+      });
+
+      // Tocar la tarjeta abre el visor a pantalla completa en 1 toque
+      const copyCard = screen.getByLabelText(
+        'Guía nutricional en quimioterapia, Infografía · Disponible sin internet',
+      );
+      fireEvent.press(copyCard);
+
+      expect(router.push).toHaveBeenCalledWith(
+        '/visor-infografia?recurso=' + encodeURIComponent('edu-infografia-alimentacion'),
+      );
+    });
+
+    it('en la biblioteca offline, muestra estado vacío cuando el paciente no tiene copias', async () => {
+      mockUseLocalSearchParams.mockReturnValue({ filtro: 'offline' });
+      mockRepository.education.listLocalCopies.mockResolvedValueOnce([]);
+
+      await render(<EducationScreen />);
+
+      await waitFor(() => {
+        expect(screen.getByText('Sin copias guardadas')).toBeTruthy();
+      });
+
+      const returnBtn = screen.getByLabelText('Ver todas las categorías');
+      fireEvent.press(returnBtn);
+
+      expect(router.navigate).toHaveBeenCalledWith('/educacion');
+    });
+
+    it('muestra el botón para guardar todas las infografías sin conexión en la portada', async () => {
+      mockUseLocalSearchParams.mockReturnValue({});
+
+      await render(<EducationScreen />);
+
+      await waitFor(() => {
+        expect(screen.getByText('Guardar todas las infografías sin conexión')).toBeTruthy();
+      });
+    });
+
+    it('al presionar guardar todas, reporta resultados parciales y permite reintentar pendientes', async () => {
+      mockUseLocalSearchParams.mockReturnValue({});
+      const runBulkSpy = jest
+        .spyOn(bulkCoordinator, 'runBulkInfographicDownload')
+        .mockResolvedValueOnce({
+          total: 2,
+          downloaded: 1,
+          skipped: 0,
+          failed: 1,
+          pendingResources: [
+            {
+              id: 'fail-info',
+              title: 'Infografía con error',
+              category: 1,
+              categoryName: 'General',
+              description: 'Desc',
+              type: 'infografia',
+              version: '1.0.0',
+            },
+          ],
+          errors: [
+            { resourceId: 'fail-info', title: 'Infografía con error', message: 'Disco lleno' },
+          ],
+          cancelled: false,
+          alreadyUpToDate: false,
+          message: 'Se guardaron 1 de 2 infografías. 1 pendiente.',
+        });
+
+      await render(<EducationScreen />);
+
+      const saveAllBtn = await screen.findByText('Guardar todas las infografías sin conexión');
+      await fireEvent.press(saveAllBtn);
+
+      await waitFor(() => {
+        expect(screen.getByText('Se guardaron 1 de 2 infografías. 1 pendiente.')).toBeTruthy();
+        expect(screen.getByText('Reintentar pendientes')).toBeTruthy();
+      });
+
+      // Presionar reintentar pendientes invoca nuevamente la descarga masiva
+      runBulkSpy.mockResolvedValueOnce({
+        total: 1,
+        downloaded: 1,
+        skipped: 0,
+        failed: 0,
+        pendingResources: [],
+        errors: [],
+        cancelled: false,
+        alreadyUpToDate: false,
+        message: '1 infografía guardada para ver sin conexión.',
+      });
+
+      const retryBtn = screen.getByText('Reintentar pendientes');
+      await fireEvent.press(retryBtn);
+
+      await waitFor(() => {
+        expect(screen.getByText('1 infografía guardada para ver sin conexión.')).toBeTruthy();
+        expect(screen.queryByText('Reintentar pendientes')).toBeNull();
+      });
+    });
+
+    it('muestra estado Cancelando… mientras se interrumpe la descarga masiva', async () => {
+      mockUseLocalSearchParams.mockReturnValue({});
+      let resolveRun!: (val: bulkCoordinator.BulkDownloadResult) => void;
+      const runningPromise = new Promise<bulkCoordinator.BulkDownloadResult>((res) => {
+        resolveRun = res;
+      });
+
+      jest.spyOn(bulkCoordinator, 'runBulkInfographicDownload').mockImplementation(async (opts) => {
+        opts.onProgress?.({
+          current: 1,
+          total: 2,
+          percent: 50,
+          currentTitle: 'Infografía en curso',
+        });
+        return runningPromise;
+      });
+
+      await render(<EducationScreen />);
+
+      const saveAllBtn = await screen.findByText('Guardar todas las infografías sin conexión');
+      await fireEvent.press(saveAllBtn);
+
+      await waitFor(() => {
+        expect(screen.getByText(/Guardando 1 de 2/)).toBeTruthy();
+        expect(screen.getByText('Cancelar descarga')).toBeTruthy();
+      });
+
+      // Presionar cancelar
+      const cancelBtn = screen.getByText('Cancelar descarga');
+      await fireEvent.press(cancelBtn);
+
+      await waitFor(() => {
+        expect(screen.getAllByText('Cancelando…').length).toBeGreaterThanOrEqual(1);
+      });
+
+      // Resolver la descarga cancelada
+      resolveRun({
+        total: 2,
+        downloaded: 1,
+        skipped: 0,
+        failed: 0,
+        pendingResources: [],
+        errors: [],
+        cancelled: true,
+        alreadyUpToDate: false,
+        message: 'Descarga cancelada. Se conservaron 1 infografía completada.',
+      });
+
+      await waitFor(() => {
+        expect(screen.getByText(/Descarga cancelada/)).toBeTruthy();
+      });
+    });
+
+    it('en Educación, el toque en tarjeta de video invoca executeYouTubeLaunch con guardas de época y paciente', async () => {
+      mockUseLocalSearchParams.mockReturnValue({ categoria: '1' });
+      setEducationalCatalogReader(
+        new InMemoryEducationalCatalogReader([
+          {
+            id: 'test-vid-guard',
+            title: 'Video cuidados especiales',
+            category: 1,
+            categoryName: 'General',
+            description: 'Desc',
+            type: 'video',
+            version: '1.0.0',
+            youtubeVideoId: 'xyz123',
+          },
+        ]),
+      );
+
+      await render(<EducationCategoryScreen />);
+
+      const videoCard = await screen.findByLabelText(
+        'Video cuidados especiales, Video · Requiere internet',
+      );
+      await fireEvent.press(videoCard);
+
+      expect(mockOpenURL).toHaveBeenCalledWith('https://www.youtube.com');
+      expect(mockRepository.education.recordYouTubeInteraction).toHaveBeenCalledWith({
+        contentId: 'test-vid-guard',
+        youtubeVideoId: 'xyz123',
+        versionOrigen: '1.0.0',
+      });
     });
   });
 });

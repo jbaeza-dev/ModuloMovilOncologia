@@ -1,7 +1,7 @@
 import Feather from '@expo/vector-icons/Feather';
 import * as Crypto from 'expo-crypto';
 import { router, useLocalSearchParams } from 'expo-router';
-import { useCallback, useEffect, useState } from 'react';
+import { useCallback, useEffect, useMemo, useState } from 'react';
 import { StyleSheet, Text, TextInput, View } from 'react-native';
 
 import { NavigationCard } from '../../components/NavigationCard';
@@ -27,12 +27,15 @@ import { useFocusedValue } from '../../hooks/use-local-query';
 import { useLocalData } from '../../providers/LocalDataProvider';
 import { useAppTheme } from '../../providers/ThemeProvider';
 import { theme } from '../../theme';
+import { computeVisibleQuestions } from '../../services/forms/form-conditions';
+import type { QuestionConfiguration } from '../../data/local/forms/form-types';
 import { validateFormAnswers } from './medical-form-validation';
 import type {
   FormAnswerValue,
   MedicalFormDefinition,
   MedicalFormQuestion,
 } from './medical-form-types';
+import { formatFormAnswer } from './form-answer-formatter';
 
 export function toMedicalFormDefinition(fullDef: FullFormDefinition): MedicalFormDefinition {
   return {
@@ -835,6 +838,24 @@ export function MedicalFormSubmissionDetailScreen() {
     };
   }, [repository, patientId, id]);
 
+  const medicalForm = useMemo(() => (formDef ? toMedicalFormDefinition(formDef) : null), [formDef]);
+
+  const visibleQuestions = useMemo(() => {
+    if (!formDef || !submission || !medicalForm) return [];
+    const visibleIds = computeVisibleQuestions(
+      formDef.preguntas.map((q) => ({
+        preguntaId: q.pregunta_id,
+        configuracion: q.configuracion as QuestionConfiguration,
+      })),
+      submission.respuestas,
+    );
+    return medicalForm.preguntas.filter(
+      (q) =>
+        visibleIds.has(q.id) ||
+        (submission.respuestas[q.id] !== undefined && submission.respuestas[q.id] !== ''),
+    );
+  }, [formDef, medicalForm, submission]);
+
   if (loading) {
     return (
       <Screen title="Detalle de evaluación">
@@ -846,7 +867,7 @@ export function MedicalFormSubmissionDetailScreen() {
     );
   }
 
-  if (!submission || !formDef) {
+  if (!submission || !formDef || !medicalForm) {
     return (
       <Screen title="Evaluación no encontrada">
         <DemoBadge />
@@ -859,8 +880,6 @@ export function MedicalFormSubmissionDetailScreen() {
     );
   }
 
-  const medicalForm = toMedicalFormDefinition(formDef);
-
   return (
     <Screen title={`Entrega: ${submission.titulo}`}>
       <DemoBadge />
@@ -870,32 +889,76 @@ export function MedicalFormSubmissionDetailScreen() {
           label="Fecha de confirmación"
           value={formatDate(submission.fecha_confirmacion)}
         />
-        <DetailRow label="Versión evaluada" value={submission.version} />
-        <DetailRow label="Identificador local" value={submission.id} />
+        {submission.fecha_seguimiento ? (
+          <DetailRow
+            label="Fecha de seguimiento"
+            value={formatDate(submission.fecha_seguimiento)}
+          />
+        ) : null}
+        {submission.ventana_desde ? (
+          <DetailRow label="Ventana evaluada" value="Últimas 24 horas" />
+        ) : null}
       </InfoCard>
 
       <SectionTitle>Respuestas registradas</SectionTitle>
 
-      {medicalForm.preguntas.map((q, idx) => {
-        const val = submission.respuestas[q.id];
-        let displayVal = 'Sin respuesta (opcional)';
-        if (val !== undefined && val !== null && val !== '') {
-          if (Array.isArray(val)) {
-            displayVal = val.length ? val.join(', ') : 'Ninguna seleccionada';
-          } else {
-            displayVal = String(val);
-          }
-        }
-        return (
-          <InfoCard key={q.id}>
-            <Text style={styles.questionNumber}>
-              Pregunta {idx + 1} de {medicalForm.preguntas.length}
-            </Text>
-            <Text style={styles.questionTitle}>{q.pregunta}</Text>
-            <DetailRow label="Respuesta" value={displayVal} />
-          </InfoCard>
-        );
-      })}
+      {visibleQuestions.length === 0 ? (
+        <InfoCard>
+          <BodyText>No hay respuestas registradas en esta entrega.</BodyText>
+        </InfoCard>
+      ) : (
+        visibleQuestions.map((q, idx) => {
+          const val = submission.respuestas[q.id];
+          const qDef = formDef.preguntas.find((p) => p.pregunta_id === q.id);
+          const formatted = formatFormAnswer(
+            {
+              tipo: q.tipo,
+              obligatoria: q.requerida ?? (qDef ? qDef.requerida === 1 : false),
+              configuracion: qDef?.configuracion as QuestionConfiguration | undefined,
+              opciones: q.opciones,
+            },
+            val,
+          );
+
+          return (
+            <InfoCard key={q.id}>
+              <Text style={styles.questionNumber}>
+                Pregunta {idx + 1} de {visibleQuestions.length}
+              </Text>
+              <Text style={styles.questionTitle}>{q.pregunta}</Text>
+              <View style={styles.answerBlock}>
+                <Text style={styles.answerLabel}>Tu respuesta:</Text>
+                {formatted.items && formatted.items.length > 0 ? (
+                  <View style={styles.answerList}>
+                    {formatted.items.map((item, itemIdx) => (
+                      <View key={itemIdx} style={styles.answerListItem}>
+                        <Text style={styles.answerBullet}>•</Text>
+                        <Text style={[styles.answerValueText, styles.answerListText]}>{item}</Text>
+                      </View>
+                    ))}
+                  </View>
+                ) : (
+                  <Text
+                    style={[
+                      styles.answerValueText,
+                      formatted.isUnanswered && styles.answerUnanswered,
+                    ]}
+                  >
+                    {formatted.text}
+                  </Text>
+                )}
+                {formatted.scaleContext ? (
+                  <Text style={styles.scaleContextText}>{formatted.scaleContext}</Text>
+                ) : null}
+              </View>
+            </InfoCard>
+          );
+        })
+      )}
+
+      <View style={styles.secondaryMetaCard}>
+        <Text style={styles.secondaryMetaText}>Versión del cuestionario: {submission.version}</Text>
+      </View>
 
       <View style={styles.actions}>
         <VisualButton
@@ -1061,6 +1124,65 @@ function createStyles(colors: ReturnType<typeof useAppTheme>['theme']['colors'])
       color: colors.error,
       marginTop: theme.spacing.xs,
       fontWeight: '500',
+    },
+    answerBlock: {
+      marginTop: theme.spacing.xs,
+      paddingTop: theme.spacing.xs,
+      borderTopWidth: 1,
+      borderTopColor: colors.border,
+      gap: 4,
+    },
+    answerLabel: {
+      fontSize: 13,
+      fontWeight: '600',
+      color: colors.secondary,
+    },
+    answerValueText: {
+      fontSize: 15,
+      fontWeight: '600',
+      color: colors.text,
+      textAlign: 'left',
+      lineHeight: 22,
+    },
+    answerUnanswered: {
+      fontWeight: '400',
+      color: colors.secondary,
+      fontStyle: 'italic',
+    },
+    answerList: {
+      gap: 6,
+      marginTop: 2,
+    },
+    answerListItem: {
+      flexDirection: 'row',
+      alignItems: 'flex-start',
+      gap: theme.spacing.xs,
+    },
+    answerListText: {
+      flex: 1,
+      minWidth: 0,
+    },
+    answerBullet: {
+      fontSize: 15,
+      lineHeight: 22,
+      color: colors.primary,
+      fontWeight: '700',
+    },
+    scaleContextText: {
+      fontSize: 12,
+      color: colors.secondary,
+      marginTop: 2,
+    },
+    secondaryMetaCard: {
+      marginTop: theme.spacing.xs,
+      padding: theme.spacing.sm,
+      borderRadius: theme.radius.sm,
+      backgroundColor: colors.mutedSurface,
+      alignItems: 'center',
+    },
+    secondaryMetaText: {
+      fontSize: 12,
+      color: colors.secondary,
     },
   });
 }

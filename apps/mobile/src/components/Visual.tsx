@@ -353,8 +353,10 @@ function useStyles() {
     pressed: { opacity: 0.75 },
     buttonLabel: {
       ...theme.typography.button,
+      lineHeight: undefined,
       color: colors.onPrimary,
       textAlign: 'center',
+      flexShrink: 1,
     },
     secondaryLabel: { color: colors.text },
     field: { gap: theme.spacing.sm },

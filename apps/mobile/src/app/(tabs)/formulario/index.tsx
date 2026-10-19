@@ -1,1 +1,1 @@
-export { MedicalFormsHubScreen as default } from '../../../features/medical-forms/MedicalFormsScreens';
+export { DailyFollowUpScreen as default } from '../../../features/medical-forms/DailyFollowUpScreen';

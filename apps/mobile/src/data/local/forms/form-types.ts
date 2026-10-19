@@ -30,6 +30,52 @@ export class ConflictoEntregaError extends Error {
   }
 }
 
+export class DefinicionIncompatibleError extends Error {
+  constructor(message: string) {
+    super(message);
+    this.name = 'DefinicionIncompatibleError';
+  }
+}
+
+export class CondicionInvalidaError extends Error {
+  constructor(message: string) {
+    super(message);
+    this.name = 'CondicionInvalidaError';
+  }
+}
+
+export type FormCondition =
+  | { op: 'eq'; questionId: string; value: string }
+  | { op: 'in'; questionId: string; values: string[] }
+  | { op: 'all'; conditions: FormCondition[] };
+
+export type FormSection = {
+  id: string;
+  titulo: string;
+  orden: number;
+  descripcion?: string;
+};
+
+export type FormPeriodicity = 'daily' | 'standalone';
+
+export type FormConfiguration = {
+  secciones?: FormSection[];
+  periodicidad?: FormPeriodicity;
+  schemaVersion?: number;
+  [key: string]: unknown;
+};
+
+export type QuestionConfiguration = {
+  sectionId?: string;
+  sourceCode?: string;
+  visibleWhen?: FormCondition;
+  opciones?: MedicalFormChoice[];
+  maxLength?: number;
+  minEtiqueta?: string;
+  maxEtiqueta?: string;
+  [key: string]: unknown;
+};
+
 export type FormDefinitionRecord = {
   formulario_id: string;
   version: string;
@@ -67,6 +113,13 @@ export type FormDraftRecord = {
   paciente_id: string;
   formulario_id: string;
   version: string;
+  periodo_clave: string;
+  fecha_seguimiento: string | null;
+  zona_horaria: string | null;
+  iniciado_en: string | null;
+  ventana_desde: string | null;
+  ventana_hasta: string | null;
+  paso_actual: string | null;
   entrega_id: string;
   respuestas_json: string;
   guardado_en: string;
@@ -81,6 +134,36 @@ export type FormSubmissionRecord = {
   respuestas_json: string;
   fecha_confirmacion: string;
   creado_localmente_en: string;
+  fecha_seguimiento: string | null;
+  zona_horaria: string | null;
+  iniciado_en: string | null;
+  ventana_desde: string | null;
+  ventana_hasta: string | null;
+};
+
+export type DailyFormStatus = {
+  hasSubmittedToday: boolean;
+  hasActiveDraft: boolean;
+  hasOlderDraft: boolean;
+  activeDraft: FormDraftRecord | null;
+  olderDraft: FormDraftRecord | null;
+  lastSubmission: FormSubmissionRecord | null;
+  todayTrackingDate: string;
+};
+
+export type DailyDraftData = {
+  formId: string;
+  version: string;
+  periodoClave: string;
+  entregaId: string;
+  fechaSeguimiento: string;
+  zonaHoraria: string;
+  iniciadoEn: string;
+  ventanaDesde: string;
+  ventanaHasta: string;
+  pasoActual: string | null;
+  respuestas: Record<string, FormAnswerValue>;
+  guardadoEn: string;
 };
 
 export type FormLegacyImportRecord = {
@@ -108,12 +191,7 @@ export type MedicalFormBundleQuestion = {
   tipo: string;
   orden: number;
   requerida?: boolean;
-  configuracion?: {
-    opciones?: MedicalFormChoice[];
-    minEtiqueta?: string;
-    maxEtiqueta?: string;
-    [key: string]: unknown;
-  };
+  configuracion?: QuestionConfiguration;
 };
 
 export type MedicalFormBundleItem = {
@@ -122,7 +200,7 @@ export type MedicalFormBundleItem = {
   titulo: string;
   descripcion: string;
   duracionEstimadaMin: number;
-  configuracion?: Record<string, unknown>;
+  configuracion?: FormConfiguration;
   preguntas: MedicalFormBundleQuestion[];
 };
 

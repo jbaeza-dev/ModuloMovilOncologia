@@ -25,6 +25,7 @@ import {
   seedPatientContextIfEmpty,
 } from '../data/local/repository';
 import type { SqlConnection } from '../data/local/core/sql';
+import { cleanupRetiredEducationalCopies } from '../data/local/education/retired-copy-cleanup';
 import { importLegacyDrafts } from '../features/medical-forms/form-legacy-import';
 import { isDemoMode } from '../utils/environment';
 import { isValidNotificationPayload } from '../data/local/reminders/reminder-types';
@@ -216,6 +217,10 @@ export function LocalDataProvider({ children }: { children: ReactNode }) {
     setFormImportStatus('importing');
     setFormImportError(null);
     const adapter = new ExpoFileStorageAdapter();
+    cleanupRetiredEducationalCopies(database, patientId, { adapter }).catch((err) => {
+      console.warn('Fallo en limpieza de copias educativas retiradas:', err);
+    });
+
     importLegacyDrafts(patientId, database, adapter, undefined, Crypto.randomUUID)
       .then((counts) => {
         if (active) {

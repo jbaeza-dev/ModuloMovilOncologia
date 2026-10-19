@@ -33,8 +33,8 @@ export function AppNavigator() {
 
   useEffect(() => {
     if (!patientId && !isClosing) {
-      const inTabs = segments[0] === '(tabs)';
-      if (inTabs) {
+      const inProtected = segments[0] === '(tabs)' || segments[0] === 'visor-infografia';
+      if (inProtected) {
         if (isDemoMode()) {
           router.replace('/acceso/seleccionar-paciente');
         } else {
@@ -54,6 +54,10 @@ export function AppNavigator() {
       <Stack screenOptions={{ headerShown: false }}>
         <Stack.Protected guard={Boolean(patientId && !isClosing)}>
           <Stack.Screen name="(tabs)" />
+          <Stack.Screen
+            name="visor-infografia"
+            options={{ presentation: 'fullScreenModal', headerShown: false }}
+          />
         </Stack.Protected>
         <Stack.Screen name="acceso" />
         <Stack.Screen name="+not-found" />

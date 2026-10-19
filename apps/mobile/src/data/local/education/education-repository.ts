@@ -1,5 +1,6 @@
 import type { SqlConnection } from '../core/sql';
 import type {
+  ActiveEducationalCopyFormat,
   EducationalCopyFormat,
   EducationalInteraction,
   EducationalLocalCopy,
@@ -21,6 +22,8 @@ export function mapRowToLocalCopy(row: {
   formato?: string;
   tamano_bytes?: number;
   metadata_local_json?: string | null;
+  retirado_en?: string | null;
+  ultimo_error_retiro?: string | null;
 }): EducationalLocalCopy {
   let metadata: EducationalLocalCopyMetadata | undefined;
   if (row.metadata_local_json) {
@@ -39,7 +42,7 @@ export function mapRowToLocalCopy(row: {
     contentId: row.contenido_id,
     rutaRelativa: row.ruta_local ?? '',
     rutaAbsoluta: row.ruta_local ?? '',
-    formato: (row.formato as EducationalCopyFormat) || 'markdown',
+    formato: (row.formato as EducationalCopyFormat) || 'png',
     tamanoBytes: row.tamano_bytes ?? 0,
     estado: (row.estado as 'pendiente' | 'descargado' | 'error') || 'descargado',
     titulo: metadata?.titulo,
@@ -49,6 +52,8 @@ export function mapRowToLocalCopy(row: {
     visualizadoEn: isViewed ? row.visualizada_en : null,
     revisionDeclarada: isReviewed,
     revisionDeclaradaEn: isReviewed ? (row.revision_declarada_en ?? null) : null,
+    retiradoEn: row.retirado_en ?? null,
+    ultimoErrorRetiro: row.ultimo_error_retiro ?? null,
     metadataLocal: metadata,
   };
 }
@@ -78,6 +83,10 @@ export interface EducationRepository {
   listInteractions(): Promise<EducationalInteraction[]>;
   getLocalCopy(contentId: string): Promise<EducationalLocalCopy | null>;
   listLocalCopies(): Promise<EducationalLocalCopy[]>;
+  getRetiredCopy(contentId: string): Promise<EducationalLocalCopy | null>;
+  listRetiredCopies(): Promise<EducationalLocalCopy[]>;
+  recordRetiredCopyError(contentId: string, rutaLocal: string, errorMensaje: string): Promise<void>;
+  removeRetiredCopy(contentId: string, rutaLocal: string): Promise<boolean>;
   getResourceWithStatus(resource: EducationalResource): Promise<EducationalResourceWithStatus>;
   listCatalogWithStatus(
     catalog?: readonly EducationalResource[],
@@ -99,7 +108,7 @@ export interface EducationRepository {
     params: {
       contentId: string;
       rutaLocal: string;
-      formato: EducationalCopyFormat;
+      formato: ActiveEducationalCopyFormat;
       tamanoBytes: number;
       nowIso: string;
       metadataLocal?: EducationalLocalCopyMetadata;
@@ -109,7 +118,7 @@ export interface EducationRepository {
   saveLocalCopy(params: {
     contentId: string;
     rutaLocal: string;
-    formato: EducationalCopyFormat;
+    formato: ActiveEducationalCopyFormat;
     tamanoBytes: number;
     metadataLocal?: EducationalLocalCopyMetadata;
   }): Promise<EducationalLocalCopy>;
@@ -171,10 +180,12 @@ export function createEducationRepository(
         formato?: string;
         tamano_bytes?: number;
         metadata_local_json?: string | null;
-      }>(`SELECT * FROM descarga WHERE paciente_id = ? AND contenido_id = ?`, [
-        patientId,
-        contentId,
-      ]);
+        retirado_en?: string | null;
+        ultimo_error_retiro?: string | null;
+      }>(
+        `SELECT * FROM descarga WHERE paciente_id = ? AND contenido_id = ? AND retirado_en IS NULL`,
+        [patientId, contentId],
+      );
       return row ? mapRowToLocalCopy(row) : null;
     },
 
@@ -192,11 +203,89 @@ export function createEducationRepository(
         formato?: string;
         tamano_bytes?: number;
         metadata_local_json?: string | null;
+        retirado_en?: string | null;
+        ultimo_error_retiro?: string | null;
       }>(
-        `SELECT * FROM descarga WHERE paciente_id = ? ORDER BY COALESCE(fecha_descarga, '1970-01-01') DESC`,
+        `SELECT * FROM descarga WHERE paciente_id = ? AND retirado_en IS NULL ORDER BY COALESCE(fecha_descarga, '1970-01-01') DESC`,
         [patientId],
       );
       return rows.map(mapRowToLocalCopy);
+    },
+
+    async getRetiredCopy(contentId: string): Promise<EducationalLocalCopy | null> {
+      const row = await database.first<{
+        paciente_id: string;
+        contenido_id: string;
+        ruta_local: string | null;
+        estado: string;
+        fecha_descarga: string | null;
+        visualizada: number;
+        visualizada_en: string | null;
+        revision_declarada?: number;
+        revision_declarada_en?: string | null;
+        formato?: string;
+        tamano_bytes?: number;
+        metadata_local_json?: string | null;
+        retirado_en?: string | null;
+        ultimo_error_retiro?: string | null;
+      }>(
+        `SELECT * FROM descarga WHERE paciente_id = ? AND contenido_id = ? AND retirado_en IS NOT NULL`,
+        [patientId, contentId],
+      );
+      return row ? mapRowToLocalCopy(row) : null;
+    },
+
+    async listRetiredCopies(): Promise<EducationalLocalCopy[]> {
+      const rows = await database.all<{
+        paciente_id: string;
+        contenido_id: string;
+        ruta_local: string | null;
+        estado: string;
+        fecha_descarga: string | null;
+        visualizada: number;
+        visualizada_en: string | null;
+        revision_declarada?: number;
+        revision_declarada_en?: string | null;
+        formato?: string;
+        tamano_bytes?: number;
+        metadata_local_json?: string | null;
+        retirado_en?: string | null;
+        ultimo_error_retiro?: string | null;
+      }>(
+        `SELECT * FROM descarga WHERE paciente_id = ? AND retirado_en IS NOT NULL ORDER BY COALESCE(retirado_en, fecha_descarga) DESC`,
+        [patientId],
+      );
+      return rows.map(mapRowToLocalCopy);
+    },
+
+    async recordRetiredCopyError(
+      contentId: string,
+      rutaLocal: string,
+      errorMensaje: string,
+    ): Promise<void> {
+      await database.run(
+        `UPDATE descarga
+         SET ultimo_error_retiro = ?
+         WHERE paciente_id = ? AND contenido_id = ? AND retirado_en IS NOT NULL AND ruta_local = ?`,
+        [errorMensaje, patientId, contentId, rutaLocal],
+      );
+    },
+
+    async removeRetiredCopy(contentId: string, rutaLocal: string): Promise<boolean> {
+      const existing = await database.first<{ count: number }>(
+        `SELECT COUNT(*) as count FROM descarga
+         WHERE paciente_id = ? AND contenido_id = ? AND retirado_en IS NOT NULL AND ruta_local = ?`,
+        [patientId, contentId, rutaLocal],
+      );
+      if (!existing || existing.count === 0) {
+        return false;
+      }
+      await database.run(
+        `DELETE FROM descarga
+         WHERE paciente_id = ? AND contenido_id = ? AND retirado_en IS NOT NULL AND ruta_local = ?`,
+        [patientId, contentId, rutaLocal],
+      );
+      return true;
     },
 
     async getResourceWithStatus(
@@ -311,7 +400,7 @@ export function createEducationRepository(
       params: {
         contentId: string;
         rutaLocal: string;
-        formato: EducationalCopyFormat;
+        formato: ActiveEducationalCopyFormat;
         tamanoBytes: number;
         nowIso: string;
         metadataLocal?: EducationalLocalCopyMetadata;
@@ -359,8 +448,8 @@ export function createEducationRepository(
         `INSERT INTO descarga (
           paciente_id, contenido_id, ruta_local, estado, fecha_descarga,
           visualizada, visualizada_en, revision_declarada, revision_declarada_en,
-          formato, tamano_bytes, metadata_local_json
-        ) VALUES (?, ?, ?, 'descargado', ?, 0, NULL, ?, ?, ?, ?, ?)
+          formato, tamano_bytes, metadata_local_json, retirado_en, ultimo_error_retiro
+        ) VALUES (?, ?, ?, 'descargado', ?, 0, NULL, ?, ?, ?, ?, ?, NULL, NULL)
         ON CONFLICT(paciente_id, contenido_id) DO UPDATE SET
           ruta_local = excluded.ruta_local,
           estado = 'descargado',
@@ -371,7 +460,9 @@ export function createEducationRepository(
           revision_declarada_en = excluded.revision_declarada_en,
           formato = excluded.formato,
           tamano_bytes = excluded.tamano_bytes,
-          metadata_local_json = excluded.metadata_local_json`,
+          metadata_local_json = excluded.metadata_local_json,
+          retirado_en = NULL,
+          ultimo_error_retiro = NULL`,
         [
           patientId,
           params.contentId,
@@ -400,6 +491,8 @@ export function createEducationRepository(
         visualizadoEn: null,
         revisionDeclarada: finalRevision === 1,
         revisionDeclaradaEn: finalRevisionEn,
+        retiradoEn: null,
+        ultimoErrorRetiro: null,
         metadataLocal: params.metadataLocal,
       };
     },
@@ -407,7 +500,7 @@ export function createEducationRepository(
     async saveLocalCopy(params: {
       contentId: string;
       rutaLocal: string;
-      formato: EducationalCopyFormat;
+      formato: ActiveEducationalCopyFormat;
       tamanoBytes: number;
       metadataLocal?: EducationalLocalCopyMetadata;
     }): Promise<EducationalLocalCopy> {

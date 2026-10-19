@@ -349,4 +349,14 @@ describe('HomeScreen UI tests (Bloque 2)', () => {
     await fireEvent.press(screen.getByLabelText('Mis medicamentos'));
     expect(mockRouterNavigate).toHaveBeenCalledWith('/perfil/medicacion', { withAnchor: true });
   });
+
+  it('muestra la tarjeta «Cómo me siento hoy» y permite navegar a /formulario', async () => {
+    await render(<HomeScreen />);
+
+    expect(screen.getByText('Cómo me siento hoy')).toBeTruthy();
+    expect(screen.getByText('Completa tu cuestionario diario de seguimiento.')).toBeTruthy();
+
+    await fireEvent.press(screen.getByLabelText('Cómo me siento hoy'));
+    expect(mockRouterPush).toHaveBeenCalledWith('/formulario');
+  });
 });

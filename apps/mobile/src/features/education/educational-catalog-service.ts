@@ -1,26 +1,32 @@
+import type Feather from '@expo/vector-icons/Feather';
 import type { EducationalResource } from '../../data/local/education/education-types';
+import {
+  EDUCATIONAL_CATEGORIES,
+  type EducationalCategoryDefinition,
+} from './educational-categories';
 import { SAMPLE_EDUCATIONAL_CATALOG } from './sample-education-catalog';
 
 export interface EducationalCategory {
   id: number;
+  slug?: string;
   title: string;
-  icon: 'book-open' | 'sun' | 'coffee' | 'video' | 'image';
+  icon: keyof typeof Feather.glyphMap;
+  description?: string;
   count: number;
   countLabel: string;
 }
 
+export type EducationalFormatFilter = 'all' | 'video' | 'infografia';
+
 export interface EducationalCatalogReader {
   getCategories(): Promise<EducationalCategory[]>;
-  getResourcesByCategory(categoryId: number): Promise<EducationalResource[]>;
+  getResourcesByCategory(
+    categoryId: number,
+    formatFilter?: EducationalFormatFilter,
+  ): Promise<EducationalResource[]>;
   getResourceById(resourceId: string): Promise<EducationalResource | null>;
-  getAllResources(): Promise<EducationalResource[]>;
+  getAllResources(formatFilter?: EducationalFormatFilter): Promise<EducationalResource[]>;
 }
-
-const CATEGORY_DEFINITIONS: ReadonlyArray<Omit<EducationalCategory, 'count' | 'countLabel'>> = [
-  { id: 0, title: 'Preparación', icon: 'book-open' },
-  { id: 1, title: 'Vida cotidiana', icon: 'sun' },
-  { id: 2, title: 'Nutrición y bienestar', icon: 'coffee' },
-];
 
 export class InMemoryEducationalCatalogReader implements EducationalCatalogReader {
   private resources: readonly EducationalResource[];
@@ -30,18 +36,29 @@ export class InMemoryEducationalCatalogReader implements EducationalCatalogReade
   }
 
   async getCategories(): Promise<EducationalCategory[]> {
-    return CATEGORY_DEFINITIONS.map((def) => {
+    return EDUCATIONAL_CATEGORIES.map((def: EducationalCategoryDefinition) => {
       const matchingCount = this.resources.filter((r) => r.category === def.id).length;
       return {
-        ...def,
+        id: def.id,
+        slug: def.slug,
+        title: def.title,
+        icon: def.icon,
+        description: def.description,
         count: matchingCount,
         countLabel: `${matchingCount} contenido${matchingCount === 1 ? '' : 's'}`,
       };
     });
   }
 
-  async getResourcesByCategory(categoryId: number): Promise<EducationalResource[]> {
-    return this.resources.filter((r) => r.category === categoryId);
+  async getResourcesByCategory(
+    categoryId: number,
+    formatFilter: EducationalFormatFilter = 'all',
+  ): Promise<EducationalResource[]> {
+    return this.resources.filter((r) => {
+      if (r.category !== categoryId) return false;
+      if (formatFilter === 'all') return true;
+      return r.type === formatFilter;
+    });
   }
 
   async getResourceById(resourceId: string): Promise<EducationalResource | null> {
@@ -49,8 +66,11 @@ export class InMemoryEducationalCatalogReader implements EducationalCatalogReade
     return found ?? null;
   }
 
-  async getAllResources(): Promise<EducationalResource[]> {
-    return [...this.resources];
+  async getAllResources(
+    formatFilter: EducationalFormatFilter = 'all',
+  ): Promise<EducationalResource[]> {
+    if (formatFilter === 'all') return [...this.resources];
+    return this.resources.filter((r) => r.type === formatFilter);
   }
 }
 

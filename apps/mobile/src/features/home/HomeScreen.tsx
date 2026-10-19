@@ -1,11 +1,13 @@
 import { router, useFocusEffect } from 'expo-router';
-import { useCallback, useRef, useState } from 'react';
-import { Linking, ScrollView, StyleSheet, Text, View } from 'react-native';
+import { useCallback, useEffect, useRef, useState } from 'react';
+import { AppState, Linking, ScrollView, StyleSheet, Text, View } from 'react-native';
 
 import { ConfirmLogoutButton } from '../../components/ConfirmLogoutButton';
 import { NavigationCard } from '../../components/NavigationCard';
 import { Screen } from '../../components/Screen';
 import { InfoCard, SectionTitle, StatusPill, VisualButton } from '../../components/Visual';
+import type { DailyFormStatus } from '../../data/local/forms/form-types';
+import { selectDailyFormAssignment } from '../../data/local/forms/form-repository';
 import type { PatientProfileRecord } from '../../data/local/repository';
 import { useFocusedValue } from '../../hooks/use-local-query';
 import { useReminderStatus } from '../../hooks/use-reminder-status';
@@ -72,6 +74,34 @@ export function HomeScreen() {
     loadProfile,
     null as PatientProfileRecord | null,
   );
+
+  const loadDailyStatus = useCallback(async () => {
+    if (!repository || typeof repository.listAssignedForms !== 'function') return null;
+    try {
+      const assigned = await repository.listAssignedForms();
+      const primary = selectDailyFormAssignment(assigned);
+      if (!primary) return null;
+      return await repository.getDailyFormStatus(primary.formulario_id);
+    } catch {
+      return null;
+    }
+  }, [repository]);
+
+  const { value: dailyStatus, refresh: refreshDailyStatus } = useFocusedValue(
+    loadDailyStatus,
+    null as DailyFormStatus | null,
+  );
+
+  useEffect(() => {
+    const subscription = AppState.addEventListener('change', (nextState) => {
+      if (nextState === 'active') {
+        refreshDailyStatus();
+      }
+    });
+    return () => {
+      subscription.remove();
+    };
+  }, [refreshDailyStatus]);
 
   const {
     loading: reminderLoading,
@@ -346,10 +376,16 @@ export function HomeScreen() {
           primary
         />
         <NavigationCard
-          title="Registrar síntomas"
-          description="Guarda una descripción de síntomas y malestares."
+          title="Cómo me siento hoy"
+          description={
+            dailyStatus?.hasSubmittedToday
+              ? 'Seguimiento de hoy completado. Puedes revisarlo o actualizarlo.'
+              : dailyStatus?.hasActiveDraft
+                ? 'Tienes un seguimiento en curso para hoy.'
+                : 'Completa tu cuestionario diario de seguimiento.'
+          }
           icon="clipboard"
-          href="/(tabs)/(inicio)/registrar-sintomas"
+          href="/formulario"
           navigationMethod="push"
         />
       </View>

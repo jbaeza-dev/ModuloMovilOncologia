@@ -241,13 +241,13 @@ describe('Screen, NavigationCard, rutas de Inicio y reinicio dirigido (Bloque 1 
     expect(await screen.findByText('Hola, María Elena Morales')).toBeTruthy();
     expect(screen.getByText('Tu próxima medición')).toBeTruthy();
     expect(screen.getByText('Configurar aviso')).toBeTruthy();
-    expect(screen.getByText('Guarda una descripción de síntomas y malestares.')).toBeTruthy();
+    expect(screen.getByText('Completa tu cuestionario diario de seguimiento.')).toBeTruthy();
 
     await fireEvent.press(screen.getByLabelText('Registrar signos vitales'));
     expect(mockRouterPush).toHaveBeenCalledWith('/(tabs)/(inicio)/registrar-vitales');
 
-    await fireEvent.press(screen.getByLabelText('Registrar síntomas'));
-    expect(mockRouterPush).toHaveBeenCalledWith('/(tabs)/(inicio)/registrar-sintomas');
+    await fireEvent.press(screen.getByLabelText('Cómo me siento hoy'));
+    expect(mockRouterPush).toHaveBeenCalledWith('/formulario');
   });
 
   it('P-01: resolveHomeGreeting evita mostrar el nombre retenido de otro paciente y aplica respaldos correctos', () => {

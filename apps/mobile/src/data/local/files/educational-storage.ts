@@ -1,7 +1,7 @@
 import { computeSha256 } from '../../../utils/crypto';
 import type {
+  ActiveEducationalCopyFormat,
   EducationalContentType,
-  EducationalCopyFormat,
   EducationalLocalCopyMetadata,
 } from '../education/education-types';
 import { ExpoFileStorageAdapter, type FileStorageAdapter } from './file-storage-adapter';
@@ -11,6 +11,9 @@ import {
   registerActiveWrite,
   withPatientResourceLock,
 } from './resource-storage';
+
+export const MAX_EDUCATIONAL_MEDIA_BYTES = 5 * 1024 * 1024; // 5 MiB (5,242,880 bytes)
+export const MAX_EDUCATIONAL_IMAGE_PIXELS = 8_000_000; // 8 Megapíxeles
 
 const defaultExpoAdapter = new ExpoFileStorageAdapter();
 
@@ -28,19 +31,22 @@ function generateSafeUuid(): string {
 export interface SaveMediaParams {
   pacienteId: string;
   contenidoId: string;
-  formato: EducationalCopyFormat;
+  formato: ActiveEducationalCopyFormat;
   content: string | Uint8Array;
   versionOrigen?: string;
   mimeType?: string;
   titulo?: string;
   tipo?: EducationalContentType;
   descripcion?: string;
+  textoAccesible?: string;
+  anchoPx?: number;
+  altoPx?: number;
   previousRutaLocal?: string | null;
   getPreviousRutaLocal?: () => Promise<string | null | undefined> | string | null | undefined;
   tokenGenerator?: () => string;
   persistCopyInTx: (params: {
     rutaLocal: string;
-    formato: EducationalCopyFormat;
+    formato: ActiveEducationalCopyFormat;
     tamanoBytes: number;
     metadataLocal: EducationalLocalCopyMetadata;
   }) => Promise<void>;
@@ -135,12 +141,182 @@ export function isPathInPatientMediaDirectory(
  * 7. En caso de fallo antes del commit, la compensación elimina EXCLUSIVAMENTE los archivos creados por este intento
  *    y limpia temporales parciales si existen en disco.
  */
+export interface ImageDimensions {
+  width: number;
+  height: number;
+  format: 'png' | 'jpeg';
+}
+
+/**
+ * Parsea y valida la cabecera binaria de imágenes PNG o JPEG para extraer sus dimensiones exactas.
+ */
+export function parseImageHeader(bytes: Uint8Array): ImageDimensions {
+  if (bytes.length < 8) {
+    throw new Error('Archivo corrupto o incompleto: cabecera binaria insuficiente.');
+  }
+
+  // PNG magic bytes: 89 50 4E 47 0D 0A 1A 0A
+  const isPng =
+    bytes[0] === 0x89 &&
+    bytes[1] === 0x50 &&
+    bytes[2] === 0x4e &&
+    bytes[3] === 0x47 &&
+    bytes[4] === 0x0d &&
+    bytes[5] === 0x0a &&
+    bytes[6] === 0x1a &&
+    bytes[7] === 0x0a;
+
+  if (isPng) {
+    if (bytes.length < 24) {
+      throw new Error('Cabecera PNG incompleta para extraer dimensiones IHDR.');
+    }
+    const view = new DataView(bytes.buffer, bytes.byteOffset, bytes.byteLength);
+    const width = view.getUint32(16, false); // big-endian
+    const height = view.getUint32(20, false); // big-endian
+    if (width === 0 || height === 0) {
+      throw new Error('Dimensiones PNG inválidas en cabecera IHDR.');
+    }
+    return { width, height, format: 'png' };
+  }
+
+  // JPEG magic bytes: FF D8 FF
+  const isJpeg = bytes[0] === 0xff && bytes[1] === 0xd8 && bytes[2] === 0xff;
+  if (isJpeg) {
+    let offset = 2;
+    const view = new DataView(bytes.buffer, bytes.byteOffset, bytes.byteLength);
+    while (offset < bytes.length) {
+      if (bytes[offset] !== 0xff) {
+        throw new Error('Formato JPEG corrupto: marcador inválido.');
+      }
+      while (bytes[offset] === 0xff && offset < bytes.length) {
+        offset++;
+      }
+      if (offset >= bytes.length) break;
+      const marker = bytes[offset++];
+
+      if (marker === 0xd9 || marker === 0xda) {
+        break;
+      }
+      if (marker >= 0xd0 && marker <= 0xd7) {
+        continue;
+      }
+
+      if (offset + 2 > bytes.length) break;
+      const length = view.getUint16(offset, false);
+      if (length < 2) {
+        throw new Error('Longitud de segmento JPEG inválida.');
+      }
+
+      const isSof =
+        (marker >= 0xc0 && marker <= 0xc3) ||
+        (marker >= 0xc5 && marker <= 0xc7) ||
+        (marker >= 0xc9 && marker <= 0xcb) ||
+        (marker >= 0xcd && marker <= 0xcf);
+
+      if (isSof) {
+        if (offset + 7 > bytes.length) {
+          throw new Error('Segmento SOF de JPEG incompleto.');
+        }
+        const height = view.getUint16(offset + 3, false);
+        const width = view.getUint16(offset + 5, false);
+        if (width === 0 || height === 0) {
+          throw new Error('Dimensiones JPEG inválidas en marcador SOF.');
+        }
+        return { width, height, format: 'jpeg' };
+      }
+
+      offset += length;
+    }
+    throw new Error('No se encontró el marcador de dimensiones (SOF) en la imagen JPEG.');
+  }
+
+  throw new Error(
+    'Formato de imagen no reconocido: solo se admiten cabeceras binarias PNG y JPEG.',
+  );
+}
+
+/**
+ * Genera un buffer binario mínimo de PNG válido con dimensiones específicas para pruebas o fixtures sintéticos.
+ */
+export function createMinimalPng(width = 10, height = 10): Uint8Array {
+  const buffer = new Uint8Array(33);
+  buffer.set([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a], 0);
+  buffer.set([0x00, 0x00, 0x00, 0x0d], 8);
+  buffer.set([0x49, 0x48, 0x44, 0x52], 12);
+  const view = new DataView(buffer.buffer);
+  view.setUint32(16, width, false);
+  view.setUint32(20, height, false);
+  buffer.set([0x08, 0x06, 0x00, 0x00, 0x00], 24);
+  return buffer;
+}
+
+/**
+ * Genera un buffer binario mínimo de JPEG válido con dimensiones específicas para pruebas o fixtures sintéticos.
+ */
+export function createMinimalJpeg(width = 10, height = 10): Uint8Array {
+  const buffer = new Uint8Array(17);
+  buffer[0] = 0xff;
+  buffer[1] = 0xd8;
+  buffer[2] = 0xff;
+  buffer[3] = 0xc0;
+  buffer[4] = 0x00;
+  buffer[5] = 0x0b;
+  buffer[6] = 0x08;
+  const view = new DataView(buffer.buffer);
+  view.setUint16(7, height, false);
+  view.setUint16(9, width, false);
+  buffer[11] = 0x03;
+  buffer[12] = 0x01;
+  buffer[13] = 0x11;
+  buffer[14] = 0x00;
+  buffer[15] = 0xff;
+  buffer[16] = 0xd9;
+  return buffer;
+}
+
 export async function saveEducationalMediaWithCompensation(
   params: SaveMediaParams,
 ): Promise<SaveMediaResult> {
   const { pacienteId, contenidoId, formato, content } = params;
   assertSafeId(pacienteId, 'pacienteId');
   assertSafeId(contenidoId, 'contenidoId');
+
+  if ((formato as string) === 'markdown' || (formato !== 'png' && formato !== 'jpeg')) {
+    throw new Error('Formato no permitido: solo se admiten imágenes PNG y JPEG para descarga.');
+  }
+
+  if (!params.textoAccesible || params.textoAccesible.trim().length === 0) {
+    throw new Error('El recurso educativo tipo infografía requiere un texto accesible no vacío.');
+  }
+
+  const rawBytes: Uint8Array =
+    typeof content === 'string'
+      ? /^[A-Za-z0-9+/=]+$/.test(content.trim()) && content.length % 4 === 0
+        ? Uint8Array.from(Buffer.from(content, 'base64'))
+        : new TextEncoder().encode(content)
+      : content;
+
+  const tamanoBytes = rawBytes.byteLength;
+  if (tamanoBytes > MAX_EDUCATIONAL_MEDIA_BYTES) {
+    throw new Error('El archivo supera el tamaño máximo permitido de 5 MB.');
+  }
+
+  // Validación estricta de cabecera binaria y resolución sin depender de opciones opcionales
+  const dimensions = parseImageHeader(rawBytes);
+  if (formato === 'png' && dimensions.format !== 'png') {
+    throw new Error('La cabecera binaria no corresponde a una imagen PNG válida.');
+  }
+  if (formato === 'jpeg' && dimensions.format !== 'jpeg') {
+    throw new Error('La cabecera binaria no corresponde a una imagen JPEG válida.');
+  }
+
+  const totalPixels = dimensions.width * dimensions.height;
+  if (totalPixels > MAX_EDUCATIONAL_IMAGE_PIXELS) {
+    throw new Error('La imagen supera la resolución máxima permitida de 8 megapíxeles.');
+  }
+
+  const anchoPx = dimensions.width;
+  const altoPx = dimensions.height;
 
   const adapter = params.adapter ?? defaultExpoAdapter;
 
@@ -157,17 +333,15 @@ export async function saveEducationalMediaWithCompensation(
     await adapter.ensureDirectory(baseDir);
 
     const baseDirClean = baseDir.replace(/\\/g, '/').replace(/\/+$/, '');
-    const extension = formato === 'markdown' ? 'md' : formato === 'png' ? 'png' : 'jpg';
+    const extension = formato === 'png' ? 'png' : 'jpg';
     const token = params.tokenGenerator
       ? params.tokenGenerator()
       : `${contenidoId}.${Date.now()}.${generateSafeUuid()}`;
     const tmpUri = `${baseDirClean}/${token}.tmp`;
     const finalUri = `${baseDirClean}/${token}.${extension}`;
 
-    // Cálculo estricto de SHA-256 y tamaño sobre los bytes reales
-    const isString = typeof content === 'string';
-    const tamanoBytes = isString ? new TextEncoder().encode(content).length : content.byteLength;
-    const sha256 = await computeSha256(content);
+    // Cálculo estricto de SHA-256 sobre los bytes reales
+    const sha256 = await computeSha256(rawBytes);
 
     // Proteger temporal y destino en activeWrites
     const unregister = registerActiveWrite([tmpUri, finalUri]);
@@ -177,12 +351,10 @@ export async function saveEducationalMediaWithCompensation(
 
     try {
       // 1. Escritura en temporal
-      if (isString) {
-        await adapter.writeText(tmpUri, content);
-      } else if (typeof adapter.writeBinary === 'function') {
-        await adapter.writeBinary(tmpUri, content);
+      if (typeof adapter.writeBinary === 'function') {
+        await adapter.writeBinary(tmpUri, rawBytes);
       } else {
-        await adapter.writeText(tmpUri, Buffer.from(content).toString('base64'));
+        await adapter.writeText(tmpUri, Buffer.from(rawBytes).toString('base64'));
       }
 
       // 2. Mover temporal a destino final sin sobrescritura (rechaza colisión)
@@ -201,6 +373,9 @@ export async function saveEducationalMediaWithCompensation(
           titulo: params.titulo,
           tipo: params.tipo,
           descripcion: params.descripcion,
+          textoAccesible: params.textoAccesible,
+          anchoPx,
+          altoPx,
         },
       });
 

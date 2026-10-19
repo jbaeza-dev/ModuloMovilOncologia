@@ -25,7 +25,7 @@ export function EducationCopiesScreen() {
   const { patientId, repository, runSave, saving } = useLocalData();
   const styles = useStyles();
 
-  const [filterFormat, setFilterFormat] = useState<'all' | 'markdown' | 'png'>('all');
+  const [filterFormat, setFilterFormat] = useState<'all' | 'png' | 'jpeg'>('all');
   const [actionBusy, setActionBusy] = useState(false);
 
   const loadCopies = useCallback(async (): Promise<EducationalLocalCopy[]> => {
@@ -101,22 +101,22 @@ export function EducationCopiesScreen() {
         </Pressable>
         <Pressable
           accessibilityRole="button"
-          accessibilityLabel="Filtrar por guías de texto"
-          onPress={() => setFilterFormat('markdown')}
-          style={[styles.filterChip, filterFormat === 'markdown' && styles.filterChipActive]}
-        >
-          <Text style={[styles.filterText, filterFormat === 'markdown' && styles.filterTextActive]}>
-            Guías ({copies.filter((c) => c.formato === 'markdown').length})
-          </Text>
-        </Pressable>
-        <Pressable
-          accessibilityRole="button"
-          accessibilityLabel="Filtrar por infografías"
+          accessibilityLabel="Filtrar por infografías PNG"
           onPress={() => setFilterFormat('png')}
           style={[styles.filterChip, filterFormat === 'png' && styles.filterChipActive]}
         >
           <Text style={[styles.filterText, filterFormat === 'png' && styles.filterTextActive]}>
-            Infografías ({copies.filter((c) => c.formato === 'png').length})
+            PNG ({copies.filter((c) => c.formato === 'png').length})
+          </Text>
+        </Pressable>
+        <Pressable
+          accessibilityRole="button"
+          accessibilityLabel="Filtrar por infografías JPEG"
+          onPress={() => setFilterFormat('jpeg')}
+          style={[styles.filterChip, filterFormat === 'jpeg' && styles.filterChipActive]}
+        >
+          <Text style={[styles.filterText, filterFormat === 'jpeg' && styles.filterTextActive]}>
+            JPEG ({copies.filter((c) => c.formato === 'jpeg').length})
           </Text>
         </Pressable>
       </View>
@@ -132,7 +132,7 @@ export function EducationCopiesScreen() {
         <EmptyState
           icon="folder"
           title="Sin copias en este filtro"
-          description="Descarga guías o infografías desde la biblioteca para consultarlas fuera de línea."
+          description="Descarga infografías desde la biblioteca para consultarlas fuera de línea."
         />
       ) : (
         filteredCopies.map((copy) => {

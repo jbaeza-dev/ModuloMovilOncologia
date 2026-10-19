@@ -1,3 +1,5 @@
-import { SymptomDataScreen } from '../../../features/form/SymptomDataScreen';
+import { Redirect } from 'expo-router';
 
-export default SymptomDataScreen;
+export default function RegistrarSintomasLegacyRedirect() {
+  return <Redirect href="/formulario" />;
+}

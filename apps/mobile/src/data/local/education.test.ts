@@ -240,8 +240,8 @@ describe('Educación multimedia - Repositorio SQLite (interacciones y copias)', 
     // Guardar copia 1 sin versión de origen
     await eduA.saveLocalCopy({
       contentId: 'edu-sin-version',
-      rutaLocal: '/data/user/0/recursos_educativos/A/guia_nv1.md',
-      formato: 'markdown',
+      rutaLocal: '/data/user/0/recursos_educativos/A/info_nv1.png',
+      formato: 'png',
       tamanoBytes: 100,
       metadataLocal: { sha256: sha1 },
     });
@@ -253,8 +253,8 @@ describe('Educación multimedia - Repositorio SQLite (interacciones y copias)', 
     // Guardar copia 2 también sin versión de origen y con el mismo sha1
     await eduA.saveLocalCopy({
       contentId: 'edu-sin-version',
-      rutaLocal: '/data/user/0/recursos_educativos/A/guia_nv2.md',
-      formato: 'markdown',
+      rutaLocal: '/data/user/0/recursos_educativos/A/info_nv2.png',
+      formato: 'png',
       tamanoBytes: 100,
       metadataLocal: { sha256: sha1 },
     });
@@ -301,8 +301,8 @@ describe('Educación multimedia - Repositorio SQLite (interacciones y copias)', 
     });
     await repoA.education.saveLocalCopy({
       contentId: 'edu-guia-1',
-      rutaLocal: '/data/A/guia.md',
-      formato: 'markdown',
+      rutaLocal: '/data/A/info.png',
+      formato: 'png',
       tamanoBytes: 1200,
     });
 

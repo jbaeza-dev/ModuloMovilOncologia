@@ -1,57 +1,21 @@
 import type { EducationalResource } from '../../data/local/education/education-types';
+import { EDUCATIONAL_CATEGORIES } from './educational-categories';
 
 export interface EducationalCategoryItem {
   id: number;
+  slug: string;
   title: string;
-  icon: 'book-open' | 'sun' | 'coffee' | 'video' | 'image';
+  icon: string;
   count: string;
 }
 
-export const SAMPLE_EDUCATIONAL_CATEGORIES: readonly EducationalCategoryItem[] = [
-  { id: 0, title: 'Preparación', icon: 'book-open', count: '4 contenidos' },
-  { id: 1, title: 'Vida cotidiana', icon: 'sun', count: '4 contenidos' },
-  { id: 2, title: 'Nutrición y bienestar', icon: 'coffee', count: '3 contenidos' },
-] as const;
-
 export const SAMPLE_EDUCATIONAL_CATALOG: readonly EducationalResource[] = [
-  // Categoría 0: Preparación
-  {
-    id: 'edu-prep-sesion',
-    category: 0,
-    categoryName: 'Preparación',
-    title: 'Prepararse para una sesión',
-    type: 'guia',
-    version: '1.0.0',
-    estimatedReadTimeMinutes: 3,
-    description: 'Recomendaciones básicas para asistir a la infusión de quimioterapia.',
-    contentMarkdown: `# Prepararse para una sesión\n\nEste texto es material de muestra neutro para la demostración técnica del guardado y lectura de archivos sin conexión en el dispositivo móvil.\n\nNo contiene indicaciones médicas, umbrales clínicos ni recomendaciones de tratamiento, los cuales serán incorporados tras la correspondiente validación clínica del equipo de salud.`,
-  },
-  {
-    id: 'edu-cuidados-casa',
-    category: 0,
-    categoryName: 'Preparación',
-    title: 'Cuidados en casa',
-    type: 'guia',
-    version: '1.0.0',
-    estimatedReadTimeMinutes: 4,
-    description: 'Pautas de higiene, reposo y convivencia durante los primeros días.',
-    contentMarkdown: `# Cuidados en el hogar\n\nMaterial de demostración técnica para validar la persistencia local de recursos educativos.\n\nEste contenido es un texto de prueba neutro para comprobar el almacenamiento físico del archivo en el teléfono y su posterior visualización sin red.`,
-  },
-  {
-    id: 'edu-preguntas-frecuentes',
-    category: 0,
-    categoryName: 'Preparación',
-    title: 'Preguntas frecuentes',
-    type: 'guia',
-    version: '1.0.0',
-    estimatedReadTimeMinutes: 5,
-    description: 'Respuestas a dudas habituales sobre tiempos de espera y compañía.',
-    contentMarkdown: `# Preguntas frecuentes sobre el acompañamiento\n\nTexto de muestra utilizado exclusivamente para validar el aislamiento de archivos por paciente y la lectura local sin conexión en QuimioCare.`,
-  },
+  // Categoría 2: Conociendo la quimioterapia
   {
     id: 'edu-video-induccion',
-    category: 0,
-    categoryName: 'Preparación',
+    category: 2,
+    categoryName: 'Conociendo la quimioterapia',
+    categorySlug: 'conociendo-quimioterapia',
     title: 'Video: Conoce tu proceso de tratamiento',
     type: 'video',
     version: '1.0.0',
@@ -60,84 +24,64 @@ export const SAMPLE_EDUCATIONAL_CATALOG: readonly EducationalResource[] = [
     youtubeVideoId: 'psfP_n8eP40',
   },
 
-  // Categoría 1: Vida cotidiana
+  // Categoría 4: Efectos secundarios
   {
-    id: 'edu-organizar-preguntas',
-    category: 1,
-    categoryName: 'Vida cotidiana',
-    title: 'Organizar tus preguntas',
-    type: 'guia',
+    id: 'edu-video-alivio-sintomas',
+    category: 4,
+    categoryName: 'Efectos secundarios',
+    categorySlug: 'efectos-secundarios',
+    title: 'Video: Consejos prácticos ante molestias frecuentes',
+    type: 'video',
     version: '1.0.0',
-    estimatedReadTimeMinutes: 3,
-    description: 'Cómo registrar síntomas y dudas para la consulta oncológica.',
-    contentMarkdown: `# Organizar tus consultas\n\nDocumento de prueba técnica para verificar que el almacenamiento de copias locales funciona de manera aislada por paciente en el dispositivo.`,
-  },
-  {
-    id: 'edu-rutina-cotidiana',
-    category: 1,
-    categoryName: 'Vida cotidiana',
-    title: 'Rutina cotidiana',
-    type: 'guia',
-    version: '1.0.0',
-    estimatedReadTimeMinutes: 3,
-    description: 'Adaptación de actividades habituales y pausas recomendadas.',
-    contentMarkdown: `# Rutina diaria de ejemplo\n\nMaterial de prueba sin recomendaciones clínicas para la verificación de almacenamiento y borrado físico de archivos.`,
-  },
-  {
-    id: 'edu-descanso-acompanamiento',
-    category: 1,
-    categoryName: 'Vida cotidiana',
-    title: 'Descanso y acompañamiento',
-    type: 'guia',
-    version: '1.0.0',
-    estimatedReadTimeMinutes: 4,
-    description: 'Higiene del sueño y espacios de tranquilidad durante el ciclo.',
-    contentMarkdown: `# Descanso y bienestar\n\nTexto demostrativo para la evaluación técnica del módulo móvil.`,
-  },
-  {
-    id: 'edu-apoyo-familiar',
-    category: 1,
-    categoryName: 'Vida cotidiana',
-    title: 'Apoyo familiar',
-    type: 'guia',
-    version: '1.0.0',
-    estimatedReadTimeMinutes: 3,
-    description: 'Pautas de comunicación con familiares y cuidadores primarios.',
-    contentMarkdown: `# Red de apoyo y acompañamiento\n\nDocumento neutral para pruebas de lectura fuera de línea.`,
+    estimatedReadTimeMinutes: 5,
+    description: 'Técnicas sencillas de respiración y descanso tras la infusión.',
+    youtubeVideoId: 'dQw4w9WgXcQ',
   },
 
-  // Categoría 2: Nutrición y bienestar
+  // Categoría 5: Salud mental
   {
-    id: 'edu-alimentacion-diaria',
-    category: 2,
-    categoryName: 'Nutrición y bienestar',
-    title: 'Alimentación diaria',
-    type: 'guia',
+    id: 'edu-video-bienestar-emocional',
+    category: 5,
+    categoryName: 'Salud mental',
+    categorySlug: 'salud-mental',
+    title: 'Video: Reconocer y compartir emociones',
+    type: 'video',
     version: '1.0.0',
-    estimatedReadTimeMinutes: 4,
-    description: 'Consejos generales de hidratación y tolerancia a alimentos.',
-    contentMarkdown: `# Información sobre alimentación\n\nTexto de prueba técnica. El contenido clínico definitivo será suministrado por el equipo tratante en futuras etapas del proyecto.`,
+    estimatedReadTimeMinutes: 5,
+    description: 'Orientación para conversar sobre los estados de ánimo con personas de confianza.',
+    youtubeVideoId: 'dQw4w9WgXcQ',
   },
-  {
-    id: 'edu-bienestar-general',
-    category: 2,
-    categoryName: 'Nutrición y bienestar',
-    title: 'Bienestar general',
-    type: 'guia',
-    version: '1.0.0',
-    estimatedReadTimeMinutes: 4,
-    description: 'Paseos ligeros, respiración y cuidado del estado de ánimo.',
-    contentMarkdown: `# Bienestar y seguimiento\n\nMaterial de demostración técnica para la persistencia SQLite en QuimioCare.`,
-  },
+
+  // Categoría 6: Alimentación
   {
     id: 'edu-infografia-alimentacion',
-    category: 2,
-    categoryName: 'Nutrición y bienestar',
+    category: 6,
+    categoryName: 'Alimentación',
+    categorySlug: 'alimentacion',
     title: 'Infografía: Guía nutricional en quimioterapia',
     type: 'infografia',
     version: '1.0.0',
-    estimatedReadTimeMinutes: 2,
-    description: 'Póster ilustrado con 3 pilares: hidratación, porciones y cocción segura.',
+    estimatedReadTimeMinutes: 3,
+    description:
+      'Pautas de hidratación constante, porciones pequeñas y frecuentes, e higiene alimentaria estricta.',
+    textoAccesible:
+      'Guía Nutricional en Quimioterapia. Información médica fiable.\n\n' +
+      '1. HIDRATACIÓN CONSTANTE:\n' +
+      '• Beber abundantes líquidos (agua, infusiones, caldos).\n' +
+      '• Pequeños sorbos a lo largo del día.\n' +
+      '• Evitar deshidratación.\n' +
+      '• Consultar sobre bebidas recomendadas.\n\n' +
+      '2. PORCIONES PEQUEÑAS Y FRECUENTES:\n' +
+      '• Comer menos cantidad, pero más a menudo (5-6 veces al día).\n' +
+      '• Alimentos suaves y fáciles de digerir.\n' +
+      '• Texturas agradables al paladar.\n' +
+      '• Priorizar alimentos ricos en nutrientes.\n\n' +
+      '3. HIGIENE ALIMENTARIA ESTRICTA:\n' +
+      '• Lavar frutas y verduras minuciosamente.\n' +
+      '• Cocinar bien los alimentos (carnes, huevos, pescados).\n' +
+      '• Mantener limpieza en la cocina y utensilios.\n' +
+      '• Refrigerar alimentos cocinados rápidamente.\n' +
+      '• Evitar contaminación cruzada.',
     asset: {
       type: 'bundled',
       assetKey: 'infografia_alimentacion_quimio',
@@ -145,4 +89,28 @@ export const SAMPLE_EDUCATIONAL_CATALOG: readonly EducationalResource[] = [
       mimeType: 'image/png',
     },
   },
+  {
+    id: 'edu-video-hidratacion-facil',
+    category: 6,
+    categoryName: 'Alimentación',
+    categorySlug: 'alimentacion',
+    title: 'Video: Opciones de líquidos e hidratación diaria',
+    type: 'video',
+    version: '1.0.0',
+    estimatedReadTimeMinutes: 4,
+    description: 'Ideas de caldos tibios e infusiones suaves durante los ciclos.',
+    youtubeVideoId: 'psfP_n8eP40',
+  },
 ] as const;
+
+export const SAMPLE_EDUCATIONAL_CATEGORIES: readonly EducationalCategoryItem[] =
+  EDUCATIONAL_CATEGORIES.map((c) => {
+    const count = SAMPLE_EDUCATIONAL_CATALOG.filter((item) => item.categorySlug === c.slug).length;
+    return {
+      id: c.id,
+      slug: c.slug,
+      title: c.title,
+      icon: c.icon,
+      count: count === 0 ? '0 contenidos' : count === 1 ? '1 contenido' : `${count} contenidos`,
+    };
+  });
