@@ -1,0 +1,66 @@
+name: Compilar APK Android (Demo)
+
+on:
+  workflow_dispatch:
+    inputs:
+      demo_mode:
+        description: 'Activar modo demo (datos sintéticos A/B)'
+        required: true
+        type: boolean
+        default: true
+  push:
+    branches:
+      - 'ci/build-apk-android'
+    paths:
+      - '.github/workflows/build-apk.yml'
+
+permissions:
+  contents: read
+
+jobs:
+  build_apk:
+    name: Compilar APK Android Release
+    runs-on: ubuntu-latest
+    timeout-minutes: 35
+
+    steps:
+      - name: Checkout del repositorio
+        uses: actions/checkout@v4
+
+      - name: Configurar Node.js y pnpm
+        uses: pnpm/action-setup@v3
+        with:
+          node-version-file: .nvmrc
+          cache: true
+          require-lockfile: true
+
+      - name: Instalar dependencias del monorrepositorio
+        run: pnpm install --frozen-lockfile
+
+      - name: Configurar JDK 17
+        uses: actions/setup-java@v4
+        with:
+          distribution: 'temurin'
+          java-version: '17'
+          cache: 'gradle'
+
+      - name: Configurar Android SDK
+        uses: android-actions/setup-android@v3
+
+      - name: Generar proyecto nativo Android (Expo Prebuild)
+        run: pnpm --filter @modulo-movil-oncologia/mobile exec expo prebuild --platform android --no-install
+
+      - name: Compilar APK Release Demo
+        env:
+          EXPO_PUBLIC_DEMO_MODE: ${{ github.event.inputs.demo_mode || 'true' }}
+        run: |
+          cd apps/mobile/android
+          chmod +x gradlew
+          ./gradlew assembleRelease --no-daemon -PEXPO_PUBLIC_DEMO_MODE=${{ github.event.inputs.demo_mode || 'true' }}
+
+      - name: Subir APK como artefacto descargable
+        uses: actions/upload-artifact@v4
+        with:
+          name: QuimioCare-Demo-APK
+          path: apps/mobile/android/app/build/outputs/apk/release/*.apk
+          retention-days: 30
