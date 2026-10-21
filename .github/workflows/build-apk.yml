@@ -44,10 +44,9 @@ jobs:
           java-version: '17'
           cache: 'gradle'
 
-      - name: Configurar Android SDK
-        uses: android-actions/setup-android@v3
-
       - name: Generar proyecto nativo Android (Expo Prebuild)
+        env:
+          EXPO_PUBLIC_DEMO_MODE: ${{ github.event.inputs.demo_mode || 'true' }}
         run: pnpm --filter @modulo-movil-oncologia/mobile exec expo prebuild --platform android --no-install
 
       - name: Compilar APK Release Demo
