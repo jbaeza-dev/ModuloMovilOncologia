@@ -1,6 +1,13 @@
 name: Compilar APK Android (Demo)
 
 on:
+  push:
+    branches:
+      - main
+    paths:
+      - 'apps/mobile/**'
+      - '.github/workflows/build-apk.yml'
+      - 'pnpm-lock.yaml'
   workflow_dispatch:
     inputs:
       demo_mode:
@@ -8,11 +15,6 @@ on:
         required: true
         type: boolean
         default: true
-  push:
-    branches:
-      - 'ci/build-apk-android'
-    paths:
-      - '.github/workflows/build-apk.yml'
 
 permissions:
   contents: read
