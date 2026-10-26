@@ -1,6 +1,13 @@
 name: Compilar APK Android (Demo)
 
 on:
+  pull_request:
+    branches: [main]
+    paths:
+      - 'apps/mobile/**'
+      - 'packages/**'
+      - '.github/workflows/build-apk.yml'
+      - 'pnpm-lock.yaml'
   push:
     branches:
       - main
@@ -21,6 +28,14 @@ on:
         required: true
         type: boolean
         default: false
+      android_abi:
+        description: 'ARM64 para el Redmi; universal incluye ARM32 y emuladores'
+        required: true
+        type: choice
+        default: arm64-v8a
+        options:
+          - arm64-v8a
+          - universal
 
 permissions:
   contents: read
@@ -29,10 +44,12 @@ jobs:
   build_apk:
     name: Compilar APK Android Release
     runs-on: ubuntu-latest
-    timeout-minutes: 45
+    timeout-minutes: ${{ github.event_name == 'workflow_dispatch' && inputs.android_abi == 'universal' && 90 || 60 }}
     env:
       EXPO_PUBLIC_DEMO_MODE: ${{ github.event_name == 'workflow_dispatch' && inputs.demo_mode || github.event_name != 'workflow_dispatch' }}
       EXPO_PUBLIC_P01_PROBE_ENABLED: ${{ github.event_name == 'workflow_dispatch' && inputs.p01_probe_enabled || false }}
+      ANDROID_ABI_PROFILE: ${{ github.event_name == 'workflow_dispatch' && inputs.android_abi || 'arm64-v8a' }}
+      REACT_NATIVE_ARCHITECTURES: ${{ github.event_name == 'workflow_dispatch' && inputs.android_abi == 'universal' && 'armeabi-v7a,arm64-v8a,x86,x86_64' || 'arm64-v8a' }}
 
     steps:
       - name: Checkout del repositorio
@@ -67,9 +84,13 @@ jobs:
           GRADLE_OPTS: "-Dorg.gradle.jvmargs='-Xmx4096m -XX:MaxMetaspaceSize=1024m -XX:+UseG1GC' -Dorg.gradle.parallel=true"
         working-directory: apps/mobile/android
         run: |
+          echo "Perfil Android: ${ANDROID_ABI_PROFILE}; arquitecturas: ${REACT_NATIVE_ARCHITECTURES}"
           chmod +x gradlew
           ./gradlew assembleRelease \
             --no-daemon \
+            --console=plain \
+            --max-workers=2 \
+            -PreactNativeArchitectures="${REACT_NATIVE_ARCHITECTURES}" \
             -PEXPO_PUBLIC_DEMO_MODE=${EXPO_PUBLIC_DEMO_MODE} \
             -x lint \
             -x lintVitalAnalyzeRelease \
@@ -78,7 +99,7 @@ jobs:
       - name: Subir APK compilado (no acredita interacción ni push)
         uses: actions/upload-artifact@v4
         with:
-          name: QuimioCare-Demo-APK
+          name: QuimioCare-Demo-APK-${{ env.ANDROID_ABI_PROFILE }}
           path: apps/mobile/android/app/build/outputs/apk/release/*.apk
           if-no-files-found: error
           retention-days: 30
