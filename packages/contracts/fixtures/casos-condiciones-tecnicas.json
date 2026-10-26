@@ -1,0 +1,320 @@
+{
+  "escenario": "TECNICO_CONDICIONES_1",
+  "aviso": "No tiene significado clínico. UUID distintos del cuestionario de 41. Casos ejecutados en memoria, no HTTP.",
+  "formulario": {
+    "id": "cd3d5bc3-7d2a-5adf-b5fb-f090a98cec5b",
+    "codigo": "DEMO_CONDICIONES_RC31",
+    "titulo": "Prueba técnica, no instrumento clínico",
+    "descripcion": "Sin significado clínico",
+    "tratamiento": "quimioterapia",
+    "version": 1,
+    "activo": true,
+    "version_condiciones": 1,
+    "preguntas": [
+      {
+        "id": "e6a46d67-4f95-5e58-ae48-f4fc280c4e49",
+        "codigo": "MADRE_DEMO",
+        "titulo": "Activar rama técnica",
+        "texto": "Activar rama técnica",
+        "tipo": "booleano",
+        "requerida": true,
+        "orden": 1,
+        "opciones": [],
+        "configuracion": {}
+      },
+      {
+        "id": "2ccd72df-2830-52ad-b0c5-b0737e759f11",
+        "codigo": "HIJA_DEMO",
+        "titulo": "Valor técnico de prueba",
+        "texto": "Valor técnico de prueba",
+        "tipo": "numerico",
+        "requerida": false,
+        "orden": 2,
+        "opciones": [],
+        "configuracion": {
+          "depende_de": "MADRE_DEMO",
+          "valor_activador": true,
+          "requerida_si_activa": true,
+          "min_value": 0,
+          "max_value": 10
+        }
+      },
+      {
+        "id": "880790a0-72f6-5645-9571-46c5e7859cd9",
+        "codigo": "TEXTO_DEMO",
+        "titulo": "Texto técnico opcional",
+        "texto": "Texto técnico opcional",
+        "tipo": "texto_libre",
+        "requerida": false,
+        "orden": 3,
+        "opciones": [],
+        "configuracion": {
+          "max_length": 500
+        }
+      }
+    ],
+    "fecha_creacion": "2026-10-22T15:00:00Z"
+  },
+  "configuracion_formulario_en_origen": {
+    "version_condiciones": 1,
+    "provisional": true
+  },
+  "casos": [
+    {
+      "caso": "madre_false_hija_omitida",
+      "request": {
+        "id": "138ed5c4-65f7-5342-bad5-3bf9fb26e937",
+        "fecha_respuesta": "2026-10-22T15:00:00+00:00",
+        "respuestas": [
+          {
+            "pregunta_id": "e6a46d67-4f95-5e58-ae48-f4fc280c4e49",
+            "valor": false
+          }
+        ],
+        "comentario": null
+      },
+      "status_esperado": 201,
+      "response": {
+        "id": "138ed5c4-65f7-5342-bad5-3bf9fb26e937",
+        "formulario_id": "cd3d5bc3-7d2a-5adf-b5fb-f090a98cec5b",
+        "formulario_version": 1,
+        "paciente_id": "964d32f1-6941-579f-9f08-b60342194da9",
+        "fecha_respuesta_cliente": "2026-10-22T15:00:00Z",
+        "fecha_recepcion_servidor": "2026-10-22T15:00:00Z",
+        "respuestas": [
+          {
+            "pregunta_id": "e6a46d67-4f95-5e58-ae48-f4fc280c4e49",
+            "codigo_pregunta": "MADRE_DEMO",
+            "texto_pregunta": "Activar rama técnica",
+            "tipo_pregunta": "booleano",
+            "valor": false,
+            "valor_texto": "No"
+          }
+        ],
+        "comentario": "",
+        "mensaje": "Respuesta registrada exitosamente."
+      }
+    },
+    {
+      "caso": "madre_true_hija_valida",
+      "request": {
+        "id": "19010902-310f-5ba7-beaf-07444b1ce6bb",
+        "fecha_respuesta": "2026-10-22T15:00:00+00:00",
+        "respuestas": [
+          {
+            "pregunta_id": "e6a46d67-4f95-5e58-ae48-f4fc280c4e49",
+            "valor": true
+          },
+          {
+            "pregunta_id": "2ccd72df-2830-52ad-b0c5-b0737e759f11",
+            "valor": 3
+          }
+        ],
+        "comentario": null
+      },
+      "status_esperado": 201,
+      "response": {
+        "id": "19010902-310f-5ba7-beaf-07444b1ce6bb",
+        "formulario_id": "cd3d5bc3-7d2a-5adf-b5fb-f090a98cec5b",
+        "formulario_version": 1,
+        "paciente_id": "964d32f1-6941-579f-9f08-b60342194da9",
+        "fecha_respuesta_cliente": "2026-10-22T15:00:00Z",
+        "fecha_recepcion_servidor": "2026-10-22T15:00:00Z",
+        "respuestas": [
+          {
+            "pregunta_id": "e6a46d67-4f95-5e58-ae48-f4fc280c4e49",
+            "codigo_pregunta": "MADRE_DEMO",
+            "texto_pregunta": "Activar rama técnica",
+            "tipo_pregunta": "booleano",
+            "valor": true,
+            "valor_texto": "Sí"
+          },
+          {
+            "pregunta_id": "2ccd72df-2830-52ad-b0c5-b0737e759f11",
+            "codigo_pregunta": "HIJA_DEMO",
+            "texto_pregunta": "Valor técnico de prueba",
+            "tipo_pregunta": "numerico",
+            "valor": 3,
+            "valor_texto": "3"
+          }
+        ],
+        "comentario": "",
+        "mensaje": "Respuesta registrada exitosamente."
+      }
+    },
+    {
+      "caso": "hija_cero_valido",
+      "request": {
+        "id": "f5f2fd31-0b60-5b0f-85a0-cff95a7dacdc",
+        "fecha_respuesta": "2026-10-22T15:00:00+00:00",
+        "respuestas": [
+          {
+            "pregunta_id": "e6a46d67-4f95-5e58-ae48-f4fc280c4e49",
+            "valor": true
+          },
+          {
+            "pregunta_id": "2ccd72df-2830-52ad-b0c5-b0737e759f11",
+            "valor": 0
+          }
+        ],
+        "comentario": null
+      },
+      "status_esperado": 201,
+      "response": {
+        "id": "f5f2fd31-0b60-5b0f-85a0-cff95a7dacdc",
+        "formulario_id": "cd3d5bc3-7d2a-5adf-b5fb-f090a98cec5b",
+        "formulario_version": 1,
+        "paciente_id": "964d32f1-6941-579f-9f08-b60342194da9",
+        "fecha_respuesta_cliente": "2026-10-22T15:00:00Z",
+        "fecha_recepcion_servidor": "2026-10-22T15:00:00Z",
+        "respuestas": [
+          {
+            "pregunta_id": "e6a46d67-4f95-5e58-ae48-f4fc280c4e49",
+            "codigo_pregunta": "MADRE_DEMO",
+            "texto_pregunta": "Activar rama técnica",
+            "tipo_pregunta": "booleano",
+            "valor": true,
+            "valor_texto": "Sí"
+          },
+          {
+            "pregunta_id": "2ccd72df-2830-52ad-b0c5-b0737e759f11",
+            "codigo_pregunta": "HIJA_DEMO",
+            "texto_pregunta": "Valor técnico de prueba",
+            "tipo_pregunta": "numerico",
+            "valor": 0,
+            "valor_texto": "0"
+          }
+        ],
+        "comentario": "",
+        "mensaje": "Respuesta registrada exitosamente."
+      }
+    },
+    {
+      "caso": "madre_true_hija_falta",
+      "request": {
+        "id": "dd21c951-3216-529f-835d-180d8e795396",
+        "fecha_respuesta": "2026-10-22T15:00:00+00:00",
+        "respuestas": [
+          {
+            "pregunta_id": "e6a46d67-4f95-5e58-ae48-f4fc280c4e49",
+            "valor": true
+          }
+        ],
+        "comentario": null
+      },
+      "status_esperado": 422,
+      "response": {
+        "error": {
+          "codigo": "REGLA_DE_NEGOCIO_INVALIDA",
+          "mensaje": "La pregunta obligatoria 'HIJA_DEMO' no ha sido respondida.",
+          "detalles": {
+            "motivo": "PREGUNTA_REQUERIDA_FALTANTE",
+            "pregunta_id": "2ccd72df-2830-52ad-b0c5-b0737e759f11",
+            "codigo_pregunta": "HIJA_DEMO"
+          },
+          "status_code": 422
+        }
+      }
+    },
+    {
+      "caso": "madre_false_hija_null_enviada",
+      "request": {
+        "id": "5d0523b9-7877-55fd-80a6-85437fa00b3d",
+        "fecha_respuesta": "2026-10-22T15:00:00+00:00",
+        "respuestas": [
+          {
+            "pregunta_id": "e6a46d67-4f95-5e58-ae48-f4fc280c4e49",
+            "valor": false
+          },
+          {
+            "pregunta_id": "2ccd72df-2830-52ad-b0c5-b0737e759f11",
+            "valor": null
+          }
+        ],
+        "comentario": null
+      },
+      "status_esperado": 422,
+      "response": {
+        "error": {
+          "codigo": "PREGUNTA_NO_APLICABLE",
+          "mensaje": "La pregunta 'HIJA_DEMO' no es aplicable según las respuestas proporcionadas.",
+          "detalles": {
+            "motivo": "PREGUNTA_NO_APLICABLE",
+            "pregunta_id": "2ccd72df-2830-52ad-b0c5-b0737e759f11",
+            "codigo_pregunta": "HIJA_DEMO"
+          },
+          "status_code": 422
+        }
+      }
+    },
+    {
+      "caso": "valor_hija_fuera_rango",
+      "request": {
+        "id": "e8d7d05d-0445-5f15-b96e-1a1dace218bf",
+        "fecha_respuesta": "2026-10-22T15:00:00+00:00",
+        "respuestas": [
+          {
+            "pregunta_id": "e6a46d67-4f95-5e58-ae48-f4fc280c4e49",
+            "valor": true
+          },
+          {
+            "pregunta_id": "2ccd72df-2830-52ad-b0c5-b0737e759f11",
+            "valor": 11
+          }
+        ],
+        "comentario": null
+      },
+      "status_esperado": 422,
+      "response": {
+        "error": {
+          "codigo": "REGLA_DE_NEGOCIO_INVALIDA",
+          "mensaje": "El valor 11 para 'HIJA_DEMO' supera el máximo permitido (10).",
+          "detalles": null,
+          "status_code": 422
+        }
+      }
+    },
+    {
+      "caso": "texto_501",
+      "request": {
+        "id": "46d265d7-0f05-5806-89f7-46f1d62a8ab9",
+        "fecha_respuesta": "2026-10-22T15:00:00+00:00",
+        "respuestas": [
+          {
+            "pregunta_id": "e6a46d67-4f95-5e58-ae48-f4fc280c4e49",
+            "valor": false
+          },
+          {
+            "pregunta_id": "880790a0-72f6-5645-9571-46c5e7859cd9",
+            "valor": "xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx"
+          }
+        ],
+        "comentario": null
+      },
+      "status_esperado": 422,
+      "response": {
+        "error": {
+          "codigo": "REGLA_DE_NEGOCIO_INVALIDA",
+          "mensaje": "El texto para la pregunta 'TEXTO_DEMO' excede el límite permitido de 500 caracteres.",
+          "detalles": null,
+          "status_code": 422
+        }
+      }
+    }
+  ],
+  "ejemplos_configuracion_invalidos": [
+    {
+      "depende_de": "MADRE_DEMO"
+    },
+    {
+      "depende_de": "MADRE_DEMO",
+      "valor_activador": null,
+      "requerida_si_activa": true
+    },
+    {
+      "depende_de": "MADRE_DEMO",
+      "valor_activador": true,
+      "requerida_si_activa": "true"
+    }
+  ]
+}

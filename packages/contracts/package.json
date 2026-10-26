@@ -1,0 +1,28 @@
+{
+  "name": "@quimiocare/contracts",
+  "version": "1.1.0",
+  "private": true,
+  "type": "module",
+  "description": "Contratos RC3.2/RC3.1 conservados y ampliaciones propias versionadas de QuimioCare.",
+  "exports": {
+    ".": {
+      "types": "./src/index.ts",
+      "import": "./dist/src/index.js"
+    },
+    "./fixtures": {
+      "types": "./src/fixtures.ts",
+      "import": "./dist/src/fixtures.js"
+    }
+  },
+  "scripts": {
+    "generate": "node scripts/generate-types.mjs",
+    "generate:check": "node scripts/generate-types.mjs --check",
+    "build": "pnpm generate && tsc -p tsconfig.build.json && node scripts/copy-assets.mjs",
+    "typecheck": "tsc --noEmit -p tsconfig.json",
+    "test": "vitest run --config vitest.config.ts"
+  },
+  "dependencies": {
+    "ajv": "8.17.1",
+    "ajv-formats": "3.0.1"
+  }
+}

@@ -499,7 +499,7 @@ describe('Incremento 5: UI de Recordatorios y Avisos Locales', () => {
         ).toBeTruthy();
       });
 
-      fireEvent.press(screen.getByText('Ver horarios'));
+      await fireEvent.press(screen.getByText('Ver horarios'));
 
       await waitFor(() => {
         expect(screen.getByText(/08:00/)).toBeTruthy();
@@ -522,7 +522,7 @@ describe('Incremento 5: UI de Recordatorios y Avisos Locales', () => {
       });
 
       const masterSwitch = screen.getByRole('switch', { name: 'Activar mis recordatorios' });
-      fireEvent.press(masterSwitch);
+      await fireEvent.press(masterSwitch);
 
       await waitFor(() => {
         expect(mockReminderRepo.setPreferences).toHaveBeenCalledWith(false);
@@ -637,14 +637,14 @@ describe('Incremento 5: UI de Recordatorios y Avisos Locales', () => {
         expect(screen.getByLabelText('Seleccionar hora del aviso de medición')).toBeTruthy();
       });
 
-      fireEvent.press(screen.getByLabelText('Seleccionar hora del aviso de medición'));
+      await fireEvent.press(screen.getByLabelText('Seleccionar hora del aviso de medición'));
       await waitFor(() => {
         expect(screen.getByTestId('native-time-picker')).toBeTruthy();
       });
       const picker = screen.getByTestId('native-time-picker');
 
       // Simular cancelación del diálogo nativo (dismissed)
-      fireEvent(picker, 'onChange', { type: 'dismissed' }, undefined);
+      await fireEvent(picker, 'onChange', { type: 'dismissed' }, undefined);
 
       expect(screen.getAllByText('07:00').length).toBeGreaterThanOrEqual(1);
     });
@@ -679,7 +679,7 @@ describe('Incremento 5: UI de Recordatorios y Avisos Locales', () => {
       expect(screen.getByLabelText('Dos horarios diarios')).toBeTruthy();
       expect(screen.getByLabelText('Tres horarios diarios')).toBeTruthy();
 
-      fireEvent.press(screen.getByLabelText('Dos horarios diarios'));
+      await fireEvent.press(screen.getByLabelText('Dos horarios diarios'));
 
       await waitFor(() => {
         expect(screen.getByText('19:00')).toBeTruthy();
@@ -701,7 +701,7 @@ describe('Incremento 5: UI de Recordatorios y Avisos Locales', () => {
         expect(screen.getByText('Medicamento vinculado')).toBeTruthy();
       });
 
-      fireEvent.press(screen.getByText('Guardar y activar'));
+      await fireEvent.press(screen.getByText('Guardar y activar'));
 
       await waitFor(() => {
         expect(
@@ -720,7 +720,7 @@ describe('Incremento 5: UI de Recordatorios y Avisos Locales', () => {
         expect(screen.getByText('Guardar y activar')).toBeTruthy();
       });
 
-      fireEvent.press(screen.getByText('Guardar y activar'));
+      await fireEvent.press(screen.getByText('Guardar y activar'));
 
       await waitFor(() => {
         expect(mockReminderRepo.saveRuleWithActivationIntent).toHaveBeenCalledWith(
@@ -742,16 +742,16 @@ describe('Incremento 5: UI de Recordatorios y Avisos Locales', () => {
         expect(screen.getByLabelText('Escribir hora con teclado para Hora del aviso')).toBeTruthy();
       });
 
-      fireEvent.press(screen.getByLabelText('Escribir hora con teclado para Hora del aviso'));
+      await fireEvent.press(screen.getByLabelText('Escribir hora con teclado para Hora del aviso'));
       await waitFor(() => {
         expect(screen.getByLabelText('Campo de texto hora para Hora del aviso')).toBeTruthy();
       });
       const timeInput = screen.getByLabelText('Campo de texto hora para Hora del aviso');
-      fireEvent.changeText(timeInput, '08:30');
+      await fireEvent.changeText(timeInput, '08:30');
       await waitFor(() => {
         expect(timeInput.props.value).toBe('08:30');
       });
-      fireEvent.press(screen.getByText('Aplicar hora'));
+      await fireEvent.press(screen.getByText('Aplicar hora'));
 
       await waitFor(() => {
         expect(screen.getAllByText('08:30').length).toBeGreaterThanOrEqual(1);
@@ -783,7 +783,7 @@ describe('Incremento 5: UI de Recordatorios y Avisos Locales', () => {
         expect(screen.getByText('Eliminar recordatorio')).toBeTruthy();
       });
 
-      fireEvent.press(screen.getByText('Eliminar recordatorio'));
+      await fireEvent.press(screen.getByText('Eliminar recordatorio'));
 
       await waitFor(() => {
         expect(mockReminderRepo.deleteRule).toHaveBeenCalledWith('rule-vitales');
@@ -812,16 +812,16 @@ describe('Incremento 5: UI de Recordatorios y Avisos Locales', () => {
       });
 
       // Cambiar días (Personalizar -> desmarcar Lunes) y guardar
-      fireEvent.press(screen.getByLabelText('Personalizar'));
+      await fireEvent.press(screen.getByLabelText('Personalizar'));
       await waitFor(() => {
         expect(screen.getByLabelText('Lunes')).toBeTruthy();
       });
-      fireEvent.press(screen.getByLabelText('Lunes'));
+      await fireEvent.press(screen.getByLabelText('Lunes'));
       await waitFor(() => {
         expect(screen.getByLabelText('Lunes').props.accessibilityState.selected).toBe(false);
       });
 
-      fireEvent.press(screen.getByText('Guardar y activar'));
+      await fireEvent.press(screen.getByText('Guardar y activar'));
 
       // Permanece en pantalla mostrando la tarjeta de incidencia nativa
       await waitFor(() => {
@@ -833,14 +833,14 @@ describe('Incremento 5: UI de Recordatorios y Avisos Locales', () => {
       expect(mockPreventRemoveEnabled).toBe(false);
 
       // 3. Modificar nuevamente un campo (desmarcar Martes) -> vuelve a estar sucio respecto a confirmedSnapshot
-      fireEvent.press(screen.getByLabelText('Martes'));
+      await fireEvent.press(screen.getByLabelText('Martes'));
       await waitFor(() => {
         expect(screen.getByLabelText('Martes').props.accessibilityState.selected).toBe(false);
       });
       expect(mockPreventRemoveEnabled).toBe(true);
 
       // 4. Pulsar Atrás (Volver) -> aparece la confirmación "¿Salir sin guardar los cambios?"
-      fireEvent.press(screen.getByLabelText('Volver'));
+      await fireEvent.press(screen.getByLabelText('Volver'));
 
       expect(alertSpy).toHaveBeenCalledWith(
         '¿Salir sin guardar los cambios?',
@@ -883,14 +883,14 @@ describe('Incremento 5: UI de Recordatorios y Avisos Locales', () => {
         expect(screen.getByText('Guardar y activar')).toBeTruthy();
       });
 
-      fireEvent.press(screen.getByText('Guardar y activar'));
+      await fireEvent.press(screen.getByText('Guardar y activar'));
 
       await waitFor(() => {
         expect(screen.getByText('Tus avisos generales están en pausa')).toBeTruthy();
       });
       expect(screen.getByText(/2 otros horarios activos/)).toBeTruthy();
 
-      fireEvent.press(screen.getByText('Activar avisos y este horario'));
+      await fireEvent.press(screen.getByText('Activar avisos y este horario'));
 
       await waitFor(() => {
         expect(saveWithIntentMock).toHaveBeenLastCalledWith(
@@ -970,18 +970,18 @@ describe('Incremento 5: UI de Recordatorios y Avisos Locales', () => {
       });
 
       // Modificamos un campo para ensuciar el formulario
-      fireEvent.press(screen.getByLabelText('Personalizar'));
+      await fireEvent.press(screen.getByLabelText('Personalizar'));
       await waitFor(() => {
         expect(screen.getByLabelText('Lunes')).toBeTruthy();
       });
-      fireEvent.press(screen.getByLabelText('Lunes'));
+      await fireEvent.press(screen.getByLabelText('Lunes'));
 
       await waitFor(() => {
         expect(mockPreventRemoveEnabled).toBe(true);
       });
 
       // Intentamos salir pulsando Volver
-      fireEvent.press(screen.getByLabelText('Volver'));
+      await fireEvent.press(screen.getByLabelText('Volver'));
       expect(alertSpy).toHaveBeenCalled();
 
       // El usuario elige "Seguir editando"
@@ -1012,18 +1012,18 @@ describe('Incremento 5: UI de Recordatorios y Avisos Locales', () => {
       });
 
       // Modificamos un campo para ensuciar el formulario
-      fireEvent.press(screen.getByLabelText('Personalizar'));
+      await fireEvent.press(screen.getByLabelText('Personalizar'));
       await waitFor(() => {
         expect(screen.getByLabelText('Lunes')).toBeTruthy();
       });
-      fireEvent.press(screen.getByLabelText('Lunes'));
+      await fireEvent.press(screen.getByLabelText('Lunes'));
 
       await waitFor(() => {
         expect(mockPreventRemoveEnabled).toBe(true);
       });
 
       // Intentamos salir pulsando Volver
-      fireEvent.press(screen.getByLabelText('Volver'));
+      await fireEvent.press(screen.getByLabelText('Volver'));
       expect(alertSpy).toHaveBeenCalled();
 
       // El usuario elige "Salir sin guardar"
@@ -1098,7 +1098,7 @@ describe('Incremento 5: UI de Recordatorios y Avisos Locales', () => {
         expect(screen.getByText('Guardar cambios')).toBeTruthy();
       });
 
-      fireEvent.press(screen.getByText('Guardar cambios'));
+      await fireEvent.press(screen.getByText('Guardar cambios'));
 
       await waitFor(() => {
         expect(saveSpy).toHaveBeenCalledWith(
@@ -1144,7 +1144,7 @@ describe('Incremento 5: UI de Recordatorios y Avisos Locales', () => {
         expect(screen.getAllByText('Recordatorio en pausa').length).toBeGreaterThanOrEqual(1);
       });
 
-      fireEvent.press(screen.getByText('Guardar cambios'));
+      await fireEvent.press(screen.getByText('Guardar cambios'));
 
       await waitFor(() => {
         expect(saveSpy).toHaveBeenCalledWith(
@@ -1178,16 +1178,16 @@ describe('Incremento 5: UI de Recordatorios y Avisos Locales', () => {
       expect(summary.getByText('Recordatorio activo')).toBeTruthy();
 
       // Al cambiar la hora con el teclado, el resumen se actualiza automáticamente
-      fireEvent.press(screen.getByLabelText('Escribir hora con teclado para Hora del aviso'));
+      await fireEvent.press(screen.getByLabelText('Escribir hora con teclado para Hora del aviso'));
       await waitFor(() => {
         expect(screen.getByLabelText('Campo de texto hora para Hora del aviso')).toBeTruthy();
       });
       const timeInput = screen.getByLabelText('Campo de texto hora para Hora del aviso');
-      fireEvent.changeText(timeInput, '09:15');
+      await fireEvent.changeText(timeInput, '09:15');
       await waitFor(() => {
         expect(timeInput.props.value).toBe('09:15');
       });
-      fireEvent.press(screen.getByText('Aplicar hora'));
+      await fireEvent.press(screen.getByText('Aplicar hora'));
 
       // Verificar específicamente en el contenedor del resumen la nueva hora y la desaparición de la anterior
       await waitFor(() => {
@@ -1259,7 +1259,7 @@ describe('Incremento 5: UI de Recordatorios y Avisos Locales', () => {
       const toggleSwitch = screen.getByRole('switch', {
         name: 'Estado del recordatorio: activo',
       });
-      fireEvent.press(toggleSwitch);
+      await fireEvent.press(toggleSwitch);
 
       await waitFor(() => {
         expect(summary.getByText('Recordatorio en pausa')).toBeTruthy();
@@ -1315,7 +1315,7 @@ describe('Incremento 5: UI de Recordatorios y Avisos Locales', () => {
         updatedAt: '2026-10-16T00:00:00Z',
       });
 
-      fireEvent.press(summary.getByText('Reintentar comprobación'));
+      await fireEvent.press(summary.getByText('Reintentar comprobación'));
 
       await waitFor(() => {
         expect(summary.getByText('Avisos generales en pausa')).toBeTruthy();
@@ -1389,7 +1389,7 @@ describe('Incremento 5: UI de Recordatorios y Avisos Locales', () => {
         expect(screen.getByRole('tab', { name: 'Ver actividad observada' })).toBeTruthy();
       });
 
-      fireEvent.press(screen.getByRole('tab', { name: 'Ver actividad observada' }));
+      await fireEvent.press(screen.getByRole('tab', { name: 'Ver actividad observada' }));
 
       await waitFor(() => {
         expect(mockReminderRepo.listNotifications).toHaveBeenCalledWith(
@@ -1428,7 +1428,7 @@ describe('Incremento 5: UI de Recordatorios y Avisos Locales', () => {
         allEnabledRulesCount: 0,
       });
 
-      fireEvent.press(screen.getByRole('button', { name: 'Reintentar' }));
+      await fireEvent.press(screen.getByRole('button', { name: 'Reintentar' }));
 
       await waitFor(() => {
         expect(screen.getByText('Sin avisos en esta vista')).toBeTruthy();
@@ -1469,7 +1469,7 @@ describe('Incremento 5: UI de Recordatorios y Avisos Locales', () => {
         allEnabledRulesCount: 0,
       });
 
-      fireEvent.press(screen.getByRole('button', { name: 'Reintentar' }));
+      await fireEvent.press(screen.getByRole('button', { name: 'Reintentar' }));
 
       await waitFor(() => {
         expect(screen.getByText('Sin avisos en esta vista')).toBeTruthy();
@@ -1500,7 +1500,7 @@ describe('Incremento 5: UI de Recordatorios y Avisos Locales', () => {
 
       const openBtn = screen.getByRole('button', { name: 'Abrir Ajustes de Android' });
       expect(openBtn).toBeTruthy();
-      fireEvent.press(openBtn);
+      await fireEvent.press(openBtn);
       expect(openSettingsSpy).toHaveBeenCalled();
     });
 
@@ -1524,7 +1524,7 @@ describe('Incremento 5: UI de Recordatorios y Avisos Locales', () => {
 
       const allowBtn = screen.getByRole('button', { name: 'Habilitar notificaciones' });
       expect(allowBtn).toBeTruthy();
-      fireEvent.press(allowBtn);
+      await fireEvent.press(allowBtn);
       expect(mockAdapter.requestPermission).toHaveBeenCalled();
     });
 
@@ -1552,7 +1552,7 @@ describe('Incremento 5: UI de Recordatorios y Avisos Locales', () => {
 
       const openBtn = screen.getByRole('button', { name: 'Abrir Ajustes de Android' });
       expect(openBtn).toBeTruthy();
-      fireEvent.press(openBtn);
+      await fireEvent.press(openBtn);
       expect(openSettingsSpy).toHaveBeenCalled();
     });
 
@@ -1567,7 +1567,7 @@ describe('Incremento 5: UI de Recordatorios y Avisos Locales', () => {
         expect(screen.getByRole('tab', { name: 'Ver actividad observada' })).toBeTruthy();
       });
 
-      fireEvent.press(screen.getByRole('tab', { name: 'Ver actividad observada' }));
+      await fireEvent.press(screen.getByRole('tab', { name: 'Ver actividad observada' }));
 
       await waitFor(() => {
         expect(screen.getByText('No se pudo cargar la actividad')).toBeTruthy();

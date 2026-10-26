@@ -1,0 +1,21 @@
+{
+  "status": "objetivo_pendiente_de_implementacion",
+  "archivo_local": "imagen-prueba.png",
+  "aviso_url": "URL placeholder: configurar esa ruta en el simulador con estos bytes. No está publicada en PARRA.",
+  "contenido_educativo": {
+    "id": "8384c56c-0b01-5629-9108-0ec27217646e",
+    "profesional_id": "b505dbdc-34db-5dd8-9d56-01a22a8659a8",
+    "titulo": "Imagen técnica de prueba",
+    "descripcion": "No contiene material clínico",
+    "tipo": "imagen",
+    "url": "https://example.com/fixtures/imagen-prueba.png",
+    "categoria": "quimioterapia",
+    "activo": true,
+    "fecha_creacion": "2026-10-22T15:00:00+00:00",
+    "carpeta_id": null,
+    "archivo_mime": "image/png",
+    "archivo_tamano_bytes": 77,
+    "archivo_revision": "38a00cb5-7f84-5076-9c22-2378dad7ea71",
+    "archivo_sha256": "3928618d567aa706302b2f1a7278e3758fee6d69637a075813c3ee5a565d747a"
+  }
+}

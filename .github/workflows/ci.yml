@@ -21,6 +21,8 @@ jobs:
     steps:
       - name: Checkout
         uses: actions/checkout@v7
+        with:
+          persist-credentials: false
       - name: Set up Node.js and pnpm
         uses: pnpm/setup@v3
         with:
@@ -29,6 +31,8 @@ jobs:
           require-lockfile: true
       - name: Check format, lint, and TypeScript
         run: pnpm run check
+      - name: Verify generated contracts are current
+        run: pnpm --filter @quimiocare/contracts run generate:check
       - name: Test SQLite and local data rules
         run: pnpm run test:local
       - name: Test UI component interactions
@@ -37,3 +41,56 @@ jobs:
         run: pnpm --filter @modulo-movil-oncologia/mobile run doctor
       - name: Export Android JavaScript bundle
         run: pnpm --filter @modulo-movil-oncologia/mobile run bundle:android
+
+  simulator:
+    name: Simulator HTTP and PostgreSQL
+    runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: postgres:17.7-bookworm@sha256:86e0b703649d7a792bd9243ee28afc9d8f7c6b2b5638077c9d6882d4d472bbfd
+        env:
+          POSTGRES_USER: postgres
+          POSTGRES_PASSWORD: quimiocare_ci_only
+          POSTGRES_DB: quimiocare_test
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U postgres -d quimiocare_test"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 12
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v7
+        with:
+          persist-credentials: false
+      - name: Set up Node.js and pnpm
+        uses: pnpm/setup@v3
+        with:
+          node-version-file: .nvmrc
+          cache: true
+          require-lockfile: true
+      - name: Build contracts and simulator
+        run: |
+          pnpm --filter @quimiocare/contracts run build
+          pnpm --filter @quimiocare/simulator run build
+      - name: Test contract boundaries
+        run: pnpm --filter @quimiocare/contracts run test
+      - name: Test simulator domain rules
+        run: pnpm --filter @quimiocare/simulator run test
+      - name: Exercise real HTTP and durable database
+        env:
+          APP_ENV: demo
+          TEST_DATABASE_URL: postgresql://postgres:quimiocare_ci_only@127.0.0.1:5432/quimiocare_test
+        run: pnpm --filter @quimiocare/simulator run test:integration
+      - name: Validate Compose structure without printing credentials
+        run: |
+          node infra/demo/configure.mjs
+          docker compose --env-file infra/demo/.env -f infra/demo/compose.yaml config --quiet
+
+      - name: Validate PowerSync queries with the pinned service compiler
+        run: >-
+          docker run --rm --entrypoint node
+          --mount "type=bind,source=${{ github.workspace }}/infra/powersync,target=/config,readonly"
+          docker.io/journeyapps/powersync-service:1.27.1@sha256:4b5b7d70f63c5cb5afdc680f5cdbacdcbc33cbf5f8fb55b001da263d7da75866
+          /config/validate-config.mjs

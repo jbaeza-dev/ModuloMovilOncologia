@@ -260,7 +260,7 @@ describe('Pruebas de interfaz (UI) para módulo de Educación', () => {
       expect(image).toBeTruthy();
 
       // Simular fallo de renderizado de la imagen
-      fireEvent(image, 'error', { nativeEvent: { error: 'Failed to load image' } });
+      await fireEvent(image, 'error', { nativeEvent: { error: 'Failed to load image' } });
 
       // Mensaje de advertencia visible
       expect(
@@ -278,7 +278,7 @@ describe('Pruebas de interfaz (UI) para módulo de Educación', () => {
       expect(retryBtn).toBeTruthy();
 
       // Al pulsar reintentar, se remonta la imagen con una nueva key para forzar nueva carga
-      fireEvent.press(retryBtn);
+      await fireEvent.press(retryBtn);
       await waitFor(() => {
         expect(
           screen.queryByText(/No se pudo renderizar la infografía desde el almacenamiento local/i),
@@ -293,7 +293,7 @@ describe('Pruebas de interfaz (UI) para módulo de Educación', () => {
       expect(reloadedImage).not.toBe(image);
 
       // Al completar exitosamente la nueva carga, desaparece la carga y se rehabilita la revisión
-      fireEvent(reloadedImage, 'load');
+      await fireEvent(reloadedImage, 'load');
       await waitFor(() => {
         expect(screen.queryByText('Cargando visualización de imagen…')).toBeNull();
         const activeReviewBtn = screen.getByRole('button', { name: 'Declarar material revisado' });
@@ -459,14 +459,14 @@ describe('Pruebas de interfaz (UI) para módulo de Educación', () => {
       expect(screen.getByText('Video: Opciones de líquidos e hidratación diaria')).toBeTruthy();
 
       // Filtrar por Videos
-      fireEvent.press(filterVideos);
+      await fireEvent.press(filterVideos);
       await waitFor(() => {
         expect(screen.getByText('Video: Opciones de líquidos e hidratación diaria')).toBeTruthy();
         expect(screen.queryByText('Infografía: Guía nutricional en quimioterapia')).toBeNull();
       });
 
       // Filtrar por Infografías
-      fireEvent.press(filterInfografias);
+      await fireEvent.press(filterInfografias);
       await waitFor(() => {
         expect(screen.getByText('Infografía: Guía nutricional en quimioterapia')).toBeTruthy();
         expect(screen.queryByText('Video: Opciones de líquidos e hidratación diaria')).toBeNull();
@@ -664,7 +664,7 @@ describe('Pruebas de interfaz (UI) para módulo de Educación', () => {
 
       // Abrir controles accesibles de zoom
       const zoomOptionsBtn = screen.getByLabelText('Opciones accesibles de zoom');
-      fireEvent.press(zoomOptionsBtn);
+      await fireEvent.press(zoomOptionsBtn);
 
       await waitFor(() => {
         expect(screen.getByLabelText('Aumentar zoom')).toBeTruthy();
@@ -674,14 +674,14 @@ describe('Pruebas de interfaz (UI) para módulo de Educación', () => {
 
       // Aumentar zoom (+): pasa de 100% a 175%
       const zoomInBtn = screen.getByLabelText('Aumentar zoom');
-      fireEvent.press(zoomInBtn);
+      await fireEvent.press(zoomInBtn);
 
       await waitFor(() => {
         expect(screen.getByText('Nivel de zoom al 175%')).toBeTruthy();
       });
 
       // Aumentar zoom (+) nuevamente: pasa a 250%
-      fireEvent.press(zoomInBtn);
+      await fireEvent.press(zoomInBtn);
 
       await waitFor(() => {
         expect(screen.getByText('Nivel de zoom al 250%')).toBeTruthy();
@@ -689,7 +689,7 @@ describe('Pruebas de interfaz (UI) para módulo de Educación', () => {
 
       // Reducir zoom (-): regresa a 175%
       const zoomOutBtn = screen.getByLabelText('Reducir zoom');
-      fireEvent.press(zoomOutBtn);
+      await fireEvent.press(zoomOutBtn);
 
       await waitFor(() => {
         expect(screen.getByText('Nivel de zoom al 175%')).toBeTruthy();
@@ -697,7 +697,7 @@ describe('Pruebas de interfaz (UI) para módulo de Educación', () => {
 
       // Restablecer tamaño normal
       const resetBtn = screen.getByLabelText('Restablecer tamaño normal');
-      fireEvent.press(resetBtn);
+      await fireEvent.press(resetBtn);
 
       await waitFor(() => {
         expect(screen.getByText('Imagen ajustada a la pantalla (100%)')).toBeTruthy();
@@ -722,14 +722,18 @@ describe('Pruebas de interfaz (UI) para módulo de Educación', () => {
       );
 
       // Doble toque accesible / activate: conmuta a 250%
-      fireEvent(imageNode, 'accessibilityAction', { nativeEvent: { actionName: 'activate' } });
+      await fireEvent(imageNode, 'accessibilityAction', {
+        nativeEvent: { actionName: 'activate' },
+      });
 
       await waitFor(() => {
         expect(screen.getByText('Imagen ampliada al 250%')).toBeTruthy();
       });
 
       // Segundo activate: regresa a 100%
-      fireEvent(imageNode, 'accessibilityAction', { nativeEvent: { actionName: 'activate' } });
+      await fireEvent(imageNode, 'accessibilityAction', {
+        nativeEvent: { actionName: 'activate' },
+      });
 
       await waitFor(() => {
         expect(screen.getByText('Imagen ajustada a la pantalla (100%)')).toBeTruthy();
@@ -747,7 +751,7 @@ describe('Pruebas de interfaz (UI) para módulo de Educación', () => {
 
       // Abrir modal
       const textBtn = screen.getByText('Texto accesible');
-      fireEvent.press(textBtn);
+      await fireEvent.press(textBtn);
 
       await waitFor(() => {
         expect(screen.getByText('Texto alternativo accesible')).toBeTruthy();
@@ -756,7 +760,7 @@ describe('Pruebas de interfaz (UI) para módulo de Educación', () => {
 
       // Cerrar modal
       const closeBtn = screen.getByText('Cerrar lectura');
-      fireEvent.press(closeBtn);
+      await fireEvent.press(closeBtn);
 
       await waitFor(() => {
         expect(screen.queryByText('Texto alternativo accesible')).toBeNull();
@@ -774,7 +778,7 @@ describe('Pruebas de interfaz (UI) para módulo de Educación', () => {
       });
 
       const closeBtn = screen.getByLabelText('Cerrar visor de infografía');
-      fireEvent.press(closeBtn);
+      await fireEvent.press(closeBtn);
 
       expect(router.back).toHaveBeenCalled();
     });
@@ -790,7 +794,7 @@ describe('Pruebas de interfaz (UI) para módulo de Educación', () => {
       });
 
       const closeBtn = screen.getByLabelText('Cerrar visor de infografía');
-      fireEvent.press(closeBtn);
+      await fireEvent.press(closeBtn);
 
       expect(router.replace).toHaveBeenCalledWith('/educacion');
     });
@@ -817,7 +821,7 @@ describe('Pruebas de interfaz (UI) para módulo de Educación', () => {
       });
 
       const copiesCard = screen.getByLabelText('Ver mis copias guardadas sin conexión');
-      fireEvent.press(copiesCard);
+      await fireEvent.press(copiesCard);
 
       expect(router.navigate).toHaveBeenCalledWith('/educacion?filtro=offline');
     });
@@ -851,7 +855,7 @@ describe('Pruebas de interfaz (UI) para módulo de Educación', () => {
       const copyCard = screen.getByLabelText(
         'Guía nutricional en quimioterapia, Infografía · Disponible sin internet',
       );
-      fireEvent.press(copyCard);
+      await fireEvent.press(copyCard);
 
       expect(router.push).toHaveBeenCalledWith(
         '/visor-infografia?recurso=' + encodeURIComponent('edu-infografia-alimentacion'),
@@ -869,7 +873,7 @@ describe('Pruebas de interfaz (UI) para módulo de Educación', () => {
       });
 
       const returnBtn = screen.getByLabelText('Ver todas las categorías');
-      fireEvent.press(returnBtn);
+      await fireEvent.press(returnBtn);
 
       expect(router.navigate).toHaveBeenCalledWith('/educacion');
     });

@@ -1,0 +1,141 @@
+import { createHash, createHmac, randomBytes, timingSafeEqual } from 'node:crypto';
+import type { SimulatorConfig } from './config.js';
+import type { Database } from './db.js';
+import { one, transaction } from './db.js';
+import { ApiError } from './errors.js';
+import { scenarioFor } from './scenarios.js';
+import { PATIENTS } from './types.js';
+import type { DemoPatient, Principal } from './types.js';
+
+const unauthorized = () =>
+  new ApiError(401, 'HTTP_401', 'Credencial sintética inválida o vencida.');
+const encode = (value: unknown) => Buffer.from(JSON.stringify(value)).toString('base64url');
+const hashToken = (token: string) => createHash('sha256').update(token).digest('hex');
+
+export function signAccess(
+  config: SimulatorConfig,
+  patient: DemoPatient,
+  generation: string,
+  now = Date.now(),
+): string {
+  const issued = Math.floor(now / 1000);
+  const header = encode({ alg: 'HS256', typ: 'JWT' });
+  const claims = encode({
+    sub: PATIENTS[patient],
+    iss: config.issuer,
+    aud: config.audience,
+    iat: issued,
+    exp: issued + 3600,
+    role: 'paciente',
+    demo_patient: patient,
+    cohort: 'quimiocare-demo',
+    demo_generation: generation,
+  });
+  const signed = `${header}.${claims}`;
+  return `${signed}.${createHmac('sha256', config.signingKey).update(signed).digest('base64url')}`;
+}
+
+export function verifyAccess(config: SimulatorConfig, token: string, now = Date.now()): Principal {
+  try {
+    if (token.length > 8192) throw unauthorized();
+    const parts = token.split('.');
+    if (parts.length !== 3 || parts.some((part) => !/^[A-Za-z0-9_-]+$/.test(part)))
+      throw unauthorized();
+    const [headerPart, claimPart, signaturePart] = parts as [string, string, string];
+    const header = JSON.parse(Buffer.from(headerPart, 'base64url').toString()) as Record<
+      string,
+      unknown
+    >;
+    const claims = JSON.parse(Buffer.from(claimPart, 'base64url').toString()) as Record<
+      string,
+      unknown
+    >;
+    if (header.alg !== 'HS256' || header.typ !== 'JWT') throw unauthorized();
+    const expected = createHmac('sha256', config.signingKey)
+      .update(`${headerPart}.${claimPart}`)
+      .digest();
+    const actual = Buffer.from(signaturePart, 'base64url');
+    if (actual.length !== expected.length || !timingSafeEqual(expected, actual))
+      throw unauthorized();
+    const patient = claims.demo_patient;
+    const seconds = Math.floor(now / 1000);
+    if (
+      (patient !== 'A' && patient !== 'B') ||
+      claims.sub !== PATIENTS[patient] ||
+      claims.iss !== config.issuer ||
+      claims.aud !== config.audience ||
+      claims.role !== 'paciente' ||
+      claims.cohort !== 'quimiocare-demo' ||
+      !Number.isInteger(claims.exp) ||
+      !Number.isInteger(claims.iat) ||
+      Number(claims.exp) <= seconds ||
+      Number(claims.iat) > seconds + 30 ||
+      typeof claims.demo_generation !== 'string'
+    )
+      throw unauthorized();
+    return { id: PATIENTS[patient], demo: patient, generation: claims.demo_generation };
+  } catch {
+    throw unauthorized();
+  }
+}
+
+export function principalFromHeader(
+  config: SimulatorConfig,
+  authorization: string | undefined,
+): Principal {
+  if (!authorization?.startsWith('Bearer ')) throw unauthorized();
+  return verifyAccess(config, authorization.slice(7));
+}
+
+export function verifyControl(config: SimulatorConfig, supplied: string | undefined): void {
+  const actual = Buffer.from(supplied ?? '');
+  const expected = Buffer.from(config.controlKey);
+  if (actual.length !== expected.length || !timingSafeEqual(actual, expected)) throw unauthorized();
+}
+
+export async function issueSession(db: Database, config: SimulatorConfig, patient: DemoPatient) {
+  const generation = (await scenarioFor(db, PATIENTS[patient])).session_epoch;
+  const refresh = randomBytes(48).toString('base64url');
+  await db.query(
+    "INSERT INTO qc_demo_refresh(token_hash,paciente_id,vence_en) VALUES($1,$2,now()+interval '24 hours')",
+    [hashToken(refresh), PATIENTS[patient]],
+  );
+  return {
+    access_token: signAccess(config, patient, generation),
+    refresh_token: refresh,
+    token_type: 'bearer',
+    expires_in: 3600,
+    user: { id: PATIENTS[patient], paciente_demo: patient },
+  };
+}
+
+export async function refreshSession(db: Database, config: SimulatorConfig, token: string) {
+  return transaction(db, async (client) => {
+    const stored = await one<{ paciente_id: string; vence_en: Date; consumido: boolean }>(
+      client,
+      'SELECT paciente_id,vence_en,consumido FROM qc_demo_refresh WHERE token_hash=$1 FOR UPDATE',
+      [hashToken(token)],
+    );
+    if (!stored || stored.consumido || stored.vence_en.getTime() <= Date.now())
+      throw unauthorized();
+    const patient: DemoPatient = stored.paciente_id === PATIENTS.A ? 'A' : 'B';
+    if (stored.paciente_id !== PATIENTS[patient]) throw unauthorized();
+    const next = randomBytes(48).toString('base64url');
+    await client.query('UPDATE qc_demo_refresh SET consumido=true WHERE token_hash=$1', [
+      hashToken(token),
+    ]);
+    // Refresh rotation does not extend the original absolute 24-hour lifetime.
+    await client.query(
+      'INSERT INTO qc_demo_refresh(token_hash,paciente_id,vence_en) VALUES($1,$2,$3)',
+      [hashToken(next), stored.paciente_id, stored.vence_en],
+    );
+    const generation = (await scenarioFor(client, stored.paciente_id)).session_epoch;
+    return {
+      access_token: signAccess(config, patient, generation),
+      refresh_token: next,
+      token_type: 'bearer',
+      expires_in: 3600,
+      user: { id: PATIENTS[patient], paciente_demo: patient },
+    };
+  });
+}

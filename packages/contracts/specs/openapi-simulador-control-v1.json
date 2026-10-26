@@ -1,0 +1,685 @@
+{
+  "openapi": "3.1.0",
+  "info": {
+    "title": "QuimioCare — controles del simulador independiente",
+    "version": "1.0.0-objetivo-2026-10-23",
+    "description": "Seis operaciones propias de demo. Además se implementan las 16 operaciones clínicas y 1 IA, reutilizando sus especificaciones sin contarlas de nuevo. No son endpoints del equipo clínico ni del gateway real."
+  },
+  "servers": [
+    {
+      "url": "http://localhost:3002",
+      "description": "Simulador clínico y helpers; el stub IA puede estar en :3003, configurable."
+    }
+  ],
+  "paths": {
+    "/__demo/auth/session": {
+      "post": {
+        "operationId": "demoCrearSesion",
+        "summary": "Seleccionar paciente sintético",
+        "description": "Solo habilitado en modo demo sin datos reales. Firma JWT con clave y emisor demo: sub estable por paciente, iss configurado, aud authenticated, iat actual, exp=iat+3600 s. Devuelve tokens para el adaptador demo; no reproduce OAuth Google ni GoTrue real.",
+        "security": [],
+        "responses": {
+          "200": {
+            "description": "Operación completada.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/TokenDemo"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Error propio del simulador; no se confunde con envoltura clínica o IA.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorDemo"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Error propio del simulador; no se confunde con envoltura clínica o IA.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorDemo"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "Error propio del simulador; no se confunde con envoltura clínica o IA.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorDemo"
+                }
+              }
+            }
+          }
+        },
+        "x-implementation-status": "objetivo_por_implementar",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ElegirPaciente"
+              }
+            }
+          }
+        }
+      }
+    },
+    "/__demo/auth/refresh": {
+      "post": {
+        "operationId": "demoRenovarSesion",
+        "summary": "Renovar sesión sintética",
+        "description": "Refresh opaco vinculado en servidor a A/B; TTL 24 h. Rotar al usarlo, invalidar el anterior; nunca aceptar un sub enviado por el cliente. Persiste mientras dure la sesión de demo y se borra al reset. Un fallo de renovación requiere seleccionar paciente otra vez.",
+        "security": [],
+        "responses": {
+          "200": {
+            "description": "Operación completada.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/TokenDemo"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Refresh sintético inválido, revocado o vencido.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorDemo"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Error propio del simulador; no se confunde con envoltura clínica o IA.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorDemo"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Error propio del simulador; no se confunde con envoltura clínica o IA.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorDemo"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "Error propio del simulador; no se confunde con envoltura clínica o IA.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorDemo"
+                }
+              }
+            }
+          }
+        },
+        "x-implementation-status": "objetivo_por_implementar",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/RenovarToken"
+              }
+            }
+          }
+        }
+      }
+    },
+    "/__demo/escenarios": {
+      "get": {
+        "operationId": "demoListarEscenarios",
+        "summary": "Listar escenarios reproducibles",
+        "description": "Inventario de escenarios. No acredita clínica ni comportamiento real de la IA.",
+        "security": [
+          {
+            "ControlDemo": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Operación completada.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Escenarios"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Error propio del simulador; no se confunde con envoltura clínica o IA.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorDemo"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Error propio del simulador; no se confunde con envoltura clínica o IA.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorDemo"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Error propio del simulador; no se confunde con envoltura clínica o IA.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorDemo"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "Error propio del simulador; no se confunde con envoltura clínica o IA.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorDemo"
+                }
+              }
+            }
+          }
+        },
+        "x-implementation-status": "objetivo_por_implementar"
+      }
+    },
+    "/__demo/escenario-activo": {
+      "put": {
+        "operationId": "demoActivarEscenario",
+        "summary": "Activar escenario para A o B",
+        "description": "Solo control del banco de pruebas. Las pérdidas de ACK persisten primero y cortan la respuesta de la primera escritura pertinente; replay posterior devuelve el original. Validaciones de dominio se ejecutan sobre las definiciones del escenario; no forzar 422 para payload válido.",
+        "security": [
+          {
+            "ControlDemo": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Operación completada.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/EstadoEscenario"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Error propio del simulador; no se confunde con envoltura clínica o IA.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorDemo"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Error propio del simulador; no se confunde con envoltura clínica o IA.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorDemo"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Error propio del simulador; no se confunde con envoltura clínica o IA.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorDemo"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "Error propio del simulador; no se confunde con envoltura clínica o IA.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorDemo"
+                }
+              }
+            }
+          }
+        },
+        "x-implementation-status": "objetivo_por_implementar",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/SeleccionEscenario"
+              }
+            }
+          }
+        }
+      }
+    },
+    "/__demo/reset": {
+      "post": {
+        "operationId": "demoReiniciarDatos",
+        "summary": "Reiniciar exclusivamente datos sintéticos",
+        "description": "Borra escrituras/tokens/escenarios sintéticos del simulador y restaura el seed identificado. No modifica BD del gateway, teléfono, PowerSync o servidores reales. Su limpieza se ejecuta por procedimientos separados. Deshabilitado en modo real.",
+        "security": [
+          {
+            "ControlDemo": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Operación completada.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ResultadoReset"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Error propio del simulador; no se confunde con envoltura clínica o IA.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorDemo"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Error propio del simulador; no se confunde con envoltura clínica o IA.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorDemo"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Error propio del simulador; no se confunde con envoltura clínica o IA.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorDemo"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "Error propio del simulador; no se confunde con envoltura clínica o IA.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorDemo"
+                }
+              }
+            }
+          }
+        },
+        "x-implementation-status": "objetivo_por_implementar",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ResetDemo"
+              }
+            }
+          }
+        }
+      }
+    },
+    "/__demo/archivos/imagen-prueba.png": {
+      "get": {
+        "operationId": "demoImagenPrueba",
+        "summary": "Obtener bytes originales de imagen fixture",
+        "description": "Contenido público sintético. La URL absoluta de catálogo se genera con la base accesible del simulador; no se usa example.com como archivo descargable.",
+        "security": [],
+        "responses": {
+          "200": {
+            "description": "PNG sintético 2×2, 77 bytes; SHA-256 3928618d567aa706302b2f1a7278e3758fee6d69637a075813c3ee5a565d747a.",
+            "content": {
+              "image/png": {
+                "schema": {
+                  "type": "string",
+                  "format": "binary"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Error propio del simulador; no se confunde con envoltura clínica o IA.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorDemo"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Error propio del simulador; no se confunde con envoltura clínica o IA.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorDemo"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "Error propio del simulador; no se confunde con envoltura clínica o IA.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorDemo"
+                }
+              }
+            }
+          }
+        },
+        "x-implementation-status": "objetivo_por_implementar"
+      }
+    }
+  },
+  "components": {
+    "schemas": {
+      "ErrorDemo": {
+        "type": "object",
+        "properties": {
+          "error": {
+            "type": "object",
+            "properties": {
+              "codigo": {
+                "type": "string",
+                "minLength": 1,
+                "maxLength": 80
+              },
+              "mensaje": {
+                "type": "string",
+                "minLength": 1,
+                "maxLength": 500
+              }
+            },
+            "required": [
+              "codigo",
+              "mensaje"
+            ],
+            "additionalProperties": false
+          }
+        },
+        "required": [
+          "error"
+        ],
+        "additionalProperties": false
+      },
+      "ElegirPaciente": {
+        "type": "object",
+        "properties": {
+          "paciente_demo": {
+            "enum": [
+              "A",
+              "B"
+            ]
+          }
+        },
+        "required": [
+          "paciente_demo"
+        ],
+        "additionalProperties": false
+      },
+      "RenovarToken": {
+        "type": "object",
+        "properties": {
+          "refresh_token": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 4096
+          }
+        },
+        "required": [
+          "refresh_token"
+        ],
+        "additionalProperties": false
+      },
+      "TokenDemo": {
+        "type": "object",
+        "properties": {
+          "access_token": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 8192
+          },
+          "refresh_token": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 4096
+          },
+          "token_type": {
+            "const": "bearer"
+          },
+          "expires_in": {
+            "type": "integer",
+            "const": 3600
+          },
+          "user": {
+            "type": "object",
+            "properties": {
+              "id": {
+                "type": "string",
+                "format": "uuid"
+              },
+              "paciente_demo": {
+                "enum": [
+                  "A",
+                  "B"
+                ]
+              }
+            },
+            "required": [
+              "id",
+              "paciente_demo"
+            ],
+            "additionalProperties": false
+          }
+        },
+        "required": [
+          "access_token",
+          "refresh_token",
+          "token_type",
+          "expires_in",
+          "user"
+        ],
+        "additionalProperties": false
+      },
+      "Escenario": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "enum": [
+              "NORMAL",
+              "ACK_SIGNOS_PERDIDO",
+              "ACK_EPRO_PERDIDO",
+              "SESION_EXPIRADA",
+              "AUTORIZACION_DENEGADA",
+              "TERMINOS_NUEVOS",
+              "EDUCACION_RETIRADA",
+              "IA_NO_DISPONIBLE",
+              "IA_URGENCIA",
+              "EDICION_CONDICIONAL",
+              "EXCLUSIVIDAD_ACTIVA",
+              "SERVICIO_NO_DISPONIBLE"
+            ]
+          },
+          "descripcion": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 1000
+          }
+        },
+        "required": [
+          "id",
+          "descripcion"
+        ],
+        "additionalProperties": false
+      },
+      "Escenarios": {
+        "type": "object",
+        "properties": {
+          "items": {
+            "type": "array",
+            "minItems": 12,
+            "maxItems": 12,
+            "items": {
+              "$ref": "#/components/schemas/Escenario"
+            }
+          }
+        },
+        "required": [
+          "items"
+        ],
+        "additionalProperties": false
+      },
+      "SeleccionEscenario": {
+        "type": "object",
+        "properties": {
+          "paciente_demo": {
+            "enum": [
+              "A",
+              "B"
+            ]
+          },
+          "escenario": {
+            "enum": [
+              "NORMAL",
+              "ACK_SIGNOS_PERDIDO",
+              "ACK_EPRO_PERDIDO",
+              "SESION_EXPIRADA",
+              "AUTORIZACION_DENEGADA",
+              "TERMINOS_NUEVOS",
+              "EDUCACION_RETIRADA",
+              "IA_NO_DISPONIBLE",
+              "IA_URGENCIA",
+              "EDICION_CONDICIONAL",
+              "EXCLUSIVIDAD_ACTIVA",
+              "SERVICIO_NO_DISPONIBLE"
+            ]
+          }
+        },
+        "required": [
+          "paciente_demo",
+          "escenario"
+        ],
+        "additionalProperties": false
+      },
+      "EstadoEscenario": {
+        "type": "object",
+        "properties": {
+          "paciente_demo": {
+            "enum": [
+              "A",
+              "B"
+            ]
+          },
+          "escenario": {
+            "enum": [
+              "NORMAL",
+              "ACK_SIGNOS_PERDIDO",
+              "ACK_EPRO_PERDIDO",
+              "SESION_EXPIRADA",
+              "AUTORIZACION_DENEGADA",
+              "TERMINOS_NUEVOS",
+              "EDUCACION_RETIRADA",
+              "IA_NO_DISPONIBLE",
+              "IA_URGENCIA",
+              "EDICION_CONDICIONAL",
+              "EXCLUSIVIDAD_ACTIVA",
+              "SERVICIO_NO_DISPONIBLE"
+            ]
+          },
+          "aplicado_en": {
+            "type": "string",
+            "format": "date-time"
+          }
+        },
+        "required": [
+          "paciente_demo",
+          "escenario",
+          "aplicado_en"
+        ],
+        "additionalProperties": false
+      },
+      "ResetDemo": {
+        "type": "object",
+        "properties": {
+          "confirmar": {
+            "const": "REINICIAR_DATOS_SINTETICOS"
+          },
+          "seed": {
+            "const": "quimiocare-rc32-v1"
+          }
+        },
+        "required": [
+          "confirmar",
+          "seed"
+        ],
+        "additionalProperties": false
+      },
+      "ResultadoReset": {
+        "type": "object",
+        "properties": {
+          "seed": {
+            "const": "quimiocare-rc32-v1"
+          },
+          "reiniciado_en": {
+            "type": "string",
+            "format": "date-time"
+          }
+        },
+        "required": [
+          "seed",
+          "reiniciado_en"
+        ],
+        "additionalProperties": false
+      }
+    },
+    "securitySchemes": {
+      "ControlDemo": {
+        "type": "apiKey",
+        "in": "header",
+        "name": "X-Demo-Control",
+        "description": "Credencial de operación del simulador, solo herramientas del equipo. No incluir en APK ni usar como token de paciente."
+      }
+    }
+  }
+}

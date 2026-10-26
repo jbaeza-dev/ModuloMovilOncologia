@@ -1,0 +1,125 @@
+{
+  "description": "Respuesta al crear o consultar un contenido educativo.",
+  "properties": {
+    "id": {
+      "format": "uuid",
+      "title": "Id",
+      "type": "string"
+    },
+    "profesional_id": {
+      "format": "uuid",
+      "title": "Profesional Id",
+      "type": "string"
+    },
+    "titulo": {
+      "title": "Titulo",
+      "type": "string"
+    },
+    "descripcion": {
+      "title": "Descripcion",
+      "type": "string"
+    },
+    "tipo": {
+      "title": "Tipo",
+      "type": "string"
+    },
+    "url": {
+      "title": "Url",
+      "type": "string"
+    },
+    "categoria": {
+      "title": "Categoria",
+      "type": "string"
+    },
+    "activo": {
+      "title": "Activo",
+      "type": "boolean"
+    },
+    "fecha_creacion": {
+      "format": "date-time",
+      "title": "Fecha Creacion",
+      "type": "string"
+    },
+    "carpeta_id": {
+      "anyOf": [
+        {
+          "format": "uuid",
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Carpeta Id"
+    },
+    "archivo_mime": {
+      "anyOf": [
+        {
+          "type": "string",
+          "enum": [
+            "image/png",
+            "image/jpeg"
+          ]
+        },
+        {
+          "type": "null"
+        }
+      ]
+    },
+    "archivo_tamano_bytes": {
+      "anyOf": [
+        {
+          "type": "integer",
+          "minimum": 1
+        },
+        {
+          "type": "null"
+        }
+      ]
+    },
+    "archivo_revision": {
+      "anyOf": [
+        {
+          "type": "string",
+          "format": "uuid"
+        },
+        {
+          "type": "null"
+        }
+      ]
+    },
+    "archivo_sha256": {
+      "anyOf": [
+        {
+          "type": "string",
+          "pattern": "^[0-9a-f]{64}$"
+        },
+        {
+          "type": "null"
+        }
+      ]
+    }
+  },
+  "required": [
+    "id",
+    "profesional_id",
+    "titulo",
+    "descripcion",
+    "tipo",
+    "url",
+    "categoria",
+    "activo",
+    "fecha_creacion",
+    "archivo_mime",
+    "archivo_tamano_bytes",
+    "archivo_revision",
+    "archivo_sha256"
+  ],
+  "title": "ContenidoEducativoResponseObjetivoRC3",
+  "type": "object",
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "x-status": "definido_para_implementar_no_expuesto_actualmente",
+  "x-rules": "Imagen nueva: cuatro campos completos; video: null; legado pendiente de completar no se anuncia como imagen offline verificada. URL conserva significado; reemplazo nuevo UUID de revisión.",
+  "x-version": "RC3.1-avance-2026-10-23"
+}

@@ -1,0 +1,100 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "Configuración objetivo contrato 1 — exclusividades RC3.2",
+  "type": "object",
+  "properties": {
+    "depende_de": {
+      "type": "string",
+      "minLength": 1,
+      "pattern": "^\\S(?:.*\\S)?$"
+    },
+    "valor_activador": {
+      "type": [
+        "boolean",
+        "number",
+        "string"
+      ]
+    },
+    "requerida_si_activa": {
+      "type": "boolean"
+    },
+    "min_value": {
+      "type": "number"
+    },
+    "max_value": {
+      "type": "number"
+    },
+    "max_length": {
+      "type": "integer",
+      "minimum": 0
+    },
+    "modulo": {},
+    "es_madre": {},
+    "id_web_original": {},
+    "metadata": {},
+    "opciones_exclusivas": {
+      "type": "array",
+      "items": {
+        "type": "string",
+        "minLength": 1
+      },
+      "uniqueItems": true,
+      "default": [],
+      "description": "Códigos exactos de opciones que solo pueden seleccionarse de manera individual. Solo opcion_multiple, con marcador explícito de contrato 1. Soporte de código pendiente.",
+      "x-implementation-status": "pendiente"
+    }
+  },
+  "additionalProperties": false,
+  "dependentRequired": {
+    "depende_de": [
+      "requerida_si_activa",
+      "valor_activador"
+    ],
+    "requerida_si_activa": [
+      "depende_de",
+      "valor_activador"
+    ],
+    "valor_activador": [
+      "depende_de",
+      "requerida_si_activa"
+    ]
+  },
+  "x-status": "normativo_objetivo_confirmado_clinico_pendiente_confirmacion_movil_y_soporte_codigo",
+  "x-domain-rules": [
+    "Conservar igualdad tipada, dependencias completas y validación del grafo de RC3.1.",
+    "opciones_exclusivas omitido o vacío no agrega restricciones de selección.",
+    "Todo código de opciones_exclusivas pertenece a pregunta.opciones[].codigo; no inferir por texto o gravedad.",
+    "Si valor incluye un código exclusivo, el array contiene únicamente una ocurrencia de ese código. No combinar ni deduplicar automáticamente.",
+    "Una hija no aplicable sigue omitiéndose incluso si tiene exclusividades; no exigir una selección para activarla.",
+    "Una configuración inválida no se publica; una respuesta incompatible produce 422 REGLA_DE_NEGOCIO_INVALIDA con motivo OPCIONES_EXCLUSIVAS_INCOMPATIBLES.",
+    "Esta extensión aún no está soportada por el validador observado; no modificar retrospectivamente ediciones legadas ni la definición clínica de 41 preguntas.",
+    "JSON Schema de configuracion no sustituye comprobaciones cruzadas con edición, tipo de pregunta, opciones o grafo."
+  ],
+  "x-version": "1.0-RC3.2-objetivo-2026-10-23",
+  "x-pregunta-contexto": "opciones_exclusivas solo para opcion_multiple; códigos exactos de opciones de la misma pregunta; marcador explícito configuracion.version_condiciones=1 en la edición.",
+  "$defs": {
+    "legado": {
+      "type": "object",
+      "not": {
+        "anyOf": [
+          {
+            "required": [
+              "opciones_exclusivas"
+            ]
+          },
+          {
+            "required": [
+              "valor_activador"
+            ]
+          },
+          {
+            "required": [
+              "requerida_si_activa"
+            ]
+          }
+        ]
+      },
+      "description": "Contrato 0: preservar metadatos históricos; no ejecutar saltos ni introducir la extensión opciones_exclusivas."
+    }
+  }
+}

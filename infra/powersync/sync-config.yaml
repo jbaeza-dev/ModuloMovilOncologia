@@ -1,0 +1,48 @@
+# Catálogos compartidos únicamente por los pacientes sintéticos firmados A/B.
+# Las condiciones auth.* provienen del JWT verificado, nunca de parámetros del cliente.
+config:
+  edition: 3
+
+streams:
+  quimiocare_formularios_demo:
+    auto_subscribe: true
+    query: |
+      SELECT id, codigo, titulo, descripcion, tratamiento, version, activo,
+        configuracion, fecha_creacion, eliminado
+      FROM formulario
+      WHERE eliminado = false AND tratamiento = 'quimioterapia'
+        AND (id = 'a4a98ef2-2013-5277-94ea-8365bf50ba71' OR id = 'cd3d5bc3-7d2a-5adf-b5fb-f090a98cec5b' OR id = '753baa82-afe9-5592-9968-6485c9562174')
+        AND auth.parameter('iss') = 'quimiocare-demo'
+        AND auth.parameter('role') = 'paciente'
+        AND auth.parameter('cohort') = 'quimiocare-demo'
+        AND (auth.user_id() = '964d32f1-6941-579f-9f08-b60342194da9' OR auth.user_id() = '2dcb04f2-a2ad-5ea4-b711-9acd7e570002')
+
+  quimiocare_preguntas_demo:
+    auto_subscribe: true
+    query: |
+      SELECT id, formulario_id, codigo, titulo, texto, tipo, requerida, orden,
+        opciones, configuracion, eliminado
+      FROM pregunta
+      WHERE eliminado = false
+        AND formulario_id IN (
+          SELECT id FROM formulario
+          WHERE eliminado = false AND tratamiento = 'quimioterapia'
+            AND (id = 'a4a98ef2-2013-5277-94ea-8365bf50ba71' OR id = 'cd3d5bc3-7d2a-5adf-b5fb-f090a98cec5b' OR id = '753baa82-afe9-5592-9968-6485c9562174')
+        )
+        AND auth.parameter('iss') = 'quimiocare-demo'
+        AND auth.parameter('role') = 'paciente'
+        AND auth.parameter('cohort') = 'quimiocare-demo'
+        AND (auth.user_id() = '964d32f1-6941-579f-9f08-b60342194da9' OR auth.user_id() = '2dcb04f2-a2ad-5ea4-b711-9acd7e570002')
+
+  quimiocare_educacion_demo:
+    auto_subscribe: true
+    query: |
+      SELECT id, titulo, ifnull(descripcion, '') AS descripcion,
+        tipo, url, categoria, carpeta_id, activo, fecha_creacion,
+        archivo_mime, archivo_tamano_bytes, archivo_revision, archivo_sha256
+      FROM contenido_educativo
+      WHERE qc_mobile_eligible = true
+        AND auth.parameter('iss') = 'quimiocare-demo'
+        AND auth.parameter('role') = 'paciente'
+        AND auth.parameter('cohort') = 'quimiocare-demo'
+        AND (auth.user_id() = '964d32f1-6941-579f-9f08-b60342194da9' OR auth.user_id() = '2dcb04f2-a2ad-5ea4-b711-9acd7e570002')

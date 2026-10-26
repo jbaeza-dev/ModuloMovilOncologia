@@ -1,0 +1,5 @@
+# Override optativo para pruebas HTTP desde el host. Nunca publicar PostgreSQL en 0.0.0.0.
+services:
+  postgres-origin:
+    ports:
+      - '127.0.0.1:55432:5432'

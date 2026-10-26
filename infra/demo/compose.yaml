@@ -1,0 +1,176 @@
+name: quimiocare-p01
+
+x-simulator: &simulator
+  image: quimiocare-simulator:p01
+  build:
+    context: ../..
+    dockerfile: infra/demo/Containerfile.simulator
+  environment: &simulator-environment
+    APP_ENV: demo
+    DATABASE_URL: postgresql://qc_simulator:${DEMO_DATABASE_PASSWORD:?Ejecutar configure.mjs}@postgres-origin:5432/qc_demo
+    DEMO_SIGNING_KEY: ${DEMO_SIGNING_KEY:?Ejecutar configure.mjs}
+    DEMO_CONTROL_KEY: ${DEMO_CONTROL_KEY:?Ejecutar configure.mjs}
+    AUTH_EXPECTED_ISSUER: quimiocare-demo
+    AUTH_EXPECTED_AUDIENCE: authenticated
+    SIMULATOR_PUBLIC_BASE_URL: ${SIMULATOR_PUBLIC_BASE_URL:?Configurar URL accesible para Android}
+  networks: [demo]
+
+services:
+  postgres-origin:
+    image: docker.io/library/postgres:17.7-bookworm@sha256:86e0b703649d7a792bd9243ee28afc9d8f7c6b2b5638077c9d6882d4d472bbfd
+    restart: unless-stopped
+    command:
+      [
+        'postgres',
+        '-c',
+        'wal_level=logical',
+        '-c',
+        'max_replication_slots=10',
+        '-c',
+        'max_wal_senders=10',
+      ]
+    environment:
+      POSTGRES_USER: qc_admin
+      POSTGRES_DB: qc_demo
+      POSTGRES_PASSWORD: ${DEMO_DATABASE_ADMIN_PASSWORD:?Ejecutar configure.mjs}
+      DEMO_DATABASE_PASSWORD: ${DEMO_DATABASE_PASSWORD:?Ejecutar configure.mjs}
+      DEMO_REPLICA_PASSWORD: ${DEMO_REPLICA_PASSWORD:?Ejecutar configure.mjs}
+    volumes:
+      - origin-data:/var/lib/postgresql/data
+      - ./postgres/01-roles.sh:/docker-entrypoint-initdb.d/01-roles.sh:ro
+    healthcheck:
+      test: ['CMD-SHELL', 'pg_isready -U qc_admin -d qc_demo']
+      interval: 5s
+      timeout: 5s
+      retries: 12
+    networks: [demo]
+
+  postgres-storage:
+    image: docker.io/library/postgres:17.7-bookworm@sha256:86e0b703649d7a792bd9243ee28afc9d8f7c6b2b5638077c9d6882d4d472bbfd
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: qc_storage
+      POSTGRES_DB: qc_powersync
+      POSTGRES_PASSWORD: ${POWERSYNC_STORAGE_PASSWORD:?Ejecutar configure.mjs}
+    volumes:
+      - sync-data:/var/lib/postgresql/data
+    healthcheck:
+      test: ['CMD-SHELL', 'pg_isready -U qc_storage -d qc_powersync']
+      interval: 5s
+      timeout: 5s
+      retries: 12
+    networks: [demo]
+
+  migrate:
+    <<: *simulator
+    command: ['node', 'apps/simulator/dist/migrate.js']
+    restart: 'no'
+    depends_on:
+      postgres-origin:
+        condition: service_healthy
+
+  seed:
+    <<: *simulator
+    command: ['node', 'apps/simulator/dist/seed.js']
+    restart: 'no'
+    depends_on:
+      migrate:
+        condition: service_completed_successfully
+
+  replication-setup:
+    image: docker.io/library/postgres:17.7-bookworm@sha256:86e0b703649d7a792bd9243ee28afc9d8f7c6b2b5638077c9d6882d4d472bbfd
+    command: ['bash', '/bootstrap/02-replication.sh']
+    restart: 'no'
+    environment:
+      APP_ENV: demo
+      PGHOST: postgres-origin
+      PGPORT: 5432
+      PGDATABASE: qc_demo
+      PGUSER: qc_admin
+      PGPASSWORD: ${DEMO_DATABASE_ADMIN_PASSWORD:?Ejecutar configure.mjs}
+    volumes:
+      - ./postgres/02-replication.sh:/bootstrap/02-replication.sh:ro
+      - ./postgres/02-replication.sql:/bootstrap/02-replication.sql:ro
+    depends_on:
+      seed:
+        condition: service_completed_successfully
+    networks: [demo]
+
+  clinical:
+    <<: *simulator
+    restart: unless-stopped
+    command: ['node', 'apps/simulator/dist/server.js']
+    environment:
+      <<: *simulator-environment
+      SIMULATOR_SERVICE: clinical
+      SIMULATOR_PORT: 3002
+    ports:
+      - '${DEMO_BIND_ADDRESS:-127.0.0.1}:3002:3002'
+    depends_on:
+      seed:
+        condition: service_completed_successfully
+    healthcheck:
+      test:
+        [
+          'CMD',
+          'node',
+          '-e',
+          "fetch('http://127.0.0.1:3002/health').then(r=>{if(!r.ok)process.exit(1)}).catch(()=>process.exit(1))",
+        ]
+      interval: 10s
+      timeout: 5s
+      retries: 6
+
+  ai:
+    <<: *simulator
+    restart: unless-stopped
+    command: ['node', 'apps/simulator/dist/server.js']
+    environment:
+      <<: *simulator-environment
+      SIMULATOR_SERVICE: ai
+      SIMULATOR_PORT: 3003
+    ports:
+      - '${DEMO_BIND_ADDRESS:-127.0.0.1}:3003:3003'
+    depends_on:
+      seed:
+        condition: service_completed_successfully
+    healthcheck:
+      test:
+        [
+          'CMD',
+          'node',
+          '-e',
+          "fetch('http://127.0.0.1:3003/health').then(r=>{if(!r.ok)process.exit(1)}).catch(()=>process.exit(1))",
+        ]
+      interval: 10s
+      timeout: 5s
+      retries: 6
+
+  powersync:
+    image: docker.io/journeyapps/powersync-service:1.27.1@sha256:4b5b7d70f63c5cb5afdc680f5cdbacdcbc33cbf5f8fb55b001da263d7da75866
+    restart: unless-stopped
+    command: ['start', '-r', 'unified']
+    environment:
+      POWERSYNC_CONFIG_PATH: /config/service.yaml
+      PS_SOURCE_URI: postgresql://qc_replica:${DEMO_REPLICA_PASSWORD:?Ejecutar configure.mjs}@postgres-origin:5432/qc_demo
+      PS_STORAGE_URI: postgresql://qc_storage:${POWERSYNC_STORAGE_PASSWORD:?Ejecutar configure.mjs}@postgres-storage:5432/qc_powersync
+      PS_DEMO_JWK: ${PS_DEMO_JWK:?Ejecutar configure.mjs}
+      PS_ADMIN_TOKEN: ${PS_ADMIN_TOKEN:?Ejecutar configure.mjs}
+    volumes:
+      - ../powersync/service.yaml:/config/service.yaml:ro
+      - ../powersync/sync-config.yaml:/config/sync-config.yaml:ro
+    ports:
+      - '${DEMO_BIND_ADDRESS:-127.0.0.1}:8080:8080'
+    depends_on:
+      postgres-storage:
+        condition: service_healthy
+      replication-setup:
+        condition: service_completed_successfully
+    networks: [demo]
+
+networks:
+  demo:
+
+volumes:
+  origin-data:
+  sync-data:

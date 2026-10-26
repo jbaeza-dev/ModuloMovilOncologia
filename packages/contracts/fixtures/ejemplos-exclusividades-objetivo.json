@@ -1,0 +1,127 @@
+{
+  "estado": "OBJETIVO_NO_IMPLEMENTADO",
+  "aviso": "Escenario técnico separado de las 41 preguntas. No ratifica ninguna exclusividad clínica. HTTP/cuerpos son esperados para mocks, no respuestas observadas.",
+  "formulario": {
+    "id": "753baa82-afe9-5592-9968-6485c9562174",
+    "codigo": "DEMO_EXCLUSIVIDAD_RC32",
+    "titulo": "Prueba técnica de exclusividad",
+    "descripcion": "No es instrumento de enfermería",
+    "tratamiento": "quimioterapia",
+    "version": 1,
+    "activo": true,
+    "version_condiciones": 1,
+    "preguntas": [
+      {
+        "id": "bebdff27-dc0c-56c5-949b-4100e6fd280f",
+        "codigo": "SELECCION_DEMO",
+        "titulo": "Selección técnica, sin contenido clínico",
+        "texto": null,
+        "tipo": "opcion_multiple",
+        "requerida": true,
+        "orden": 1,
+        "opciones": [
+          {
+            "codigo": "OP_A",
+            "etiqueta": "Opción A",
+            "orden": 1
+          },
+          {
+            "codigo": "OP_B",
+            "etiqueta": "Opción B",
+            "orden": 2
+          },
+          {
+            "codigo": "SOLO_ESTA",
+            "etiqueta": "Esta opción por sí sola",
+            "orden": 3
+          }
+        ],
+        "configuracion": {
+          "opciones_exclusivas": [
+            "SOLO_ESTA"
+          ]
+        }
+      }
+    ],
+    "fecha_creacion": "2026-10-23T12:00:00Z"
+  },
+  "configuracion_formulario_en_origen": {
+    "version_condiciones": 1,
+    "provisional": true
+  },
+  "casos": [
+    {
+      "caso": "exclusiva_sola_valida",
+      "method": "POST",
+      "path": "/api/v1/formularios/753baa82-afe9-5592-9968-6485c9562174/respuestas",
+      "request": {
+        "id": "d5ce3aa6-7e73-5aba-8357-936a22762b81",
+        "fecha_respuesta": "2026-10-23T12:00:00Z",
+        "respuestas": [
+          {
+            "pregunta_id": "bebdff27-dc0c-56c5-949b-4100e6fd280f",
+            "valor": [
+              "SOLO_ESTA"
+            ]
+          }
+        ],
+        "comentario": null
+      },
+      "status_esperado": 201,
+      "response_objetivo": {
+        "id": "d5ce3aa6-7e73-5aba-8357-936a22762b81",
+        "formulario_id": "753baa82-afe9-5592-9968-6485c9562174",
+        "formulario_version": 1,
+        "paciente_id": "964d32f1-6941-579f-9f08-b60342194da9",
+        "fecha_respuesta_cliente": "2026-10-23T12:00:00Z",
+        "fecha_recepcion_servidor": "2026-10-23T12:00:01Z",
+        "respuestas": [
+          {
+            "pregunta_id": "bebdff27-dc0c-56c5-949b-4100e6fd280f",
+            "codigo_pregunta": "SELECCION_DEMO",
+            "texto_pregunta": "Selección técnica, sin contenido clínico",
+            "tipo_pregunta": "opcion_multiple",
+            "valor": [
+              "SOLO_ESTA"
+            ],
+            "valor_texto": null
+          }
+        ],
+        "comentario": "",
+        "mensaje": "Respuesta registrada exitosamente."
+      }
+    },
+    {
+      "caso": "exclusiva_combinada_invalida",
+      "method": "POST",
+      "path": "/api/v1/formularios/753baa82-afe9-5592-9968-6485c9562174/respuestas",
+      "request": {
+        "id": "49730a50-e0ae-5fbf-9c80-9ade66c0006e",
+        "fecha_respuesta": "2026-10-23T12:00:00Z",
+        "respuestas": [
+          {
+            "pregunta_id": "bebdff27-dc0c-56c5-949b-4100e6fd280f",
+            "valor": [
+              "SOLO_ESTA",
+              "OP_A"
+            ]
+          }
+        ],
+        "comentario": null
+      },
+      "status_esperado": 422,
+      "response_objetivo": {
+        "error": {
+          "codigo": "REGLA_DE_NEGOCIO_INVALIDA",
+          "mensaje": "La opción exclusiva debe seleccionarse de manera individual.",
+          "detalles": {
+            "motivo": "OPCIONES_EXCLUSIVAS_INCOMPATIBLES",
+            "pregunta_id": "bebdff27-dc0c-56c5-949b-4100e6fd280f",
+            "codigo_pregunta": "SELECCION_DEMO"
+          },
+          "status_code": 422
+        }
+      }
+    }
+  ]
+}

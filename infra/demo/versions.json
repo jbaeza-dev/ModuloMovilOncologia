@@ -1,0 +1,20 @@
+{
+  "consultado": "2026-10-25",
+  "registry": "registry-1.docker.io",
+  "metodo": "HEAD con manifiesto OCI/lista y Docker-Content-Digest",
+  "node": {
+    "tag": "node:22.23.2-bookworm-slim",
+    "digest": "sha256:48e4b67d85f87bd551df43704e24d252f56cc5f8e9718841aace50f19948f0f9"
+  },
+  "postgres": {
+    "tag": "postgres:17.7-bookworm",
+    "digest": "sha256:86e0b703649d7a792bd9243ee28afc9d8f7c6b2b5638077c9d6882d4d472bbfd"
+  },
+  "powersync": {
+    "tag": "journeyapps/powersync-service:1.27.1",
+    "digest": "sha256:4b5b7d70f63c5cb5afdc680f5cdbacdcbc33cbf5f8fb55b001da263d7da75866",
+    "release": "https://github.com/powersync-ja/powersync-service/releases/tag/v1.27.1"
+  },
+  "pnpm": "11.19.0",
+  "nota": "Digest verificado no equivale a pull, arranque ni aceptación SDK nativa. Solo datos sintéticos."
+}

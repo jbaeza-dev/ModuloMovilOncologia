@@ -1,0 +1,2832 @@
+{
+  "openapi": "3.1.0",
+  "info": {
+    "title": "QuimioCare — backend pasarela",
+    "version": "1.0.0-objetivo-2026-10-23",
+    "description": "Contrato de desarrollo propio. Quimioterapia. Agenda por cuenta, edición online, push con respaldo local y chat transitorio. No acredita implementación, despliegue ni aprobación clínica. JSON Schema 2020-12; invariantes de dominio descritas en el contrato maestro."
+  },
+  "servers": [
+    {
+      "url": "http://localhost:3001",
+      "description": "Desarrollo local en host; Android usa IP accesible o URL pública configurada."
+    }
+  ],
+  "security": [
+    {
+      "JWTcentral": []
+    }
+  ],
+  "tags": [
+    {
+      "name": "Operación"
+    },
+    {
+      "name": "Dispositivos"
+    },
+    {
+      "name": "Recordatorios"
+    },
+    {
+      "name": "Asistente"
+    }
+  ],
+  "paths": {
+    "/health": {
+      "get": {
+        "operationId": "gatewaySalud",
+        "summary": "Consultar salud básica",
+        "tags": [
+          "Operación"
+        ],
+        "description": "Pública; no expone secretos ni direcciones internas.",
+        "responses": {
+          "200": {
+            "description": "Proceso HTTP disponible. No acredita clínica, IA, PowerSync o push.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Salud"
+                }
+              }
+            }
+          }
+        },
+        "security": [],
+        "x-implementation-status": "objetivo_por_implementar_o_verificar"
+      }
+    },
+    "/api/gateway/dispositivo/push-token": {
+      "post": {
+        "operationId": "gatewayRegistrarPush",
+        "summary": "Registrar o actualizar asociación de instalación",
+        "tags": [
+          "Dispositivos"
+        ],
+        "description": "Máximo JSON 16 KiB. Propietario = JWT sub. instalacion_id no autentica. Alta UUID cliente; cambios requieren version_esperada. Replay exacto no incrementa versión. UUID revocado no se reactiva. Colisión activa de instalación/token ajeno devuelve REGISTRO_EN_CONFLICTO sin transferirlo.",
+        "responses": {
+          "200": {
+            "description": "Actualización o replay exacto.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SesionEnvelope"
+                }
+              }
+            }
+          },
+          "201": {
+            "description": "Nueva asociación.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SesionEnvelope"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "Conflicto de versión, identidad o idempotencia; conservar petición y resolver.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "JSON mal formado: DATOS_INVALIDOS.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "NO_AUTORIZADO: JWT ausente, inválido o vencido.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "ACCESO_DENEGADO: rol/incorporación no habilitados.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "413": {
+            "description": "SOLICITUD_DEMASIADO_GRANDE: límite JSON del recurso excedido.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "DATOS_INVALIDOS: campos, formatos o invariantes inválidos.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "429": {
+            "description": "LIMITE_DE_SOLICITUDES: aplicar Retry-After si está presente.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "ERROR_SERVIDOR: persistencia incierta; reintento idempotente cuando aplica.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "AUTENTICACION_NO_CONFIGURADA o SERVICIO_NO_DISPONIBLE. No es falta permanente de permisos.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "JWTcentral": []
+          }
+        ],
+        "x-implementation-status": "objetivo_por_implementar_o_verificar",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/RegistroPush"
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/gateway/dispositivo/sesiones": {
+      "get": {
+        "operationId": "gatewayListarSesiones",
+        "summary": "Listar asociaciones propias",
+        "tags": [
+          "Dispositivos"
+        ],
+        "description": "Incluye activas y revocadas. Orden creado_en DESC, id ASC. Cursor opaco vinculado al propietario y al orden; una lista paginada no promete snapshot.",
+        "responses": {
+          "200": {
+            "description": "Operación completada.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Sesiones"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "JSON mal formado: DATOS_INVALIDOS.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "NO_AUTORIZADO: JWT ausente, inválido o vencido.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "ACCESO_DENEGADO: rol/incorporación no habilitados.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "413": {
+            "description": "SOLICITUD_DEMASIADO_GRANDE: límite JSON del recurso excedido.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "DATOS_INVALIDOS: campos, formatos o invariantes inválidos.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "429": {
+            "description": "LIMITE_DE_SOLICITUDES: aplicar Retry-After si está presente.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "ERROR_SERVIDOR: persistencia incierta; reintento idempotente cuando aplica.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "AUTENTICACION_NO_CONFIGURADA o SERVICIO_NO_DISPONIBLE. No es falta permanente de permisos.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "JWTcentral": []
+          }
+        ],
+        "x-implementation-status": "objetivo_por_implementar_o_verificar",
+        "parameters": [
+          {
+            "name": "limit",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "minimum": 1,
+              "maximum": 100,
+              "default": 20
+            }
+          },
+          {
+            "name": "cursor",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 2048
+            }
+          }
+        ]
+      }
+    },
+    "/api/gateway/dispositivo/sesiones/{id}": {
+      "get": {
+        "operationId": "gatewayConsultarSesion",
+        "summary": "Consultar una asociación propia",
+        "tags": [
+          "Dispositivos"
+        ],
+        "description": "Nunca devuelve token push bruto. Una asociación ajena y una inexistente producen SESION_NO_ENCONTRADA.",
+        "responses": {
+          "200": {
+            "description": "Operación completada.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SesionEnvelope"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Recurso propio inexistente o no visible; respuesta neutral.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "JSON mal formado: DATOS_INVALIDOS.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "NO_AUTORIZADO: JWT ausente, inválido o vencido.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "ACCESO_DENEGADO: rol/incorporación no habilitados.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "413": {
+            "description": "SOLICITUD_DEMASIADO_GRANDE: límite JSON del recurso excedido.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "DATOS_INVALIDOS: campos, formatos o invariantes inválidos.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "429": {
+            "description": "LIMITE_DE_SOLICITUDES: aplicar Retry-After si está presente.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "ERROR_SERVIDOR: persistencia incierta; reintento idempotente cuando aplica.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "AUTENTICACION_NO_CONFIGURADA o SERVICIO_NO_DISPONIBLE. No es falta permanente de permisos.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "JWTcentral": []
+          }
+        ],
+        "x-implementation-status": "objetivo_por_implementar_o_verificar",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          }
+        ]
+      },
+      "delete": {
+        "operationId": "gatewayRevocarSesion",
+        "summary": "Revocar elegibilidad push de una asociación",
+        "tags": [
+          "Dispositivos"
+        ],
+        "description": "Borrado lógico por propietario; repetir devuelve 204. Cancela trabajos remotos aún no enviados. No revoca JWT central ni cancela instantáneamente notificaciones nativas de otro dispositivo offline.",
+        "responses": {
+          "204": {
+            "description": "Revocación aplicada o replay de revocación propia."
+          },
+          "404": {
+            "description": "Recurso propio inexistente o no visible; respuesta neutral.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "JSON mal formado: DATOS_INVALIDOS.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "NO_AUTORIZADO: JWT ausente, inválido o vencido.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "ACCESO_DENEGADO: rol/incorporación no habilitados.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "413": {
+            "description": "SOLICITUD_DEMASIADO_GRANDE: límite JSON del recurso excedido.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "DATOS_INVALIDOS: campos, formatos o invariantes inválidos.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "429": {
+            "description": "LIMITE_DE_SOLICITUDES: aplicar Retry-After si está presente.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "ERROR_SERVIDOR: persistencia incierta; reintento idempotente cuando aplica.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "AUTENTICACION_NO_CONFIGURADA o SERVICIO_NO_DISPONIBLE. No es falta permanente de permisos.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "JWTcentral": []
+          }
+        ],
+        "x-implementation-status": "objetivo_por_implementar_o_verificar",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          }
+        ]
+      }
+    },
+    "/api/gateway/chatbot/consulta": {
+      "post": {
+        "operationId": "gatewayConsultarIA",
+        "summary": "Consultar IA sin historial",
+        "tags": [
+          "Asistente"
+        ],
+        "description": "Solo mensaje actual. Reenvía mensaje y activar_alarmas; upstream debug=false por query. Sin tratamiento ni historial. No registra texto ni respuesta en BD/logs. Reenvía errores IA documentados con su HTTP y detail; el gateway usa su envoltura para fallos propios. Timeout objetivo inicial 60 s, configurable; reintento manual, sin repetir POST automáticamente.",
+        "responses": {
+          "200": {
+            "description": "Conserva respuesta, fuentes, urgencia y estado. no_disponible también puede llegar con HTTP 200.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/IAChatResponse"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Puede originarse en validación/autorización gateway (error) o IA (detail). No interpretar por texto.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "oneOf": [
+                    {
+                      "$ref": "#/components/schemas/Error"
+                    },
+                    {
+                      "$ref": "#/components/schemas/ErrorIA"
+                    }
+                  ]
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Puede originarse en validación/autorización gateway (error) o IA (detail). No interpretar por texto.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "oneOf": [
+                    {
+                      "$ref": "#/components/schemas/Error"
+                    },
+                    {
+                      "$ref": "#/components/schemas/ErrorIA"
+                    }
+                  ]
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Puede originarse en validación/autorización gateway (error) o IA (detail). No interpretar por texto.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "oneOf": [
+                    {
+                      "$ref": "#/components/schemas/Error"
+                    },
+                    {
+                      "$ref": "#/components/schemas/ErrorIA"
+                    }
+                  ]
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "Puede originarse en validación/autorización gateway (error) o IA (detail). No interpretar por texto.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "oneOf": [
+                    {
+                      "$ref": "#/components/schemas/Error"
+                    },
+                    {
+                      "$ref": "#/components/schemas/ErrorIA"
+                    }
+                  ]
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "Puede originarse en validación/autorización gateway (error) o IA (detail). No interpretar por texto.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "oneOf": [
+                    {
+                      "$ref": "#/components/schemas/Error"
+                    },
+                    {
+                      "$ref": "#/components/schemas/ErrorIA"
+                    }
+                  ]
+                }
+              }
+            }
+          },
+          "502": {
+            "description": "IA_RESPUESTA_INVALIDA: cuerpo o tipo inesperado del upstream.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "504": {
+            "description": "IA_TIEMPO_AGOTADO: se agotó el tiempo configurable del proxy.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "ACCESO_DENEGADO: rol/incorporación no habilitados.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "413": {
+            "description": "SOLICITUD_DEMASIADO_GRANDE: límite JSON del recurso excedido.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "429": {
+            "description": "LIMITE_DE_SOLICITUDES: aplicar Retry-After si está presente.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "JWTcentral": []
+          }
+        ],
+        "x-implementation-status": "objetivo_por_implementar_o_verificar",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ConsultaChat"
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/gateway/recordatorios": {
+      "get": {
+        "operationId": "gatewayConsultarAgenda",
+        "summary": "Descargar snapshot de agenda y cumplimientos",
+        "tags": [
+          "Recordatorios"
+        ],
+        "description": "Snapshot consistente, sin paginación: máximo 100 recordatorios no eliminados, incluidos desactivados. Reemplaza el conjunto local; IDs ausentes cancelan su programación tras conciliar. Aplicar solo al contexto y versión vigentes; superponer cumplimientos locales pendientes, sin reactivar por ausencia de un evento todavía no comunicado. desde/hasta son fechas inclusivas; deben venir juntas y abarcar como máximo 31 días. Si se omiten: hoy-7 a hoy+7 en America/Santiago. Los cumplimientos no incluyen datos clínicos.",
+        "responses": {
+          "200": {
+            "description": "Operación completada.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Agenda"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "JSON mal formado: DATOS_INVALIDOS.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "NO_AUTORIZADO: JWT ausente, inválido o vencido.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "ACCESO_DENEGADO: rol/incorporación no habilitados.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "413": {
+            "description": "SOLICITUD_DEMASIADO_GRANDE: límite JSON del recurso excedido.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "DATOS_INVALIDOS: campos, formatos o invariantes inválidos.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "429": {
+            "description": "LIMITE_DE_SOLICITUDES: aplicar Retry-After si está presente.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "ERROR_SERVIDOR: persistencia incierta; reintento idempotente cuando aplica.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "AUTENTICACION_NO_CONFIGURADA o SERVICIO_NO_DISPONIBLE. No es falta permanente de permisos.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "JWTcentral": []
+          }
+        ],
+        "x-implementation-status": "objetivo_por_implementar_o_verificar",
+        "parameters": [
+          {
+            "name": "desde",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string",
+              "format": "date"
+            }
+          },
+          {
+            "name": "hasta",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string",
+              "format": "date"
+            }
+          }
+        ]
+      },
+      "post": {
+        "operationId": "gatewayCrearRecordatorio",
+        "summary": "Crear recordatorio compartido",
+        "tags": [
+          "Recordatorios"
+        ],
+        "description": "Solo online. UUID cliente estable para reintentos; mismo UUID y otro contenido produce OPERACION_EN_CONFLICTO. Si fue modificado después del alta, el mismo POST no restaura su configuración inicial: devuelve 409. fecha_fin >= fecha_inicio; horas/días se ordenan para comparar. Máximo 100 no eliminados por cuenta. No permite dosis, pauta automática ni contenido clínico en push.",
+        "responses": {
+          "201": {
+            "description": "Alta.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/RecordatorioEnvelope"
+                }
+              }
+            }
+          },
+          "200": {
+            "description": "Replay exacto no modificado.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/RecordatorioEnvelope"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "Conflicto de versión, identidad o idempotencia; conservar petición y resolver.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "JSON mal formado: DATOS_INVALIDOS.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "NO_AUTORIZADO: JWT ausente, inválido o vencido.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "ACCESO_DENEGADO: rol/incorporación no habilitados.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "413": {
+            "description": "SOLICITUD_DEMASIADO_GRANDE: límite JSON del recurso excedido.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "DATOS_INVALIDOS: campos, formatos o invariantes inválidos.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "429": {
+            "description": "LIMITE_DE_SOLICITUDES: aplicar Retry-After si está presente.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "ERROR_SERVIDOR: persistencia incierta; reintento idempotente cuando aplica.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "AUTENTICACION_NO_CONFIGURADA o SERVICIO_NO_DISPONIBLE. No es falta permanente de permisos.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "JWTcentral": []
+          }
+        ],
+        "x-implementation-status": "objetivo_por_implementar_o_verificar",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/CrearRecordatorio"
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/gateway/recordatorios/{id}": {
+      "get": {
+        "operationId": "gatewayConsultarRecordatorio",
+        "summary": "Consultar recordatorio propio",
+        "tags": [
+          "Recordatorios"
+        ],
+        "description": "Eliminado o ajeno: RECORDATORIO_NO_ENCONTRADO.",
+        "responses": {
+          "200": {
+            "description": "Operación completada.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/RecordatorioEnvelope"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Recurso propio inexistente o no visible; respuesta neutral.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "JSON mal formado: DATOS_INVALIDOS.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "NO_AUTORIZADO: JWT ausente, inválido o vencido.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "ACCESO_DENEGADO: rol/incorporación no habilitados.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "413": {
+            "description": "SOLICITUD_DEMASIADO_GRANDE: límite JSON del recurso excedido.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "DATOS_INVALIDOS: campos, formatos o invariantes inválidos.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "429": {
+            "description": "LIMITE_DE_SOLICITUDES: aplicar Retry-After si está presente.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "ERROR_SERVIDOR: persistencia incierta; reintento idempotente cuando aplica.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "AUTENTICACION_NO_CONFIGURADA o SERVICIO_NO_DISPONIBLE. No es falta permanente de permisos.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "JWTcentral": []
+          }
+        ],
+        "x-implementation-status": "objetivo_por_implementar_o_verificar",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          }
+        ]
+      },
+      "put": {
+        "operationId": "gatewayReemplazarRecordatorio",
+        "summary": "Reemplazar configuración de recordatorio",
+        "tags": [
+          "Recordatorios"
+        ],
+        "description": "Solo online. Reemplazo completo con version_esperada. Un cambio válido incrementa versión de recordatorio y agenda una vez; un no-op idéntico no incrementa. Si una respuesta se pierde, consultar GET y comparar contenido; no repetir sobre otra versión a ciegas. Las ocurrencias futuras se reconstruyen con la nueva versión.",
+        "responses": {
+          "200": {
+            "description": "Operación completada.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/RecordatorioEnvelope"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Recurso propio inexistente o no visible; respuesta neutral.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "Conflicto de versión, identidad o idempotencia; conservar petición y resolver.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "JSON mal formado: DATOS_INVALIDOS.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "NO_AUTORIZADO: JWT ausente, inválido o vencido.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "ACCESO_DENEGADO: rol/incorporación no habilitados.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "413": {
+            "description": "SOLICITUD_DEMASIADO_GRANDE: límite JSON del recurso excedido.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "DATOS_INVALIDOS: campos, formatos o invariantes inválidos.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "429": {
+            "description": "LIMITE_DE_SOLICITUDES: aplicar Retry-After si está presente.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "ERROR_SERVIDOR: persistencia incierta; reintento idempotente cuando aplica.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "AUTENTICACION_NO_CONFIGURADA o SERVICIO_NO_DISPONIBLE. No es falta permanente de permisos.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "JWTcentral": []
+          }
+        ],
+        "x-implementation-status": "objetivo_por_implementar_o_verificar",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ReemplazarRecordatorio"
+              }
+            }
+          }
+        },
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          }
+        ]
+      },
+      "delete": {
+        "operationId": "gatewayEliminarRecordatorio",
+        "summary": "Eliminar recordatorio de la agenda compartida",
+        "tags": [
+          "Recordatorios"
+        ],
+        "description": "Solo online. Primera eliminación requiere versión coincidente; tombstone propio permite replay 204. Otro propietario: 404. No cancela de inmediato avisos de dispositivos offline. Una vez eliminado, el UUID no se reutiliza.",
+        "responses": {
+          "204": {
+            "description": "Eliminado o repetición propia ya eliminada."
+          },
+          "404": {
+            "description": "Recurso propio inexistente o no visible; respuesta neutral.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "Conflicto de versión, identidad o idempotencia; conservar petición y resolver.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "JSON mal formado: DATOS_INVALIDOS.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "NO_AUTORIZADO: JWT ausente, inválido o vencido.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "ACCESO_DENEGADO: rol/incorporación no habilitados.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "413": {
+            "description": "SOLICITUD_DEMASIADO_GRANDE: límite JSON del recurso excedido.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "DATOS_INVALIDOS: campos, formatos o invariantes inválidos.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "429": {
+            "description": "LIMITE_DE_SOLICITUDES: aplicar Retry-After si está presente.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "ERROR_SERVIDOR: persistencia incierta; reintento idempotente cuando aplica.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "AUTENTICACION_NO_CONFIGURADA o SERVICIO_NO_DISPONIBLE. No es falta permanente de permisos.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "JWTcentral": []
+          }
+        ],
+        "x-implementation-status": "objetivo_por_implementar_o_verificar",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          },
+          {
+            "name": "version_esperada",
+            "in": "query",
+            "required": true,
+            "schema": {
+              "type": "integer",
+              "minimum": 1
+            }
+          }
+        ]
+      }
+    },
+    "/api/gateway/recordatorios/cumplimientos": {
+      "post": {
+        "operationId": "gatewayRegistrarCumplimientos",
+        "summary": "Comunicar registros guardados localmente",
+        "tags": [
+          "Recordatorios"
+        ],
+        "description": "Lote atómico JSON máximo 64 KiB. Solo metadatos de control; sin valores clínicos ni id de ficha. Cada operación pertenece al JWT sub. UUID estable: replay exacto devuelve replay; otro contenido, OPERACION_EN_CONFLICTO. Guardado local de registro completo, no borrador ni apertura, cumple (cuenta,tipo,fecha,zona). registrado_en es instante de guardado local completo; fecha_local es ese día en la zona de la cuenta, distinto del instante clínico si la medición era retrospectiva. El lote no admite dos items con el mismo operacion_id. fecha_local debe corresponder a registrado_en en su zona. Al llegar tarde no se convierte en cumplimiento del día de recepción. Medición/ePRO ya cumplido no cancela medicación. Horas de captura futuras >5 min se rechazan; histórico tardío no se rechaza por antigüedad.",
+        "responses": {
+          "200": {
+            "description": "Operación completada.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ResultadoCumplimientos"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "Conflicto de versión, identidad o idempotencia; conservar petición y resolver.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "JSON mal formado: DATOS_INVALIDOS.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "NO_AUTORIZADO: JWT ausente, inválido o vencido.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "ACCESO_DENEGADO: rol/incorporación no habilitados.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "413": {
+            "description": "SOLICITUD_DEMASIADO_GRANDE: límite JSON del recurso excedido.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "DATOS_INVALIDOS: campos, formatos o invariantes inválidos.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "429": {
+            "description": "LIMITE_DE_SOLICITUDES: aplicar Retry-After si está presente.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "ERROR_SERVIDOR: persistencia incierta; reintento idempotente cuando aplica.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "AUTENTICACION_NO_CONFIGURADA o SERVICIO_NO_DISPONIBLE. No es falta permanente de permisos.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "JWTcentral": []
+          }
+        ],
+        "x-implementation-status": "objetivo_por_implementar_o_verificar",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/RegistrarCumplimientos"
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/gateway/notificaciones/acuses": {
+      "post": {
+        "operationId": "gatewayRegistrarAcuses",
+        "summary": "Comunicar procesamiento o interacción con avisos",
+        "tags": [
+          "Recordatorios"
+        ],
+        "description": "Lote atómico máximo 64 KiB, con UUID de operación estable. Repetir operacion_id dentro del lote devuelve 422 sin cambios. Comprobar propiedad de sesión y ocurrencia. push_procesado significa que el cliente pudo validar y procesar el push; no certifica lectura humana. respaldo_observado no se emite solo por programarlo. No emitir un acuse de éxito basado únicamente en ticket del proveedor. No agenda ni completa registros clínicos. Se acepta el acuse tardío de una asociación propia revocada solo como evidencia histórica; no la reactiva.",
+        "responses": {
+          "200": {
+            "description": "Operación completada.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ResultadoAcuses"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "Conflicto de versión, identidad o idempotencia; conservar petición y resolver.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "JSON mal formado: DATOS_INVALIDOS.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "NO_AUTORIZADO: JWT ausente, inválido o vencido.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "ACCESO_DENEGADO: rol/incorporación no habilitados.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "413": {
+            "description": "SOLICITUD_DEMASIADO_GRANDE: límite JSON del recurso excedido.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "DATOS_INVALIDOS: campos, formatos o invariantes inválidos.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "429": {
+            "description": "LIMITE_DE_SOLICITUDES: aplicar Retry-After si está presente.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "ERROR_SERVIDOR: persistencia incierta; reintento idempotente cuando aplica.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "AUTENTICACION_NO_CONFIGURADA o SERVICIO_NO_DISPONIBLE. No es falta permanente de permisos.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "JWTcentral": []
+          }
+        ],
+        "x-implementation-status": "objetivo_por_implementar_o_verificar",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/RegistrarAcuses"
+              }
+            }
+          }
+        }
+      }
+    }
+  },
+  "components": {
+    "securitySchemes": {
+      "JWTcentral": {
+        "type": "http",
+        "scheme": "bearer",
+        "bearerFormat": "JWT",
+        "description": "Access token central para entorno real; emisor sintético independiente para demo. El gateway no emite otro login."
+      }
+    },
+    "schemas": {
+      "Error": {
+        "type": "object",
+        "properties": {
+          "error": {
+            "type": "object",
+            "properties": {
+              "codigo": {
+                "type": "string",
+                "minLength": 1,
+                "maxLength": 80
+              },
+              "mensaje": {
+                "type": "string",
+                "minLength": 1,
+                "maxLength": 500
+              },
+              "detalles": {
+                "type": [
+                  "object",
+                  "null"
+                ],
+                "additionalProperties": true
+              },
+              "solicitud_id": {
+                "type": "string",
+                "format": "uuid"
+              }
+            },
+            "required": [
+              "codigo",
+              "mensaje"
+            ],
+            "additionalProperties": false
+          }
+        },
+        "required": [
+          "error"
+        ],
+        "additionalProperties": false
+      },
+      "Salud": {
+        "type": "object",
+        "properties": {
+          "estado": {
+            "const": "ok"
+          },
+          "servicio": {
+            "const": "quimiocare-gateway"
+          },
+          "version": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 40
+          }
+        },
+        "required": [
+          "estado",
+          "servicio",
+          "version"
+        ],
+        "additionalProperties": false
+      },
+      "Sesion": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "instalacion_id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "plataforma": {
+            "const": "android"
+          },
+          "proveedor_push": {
+            "enum": [
+              "expo",
+              "fcm"
+            ]
+          },
+          "activa": {
+            "type": "boolean"
+          },
+          "version": {
+            "type": "integer",
+            "minimum": 1
+          },
+          "ultima_conexion": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "creado_en": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "actualizado_en": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "token_registrado": {
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "id",
+          "instalacion_id",
+          "plataforma",
+          "proveedor_push",
+          "activa",
+          "version",
+          "ultima_conexion",
+          "creado_en",
+          "actualizado_en",
+          "token_registrado"
+        ],
+        "additionalProperties": false
+      },
+      "SesionEnvelope": {
+        "type": "object",
+        "properties": {
+          "sesion": {
+            "$ref": "#/components/schemas/Sesion"
+          }
+        },
+        "required": [
+          "sesion"
+        ],
+        "additionalProperties": false
+      },
+      "Sesiones": {
+        "type": "object",
+        "properties": {
+          "items": {
+            "type": "array",
+            "maxItems": 100,
+            "items": {
+              "$ref": "#/components/schemas/Sesion"
+            }
+          },
+          "next_cursor": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "maxLength": 2048
+          }
+        },
+        "required": [
+          "items",
+          "next_cursor"
+        ],
+        "additionalProperties": false
+      },
+      "RegistroPush": {
+        "type": "object",
+        "properties": {
+          "sesion_id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "instalacion_id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "token_push": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 4096
+          },
+          "proveedor_push": {
+            "enum": [
+              "expo",
+              "fcm"
+            ]
+          },
+          "plataforma": {
+            "const": "android"
+          },
+          "modelo": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 128
+          },
+          "version_app": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 128
+          },
+          "version_so": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 128
+          },
+          "version_esperada": {
+            "type": "integer",
+            "minimum": 1
+          }
+        },
+        "required": [
+          "sesion_id",
+          "instalacion_id",
+          "token_push",
+          "proveedor_push",
+          "plataforma"
+        ],
+        "additionalProperties": false
+      },
+      "IAChatRequest": {
+        "description": "Solicitud de consulta clínica al asistente.",
+        "properties": {
+          "mensaje": {
+            "description": "Pregunta del paciente",
+            "maxLength": 2000,
+            "minLength": 1,
+            "title": "Mensaje",
+            "type": "string"
+          },
+          "activar_alarmas": {
+            "default": true,
+            "description": "Activa o desactiva la evaluación de alarmas y forzado de urgencia",
+            "title": "Activar Alarmas",
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "mensaje"
+        ],
+        "title": "ChatRequest",
+        "type": "object"
+      },
+      "IAChatResponse": {
+        "description": "Respuesta generada para el paciente.",
+        "properties": {
+          "respuesta": {
+            "title": "Respuesta",
+            "type": "string"
+          },
+          "fuentes": {
+            "items": {
+              "$ref": "#/components/schemas/IAFuenteItem"
+            },
+            "title": "Fuentes",
+            "type": "array"
+          },
+          "requiere_urgencia": {
+            "title": "Requiere Urgencia",
+            "type": "boolean"
+          },
+          "confianza_nivel": {
+            "title": "Confianza Nivel",
+            "type": "string"
+          },
+          "estado_respuesta": {
+            "$ref": "#/components/schemas/IAEstadoRespuesta",
+            "description": "Estado público del resultado de la consulta clínica ('respuesta', 'sin_informacion', 'cortesia', 'no_disponible')."
+          },
+          "debug": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/IADebugInfo"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null
+          }
+        },
+        "required": [
+          "respuesta",
+          "fuentes",
+          "requiere_urgencia",
+          "confianza_nivel",
+          "estado_respuesta"
+        ],
+        "title": "ChatResponse",
+        "type": "object"
+      },
+      "IADebugInfo": {
+        "description": "Detalle de depuración para entorno de desarrollo.",
+        "properties": {
+          "origen": {
+            "title": "Origen",
+            "type": "string"
+          },
+          "confianza_score": {
+            "title": "Confianza Score",
+            "type": "number"
+          },
+          "confianza_razon": {
+            "title": "Confianza Razon",
+            "type": "string"
+          },
+          "motivos_alarma": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Motivos Alarma",
+            "type": "array"
+          },
+          "keywords": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Keywords",
+            "type": "array"
+          },
+          "temas": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Temas",
+            "type": "array"
+          },
+          "modelo": {
+            "title": "Modelo",
+            "type": "string"
+          },
+          "tokens_prompt": {
+            "title": "Tokens Prompt",
+            "type": "integer"
+          },
+          "tokens_respuesta": {
+            "title": "Tokens Respuesta",
+            "type": "integer"
+          },
+          "ms_busqueda": {
+            "title": "Ms Busqueda",
+            "type": "integer"
+          },
+          "ms_llm": {
+            "title": "Ms Llm",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "origen",
+          "confianza_score",
+          "confianza_razon",
+          "motivos_alarma",
+          "keywords",
+          "temas",
+          "modelo",
+          "tokens_prompt",
+          "tokens_respuesta",
+          "ms_busqueda",
+          "ms_llm"
+        ],
+        "title": "DebugInfo",
+        "type": "object"
+      },
+      "IAEstadoRespuesta": {
+        "description": "Estado público del resultado de la consulta clínica.",
+        "enum": [
+          "respuesta",
+          "sin_informacion",
+          "cortesia",
+          "no_disponible"
+        ],
+        "title": "EstadoRespuesta",
+        "type": "string"
+      },
+      "IAFuenteItem": {
+        "description": "Fuente clínica utilizada en la respuesta.",
+        "properties": {
+          "tema_id": {
+            "title": "Tema Id",
+            "type": "string"
+          },
+          "guia": {
+            "title": "Guia",
+            "type": "integer"
+          },
+          "tema": {
+            "title": "Tema",
+            "type": "string"
+          }
+        },
+        "required": [
+          "tema_id",
+          "guia",
+          "tema"
+        ],
+        "title": "FuenteItem",
+        "type": "object"
+      },
+      "ConsultaChat": {
+        "type": "object",
+        "properties": {
+          "mensaje": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 2000,
+            "pattern": "\\S"
+          },
+          "activar_alarmas": {
+            "type": "boolean",
+            "default": true
+          }
+        },
+        "required": [
+          "mensaje"
+        ],
+        "additionalProperties": false
+      },
+      "ErrorIA": {
+        "type": "object",
+        "properties": {
+          "detail": {
+            "oneOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "array",
+                "items": {
+                  "type": "object",
+                  "additionalProperties": true
+                }
+              }
+            ]
+          }
+        },
+        "required": [
+          "detail"
+        ],
+        "additionalProperties": false
+      },
+      "ConfiguracionRecordatorio": {
+        "type": "object",
+        "properties": {
+          "tipo": {
+            "type": "string",
+            "enum": [
+              "epro",
+              "signos",
+              "medicacion"
+            ]
+          },
+          "titulo": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 80,
+            "pattern": "\\S"
+          },
+          "zona_horaria": {
+            "type": "string",
+            "const": "America/Santiago",
+            "description": "Zona de la agenda v1; no usar offset UTC fijo. Cada ocurrencia conserva su zona y fecha civil."
+          },
+          "horas": {
+            "type": "array",
+            "minItems": 1,
+            "maxItems": 8,
+            "uniqueItems": true,
+            "items": {
+              "type": "string",
+              "pattern": "^(?:[01]\\d|2[0-3]):[0-5]\\d$"
+            },
+            "description": "Horas civiles únicas, ordenadas al normalizar la agenda."
+          },
+          "dias_semana": {
+            "type": "array",
+            "minItems": 1,
+            "maxItems": 7,
+            "uniqueItems": true,
+            "items": {
+              "type": "integer",
+              "minimum": 1,
+              "maximum": 7
+            },
+            "description": "ISO: lunes=1, domingo=7."
+          },
+          "fecha_inicio": {
+            "type": "string",
+            "format": "date"
+          },
+          "fecha_fin": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "format": "date"
+          },
+          "activo": {
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "tipo",
+          "titulo",
+          "zona_horaria",
+          "horas",
+          "dias_semana",
+          "fecha_inicio",
+          "fecha_fin",
+          "activo"
+        ],
+        "additionalProperties": false
+      },
+      "CrearRecordatorio": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "tipo": {
+            "type": "string",
+            "enum": [
+              "epro",
+              "signos",
+              "medicacion"
+            ]
+          },
+          "titulo": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 80,
+            "pattern": "\\S"
+          },
+          "zona_horaria": {
+            "type": "string",
+            "const": "America/Santiago",
+            "description": "Zona de la agenda v1; no usar offset UTC fijo. Cada ocurrencia conserva su zona y fecha civil."
+          },
+          "horas": {
+            "type": "array",
+            "minItems": 1,
+            "maxItems": 8,
+            "uniqueItems": true,
+            "items": {
+              "type": "string",
+              "pattern": "^(?:[01]\\d|2[0-3]):[0-5]\\d$"
+            },
+            "description": "Horas civiles únicas, ordenadas al normalizar la agenda."
+          },
+          "dias_semana": {
+            "type": "array",
+            "minItems": 1,
+            "maxItems": 7,
+            "uniqueItems": true,
+            "items": {
+              "type": "integer",
+              "minimum": 1,
+              "maximum": 7
+            },
+            "description": "ISO: lunes=1, domingo=7."
+          },
+          "fecha_inicio": {
+            "type": "string",
+            "format": "date"
+          },
+          "fecha_fin": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "format": "date"
+          },
+          "activo": {
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "id",
+          "tipo",
+          "titulo",
+          "zona_horaria",
+          "horas",
+          "dias_semana",
+          "fecha_inicio",
+          "fecha_fin",
+          "activo"
+        ],
+        "additionalProperties": false
+      },
+      "ReemplazarRecordatorio": {
+        "type": "object",
+        "properties": {
+          "version_esperada": {
+            "type": "integer",
+            "minimum": 1
+          },
+          "tipo": {
+            "type": "string",
+            "enum": [
+              "epro",
+              "signos",
+              "medicacion"
+            ]
+          },
+          "titulo": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 80,
+            "pattern": "\\S"
+          },
+          "zona_horaria": {
+            "type": "string",
+            "const": "America/Santiago",
+            "description": "Zona de la agenda v1; no usar offset UTC fijo. Cada ocurrencia conserva su zona y fecha civil."
+          },
+          "horas": {
+            "type": "array",
+            "minItems": 1,
+            "maxItems": 8,
+            "uniqueItems": true,
+            "items": {
+              "type": "string",
+              "pattern": "^(?:[01]\\d|2[0-3]):[0-5]\\d$"
+            },
+            "description": "Horas civiles únicas, ordenadas al normalizar la agenda."
+          },
+          "dias_semana": {
+            "type": "array",
+            "minItems": 1,
+            "maxItems": 7,
+            "uniqueItems": true,
+            "items": {
+              "type": "integer",
+              "minimum": 1,
+              "maximum": 7
+            },
+            "description": "ISO: lunes=1, domingo=7."
+          },
+          "fecha_inicio": {
+            "type": "string",
+            "format": "date"
+          },
+          "fecha_fin": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "format": "date"
+          },
+          "activo": {
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "version_esperada",
+          "tipo",
+          "titulo",
+          "zona_horaria",
+          "horas",
+          "dias_semana",
+          "fecha_inicio",
+          "fecha_fin",
+          "activo"
+        ],
+        "additionalProperties": false
+      },
+      "Recordatorio": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "tipo": {
+            "type": "string",
+            "enum": [
+              "epro",
+              "signos",
+              "medicacion"
+            ]
+          },
+          "titulo": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 80,
+            "pattern": "\\S"
+          },
+          "zona_horaria": {
+            "type": "string",
+            "const": "America/Santiago",
+            "description": "Zona de la agenda v1; no usar offset UTC fijo. Cada ocurrencia conserva su zona y fecha civil."
+          },
+          "horas": {
+            "type": "array",
+            "minItems": 1,
+            "maxItems": 8,
+            "uniqueItems": true,
+            "items": {
+              "type": "string",
+              "pattern": "^(?:[01]\\d|2[0-3]):[0-5]\\d$"
+            },
+            "description": "Horas civiles únicas, ordenadas al normalizar la agenda."
+          },
+          "dias_semana": {
+            "type": "array",
+            "minItems": 1,
+            "maxItems": 7,
+            "uniqueItems": true,
+            "items": {
+              "type": "integer",
+              "minimum": 1,
+              "maximum": 7
+            },
+            "description": "ISO: lunes=1, domingo=7."
+          },
+          "fecha_inicio": {
+            "type": "string",
+            "format": "date"
+          },
+          "fecha_fin": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "format": "date"
+          },
+          "activo": {
+            "type": "boolean"
+          },
+          "version": {
+            "type": "integer",
+            "minimum": 1
+          },
+          "creado_en": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "actualizado_en": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "canal": {
+            "const": "push_con_respaldo_local"
+          },
+          "respaldo_segundos": {
+            "const": 120
+          }
+        },
+        "required": [
+          "id",
+          "tipo",
+          "titulo",
+          "zona_horaria",
+          "horas",
+          "dias_semana",
+          "fecha_inicio",
+          "fecha_fin",
+          "activo",
+          "version",
+          "creado_en",
+          "actualizado_en",
+          "canal",
+          "respaldo_segundos"
+        ],
+        "additionalProperties": false
+      },
+      "RecordatorioEnvelope": {
+        "type": "object",
+        "properties": {
+          "recordatorio": {
+            "$ref": "#/components/schemas/Recordatorio"
+          },
+          "version_agenda": {
+            "type": "integer",
+            "minimum": 1
+          },
+          "hora_servidor": {
+            "type": "string",
+            "format": "date-time"
+          }
+        },
+        "required": [
+          "recordatorio",
+          "version_agenda",
+          "hora_servidor"
+        ],
+        "additionalProperties": false
+      },
+      "Cumplimiento": {
+        "type": "object",
+        "properties": {
+          "operacion_id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "tipo_registro": {
+            "enum": [
+              "epro",
+              "signos"
+            ]
+          },
+          "fecha_local": {
+            "type": "string",
+            "format": "date"
+          },
+          "zona_horaria": {
+            "const": "America/Santiago"
+          },
+          "registrado_en": {
+            "type": "string",
+            "format": "date-time"
+          }
+        },
+        "required": [
+          "operacion_id",
+          "tipo_registro",
+          "fecha_local",
+          "zona_horaria",
+          "registrado_en"
+        ],
+        "additionalProperties": false
+      },
+      "RegistrarCumplimientos": {
+        "type": "object",
+        "properties": {
+          "items": {
+            "type": "array",
+            "minItems": 1,
+            "maxItems": 100,
+            "items": {
+              "$ref": "#/components/schemas/Cumplimiento"
+            }
+          }
+        },
+        "required": [
+          "items"
+        ],
+        "additionalProperties": false
+      },
+      "AckCumplimiento": {
+        "type": "object",
+        "properties": {
+          "operacion_id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "resultado": {
+            "enum": [
+              "registrado",
+              "replay"
+            ]
+          }
+        },
+        "required": [
+          "operacion_id",
+          "resultado"
+        ],
+        "additionalProperties": false
+      },
+      "ResultadoCumplimientos": {
+        "type": "object",
+        "properties": {
+          "items": {
+            "type": "array",
+            "minItems": 1,
+            "maxItems": 100,
+            "items": {
+              "$ref": "#/components/schemas/AckCumplimiento"
+            }
+          },
+          "version_agenda": {
+            "type": "integer",
+            "minimum": 1
+          },
+          "hora_servidor": {
+            "type": "string",
+            "format": "date-time"
+          }
+        },
+        "required": [
+          "items",
+          "version_agenda",
+          "hora_servidor"
+        ],
+        "additionalProperties": false
+      },
+      "EstadoDiario": {
+        "type": "object",
+        "properties": {
+          "tipo_registro": {
+            "enum": [
+              "epro",
+              "signos"
+            ]
+          },
+          "fecha_local": {
+            "type": "string",
+            "format": "date"
+          },
+          "zona_horaria": {
+            "const": "America/Santiago"
+          },
+          "cumplido": {
+            "const": true
+          }
+        },
+        "required": [
+          "tipo_registro",
+          "fecha_local",
+          "zona_horaria",
+          "cumplido"
+        ],
+        "additionalProperties": false
+      },
+      "Agenda": {
+        "type": "object",
+        "properties": {
+          "version_agenda": {
+            "type": "integer",
+            "minimum": 1
+          },
+          "hora_servidor": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "desde": {
+            "type": "string",
+            "format": "date"
+          },
+          "hasta": {
+            "type": "string",
+            "format": "date"
+          },
+          "recordatorios": {
+            "type": "array",
+            "maxItems": 100,
+            "items": {
+              "$ref": "#/components/schemas/Recordatorio"
+            }
+          },
+          "cumplimientos": {
+            "type": "array",
+            "maxItems": 62,
+            "items": {
+              "$ref": "#/components/schemas/EstadoDiario"
+            }
+          },
+          "politica": {
+            "type": "object",
+            "properties": {
+              "canal": {
+                "const": "push_con_respaldo_local"
+              },
+              "respaldo_segundos": {
+                "const": 120
+              },
+              "ventana_tardia_segundos": {
+                "const": 600
+              },
+              "horizonte_local_dias": {
+                "const": 14
+              },
+              "maximo_avisos_locales": {
+                "const": 64
+              }
+            },
+            "required": [
+              "canal",
+              "respaldo_segundos",
+              "ventana_tardia_segundos",
+              "horizonte_local_dias",
+              "maximo_avisos_locales"
+            ],
+            "additionalProperties": false
+          }
+        },
+        "required": [
+          "version_agenda",
+          "hora_servidor",
+          "desde",
+          "hasta",
+          "recordatorios",
+          "cumplimientos",
+          "politica"
+        ],
+        "additionalProperties": false
+      },
+      "Acuse": {
+        "type": "object",
+        "properties": {
+          "operacion_id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "sesion_id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "ocurrencia_id": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 200
+          },
+          "evento": {
+            "enum": [
+              "push_procesado",
+              "respaldo_observado",
+              "abierto"
+            ]
+          },
+          "ocurrido_en": {
+            "type": "string",
+            "format": "date-time"
+          }
+        },
+        "required": [
+          "operacion_id",
+          "sesion_id",
+          "ocurrencia_id",
+          "evento",
+          "ocurrido_en"
+        ],
+        "additionalProperties": false
+      },
+      "RegistrarAcuses": {
+        "type": "object",
+        "properties": {
+          "items": {
+            "type": "array",
+            "minItems": 1,
+            "maxItems": 100,
+            "items": {
+              "$ref": "#/components/schemas/Acuse"
+            }
+          }
+        },
+        "required": [
+          "items"
+        ],
+        "additionalProperties": false
+      },
+      "AckAcuse": {
+        "type": "object",
+        "properties": {
+          "operacion_id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "resultado": {
+            "enum": [
+              "registrado",
+              "replay"
+            ]
+          }
+        },
+        "required": [
+          "operacion_id",
+          "resultado"
+        ],
+        "additionalProperties": false
+      },
+      "ResultadoAcuses": {
+        "type": "object",
+        "properties": {
+          "items": {
+            "type": "array",
+            "minItems": 1,
+            "maxItems": 100,
+            "items": {
+              "$ref": "#/components/schemas/AckAcuse"
+            }
+          },
+          "hora_servidor": {
+            "type": "string",
+            "format": "date-time"
+          }
+        },
+        "required": [
+          "items",
+          "hora_servidor"
+        ],
+        "additionalProperties": false
+      },
+      "PayloadNotificacion": {
+        "type": "object",
+        "properties": {
+          "tipo": {
+            "const": "recordatorio"
+          },
+          "sesion_id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "recordatorio_id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "version_recordatorio": {
+            "type": "integer",
+            "minimum": 1
+          },
+          "ocurrencia_id": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 200
+          },
+          "programado_en": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "respaldo_en": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "vence_en": {
+            "type": "string",
+            "format": "date-time"
+          }
+        },
+        "required": [
+          "tipo",
+          "sesion_id",
+          "recordatorio_id",
+          "version_recordatorio",
+          "ocurrencia_id",
+          "programado_en",
+          "respaldo_en",
+          "vence_en"
+        ],
+        "additionalProperties": false
+      }
+    }
+  },
+  "x-limites": {
+    "json_general_bytes": 16384,
+    "json_lotes_control_bytes": 65536,
+    "max_recordatorios_no_eliminados_por_cuenta": 100
+  },
+  "x-politica-notificaciones": {
+    "canal": "push_con_respaldo_local",
+    "respaldo_segundos": 120,
+    "ventana_tardia_segundos": 600,
+    "horizonte_local_dias": 14,
+    "maximo_avisos_locales": 64,
+    "tipo_push": "datos_sin_presentacion_automatica",
+    "garantia": "Mejor esfuerzo; no exactamente una vez. Cuenta compartida, deduplicación por ocurrencia y por instalación."
+  }
+}
