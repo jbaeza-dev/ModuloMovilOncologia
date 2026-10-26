@@ -19,7 +19,9 @@
     "test:contracts": "pnpm --filter @quimiocare/contracts run test",
     "test:simulator": "pnpm --filter @quimiocare/simulator run test",
     "test:integration": "pnpm --filter @quimiocare/simulator run test:integration",
-    "build:services": "pnpm --filter @quimiocare/contracts run build && pnpm --filter @quimiocare/simulator run build"
+    "build:services": "pnpm --filter @quimiocare/contracts run build && pnpm --filter @quimiocare/simulator run build && pnpm --filter @quimiocare/gateway run build",
+    "test:gateway": "pnpm --filter @quimiocare/gateway run test",
+    "test:gateway:integration": "pnpm --filter @quimiocare/gateway run test:integration"
   },
   "devDependencies": {
     "@eslint/js": "10.0.1",

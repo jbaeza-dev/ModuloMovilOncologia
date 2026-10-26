@@ -86,7 +86,8 @@ jobs:
       - name: Validate Compose structure without printing credentials
         run: |
           node infra/demo/configure.mjs
-          docker compose --env-file infra/demo/.env -f infra/demo/compose.yaml config --quiet
+          node infra/demo/configure-gateway.mjs
+          docker compose --env-file infra/demo/.env -f infra/demo/compose.yaml -f infra/demo/compose.gateway.yaml config --quiet
 
       - name: Validate PowerSync queries with the pinned service compiler
         run: >-
@@ -94,3 +95,51 @@ jobs:
           --mount "type=bind,source=${{ github.workspace }}/infra/powersync,target=/config,readonly"
           docker.io/journeyapps/powersync-service:1.27.1@sha256:4b5b7d70f63c5cb5afdc680f5cdbacdcbc33cbf5f8fb55b001da263d7da75866
           /config/validate-config.mjs
+
+  gateway:
+    name: Gateway HTTP and PostgreSQL
+    runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: postgres:17.7-bookworm@sha256:86e0b703649d7a792bd9243ee28afc9d8f7c6b2b5638077c9d6882d4d472bbfd
+        env:
+          POSTGRES_USER: postgres
+          POSTGRES_PASSWORD: gateway_ci_only
+          POSTGRES_DB: qc_gateway_demo_ci_test
+        ports: ['5432:5432']
+        options: >-
+          --health-cmd "pg_isready -U postgres -d qc_gateway_demo_ci_test"
+          --health-interval 5s --health-timeout 5s --health-retries 12
+    env:
+      APP_ENV: demo
+      GATEWAY_PORT: 3001
+      GATEWAY_DATABASE_URL: postgresql://postgres:gateway_ci_only@127.0.0.1:5432/qc_gateway_demo_ci_test
+      GATEWAY_TEST_DATABASE_URL: postgresql://postgres:gateway_ci_only@127.0.0.1:5432/qc_gateway_demo_ci_test
+      CLINICAL_API_URL: http://127.0.0.1:3002
+      AI_API_URL: http://127.0.0.1:3003
+      AUTH_EXPECTED_ISSUER: quimiocare-demo
+      AUTH_EXPECTED_AUDIENCE: authenticated
+      AUTH_ALLOWED_ALGORITHM: HS256
+      AUTH_VERIFY_KEY: synthetic-ci-only-verification-key-not-production
+      PUSH_PROVIDER: expo
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v7
+        with:
+          persist-credentials: false
+      - name: Set up Node.js and pnpm
+        uses: pnpm/setup@v3
+        with:
+          node-version-file: .nvmrc
+          cache: true
+          require-lockfile: true
+      - name: Build contracts and gateway
+        run: pnpm --filter @quimiocare/contracts run build && pnpm --filter @quimiocare/gateway run build
+      - name: Test configuration, HTTP boundaries, and dependency clients
+        run: pnpm run test:gateway
+      - name: Exercise migrations, concurrency, and recovery against PostgreSQL
+        run: pnpm run test:gateway:integration
+      - name: Apply migrations and smoke the standalone gateway
+        run: |
+          pnpm --filter @quimiocare/gateway run migrate
+          node apps/gateway/scripts/ci-smoke.mjs
