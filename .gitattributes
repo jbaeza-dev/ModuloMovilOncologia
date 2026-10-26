@@ -9,3 +9,6 @@ packages/contracts/schemas/schema-contenido-educativo-objetivo.json -text whites
 
 # La generación determinista produce LF en cualquier plataforma.
 packages/contracts/src/generated-*.ts text eol=lf
+
+# Checksums de migraciones gateway estables entre Windows y Linux.
+apps/gateway/src/persistence/migrations/*.sql text eol=lf

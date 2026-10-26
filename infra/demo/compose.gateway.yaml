@@ -1,0 +1,85 @@
+x-gateway: &gateway
+  image: quimiocare-gateway:p02
+  build:
+    context: ../..
+    dockerfile: infra/demo/Containerfile.gateway
+  init: true
+  read_only: true
+  tmpfs: [/tmp]
+  cap_drop: [ALL]
+  security_opt: [no-new-privileges:true]
+  pids_limit: 64
+  mem_limit: 192m
+  environment:
+    APP_ENV: demo
+    GATEWAY_PORT: 3001
+    GATEWAY_DATABASE_URL: postgresql://qc_gateway:${GATEWAY_DATABASE_PASSWORD:?Ejecutar configure-gateway.mjs}@postgres-origin:5432/qc_gateway_demo
+    CLINICAL_API_URL: http://clinical:3002
+    AI_API_URL: http://ai:3003
+    AUTH_EXPECTED_ISSUER: quimiocare-demo
+    AUTH_EXPECTED_AUDIENCE: authenticated
+    AUTH_ALLOWED_ALGORITHM: HS256
+    AUTH_VERIFY_KEY: ${DEMO_SIGNING_KEY:?Ejecutar configure.mjs}
+    PUSH_PROVIDER: expo
+    CORS_ALLOWED_ORIGINS: ${CORS_ALLOWED_ORIGINS:-}
+    DEPENDENCY_TIMEOUT_MS: 5000
+    AI_TIMEOUT_MS: 60000
+    HTTP_REQUEST_TIMEOUT_MS: 65000
+    AGENDA_MAX_REMINDERS: 100
+  networks: [demo]
+  logging:
+    driver: json-file
+    options: { max-size: '10m', max-file: '3' }
+
+services:
+  gateway-db-setup:
+    image: docker.io/library/postgres:17.7-bookworm@sha256:86e0b703649d7a792bd9243ee28afc9d8f7c6b2b5638077c9d6882d4d472bbfd
+    restart: 'no'
+    command: ['bash', '/bootstrap/03-gateway.sh']
+    environment:
+      PGHOST: postgres-origin
+      PGDATABASE: qc_demo
+      PGUSER: qc_admin
+      PGPASSWORD: ${DEMO_DATABASE_ADMIN_PASSWORD:?Ejecutar configure.mjs}
+      GATEWAY_DATABASE_PASSWORD: ${GATEWAY_DATABASE_PASSWORD:?Ejecutar configure-gateway.mjs}
+    volumes: ['./postgres/03-gateway.sh:/bootstrap/03-gateway.sh:ro']
+    networks: [demo]
+    depends_on:
+      postgres-origin: { condition: service_healthy }
+
+  gateway-migrate:
+    <<: *gateway
+    restart: 'no'
+    command: ['node', 'apps/gateway/dist/migrate.js']
+    depends_on:
+      gateway-db-setup: { condition: service_completed_successfully }
+
+  gateway-seed:
+    <<: *gateway
+    profiles: [tools]
+    restart: 'no'
+    command: ['node', 'apps/gateway/dist/seed.js']
+    depends_on:
+      gateway-migrate: { condition: service_completed_successfully }
+
+  gateway:
+    <<: *gateway
+    restart: unless-stopped
+    ports: ['${DEMO_BIND_ADDRESS:-127.0.0.1}:3001:3001']
+    depends_on:
+      gateway-migrate: { condition: service_completed_successfully }
+    healthcheck:
+      test:
+        [
+          'CMD',
+          'node',
+          '-e',
+          "fetch('http://127.0.0.1:3001/internal/ready').then(r=>{if(!r.ok)process.exit(1)}).catch(()=>process.exit(1))",
+        ]
+      interval: 10s
+      timeout: 5s
+      retries: 6
+      start_period: 10s
+
+  ai:
+    ports: !reset []
