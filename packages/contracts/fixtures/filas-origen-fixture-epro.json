@@ -1,0 +1,1736 @@
+{
+  "escenario": "MOCK_EPRO41_ACTIVA",
+  "aviso": "Filas sintéticas derivadas del mismo agregado según mapeo FormularioRepo. No son lectura de BD ni publicación CDC.",
+  "public.formulario": [
+    {
+      "id": "a4a98ef2-2013-5277-94ea-8365bf50ba71",
+      "codigo": "FORM_QUIMIO_EPRO_UKONS",
+      "profesional_id": null,
+      "titulo": "Cuestionario de Monitoreo Domiciliario: Pacientes en Quimioterapia (ePRO)",
+      "descripcion": "Protocolo de triaje y detección precoz de toxicidades basado en criterios CTCAE v5.0 / PRO-CTCAE y guías de triaje oncológico UKONS.",
+      "tratamiento": "quimioterapia",
+      "version": 1,
+      "activo": true,
+      "zona_tratamiento": "quimioterapia",
+      "configuracion": {
+        "provisional": true,
+        "estado": "pendiente_validacion_enfermeria",
+        "aprobacion_clinica": "pendiente",
+        "id_web_original": "form-quimio-word-definitivo",
+        "fuente_json": "frontend/src/data/cuestionario_quimioterapia_word.json",
+        "fuente_sha256": "38f734fd93765166f7ec1cbd7c89136f7b6af5b6a03af33532f72b9f27118dbc",
+        "fuente_sha256_normalizacion": "CRLF_a_LF",
+        "identidad": {
+          "algoritmo": "UUIDv5",
+          "namespace": "924b25c8-6e7d-4f42-9284-a95f68b42b1a",
+          "nombre_edicion": "FORM_QUIMIO_EPRO_UKONS:1"
+        },
+        "pendientes_asistenciales": [
+          {
+            "codigo": "P7.2",
+            "estado": "sin_definicion_en_fuente",
+            "detalle": "El documento menciona P7.2, pero no entrega su pregunta ni sus alternativas. No se crea una pregunta ni una dependencia ejecutable."
+          },
+          {
+            "codigo": "CONDICIONES",
+            "estado": "pendiente",
+            "detalle": "Confirmar P2.4 (si vomitaste), P5.2 (Oxaliplatino), P6.2 (sin catéter central) y exclusividad de Ninguna/Ninguno en selecciones múltiples. No se incorporan reglas clínicas inferidas."
+          }
+        ]
+      },
+      "fecha_creacion": "2026-10-22T15:00:00+00:00",
+      "eliminado": false
+    }
+  ],
+  "public.pregunta": [
+    {
+      "id": "f2eee937-2d4e-5b2f-93a6-bffd5b79cd27",
+      "formulario_id": "a4a98ef2-2013-5277-94ea-8365bf50ba71",
+      "codigo": "P0.1",
+      "titulo": "¿Tienes instalado un catéter para tu quimioterapia (como un \"Port-a-cath\" debajo de la piel en el pecho o un catéter PICC en el brazo)?",
+      "texto": "Filtro inicial de contexto y dispositivos invasivos.",
+      "tipo": "booleano",
+      "requerida": true,
+      "orden": 1,
+      "eliminado": false,
+      "configuracion": {
+        "modulo": "Módulo 0: Contexto y Dispositivos (Filtro Inicial)",
+        "es_madre": true,
+        "id_web_original": "p0-1"
+      },
+      "opciones": [
+        {
+          "codigo": "NO",
+          "etiqueta": "NO",
+          "id": "NO",
+          "texto": "NO",
+          "valor": null,
+          "orden": 1
+        },
+        {
+          "codigo": "SI",
+          "etiqueta": "SÍ",
+          "id": "SI",
+          "texto": "SÍ",
+          "valor": null,
+          "orden": 2
+        }
+      ]
+    },
+    {
+      "id": "7a037086-7808-5c04-b162-ef83f7f5eb0f",
+      "formulario_id": "a4a98ef2-2013-5277-94ea-8365bf50ba71",
+      "codigo": "P0.1.1",
+      "titulo": "¿Cómo se ve y se siente la zona de tu piel donde está el catéter?",
+      "texto": "Selección múltiple de estado del catéter.",
+      "tipo": "opcion_multiple",
+      "requerida": false,
+      "orden": 2,
+      "eliminado": false,
+      "configuracion": {
+        "modulo": "Módulo 0: Contexto y Dispositivos (Filtro Inicial)",
+        "depende_de": "P0.1",
+        "id_web_original": "p0-1-1"
+      },
+      "opciones": [
+        {
+          "codigo": "VERDE_1",
+          "etiqueta": "Se ve normal, sin dolor ni cambios. [VERDE]",
+          "id": "VERDE_1",
+          "texto": "Se ve normal, sin dolor ni cambios. [VERDE]",
+          "valor": null,
+          "orden": 1
+        },
+        {
+          "codigo": "VERDE_2",
+          "etiqueta": "Está un poco sensible o con leve picazón, pero sin cambios en la piel. [VERDE]",
+          "id": "VERDE_2",
+          "texto": "Está un poco sensible o con leve picazón, pero sin cambios en la piel. [VERDE]",
+          "valor": null,
+          "orden": 2
+        },
+        {
+          "codigo": "ROJO_1",
+          "etiqueta": "Está roja, caliente al tocarla o hinchada. [ROJO - Alerta de Infección/Trombosis de Catéter]",
+          "id": "ROJO_1",
+          "texto": "Está roja, caliente al tocarla o hinchada. [ROJO - Alerta de Infección/Trombosis de Catéter]",
+          "valor": null,
+          "orden": 3
+        },
+        {
+          "codigo": "ROJO_2",
+          "etiqueta": "Sale líquido, pus o sangre por el sitio del catéter. [ROJO - Alerta de Infección de Catéter]",
+          "id": "ROJO_2",
+          "texto": "Sale líquido, pus o sangre por el sitio del catéter. [ROJO - Alerta de Infección de Catéter]",
+          "valor": null,
+          "orden": 4
+        },
+        {
+          "codigo": "ROJO_3",
+          "etiqueta": "Siento dolor o hinchazón en el cuello, hombro o en todo el brazo del lado del catéter. [ROJO - Sospecha de Trombosis Venosa]",
+          "id": "ROJO_3",
+          "texto": "Siento dolor o hinchazón en el cuello, hombro o en todo el brazo del lado del catéter. [ROJO - Sospecha de Trombosis Venosa]",
+          "valor": null,
+          "orden": 5
+        }
+      ]
+    },
+    {
+      "id": "aa974415-b243-5ab5-81c0-ff32412a02c7",
+      "formulario_id": "a4a98ef2-2013-5277-94ea-8365bf50ba71",
+      "codigo": "P1",
+      "titulo": "¿Has sentido fiebre, cuerpo cortado, sudoración fría o escalofríos (tiritones) en las últimas 24 horas?",
+      "texto": "Prioridad crítica: Descarte de Neutropenia Febril.",
+      "tipo": "booleano",
+      "requerida": true,
+      "orden": 3,
+      "eliminado": false,
+      "configuracion": {
+        "modulo": "Módulo 1: Fiebre e Infección (Prioridad Crítica - Neutropenia Febril)",
+        "es_madre": true,
+        "id_web_original": "p1"
+      },
+      "opciones": [
+        {
+          "codigo": "NO",
+          "etiqueta": "NO",
+          "id": "NO",
+          "texto": "NO",
+          "valor": null,
+          "orden": 1
+        },
+        {
+          "codigo": "SI",
+          "etiqueta": "SÍ",
+          "id": "SI",
+          "texto": "SÍ",
+          "valor": null,
+          "orden": 2
+        }
+      ]
+    },
+    {
+      "id": "4bc424a2-9fd6-5989-97f9-614dd49b341d",
+      "formulario_id": "a4a98ef2-2013-5277-94ea-8365bf50ba71",
+      "codigo": "P1.1",
+      "titulo": "¿Qué síntomas has tenido exactamente?",
+      "texto": "Caracterización de la sensación térmica.",
+      "tipo": "opcion_unica",
+      "requerida": false,
+      "orden": 4,
+      "eliminado": false,
+      "configuracion": {
+        "modulo": "Módulo 1: Fiebre e Infección (Prioridad Crítica - Neutropenia Febril)",
+        "depende_de": "P1",
+        "id_web_original": "p1-1"
+      },
+      "opciones": [
+        {
+          "codigo": "AMARILLO_1",
+          "etiqueta": "Solo sensación de calor o decaimiento, sin tiritones. [AMARILLO]",
+          "id": "AMARILLO_1",
+          "texto": "Solo sensación de calor o decaimiento, sin tiritones. [AMARILLO]",
+          "valor": null,
+          "orden": 1
+        },
+        {
+          "codigo": "AMARILLO_2",
+          "etiqueta": "Escalofríos o tiritones suaves que pasaron rápido. [AMARILLO]",
+          "id": "AMARILLO_2",
+          "texto": "Escalofríos o tiritones suaves que pasaron rápido. [AMARILLO]",
+          "valor": null,
+          "orden": 2
+        },
+        {
+          "codigo": "ROJO_1",
+          "etiqueta": "Escalofríos o tiritones fuertes e incontrolables (aunque el termómetro marque temperatura normal). [ROJO - Sospecha de Bacteriemia]",
+          "id": "ROJO_1",
+          "texto": "Escalofríos o tiritones fuertes e incontrolables (aunque el termómetro marque temperatura normal). [ROJO - Sospecha de Bacteriemia]",
+          "valor": null,
+          "orden": 3
+        }
+      ]
+    },
+    {
+      "id": "cba4be0c-cfa7-5f16-bc81-08f16541c969",
+      "formulario_id": "a4a98ef2-2013-5277-94ea-8365bf50ba71",
+      "codigo": "P1.2",
+      "titulo": "¿Te tomaste la temperatura con un termómetro (en la axila o en la boca)?",
+      "texto": "Medición objetiva en grados Celsius.",
+      "tipo": "opcion_unica",
+      "requerida": false,
+      "orden": 5,
+      "eliminado": false,
+      "configuracion": {
+        "modulo": "Módulo 1: Fiebre e Infección (Prioridad Crítica - Neutropenia Febril)",
+        "depende_de": "P1",
+        "id_web_original": "p1-2"
+      },
+      "opciones": [
+        {
+          "codigo": "VERDE_1",
+          "etiqueta": "Menos de 37.5 (Normal). [VERDE]",
+          "id": "VERDE_1",
+          "texto": "Menos de 37.5 (Normal). [VERDE]",
+          "valor": null,
+          "orden": 1
+        },
+        {
+          "codigo": "AMARILLO_1",
+          "etiqueta": "Entre 37.5 a 37.9 (Febrícula). [AMARILLO]",
+          "id": "AMARILLO_1",
+          "texto": "Entre 37.5 a 37.9 (Febrícula). [AMARILLO]",
+          "valor": null,
+          "orden": 2
+        },
+        {
+          "codigo": "ROJO_1",
+          "etiqueta": "Entre 38 a 38.2 y se ha mantenido así por más de 1 hora. [ROJO - Emergencia: Fiebre Neutropénica]",
+          "id": "ROJO_1",
+          "texto": "Entre 38 a 38.2 y se ha mantenido así por más de 1 hora. [ROJO - Emergencia: Fiebre Neutropénica]",
+          "valor": null,
+          "orden": 3
+        },
+        {
+          "codigo": "ROJO_2",
+          "etiqueta": "38.3 o más en una sola toma. [ROJO - Emergencia: Fiebre Neutropénica]",
+          "id": "ROJO_2",
+          "texto": "38.3 o más en una sola toma. [ROJO - Emergencia: Fiebre Neutropénica]",
+          "valor": null,
+          "orden": 4
+        },
+        {
+          "codigo": "AMARILLO_2",
+          "etiqueta": "No me he tomado la temperatura con termómetro. [AMARILLO - Tomar temperatura lo antes posible]",
+          "id": "AMARILLO_2",
+          "texto": "No me he tomado la temperatura con termómetro. [AMARILLO - Tomar temperatura lo antes posible]",
+          "valor": null,
+          "orden": 5
+        }
+      ]
+    },
+    {
+      "id": "0e753ee5-1d6d-5803-a278-3662fb04cacd",
+      "formulario_id": "a4a98ef2-2013-5277-94ea-8365bf50ba71",
+      "codigo": "P1.3",
+      "titulo": "¿Tomaste algún medicamento que baja la fiebre o para el dolor (como Paracetamol, Dipirona/Metamizol o Ibuprofeno) en las últimas 6 horas?",
+      "texto": "Descarte de fiebre enmascarada.",
+      "tipo": "opcion_unica",
+      "requerida": false,
+      "orden": 6,
+      "eliminado": false,
+      "configuracion": {
+        "modulo": "Módulo 1: Fiebre e Infección (Prioridad Crítica - Neutropenia Febril)",
+        "depende_de": "P1",
+        "id_web_original": "p1-3"
+      },
+      "opciones": [
+        {
+          "codigo": "VERDE_1",
+          "etiqueta": "No he tomado nada. [VERDE]",
+          "id": "VERDE_1",
+          "texto": "No he tomado nada. [VERDE]",
+          "valor": null,
+          "orden": 1
+        },
+        {
+          "codigo": "AMARILLO_1",
+          "etiqueta": "Sí, tomé un medicamento. [AMARILLO - Nota clínica: Posible fiebre enmascarada]",
+          "id": "AMARILLO_1",
+          "texto": "Sí, tomé un medicamento. [AMARILLO - Nota clínica: Posible fiebre enmascarada]",
+          "valor": null,
+          "orden": 2
+        }
+      ]
+    },
+    {
+      "id": "192214a9-651a-597c-9089-f80ada31b6fc",
+      "formulario_id": "a4a98ef2-2013-5277-94ea-8365bf50ba71",
+      "codigo": "P1.4",
+      "titulo": "¿Tienes alguna otra molestia que pueda indicar resfrío o infección?",
+      "texto": "Molestias respiratorias o urinarias asociadas.",
+      "tipo": "opcion_multiple",
+      "requerida": false,
+      "orden": 7,
+      "eliminado": false,
+      "configuracion": {
+        "modulo": "Módulo 1: Fiebre e Infección (Prioridad Crítica - Neutropenia Febril)",
+        "depende_de": "P1",
+        "id_web_original": "p1-4"
+      },
+      "opciones": [
+        {
+          "codigo": "AMARILLO_1",
+          "etiqueta": "Dolor de garganta o tos nueva. [AMARILLO]",
+          "id": "AMARILLO_1",
+          "texto": "Dolor de garganta o tos nueva. [AMARILLO]",
+          "valor": null,
+          "orden": 1
+        },
+        {
+          "codigo": "AMARILLO_2",
+          "etiqueta": "Ardor o dolor al orinar. [AMARILLO]",
+          "id": "AMARILLO_2",
+          "texto": "Ardor o dolor al orinar. [AMARILLO]",
+          "valor": null,
+          "orden": 2
+        },
+        {
+          "codigo": "VERDE_1",
+          "etiqueta": "Ninguna de las anteriores. [VERDE]",
+          "id": "VERDE_1",
+          "texto": "Ninguna de las anteriores. [VERDE]",
+          "valor": null,
+          "orden": 3
+        }
+      ]
+    },
+    {
+      "id": "9e1acec1-9ccf-5785-9e37-64a320e886ff",
+      "formulario_id": "a4a98ef2-2013-5277-94ea-8365bf50ba71",
+      "codigo": "P2",
+      "titulo": "¿Has tenido náuseas (asco o ganas de vomitar) o vómitos en las últimas 24 horas?",
+      "texto": "Evaluación de tolerancia oral e hidratación.",
+      "tipo": "booleano",
+      "requerida": true,
+      "orden": 8,
+      "eliminado": false,
+      "configuracion": {
+        "modulo": "Módulo 2: Náuseas y Vómitos (Tolerancia Oral e Hidratación)",
+        "es_madre": true,
+        "id_web_original": "p2"
+      },
+      "opciones": [
+        {
+          "codigo": "NO",
+          "etiqueta": "NO",
+          "id": "NO",
+          "texto": "NO",
+          "valor": null,
+          "orden": 1
+        },
+        {
+          "codigo": "SI",
+          "etiqueta": "SÍ",
+          "id": "SI",
+          "texto": "SÍ",
+          "valor": null,
+          "orden": 2
+        }
+      ]
+    },
+    {
+      "id": "b2284b54-e296-5d7a-a4e4-be322ac9de7a",
+      "formulario_id": "a4a98ef2-2013-5277-94ea-8365bf50ba71",
+      "codigo": "P2.1",
+      "titulo": "¿Qué tan fuertes han sido las náuseas (ganas de vomitar)?",
+      "texto": "Impacto en la ingesta oral.",
+      "tipo": "opcion_unica",
+      "requerida": false,
+      "orden": 9,
+      "eliminado": false,
+      "configuracion": {
+        "modulo": "Módulo 2: Náuseas y Vómitos (Tolerancia Oral e Hidratación)",
+        "depende_de": "P2",
+        "id_web_original": "p2-1"
+      },
+      "opciones": [
+        {
+          "codigo": "VERDE_1",
+          "etiqueta": "Leves: Siento asco, pero puedo comer y tomar líquidos casi normal. [VERDE]",
+          "id": "VERDE_1",
+          "texto": "Leves: Siento asco, pero puedo comer y tomar líquidos casi normal. [VERDE]",
+          "valor": null,
+          "orden": 1
+        },
+        {
+          "codigo": "AMARILLO_1",
+          "etiqueta": "Moderadas: Me cuesta comer, he comido bastante menos de lo habitual, pero logro tomar líquidos. [AMARILLO]",
+          "id": "AMARILLO_1",
+          "texto": "Moderadas: Me cuesta comer, he comido bastante menos de lo habitual, pero logro tomar líquidos. [AMARILLO]",
+          "valor": null,
+          "orden": 2
+        },
+        {
+          "codigo": "ROJO_1",
+          "etiqueta": "Severas: El asco es constante y no me permite comer ni tomar casi nada de líquido. [ROJO]",
+          "id": "ROJO_1",
+          "texto": "Severas: El asco es constante y no me permite comer ni tomar casi nada de líquido. [ROJO]",
+          "valor": null,
+          "orden": 3
+        }
+      ]
+    },
+    {
+      "id": "1b37bc3e-041b-5661-a0a1-92c2f96151e6",
+      "formulario_id": "a4a98ef2-2013-5277-94ea-8365bf50ba71",
+      "codigo": "P2.2",
+      "titulo": "¿Has llegado a vomitar en las últimas 24 horas?",
+      "texto": "Frecuencia de episodios eméticos.",
+      "tipo": "opcion_unica",
+      "requerida": false,
+      "orden": 10,
+      "eliminado": false,
+      "configuracion": {
+        "modulo": "Módulo 2: Náuseas y Vómitos (Tolerancia Oral e Hidratación)",
+        "depende_de": "P2",
+        "id_web_original": "p2-2"
+      },
+      "opciones": [
+        {
+          "codigo": "VERDE_1",
+          "etiqueta": "No he vomitado, solo tengo náuseas. [VERDE]",
+          "id": "VERDE_1",
+          "texto": "No he vomitado, solo tengo náuseas. [VERDE]",
+          "valor": null,
+          "orden": 1
+        },
+        {
+          "codigo": "AMARILLO_1",
+          "etiqueta": "Sí, vomité 1 o 2 veces en el día. [AMARILLO]",
+          "id": "AMARILLO_1",
+          "texto": "Sí, vomité 1 o 2 veces en el día. [AMARILLO]",
+          "valor": null,
+          "orden": 2
+        },
+        {
+          "codigo": "AMARILLO_2",
+          "etiqueta": "Sí, he vomitado entre 3 y 5 veces en el día. [AMARILLO - Alerta de Deshidratación]",
+          "id": "AMARILLO_2",
+          "texto": "Sí, he vomitado entre 3 y 5 veces en el día. [AMARILLO - Alerta de Deshidratación]",
+          "valor": null,
+          "orden": 3
+        },
+        {
+          "codigo": "ROJO_1",
+          "etiqueta": "Sí, he vomitado 6 veces o más, o vomito todo lo que intento tragar (incluso el agua). [ROJO - Intolerancia Oral Total]",
+          "id": "ROJO_1",
+          "texto": "Sí, he vomitado 6 veces o más, o vomito todo lo que intento tragar (incluso el agua). [ROJO - Intolerancia Oral Total]",
+          "valor": null,
+          "orden": 4
+        }
+      ]
+    },
+    {
+      "id": "6577bf56-7301-5943-9ee4-ed89e775dad6",
+      "formulario_id": "a4a98ef2-2013-5277-94ea-8365bf50ba71",
+      "codigo": "P2.3",
+      "titulo": "¿Cómo están funcionando los medicamentos contra las náuseas que te recetó tu médico?",
+      "texto": "Efectividad del esquema antiemético.",
+      "tipo": "opcion_unica",
+      "requerida": false,
+      "orden": 11,
+      "eliminado": false,
+      "configuracion": {
+        "modulo": "Módulo 2: Náuseas y Vómitos (Tolerancia Oral e Hidratación)",
+        "depende_de": "P2",
+        "id_web_original": "p2-3"
+      },
+      "opciones": [
+        {
+          "codigo": "VERDE_1",
+          "etiqueta": "Me alivian bastante bien. [VERDE]",
+          "id": "VERDE_1",
+          "texto": "Me alivian bastante bien. [VERDE]",
+          "valor": null,
+          "orden": 1
+        },
+        {
+          "codigo": "AMARILLO_1",
+          "etiqueta": "Me alivian muy poco, sigo con muchas molestias. [AMARILLO - Requiere ajuste de antieméticos]",
+          "id": "AMARILLO_1",
+          "texto": "Me alivian muy poco, sigo con muchas molestias. [AMARILLO - Requiere ajuste de antieméticos]",
+          "valor": null,
+          "orden": 2
+        },
+        {
+          "codigo": "ROJO_1",
+          "etiqueta": "No los puedo tomar porque los vomito apenas los trago. [ROJO - Requiere vía parenteral]",
+          "id": "ROJO_1",
+          "texto": "No los puedo tomar porque los vomito apenas los trago. [ROJO - Requiere vía parenteral]",
+          "valor": null,
+          "orden": 3
+        },
+        {
+          "codigo": "VERDE_2",
+          "etiqueta": "Aún no los he tomado. [VERDE - Tomar medicación de rescate indicada]",
+          "id": "VERDE_2",
+          "texto": "Aún no los he tomado. [VERDE - Tomar medicación de rescate indicada]",
+          "valor": null,
+          "orden": 4
+        }
+      ]
+    },
+    {
+      "id": "e2f121e3-3f1e-5677-b86c-41a50f0b2792",
+      "formulario_id": "a4a98ef2-2013-5277-94ea-8365bf50ba71",
+      "codigo": "P2.4",
+      "titulo": "Si vomitaste, ¿notaste algo extraño en el vómito?",
+      "texto": "Descarte de hemorragia digestiva alta.",
+      "tipo": "opcion_unica",
+      "requerida": false,
+      "orden": 12,
+      "eliminado": false,
+      "configuracion": {
+        "modulo": "Módulo 2: Náuseas y Vómitos (Tolerancia Oral e Hidratación)",
+        "depende_de": "P2",
+        "id_web_original": "p2-4"
+      },
+      "opciones": [
+        {
+          "codigo": "VERDE_1",
+          "etiqueta": "No, era solo comida o líquido normal/amarillento. [VERDE]",
+          "id": "VERDE_1",
+          "texto": "No, era solo comida o líquido normal/amarillento. [VERDE]",
+          "valor": null,
+          "orden": 1
+        },
+        {
+          "codigo": "ROJO_1",
+          "etiqueta": "Sí, tenía sangre roja o parecía tener \"granos de café\" oscuros. [ROJO - Emergencia: Hemorragia Digestiva]",
+          "id": "ROJO_1",
+          "texto": "Sí, tenía sangre roja o parecía tener \"granos de café\" oscuros. [ROJO - Emergencia: Hemorragia Digestiva]",
+          "valor": null,
+          "orden": 2
+        }
+      ]
+    },
+    {
+      "id": "cf1cfa89-1fd6-5c84-bfa3-56ed43684c40",
+      "formulario_id": "a4a98ef2-2013-5277-94ea-8365bf50ba71",
+      "codigo": "P3.A",
+      "titulo": "¿Has tenido diarrea (deposiciones líquidas o sueltas) en las últimas 24 horas?",
+      "texto": "Evaluación de ritmo intestinal y diarrea.",
+      "tipo": "booleano",
+      "requerida": true,
+      "orden": 13,
+      "eliminado": false,
+      "configuracion": {
+        "modulo": "Módulo 3: Tránsito Intestinal (Diarrea y Estreñimiento)",
+        "es_madre": true,
+        "id_web_original": "p3-a"
+      },
+      "opciones": [
+        {
+          "codigo": "NO",
+          "etiqueta": "NO",
+          "id": "NO",
+          "texto": "NO",
+          "valor": null,
+          "orden": 1
+        },
+        {
+          "codigo": "SI",
+          "etiqueta": "SÍ",
+          "id": "SI",
+          "texto": "SÍ",
+          "valor": null,
+          "orden": 2
+        }
+      ]
+    },
+    {
+      "id": "7e59237e-257f-5de0-a721-147fab03b3d2",
+      "formulario_id": "a4a98ef2-2013-5277-94ea-8365bf50ba71",
+      "codigo": "P3.A.1",
+      "titulo": "¿Cuántas veces has tenido diarrea hoy (en comparación con tu ritmo normal)?",
+      "texto": "Graduación CTCAE de diarrea.",
+      "tipo": "opcion_unica",
+      "requerida": false,
+      "orden": 14,
+      "eliminado": false,
+      "configuracion": {
+        "modulo": "Módulo 3: Tránsito Intestinal (Diarrea y Estreñimiento)",
+        "depende_de": "P3.A",
+        "id_web_original": "p3-a-1"
+      },
+      "opciones": [
+        {
+          "codigo": "VERDE_1",
+          "etiqueta": "De 1 a 3 veces en el día (Leve). [VERDE]",
+          "id": "VERDE_1",
+          "texto": "De 1 a 3 veces en el día (Leve). [VERDE]",
+          "valor": null,
+          "orden": 1
+        },
+        {
+          "codigo": "AMARILLO_1",
+          "etiqueta": "De 4 a 6 veces en el día (Moderada). [AMARILLO - Grado 2 CTCAE]",
+          "id": "AMARILLO_1",
+          "texto": "De 4 a 6 veces en el día (Moderada). [AMARILLO - Grado 2 CTCAE]",
+          "valor": null,
+          "orden": 2
+        },
+        {
+          "codigo": "ROJO_1",
+          "etiqueta": "7 veces o más en el día, o me despierta por la noche / no alcanzo a llegar al baño (Severa). [ROJO - Grado 3 CTCAE / Riesgo de Colitis Neutropénica]",
+          "id": "ROJO_1",
+          "texto": "7 veces o más en el día, o me despierta por la noche / no alcanzo a llegar al baño (Severa). [ROJO - Grado 3 CTCAE / Riesgo de Colitis Neutropénica]",
+          "valor": null,
+          "orden": 3
+        }
+      ]
+    },
+    {
+      "id": "867fb76a-a199-5d23-8e76-7dc0649fd290",
+      "formulario_id": "a4a98ef2-2013-5277-94ea-8365bf50ba71",
+      "codigo": "P3.A.2",
+      "titulo": "¿Cómo se ven las deposiciones y qué otros síntomas sientes en el abdomen?",
+      "texto": "Signos de alarma en heces y abdomen.",
+      "tipo": "opcion_multiple",
+      "requerida": false,
+      "orden": 15,
+      "eliminado": false,
+      "configuracion": {
+        "modulo": "Módulo 3: Tránsito Intestinal (Diarrea y Estreñimiento)",
+        "depende_de": "P3.A",
+        "id_web_original": "p3-a-2"
+      },
+      "opciones": [
+        {
+          "codigo": "VERDE_1",
+          "etiqueta": "Son solo líquidas, con molestias leves o sin dolor. [VERDE]",
+          "id": "VERDE_1",
+          "texto": "Son solo líquidas, con molestias leves o sin dolor. [VERDE]",
+          "valor": null,
+          "orden": 1
+        },
+        {
+          "codigo": "ROJO_1",
+          "etiqueta": "Tienen mucosidad o hilos de sangre roja. [ROJO]",
+          "id": "ROJO_1",
+          "texto": "Tienen mucosidad o hilos de sangre roja. [ROJO]",
+          "valor": null,
+          "orden": 2
+        },
+        {
+          "codigo": "ROJO_2",
+          "etiqueta": "Son de color negro brillante (como alquitrán) y de olor muy fuerte. [ROJO - Melena]",
+          "id": "ROJO_2",
+          "texto": "Son de color negro brillante (como alquitrán) y de olor muy fuerte. [ROJO - Melena]",
+          "valor": null,
+          "orden": 3
+        },
+        {
+          "codigo": "ROJO_3",
+          "etiqueta": "Siento retorcijones o dolor abdominal muy fuerte que no se pasa. [ROJO - Sospecha de Enterocolitis]",
+          "id": "ROJO_3",
+          "texto": "Siento retorcijones o dolor abdominal muy fuerte que no se pasa. [ROJO - Sospecha de Enterocolitis]",
+          "valor": null,
+          "orden": 4
+        }
+      ]
+    },
+    {
+      "id": "22a51850-1888-5cd8-9421-753630e5eddf",
+      "formulario_id": "a4a98ef2-2013-5277-94ea-8365bf50ba71",
+      "codigo": "P3.A.3",
+      "titulo": "¿Has notado signos de deshidratación por la diarrea?",
+      "texto": "Descarte de shock hipovolémico.",
+      "tipo": "opcion_multiple",
+      "requerida": false,
+      "orden": 16,
+      "eliminado": false,
+      "configuracion": {
+        "modulo": "Módulo 3: Tránsito Intestinal (Diarrea y Estreñimiento)",
+        "depende_de": "P3.A",
+        "id_web_original": "p3-a-3"
+      },
+      "opciones": [
+        {
+          "codigo": "VERDE_1",
+          "etiqueta": "No, me siento bien hidratado/a. [VERDE]",
+          "id": "VERDE_1",
+          "texto": "No, me siento bien hidratado/a. [VERDE]",
+          "valor": null,
+          "orden": 1
+        },
+        {
+          "codigo": "AMARILLO_1",
+          "etiqueta": "Tengo mucha sed y la boca muy seca o pastosa. [AMARILLO]",
+          "id": "AMARILLO_1",
+          "texto": "Tengo mucha sed y la boca muy seca o pastosa. [AMARILLO]",
+          "valor": null,
+          "orden": 2
+        },
+        {
+          "codigo": "ROJO_1",
+          "etiqueta": "Orino muy poco y la orina es muy oscura (color té cargado). [ROJO]",
+          "id": "ROJO_1",
+          "texto": "Orino muy poco y la orina es muy oscura (color té cargado). [ROJO]",
+          "valor": null,
+          "orden": 3
+        },
+        {
+          "codigo": "ROJO_2",
+          "etiqueta": "Me mareo mucho cuando intento ponerme de pie. [ROJO - Hipotensión Ortostática]",
+          "id": "ROJO_2",
+          "texto": "Me mareo mucho cuando intento ponerme de pie. [ROJO - Hipotensión Ortostática]",
+          "valor": null,
+          "orden": 4
+        }
+      ]
+    },
+    {
+      "id": "8f4953cf-a0fe-56c5-95ca-e1d42122a071",
+      "formulario_id": "a4a98ef2-2013-5277-94ea-8365bf50ba71",
+      "codigo": "P3.B",
+      "titulo": "¿Has tenido estreñimiento (dificultad para ir al baño o deposiciones muy duras)?",
+      "texto": "Descarte de íleo paralítico u obstrucción.",
+      "tipo": "booleano",
+      "requerida": true,
+      "orden": 17,
+      "eliminado": false,
+      "configuracion": {
+        "modulo": "Módulo 3: Tránsito Intestinal (Diarrea y Estreñimiento)",
+        "es_madre": true,
+        "id_web_original": "p3-b"
+      },
+      "opciones": [
+        {
+          "codigo": "NO",
+          "etiqueta": "NO",
+          "id": "NO",
+          "texto": "NO",
+          "valor": null,
+          "orden": 1
+        },
+        {
+          "codigo": "SI",
+          "etiqueta": "SÍ",
+          "id": "SI",
+          "texto": "SÍ",
+          "valor": null,
+          "orden": 2
+        }
+      ]
+    },
+    {
+      "id": "a23d0356-d594-539e-b56a-21cb1ff1d399",
+      "formulario_id": "a4a98ef2-2013-5277-94ea-8365bf50ba71",
+      "codigo": "P3.B.1",
+      "titulo": "¿Cuántos días llevas sin poder hacer deposiciones?",
+      "texto": "Días de retención fecal.",
+      "tipo": "opcion_unica",
+      "requerida": false,
+      "orden": 18,
+      "eliminado": false,
+      "configuracion": {
+        "modulo": "Módulo 3: Tránsito Intestinal (Diarrea y Estreñimiento)",
+        "depende_de": "P3.B",
+        "id_web_original": "p3-b-1"
+      },
+      "opciones": [
+        {
+          "codigo": "VERDE_1",
+          "etiqueta": "1 a 2 días. [VERDE]",
+          "id": "VERDE_1",
+          "texto": "1 a 2 días. [VERDE]",
+          "valor": null,
+          "orden": 1
+        },
+        {
+          "codigo": "AMARILLO_1",
+          "etiqueta": "3 a 4 días. [AMARILLO]",
+          "id": "AMARILLO_1",
+          "texto": "3 a 4 días. [AMARILLO]",
+          "valor": null,
+          "orden": 2
+        },
+        {
+          "codigo": "ROJO_1",
+          "etiqueta": "5 días o más. [ROJO]",
+          "id": "ROJO_1",
+          "texto": "5 días o más. [ROJO]",
+          "valor": null,
+          "orden": 3
+        }
+      ]
+    },
+    {
+      "id": "1312aeba-56a3-5040-a632-49ea67779271",
+      "formulario_id": "a4a98ef2-2013-5277-94ea-8365bf50ba71",
+      "codigo": "P3.B.2",
+      "titulo": "¿Tienes el abdomen muy hinchado, duro, con dolor fuerte o no puedes eliminar gases?",
+      "texto": "Sospecha de abdomen agudo.",
+      "tipo": "opcion_unica",
+      "requerida": false,
+      "orden": 19,
+      "eliminado": false,
+      "configuracion": {
+        "modulo": "Módulo 3: Tránsito Intestinal (Diarrea y Estreñimiento)",
+        "depende_de": "P3.B",
+        "id_web_original": "p3-b-2"
+      },
+      "opciones": [
+        {
+          "codigo": "VERDE_1",
+          "etiqueta": "No, solo la molestia de no ir al baño. [VERDE]",
+          "id": "VERDE_1",
+          "texto": "No, solo la molestia de no ir al baño. [VERDE]",
+          "valor": null,
+          "orden": 1
+        },
+        {
+          "codigo": "ROJO_1",
+          "etiqueta": "Sí, tengo dolor fuerte, abdomen duro o vómitos junto con el estreñimiento. [ROJO - Sospecha de Obstrucción Intestinal / Íleo]",
+          "id": "ROJO_1",
+          "texto": "Sí, tengo dolor fuerte, abdomen duro o vómitos junto con el estreñimiento. [ROJO - Sospecha de Obstrucción Intestinal / Íleo]",
+          "valor": null,
+          "orden": 2
+        }
+      ]
+    },
+    {
+      "id": "a12ea85b-ca56-5a93-aea7-eb0467effc23",
+      "formulario_id": "a4a98ef2-2013-5277-94ea-8365bf50ba71",
+      "codigo": "P4",
+      "titulo": "¿Sientes dolor, ardor, enrojecimiento o tienes llagas (heridas) dentro de la boca, lengua, encías o al tragar?",
+      "texto": "Detección de mucositis oral e infecciones oportunistas.",
+      "tipo": "booleano",
+      "requerida": true,
+      "orden": 20,
+      "eliminado": false,
+      "configuracion": {
+        "modulo": "Módulo 4: Boca y Garganta (Mucositis Oral)",
+        "es_madre": true,
+        "id_web_original": "p4"
+      },
+      "opciones": [
+        {
+          "codigo": "NO",
+          "etiqueta": "NO",
+          "id": "NO",
+          "texto": "NO",
+          "valor": null,
+          "orden": 1
+        },
+        {
+          "codigo": "SI",
+          "etiqueta": "SÍ",
+          "id": "SI",
+          "texto": "SÍ",
+          "valor": null,
+          "orden": 2
+        }
+      ]
+    },
+    {
+      "id": "aea8811b-783e-53b1-9107-7e66d2905139",
+      "formulario_id": "a4a98ef2-2013-5277-94ea-8365bf50ba71",
+      "codigo": "P4.1",
+      "titulo": "¿Qué observas dentro de tu boca?",
+      "texto": "Lesiones visibles en mucosa oral.",
+      "tipo": "opcion_multiple",
+      "requerida": false,
+      "orden": 21,
+      "eliminado": false,
+      "configuracion": {
+        "modulo": "Módulo 4: Boca y Garganta (Mucositis Oral)",
+        "depende_de": "P4",
+        "id_web_original": "p4-1"
+      },
+      "opciones": [
+        {
+          "codigo": "VERDE_1",
+          "etiqueta": "Solo está roja, seca o sensible, sin heridas visibles. [VERDE]",
+          "id": "VERDE_1",
+          "texto": "Solo está roja, seca o sensible, sin heridas visibles. [VERDE]",
+          "valor": null,
+          "orden": 1
+        },
+        {
+          "codigo": "AMARILLO_1",
+          "etiqueta": "Tengo llagas o úlceras pequeñas. [AMARILLO]",
+          "id": "AMARILLO_1",
+          "texto": "Tengo llagas o úlceras pequeñas. [AMARILLO]",
+          "valor": null,
+          "orden": 2
+        },
+        {
+          "codigo": "AMARILLO_2",
+          "etiqueta": "Tengo placas blancas (como leche cortada) en la lengua o mejillas. [AMARILLO - Sospecha de Candidiasis Oral]",
+          "id": "AMARILLO_2",
+          "texto": "Tengo placas blancas (como leche cortada) en la lengua o mejillas. [AMARILLO - Sospecha de Candidiasis Oral]",
+          "valor": null,
+          "orden": 3
+        },
+        {
+          "codigo": "ROJO_1",
+          "etiqueta": "Las heridas sangran solas o al comer. [ROJO]",
+          "id": "ROJO_1",
+          "texto": "Las heridas sangran solas o al comer. [ROJO]",
+          "valor": null,
+          "orden": 4
+        }
+      ]
+    },
+    {
+      "id": "5f1e3fcb-47e7-5d01-9f61-dff47c97f605",
+      "formulario_id": "a4a98ef2-2013-5277-94ea-8365bf50ba71",
+      "codigo": "P4.2",
+      "titulo": "¿Cómo afecta esto a tu alimentación hoy?",
+      "texto": "Impacto funcional de la mucositis según CTCAE.",
+      "tipo": "opcion_unica",
+      "requerida": false,
+      "orden": 22,
+      "eliminado": false,
+      "configuracion": {
+        "modulo": "Módulo 4: Boca y Garganta (Mucositis Oral)",
+        "depende_de": "P4",
+        "id_web_original": "p4-2"
+      },
+      "opciones": [
+        {
+          "codigo": "VERDE_1",
+          "etiqueta": "Me molesta un poco, pero puedo comer alimentos normales o blandos sin problema. [VERDE - Grado 1 CTCAE]",
+          "id": "VERDE_1",
+          "texto": "Me molesta un poco, pero puedo comer alimentos normales o blandos sin problema. [VERDE - Grado 1 CTCAE]",
+          "valor": null,
+          "orden": 1
+        },
+        {
+          "codigo": "AMARILLO_1",
+          "etiqueta": "Me duele bastante; solo puedo comer papillas, sopas o líquidos, pero logro alimentarme. [AMARILLO - Grado 2 CTCAE]",
+          "id": "AMARILLO_1",
+          "texto": "Me duele bastante; solo puedo comer papillas, sopas o líquidos, pero logro alimentarme. [AMARILLO - Grado 2 CTCAE]",
+          "valor": null,
+          "orden": 2
+        },
+        {
+          "codigo": "ROJO_1",
+          "etiqueta": "El dolor es tan intenso que solo puedo pasar un poco de agua o líquidos con mucha dificultad. [ROJO - Grado 3 CTCAE]",
+          "id": "ROJO_1",
+          "texto": "El dolor es tan intenso que solo puedo pasar un poco de agua o líquidos con mucha dificultad. [ROJO - Grado 3 CTCAE]",
+          "valor": null,
+          "orden": 3
+        },
+        {
+          "codigo": "ROJO_2",
+          "etiqueta": "No puedo tragar absolutamente nada, ni agua ni mis medicamentos en pastillas. [ROJO - Emergencia de Hidratación/Nutrición]",
+          "id": "ROJO_2",
+          "texto": "No puedo tragar absolutamente nada, ni agua ni mis medicamentos en pastillas. [ROJO - Emergencia de Hidratación/Nutrición]",
+          "valor": null,
+          "orden": 4
+        }
+      ]
+    },
+    {
+      "id": "d5f372d1-d839-552d-b29d-622575ea0ea5",
+      "formulario_id": "a4a98ef2-2013-5277-94ea-8365bf50ba71",
+      "codigo": "P5",
+      "titulo": "¿Sientes hormigueo, adormecimiento, \"corrientazos\" o dolor en los dedos de las manos o de los pies?",
+      "texto": "Detección precoz de neuropatía periférica inducida por quimioterapia (NPIQ).",
+      "tipo": "booleano",
+      "requerida": true,
+      "orden": 23,
+      "eliminado": false,
+      "configuracion": {
+        "modulo": "Módulo 5: Sistema Nervioso en Manos y Pies (Neuropatía Periférica)",
+        "es_madre": true,
+        "id_web_original": "p5"
+      },
+      "opciones": [
+        {
+          "codigo": "NO",
+          "etiqueta": "NO",
+          "id": "NO",
+          "texto": "NO",
+          "valor": null,
+          "orden": 1
+        },
+        {
+          "codigo": "SI",
+          "etiqueta": "SÍ",
+          "id": "SI",
+          "texto": "SÍ",
+          "valor": null,
+          "orden": 2
+        }
+      ]
+    },
+    {
+      "id": "392077fa-4446-554f-9ade-821349c3e2cd",
+      "formulario_id": "a4a98ef2-2013-5277-94ea-8365bf50ba71",
+      "codigo": "P5.1",
+      "titulo": "¿Cómo afecta esta sensación a tus actividades diarias?",
+      "texto": "Grado funcional CTCAE de neuropatía.",
+      "tipo": "opcion_unica",
+      "requerida": false,
+      "orden": 24,
+      "eliminado": false,
+      "configuracion": {
+        "modulo": "Módulo 5: Sistema Nervioso en Manos y Pies (Neuropatía Periférica)",
+        "depende_de": "P5",
+        "id_web_original": "p5-1"
+      },
+      "opciones": [
+        {
+          "codigo": "VERDE_1",
+          "etiqueta": "Es solo un hormigueo leve que no me molesta para hacer mis cosas. [VERDE - Grado 1 CTCAE]",
+          "id": "VERDE_1",
+          "texto": "Es solo un hormigueo leve que no me molesta para hacer mis cosas. [VERDE - Grado 1 CTCAE]",
+          "valor": null,
+          "orden": 1
+        },
+        {
+          "codigo": "AMARILLO_1",
+          "etiqueta": "Me cuesta hacer cosas finas con las manos (como abrocharme botones, escribir, abrir frascos o sostener una taza sin que se caiga). [AMARILLO - Grado 2 CTCAE: Evaluar ajuste de dosis]",
+          "id": "AMARILLO_1",
+          "texto": "Me cuesta hacer cosas finas con las manos (como abrocharme botones, escribir, abrir frascos o sostener una taza sin que se caiga). [AMARILLO - Grado 2 CTCAE: Evaluar ajuste de dosis]",
+          "valor": null,
+          "orden": 2
+        },
+        {
+          "codigo": "ROJO_1",
+          "etiqueta": "Me cuesta caminar bien, siento que no piso firme, tropiezo o pierdo el equilibrio por tener los pies dormidos. [ROJO - Grado 3 CTCAE: Riesgo de Caídas]",
+          "id": "ROJO_1",
+          "texto": "Me cuesta caminar bien, siento que no piso firme, tropiezo o pierdo el equilibrio por tener los pies dormidos. [ROJO - Grado 3 CTCAE: Riesgo de Caídas]",
+          "valor": null,
+          "orden": 3
+        }
+      ]
+    },
+    {
+      "id": "377bb9d3-eefb-59fe-873a-197bc7847dd7",
+      "formulario_id": "a4a98ef2-2013-5277-94ea-8365bf50ba71",
+      "codigo": "P5.2",
+      "titulo": "¿Sientes calambres o dolor en la garganta o en las manos cuando tocas cosas frías o tomas líquidos fríos?",
+      "texto": "Específico para toxicidad por Oxaliplatino (disestesia faringolaríngea).",
+      "tipo": "opcion_unica",
+      "requerida": false,
+      "orden": 25,
+      "eliminado": false,
+      "configuracion": {
+        "modulo": "Módulo 5: Sistema Nervioso en Manos y Pies (Neuropatía Periférica)",
+        "depende_de": "P5",
+        "id_web_original": "p5-2"
+      },
+      "opciones": [
+        {
+          "codigo": "VERDE_1",
+          "etiqueta": "No. [VERDE]",
+          "id": "VERDE_1",
+          "texto": "No. [VERDE]",
+          "valor": null,
+          "orden": 1
+        },
+        {
+          "codigo": "AMARILLO_1",
+          "etiqueta": "Sí, me da molestia o dolor con el frío, pero pasa rápido al calentarme. [AMARILLO]",
+          "id": "AMARILLO_1",
+          "texto": "Sí, me da molestia o dolor con el frío, pero pasa rápido al calentarme. [AMARILLO]",
+          "valor": null,
+          "orden": 2
+        },
+        {
+          "codigo": "ROJO_1",
+          "etiqueta": "Sí, siento que se me cierra la garganta o me cuesta respirar al tomar o respirar algo frío. [ROJO - Disestesia Faringolaríngea Severa]",
+          "id": "ROJO_1",
+          "texto": "Sí, siento que se me cierra la garganta o me cuesta respirar al tomar o respirar algo frío. [ROJO - Disestesia Faringolaríngea Severa]",
+          "valor": null,
+          "orden": 3
+        }
+      ]
+    },
+    {
+      "id": "2a6d4c33-1716-5e47-a9e2-04290a11a2a1",
+      "formulario_id": "a4a98ef2-2013-5277-94ea-8365bf50ba71",
+      "codigo": "P5.3",
+      "titulo": "En comparación con tu ciclo anterior de quimioterapia, ¿esta sensación ha cambiado?",
+      "texto": "Evolución longitudinal de la neurotoxicidad.",
+      "tipo": "opcion_unica",
+      "requerida": false,
+      "orden": 26,
+      "eliminado": false,
+      "configuracion": {
+        "modulo": "Módulo 5: Sistema Nervioso en Manos y Pies (Neuropatía Periférica)",
+        "depende_de": "P5",
+        "id_web_original": "p5-3"
+      },
+      "opciones": [
+        {
+          "codigo": "VERDE_1",
+          "etiqueta": "Está igual o es más suave. [VERDE]",
+          "id": "VERDE_1",
+          "texto": "Está igual o es más suave. [VERDE]",
+          "valor": null,
+          "orden": 1
+        },
+        {
+          "codigo": "AMARILLO_1",
+          "etiqueta": "Es nueva o ha empeorado y ya no se quita entre un ciclo y otro. [AMARILLO - Alerta al Oncólogo antes del próximo ciclo]",
+          "id": "AMARILLO_1",
+          "texto": "Es nueva o ha empeorado y ya no se quita entre un ciclo y otro. [AMARILLO - Alerta al Oncólogo antes del próximo ciclo]",
+          "valor": null,
+          "orden": 2
+        }
+      ]
+    },
+    {
+      "id": "1b2c3f91-f7dd-56c9-9e62-9f6f3cf898cd",
+      "formulario_id": "a4a98ef2-2013-5277-94ea-8365bf50ba71",
+      "codigo": "P6",
+      "titulo": "¿Has notado enrojecimiento, hinchazón, dolor o descamación en las palmas de las manos, plantas de los pies o en el brazo donde te pusieron el suero?",
+      "texto": "Toxicidad dermatológica y sitios de punción.",
+      "tipo": "booleano",
+      "requerida": true,
+      "orden": 27,
+      "eliminado": false,
+      "configuracion": {
+        "modulo": "Módulo 6: Piel y Extremidades (Síndrome Mano-Pie y Extravasación)",
+        "es_madre": true,
+        "id_web_original": "p6"
+      },
+      "opciones": [
+        {
+          "codigo": "NO",
+          "etiqueta": "NO",
+          "id": "NO",
+          "texto": "NO",
+          "valor": null,
+          "orden": 1
+        },
+        {
+          "codigo": "SI",
+          "etiqueta": "SÍ",
+          "id": "SI",
+          "texto": "SÍ",
+          "valor": null,
+          "orden": 2
+        }
+      ]
+    },
+    {
+      "id": "6eafea8f-0bdf-54fe-8ea8-64f55f528497",
+      "formulario_id": "a4a98ef2-2013-5277-94ea-8365bf50ba71",
+      "codigo": "P6.1",
+      "titulo": "En las palmas de tus manos o plantas de tus pies, ¿qué síntomas tienes?",
+      "texto": "Síndrome Mano-Pie (Eritrodisestesia palmo-plantar).",
+      "tipo": "opcion_unica",
+      "requerida": false,
+      "orden": 28,
+      "eliminado": false,
+      "configuracion": {
+        "modulo": "Módulo 6: Piel y Extremidades (Síndrome Mano-Pie y Extravasación)",
+        "depende_de": "P6",
+        "id_web_original": "p6-1"
+      },
+      "opciones": [
+        {
+          "codigo": "VERDE_1",
+          "etiqueta": "No tengo nada en las palmas ni plantas. [VERDE]",
+          "id": "VERDE_1",
+          "texto": "No tengo nada en las palmas ni plantas. [VERDE]",
+          "valor": null,
+          "orden": 1
+        },
+        {
+          "codigo": "VERDE_2",
+          "etiqueta": "Están un poco rojas o secas, pero no me duelen al caminar ni al usar las manos. [VERDE - Grado 1 CTCAE]",
+          "id": "VERDE_2",
+          "texto": "Están un poco rojas o secas, pero no me duelen al caminar ni al usar las manos. [VERDE - Grado 1 CTCAE]",
+          "valor": null,
+          "orden": 2
+        },
+        {
+          "codigo": "AMARILLO_1",
+          "etiqueta": "Están rojas, hinchadas, se están pelando y me duelen al caminar o al sostener objetos. [AMARILLO - Grado 2 CTCAE]",
+          "id": "AMARILLO_1",
+          "texto": "Están rojas, hinchadas, se están pelando y me duelen al caminar o al sostener objetos. [AMARILLO - Grado 2 CTCAE]",
+          "valor": null,
+          "orden": 3
+        },
+        {
+          "codigo": "ROJO_1",
+          "etiqueta": "Tienen ampollas, heridas abiertas o costras, y el dolor no me deja caminar ni usar mis manos. [ROJO - Grado 3 CTCAE]",
+          "id": "ROJO_1",
+          "texto": "Tienen ampollas, heridas abiertas o costras, y el dolor no me deja caminar ni usar mis manos. [ROJO - Grado 3 CTCAE]",
+          "valor": null,
+          "orden": 4
+        }
+      ]
+    },
+    {
+      "id": "5b2aa122-8c57-5803-8999-dc0f2ed4aaec",
+      "formulario_id": "a4a98ef2-2013-5277-94ea-8365bf50ba71",
+      "codigo": "P6.2",
+      "titulo": "En la vena del brazo donde te pasaron la quimioterapia (si no usas catéter central), ¿notaste algo?",
+      "texto": "Descarte de extravasación periférica tardía o flebitis.",
+      "tipo": "opcion_unica",
+      "requerida": false,
+      "orden": 29,
+      "eliminado": false,
+      "configuracion": {
+        "modulo": "Módulo 6: Piel y Extremidades (Síndrome Mano-Pie y Extravasación)",
+        "depende_de": "P6",
+        "id_web_original": "p6-2"
+      },
+      "opciones": [
+        {
+          "codigo": "VERDE_1",
+          "etiqueta": "Todo normal. [VERDE]",
+          "id": "VERDE_1",
+          "texto": "Todo normal. [VERDE]",
+          "valor": null,
+          "orden": 1
+        },
+        {
+          "codigo": "VERDE_2",
+          "etiqueta": "Está un poco morado por el pinchazo, pero sin dolor importante. [VERDE]",
+          "id": "VERDE_2",
+          "texto": "Está un poco morado por el pinchazo, pero sin dolor importante. [VERDE]",
+          "valor": null,
+          "orden": 2
+        },
+        {
+          "codigo": "ROJO_1",
+          "etiqueta": "Está muy hinchado, rojo, duro, caliente o me arde/duele mucho esa zona del brazo. [ROJO - Sospecha de Extravasación Tardía o Flebitis Química]",
+          "id": "ROJO_1",
+          "texto": "Está muy hinchado, rojo, duro, caliente o me arde/duele mucho esa zona del brazo. [ROJO - Sospecha de Extravasación Tardía o Flebitis Química]",
+          "valor": null,
+          "orden": 3
+        }
+      ]
+    },
+    {
+      "id": "b80ec997-af0e-5647-b733-5750a2d61d2d",
+      "formulario_id": "a4a98ef2-2013-5277-94ea-8365bf50ba71",
+      "codigo": "P7",
+      "titulo": "¿Has tenido algún tipo de sangrado o te han salido moretones o puntitos rojos en la piel sin haberte golpeado?",
+      "texto": "Prioridad clínica: Detección de plaquetopenia crítica.",
+      "tipo": "booleano",
+      "requerida": true,
+      "orden": 30,
+      "eliminado": false,
+      "configuracion": {
+        "modulo": "Módulo 7: Sangrados y Moretones (Trombocitopenia)",
+        "es_madre": true,
+        "id_web_original": "p7"
+      },
+      "opciones": [
+        {
+          "codigo": "NO",
+          "etiqueta": "NO",
+          "id": "NO",
+          "texto": "NO",
+          "valor": null,
+          "orden": 1
+        },
+        {
+          "codigo": "SI",
+          "etiqueta": "SÍ",
+          "id": "SI",
+          "texto": "SÍ",
+          "valor": null,
+          "orden": 2
+        }
+      ]
+    },
+    {
+      "id": "fe9471a9-4cc1-5f2c-8309-307dc4425342",
+      "formulario_id": "a4a98ef2-2013-5277-94ea-8365bf50ba71",
+      "codigo": "P7.1",
+      "titulo": "¿Qué tipo de sangrado o marcas has notado?",
+      "texto": "Localización y cuantificación de diátesis hemorrágica.",
+      "tipo": "opcion_multiple",
+      "requerida": false,
+      "orden": 31,
+      "eliminado": false,
+      "configuracion": {
+        "modulo": "Módulo 7: Sangrados y Moretones (Trombocitopenia)",
+        "depende_de": "P7",
+        "id_web_original": "p7-1"
+      },
+      "opciones": [
+        {
+          "codigo": "VERDE_1",
+          "etiqueta": "Pequeño sangrado de encías al cepillarme los dientes o gotitas de sangre al sonarme la nariz, que se detiene en menos de 5 minutos. [VERDE]",
+          "id": "VERDE_1",
+          "texto": "Pequeño sangrado de encías al cepillarme los dientes o gotitas de sangre al sonarme la nariz, que se detiene en menos de 5 minutos. [VERDE]",
+          "valor": null,
+          "orden": 1
+        },
+        {
+          "codigo": "AMARILLO_1",
+          "etiqueta": "Me salieron varios moretones nuevos sin golpearme o muchos puntitos rojos pequeños en las piernas o brazos (petequias). [AMARILLO - Solicitar Hemograma/Plaquetas]",
+          "id": "AMARILLO_1",
+          "texto": "Me salieron varios moretones nuevos sin golpearme o muchos puntitos rojos pequeños en las piernas o brazos (petequias). [AMARILLO - Solicitar Hemograma/Plaquetas]",
+          "valor": null,
+          "orden": 2
+        },
+        {
+          "codigo": "ROJO_1",
+          "etiqueta": "Sangrado de nariz o encías abundante que no se detiene después de apretar durante 10 a 15 minutos. [ROJO - Emergencia Hematológica]",
+          "id": "ROJO_1",
+          "texto": "Sangrado de nariz o encías abundante que no se detiene después de apretar durante 10 a 15 minutos. [ROJO - Emergencia Hematológica]",
+          "valor": null,
+          "orden": 3
+        },
+        {
+          "codigo": "ROJO_2",
+          "etiqueta": "Orina de color rojo o rosado (con sangre) o ardor fuerte al orinar. [ROJO - Sospecha de Cistitis Hemorrágica / Trombocitopenia]",
+          "id": "ROJO_2",
+          "texto": "Orina de color rojo o rosado (con sangre) o ardor fuerte al orinar. [ROJO - Sospecha de Cistitis Hemorrágica / Trombocitopenia]",
+          "valor": null,
+          "orden": 4
+        },
+        {
+          "codigo": "ROJO_3",
+          "etiqueta": "Sangrado vaginal abundante fuera de mi regla normal, o tos con sangre. [ROJO]",
+          "id": "ROJO_3",
+          "texto": "Sangrado vaginal abundante fuera de mi regla normal, o tos con sangre. [ROJO]",
+          "valor": null,
+          "orden": 5
+        }
+      ]
+    },
+    {
+      "id": "2b3bf8c5-9788-5c31-9059-5a3485b6d067",
+      "formulario_id": "a4a98ef2-2013-5277-94ea-8365bf50ba71",
+      "codigo": "P8",
+      "titulo": "¿Sientes falta de aire al respirar, dolor en el pecho, palpitaciones o se te ha hinchado alguna pierna?",
+      "texto": "Descarte urgente de TEPA, TVP o insuficiencia cardíaca aguda.",
+      "tipo": "booleano",
+      "requerida": true,
+      "orden": 32,
+      "eliminado": false,
+      "configuracion": {
+        "modulo": "Módulo 8: Respiración y Sistema Cardiovascular (Cardiotoxicidad / Tromboembolismo / Neumonitis)",
+        "es_madre": true,
+        "id_web_original": "p8"
+      },
+      "opciones": [
+        {
+          "codigo": "NO",
+          "etiqueta": "NO",
+          "id": "NO",
+          "texto": "NO",
+          "valor": null,
+          "orden": 1
+        },
+        {
+          "codigo": "SI",
+          "etiqueta": "SÍ",
+          "id": "SI",
+          "texto": "SÍ",
+          "valor": null,
+          "orden": 2
+        }
+      ]
+    },
+    {
+      "id": "89f3694c-3886-51de-a99c-d47701211c86",
+      "formulario_id": "a4a98ef2-2013-5277-94ea-8365bf50ba71",
+      "codigo": "P8.1",
+      "titulo": "¿Cómo es la falta de aire o dificultad para respirar?",
+      "texto": "Disnea según clase funcional NYHA/CTCAE.",
+      "tipo": "opcion_unica",
+      "requerida": false,
+      "orden": 33,
+      "eliminado": false,
+      "configuracion": {
+        "modulo": "Módulo 8: Respiración y Sistema Cardiovascular (Cardiotoxicidad / Tromboembolismo / Neumonitis)",
+        "depende_de": "P8",
+        "id_web_original": "p8-1"
+      },
+      "opciones": [
+        {
+          "codigo": "VERDE_1",
+          "etiqueta": "No tengo falta de aire. [VERDE]",
+          "id": "VERDE_1",
+          "texto": "No tengo falta de aire. [VERDE]",
+          "valor": null,
+          "orden": 1
+        },
+        {
+          "codigo": "AMARILLO_1",
+          "etiqueta": "Me canso un poco más de lo normal al subir escaleras o caminar rápido, pero se me pasa al descansar. [AMARILLO]",
+          "id": "AMARILLO_1",
+          "texto": "Me canso un poco más de lo normal al subir escaleras o caminar rápido, pero se me pasa al descansar. [AMARILLO]",
+          "valor": null,
+          "orden": 2
+        },
+        {
+          "codigo": "ROJO_1",
+          "etiqueta": "Me falta el aire haciendo cosas mínimas (como vestirme o ir al baño) o necesito dormir con más almohadas para no ahogarme. [ROJO]",
+          "id": "ROJO_1",
+          "texto": "Me falta el aire haciendo cosas mínimas (como vestirme o ir al baño) o necesito dormir con más almohadas para no ahogarme. [ROJO]",
+          "valor": null,
+          "orden": 3
+        },
+        {
+          "codigo": "ROJO_2",
+          "etiqueta": "Me falta el aire estando totalmente quieto/a y en reposo. [ROJO - Emergencia Vital]",
+          "id": "ROJO_2",
+          "texto": "Me falta el aire estando totalmente quieto/a y en reposo. [ROJO - Emergencia Vital]",
+          "valor": null,
+          "orden": 4
+        }
+      ]
+    },
+    {
+      "id": "bfe44423-0586-5951-9f0e-c2f0ece49784",
+      "formulario_id": "a4a98ef2-2013-5277-94ea-8365bf50ba71",
+      "codigo": "P8.2",
+      "titulo": "¿Tienes alguno de estos síntomas en el pecho?",
+      "texto": "Dolor precordial o arritmias.",
+      "tipo": "opcion_multiple",
+      "requerida": false,
+      "orden": 34,
+      "eliminado": false,
+      "configuracion": {
+        "modulo": "Módulo 8: Respiración y Sistema Cardiovascular (Cardiotoxicidad / Tromboembolismo / Neumonitis)",
+        "depende_de": "P8",
+        "id_web_original": "p8-2"
+      },
+      "opciones": [
+        {
+          "codigo": "VERDE_1",
+          "etiqueta": "Ninguno. [VERDE]",
+          "id": "VERDE_1",
+          "texto": "Ninguno. [VERDE]",
+          "valor": null,
+          "orden": 1
+        },
+        {
+          "codigo": "ROJO_1",
+          "etiqueta": "Dolor, presión o pesadez en el centro del pecho. [ROJO - Emergencia Cardíaca/Pulmonar]",
+          "id": "ROJO_1",
+          "texto": "Dolor, presión o pesadez en el centro del pecho. [ROJO - Emergencia Cardíaca/Pulmonar]",
+          "valor": null,
+          "orden": 2
+        },
+        {
+          "codigo": "ROJO_2",
+          "etiqueta": "Siento que el corazón me late muy rápido o desordenado (palpitaciones) estando en reposo. [ROJO]",
+          "id": "ROJO_2",
+          "texto": "Siento que el corazón me late muy rápido o desordenado (palpitaciones) estando en reposo. [ROJO]",
+          "valor": null,
+          "orden": 3
+        }
+      ]
+    },
+    {
+      "id": "2d507396-4c01-588b-a99e-ccf7503544d3",
+      "formulario_id": "a4a98ef2-2013-5277-94ea-8365bf50ba71",
+      "codigo": "P8.3",
+      "titulo": "¿Se te han hinchado las piernas o los tobillos?",
+      "texto": "Asimetría en extremidades inferiores (sospecha de TVP).",
+      "tipo": "opcion_unica",
+      "requerida": false,
+      "orden": 35,
+      "eliminado": false,
+      "configuracion": {
+        "modulo": "Módulo 8: Respiración y Sistema Cardiovascular (Cardiotoxicidad / Tromboembolismo / Neumonitis)",
+        "depende_de": "P8",
+        "id_web_original": "p8-3"
+      },
+      "opciones": [
+        {
+          "codigo": "VERDE_1",
+          "etiqueta": "No. [VERDE]",
+          "id": "VERDE_1",
+          "texto": "No. [VERDE]",
+          "valor": null,
+          "orden": 1
+        },
+        {
+          "codigo": "AMARILLO_1",
+          "etiqueta": "Sí, ambos tobillos están un poco hinchados al final del día. [AMARILLO]",
+          "id": "AMARILLO_1",
+          "texto": "Sí, ambos tobillos están un poco hinchados al final del día. [AMARILLO]",
+          "valor": null,
+          "orden": 2
+        },
+        {
+          "codigo": "ROJO_1",
+          "etiqueta": "Sí, una sola pierna (o pantorrilla) se hinchó de repente, me duele, está roja o caliente. [ROJO - Sospecha de Trombosis Venosa Profunda (TVP)]",
+          "id": "ROJO_1",
+          "texto": "Sí, una sola pierna (o pantorrilla) se hinchó de repente, me duele, está roja o caliente. [ROJO - Sospecha de Trombosis Venosa Profunda (TVP)]",
+          "valor": null,
+          "orden": 3
+        }
+      ]
+    },
+    {
+      "id": "6f430595-c47a-5ce0-bdd6-074ab05a66e9",
+      "formulario_id": "a4a98ef2-2013-5277-94ea-8365bf50ba71",
+      "codigo": "P9.A",
+      "titulo": "¿Has sentido un cansancio extremo o fatiga que no se alivia aunque duermas o descanses?",
+      "texto": "Evaluación de astenia/fatiga oncológica.",
+      "tipo": "booleano",
+      "requerida": true,
+      "orden": 36,
+      "eliminado": false,
+      "configuracion": {
+        "modulo": "Módulo 9: Energía, Ánimo y Dolor General (Estado Funcional ECOG / Fatiga)",
+        "es_madre": true,
+        "id_web_original": "p9-a"
+      },
+      "opciones": [
+        {
+          "codigo": "NO",
+          "etiqueta": "NO",
+          "id": "NO",
+          "texto": "NO",
+          "valor": null,
+          "orden": 1
+        },
+        {
+          "codigo": "SI",
+          "etiqueta": "SÍ",
+          "id": "SI",
+          "texto": "SÍ",
+          "valor": null,
+          "orden": 2
+        }
+      ]
+    },
+    {
+      "id": "f3fc24f3-82e3-5284-bbc8-c7b90ead1393",
+      "formulario_id": "a4a98ef2-2013-5277-94ea-8365bf50ba71",
+      "codigo": "P9.A.1",
+      "titulo": "¿Qué tanto te limita este cansancio hoy?",
+      "texto": "Equivalencia clínica con escala ECOG.",
+      "tipo": "opcion_unica",
+      "requerida": false,
+      "orden": 37,
+      "eliminado": false,
+      "configuracion": {
+        "modulo": "Módulo 9: Energía, Ánimo y Dolor General (Estado Funcional ECOG / Fatiga)",
+        "depende_de": "P9.A",
+        "id_web_original": "p9-a-1"
+      },
+      "opciones": [
+        {
+          "codigo": "VERDE_1",
+          "etiqueta": "Me siento cansado/a, pero puedo levantarme y hacer casi todas mis actividades del día. [VERDE - ECOG 1]",
+          "id": "VERDE_1",
+          "texto": "Me siento cansado/a, pero puedo levantarme y hacer casi todas mis actividades del día. [VERDE - ECOG 1]",
+          "valor": null,
+          "orden": 1
+        },
+        {
+          "codigo": "AMARILLO_1",
+          "etiqueta": "Paso menos de la mitad del día en cama o en el sillón; puedo bañarme y vestirme solo/a, pero no puedo trabajar ni hacer tareas de la casa. [AMARILLO - ECOG 2]",
+          "id": "AMARILLO_1",
+          "texto": "Paso menos de la mitad del día en cama o en el sillón; puedo bañarme y vestirme solo/a, pero no puedo trabajar ni hacer tareas de la casa. [AMARILLO - ECOG 2]",
+          "valor": null,
+          "orden": 2
+        },
+        {
+          "codigo": "ROJO_1",
+          "etiqueta": "Paso más de la mitad del día en cama; me cuesta mucho levantarme incluso para bañarme, vestirme o comer. [ROJO - ECOG 3-4]",
+          "id": "ROJO_1",
+          "texto": "Paso más de la mitad del día en cama; me cuesta mucho levantarme incluso para bañarme, vestirme o comer. [ROJO - ECOG 3-4]",
+          "valor": null,
+          "orden": 3
+        },
+        {
+          "codigo": "ROJO_2",
+          "etiqueta": "Además del cansancio, me siento confundido/a, me cuesta mucho despertar o me he desmayado. [ROJO - Emergencia Neurológica/Metabólica]",
+          "id": "ROJO_2",
+          "texto": "Además del cansancio, me siento confundido/a, me cuesta mucho despertar o me he desmayado. [ROJO - Emergencia Neurológica/Metabólica]",
+          "valor": null,
+          "orden": 4
+        }
+      ]
+    },
+    {
+      "id": "793c8615-866b-57d1-8b58-abcf13d42811",
+      "formulario_id": "a4a98ef2-2013-5277-94ea-8365bf50ba71",
+      "codigo": "P9.B",
+      "titulo": "¿Tienes algún dolor en el cuerpo (huesos, músculos, cabeza o zona de tu enfermedad)?",
+      "texto": "Evaluación de dolor somático, visceral o neuropático.",
+      "tipo": "booleano",
+      "requerida": true,
+      "orden": 38,
+      "eliminado": false,
+      "configuracion": {
+        "modulo": "Módulo 9: Energía, Ánimo y Dolor General (Estado Funcional ECOG / Fatiga)",
+        "es_madre": true,
+        "id_web_original": "p9-b"
+      },
+      "opciones": [
+        {
+          "codigo": "NO",
+          "etiqueta": "NO",
+          "id": "NO",
+          "texto": "NO",
+          "valor": null,
+          "orden": 1
+        },
+        {
+          "codigo": "SI",
+          "etiqueta": "SÍ",
+          "id": "SI",
+          "texto": "SÍ",
+          "valor": null,
+          "orden": 2
+        }
+      ]
+    },
+    {
+      "id": "c224ac1d-194f-55d9-a85b-9eb6b112ef1c",
+      "formulario_id": "a4a98ef2-2013-5277-94ea-8365bf50ba71",
+      "codigo": "P9.B.1",
+      "titulo": "¿Qué tan intenso es el dolor en este momento?",
+      "texto": "Categorización de Escala Visual Analógica (EVA).",
+      "tipo": "opcion_unica",
+      "requerida": false,
+      "orden": 39,
+      "eliminado": false,
+      "configuracion": {
+        "modulo": "Módulo 9: Energía, Ánimo y Dolor General (Estado Funcional ECOG / Fatiga)",
+        "depende_de": "P9.B",
+        "id_web_original": "p9-b-1"
+      },
+      "opciones": [
+        {
+          "codigo": "VERDE_1",
+          "etiqueta": "Dolor Leve (1 a 3): Molesta un poco, pero me deja dormir y hacer mis cosas. [VERDE]",
+          "id": "VERDE_1",
+          "texto": "Dolor Leve (1 a 3): Molesta un poco, pero me deja dormir y hacer mis cosas. [VERDE]",
+          "valor": null,
+          "orden": 1
+        },
+        {
+          "codigo": "AMARILLO_1",
+          "etiqueta": "Dolor Moderado (4 a 6): Me interrumpe mis actividades o el sueño. [AMARILLO]",
+          "id": "AMARILLO_1",
+          "texto": "Dolor Moderado (4 a 6): Me interrumpe mis actividades o el sueño. [AMARILLO]",
+          "valor": null,
+          "orden": 2
+        },
+        {
+          "codigo": "ROJO_1",
+          "etiqueta": "Dolor Intenso o Insoportable (7 a 10): No me deja estar tranquilo/a ni dormir. [ROJO]",
+          "id": "ROJO_1",
+          "texto": "Dolor Intenso o Insoportable (7 a 10): No me deja estar tranquilo/a ni dormir. [ROJO]",
+          "valor": null,
+          "orden": 3
+        }
+      ]
+    },
+    {
+      "id": "9290d427-4599-5755-8124-cbe924e9070b",
+      "formulario_id": "a4a98ef2-2013-5277-94ea-8365bf50ba71",
+      "codigo": "P9.B.2",
+      "titulo": "¿Cómo responde el dolor a los analgésicos que te dejó tu médico?",
+      "texto": "Control analgésico de rescate.",
+      "tipo": "opcion_unica",
+      "requerida": false,
+      "orden": 40,
+      "eliminado": false,
+      "configuracion": {
+        "modulo": "Módulo 9: Energía, Ánimo y Dolor General (Estado Funcional ECOG / Fatiga)",
+        "depende_de": "P9.B",
+        "id_web_original": "p9-b-2"
+      },
+      "opciones": [
+        {
+          "codigo": "VERDE_1",
+          "etiqueta": "El dolor se pasa bien cuando tomo mis medicamentos. [VERDE]",
+          "id": "VERDE_1",
+          "texto": "El dolor se pasa bien cuando tomo mis medicamentos. [VERDE]",
+          "valor": null,
+          "orden": 1
+        },
+        {
+          "codigo": "AMARILLO_1",
+          "etiqueta": "El dolor baja un poco, pero vuelve antes de que me toque la siguiente dosis. [AMARILLO - Requiere ajuste de pauta analgésica]",
+          "id": "AMARILLO_1",
+          "texto": "El dolor baja un poco, pero vuelve antes de que me toque la siguiente dosis. [AMARILLO - Requiere ajuste de pauta analgésica]",
+          "valor": null,
+          "orden": 2
+        },
+        {
+          "codigo": "ROJO_1",
+          "etiqueta": "El dolor no se pasa con nada o apareció de forma súbita y muy violenta. [ROJO]",
+          "id": "ROJO_1",
+          "texto": "El dolor no se pasa con nada o apareció de forma súbita y muy violenta. [ROJO]",
+          "valor": null,
+          "orden": 3
+        }
+      ]
+    },
+    {
+      "id": "c2feabde-d389-55b2-aaf4-cd788674cb1c",
+      "formulario_id": "a4a98ef2-2013-5277-94ea-8365bf50ba71",
+      "codigo": "P10",
+      "titulo": "¿Hay algún otro síntoma, duda o comentario que quieras contarle a tu equipo médico o de enfermería y que no hayamos preguntado arriba?",
+      "texto": "Cuadro de texto abierto para que el paciente o cuidador escriba libremente (Máx. 500 caracteres).",
+      "tipo": "texto_libre",
+      "requerida": false,
+      "orden": 41,
+      "eliminado": false,
+      "configuracion": {
+        "modulo": "Módulo 10: Comentario Abierto",
+        "id_web_original": "p10",
+        "max_length": 500
+      },
+      "opciones": []
+    }
+  ]
+}

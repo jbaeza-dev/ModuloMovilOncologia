@@ -125,7 +125,7 @@ describe('Pruebas de UI: Componentes y Pantallas de Formularios Médicos', () =>
       expect(optionSi).toBeTruthy();
       expect(optionNo).toBeTruthy();
 
-      fireEvent.press(optionSi);
+      await fireEvent.press(optionSi);
       expect(onChange).toHaveBeenCalledWith('si');
     });
 
@@ -154,7 +154,7 @@ describe('Pruebas de UI: Componentes y Pantallas de Formularios Médicos', () =>
 
       // Pulsar la opción excluyente "Ninguna"
       const optionNinguna = screen.getByLabelText('Ninguna de las anteriores');
-      fireEvent.press(optionNinguna);
+      await fireEvent.press(optionNinguna);
 
       // Debe retornar solo ['ninguna'], desmarcando 'nauseas'
       expect(onChange).toHaveBeenCalledWith(['ninguna']);
@@ -182,7 +182,7 @@ describe('Pruebas de UI: Componentes y Pantallas de Formularios Médicos', () =>
       expect(screen.getByText('10 = Máximo dolor')).toBeTruthy();
 
       const btn8 = screen.getByLabelText('Nivel 8');
-      fireEvent.press(btn8);
+      await fireEvent.press(btn8);
       expect(onChange).toHaveBeenCalledWith(8);
     });
 
@@ -206,7 +206,7 @@ describe('Pruebas de UI: Componentes y Pantallas de Formularios Médicos', () =>
       expect(screen.getByText(/28.*de.*500.*caracteres/)).toBeTruthy();
 
       const input = screen.getByPlaceholderText('Escribe tu respuesta aquí (opcional)...');
-      fireEvent.changeText(input, 'Nuevo texto');
+      await fireEvent.changeText(input, 'Nuevo texto');
       expect(onChange).toHaveBeenCalledWith('Nuevo texto');
     });
   });

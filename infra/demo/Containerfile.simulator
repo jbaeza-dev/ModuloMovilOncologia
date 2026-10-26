@@ -1,0 +1,17 @@
+FROM docker.io/library/node:22.23.2-bookworm-slim@sha256:48e4b67d85f87bd551df43704e24d252f56cc5f8e9718841aace50f19948f0f9 AS build
+WORKDIR /workspace
+RUN npm install --global pnpm@11.19.0
+COPY package.json pnpm-lock.yaml pnpm-workspace.yaml tsconfig.base.json ./
+COPY packages/contracts/ ./packages/contracts/
+COPY apps/simulator/ ./apps/simulator/
+RUN sed -i 's/nodeLinker: hoisted/nodeLinker: isolated/' pnpm-workspace.yaml
+RUN pnpm install --frozen-lockfile --ignore-scripts --filter @quimiocare/simulator...
+RUN pnpm --filter @quimiocare/contracts run build && pnpm --filter @quimiocare/simulator run build
+
+FROM docker.io/library/node:22.23.2-bookworm-slim@sha256:48e4b67d85f87bd551df43704e24d252f56cc5f8e9718841aace50f19948f0f9
+ENV NODE_ENV=production
+WORKDIR /workspace
+COPY --from=build --chown=node:node /workspace /workspace
+USER node
+EXPOSE 3002 3003
+CMD ["node", "apps/simulator/dist/server.js"]

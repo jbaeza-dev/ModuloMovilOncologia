@@ -1,92 +1,68 @@
-# Módulo Móvil Oncológico
+# QuimioCare — módulo móvil de quimioterapia
 
-Aplicación Android de acompañamiento para pacientes en tratamiento de **quimioterapia**. Este repositorio corresponde al módulo móvil del proyecto de título y se desarrolla como un monorepositorio pnpm.
+Aplicación Android de acompañamiento durante quimioterapia, organizada como monorepositorio pnpm. El entorno académico utiliza pacientes y contenido sintéticos y puede demostrarse sin depender del módulo clínico/web externo.
 
-## Estado actual
+## Estado de esta entrega
 
-El repositorio contiene la base Expo y la navegación principal de QuimioCare, consolidada para la demostración independiente de Sprint 1 mediante datos sintéticos. La interfaz se estructura en cuatro pestañas principales (Inicio, Vitales, Formulario y Educación), complementada por Perfil, Asistente y Reportes:
+La base móvil conserva registros, borradores, historial y archivos locales aislados por paciente, biblioteca de imágenes/YouTube, recordatorios locales y exportación PDF/XLSX. El Plan 01 incorpora contratos verificables, un simulador persistente y el entorno PowerSync propio.
 
-- **Inicio:** resumen del paciente activo, acceso directo al registro diario de síntomas libres (`/formulario/sintomas-libres`), cambio entre pacientes de prueba A/B y distintivo explícito de demostración sintética (`DemoBadge`).
-- **Vitales:** registro atómico de signos vitales en SQLite local con operaciones en cola y generación/exportación persistente de reportes PDF locales (`expo-print` y `expo-sharing`) con resumen temporal calculado desde la base de datos (7, 30 y 90 días) almacenados en `reportes_locales/{paciente_id}/` con sanitización de contenido.
-- **Formulario:** catálogo de cuestionarios médicos asignados de demostración (modelos sintéticos neutros QLQ-C30 y ESAS: 2 para Paciente A, 1 para Paciente B) con validación de respuestas, guardado seguro de borradores locales en almacenamiento persistente por paciente y envío demostrativo, diferenciado de la ruta dedicada de síntomas diarios libres.
-- **Educación:** catálogo multimedia de recursos educativos (videos de YouTube online con advertencia de consumo de datos y guías Markdown e infografías PNG descargables en almacenamiento seguro aisladas por paciente con verificación criptográfica SHA-256 en SQLite v7), con nombres únicos inmutables, compensación ante fallos, protección de escrituras concurrentes y reconciliación automática bidireccional entre SQLite y el sistema de archivos.
-- **Perfil:** datos del paciente, esquema de quimioterapia y código de vinculación médica offline persistidos en SQLite, junto con la selección de cuatro paletas accesibles (Turquesa, Azul, Violeta, Ámbar) y soporte claro/oscuro guardado localmente.
-- **Asistente:** prototipo visual demostrativo sin conexión a servidor ni modelos de lenguaje externos.
+El diagnóstico nativo de P01 es una pantalla técnica habilitada solo en una build sintética explícita. Usa una base separada y no migra el historial existente. La documentación técnica, los resultados y las capturas se conservan en el contexto local del equipo. La incorporación completa de sesión, sincronización clínica, gateway, agenda compartida y triaje corresponde a los planes posteriores. No se declara aquí integración con los sistemas externos reales ni despliegue universitario completado.
 
-No hay autenticación con servidor central, envío remoto de registros, triaje clínico automatizado, sincronización bidireccional ni servicios desplegados.
+## Estructura
 
-## Componentes previstos
+| Ruta                  | Responsabilidad                                                                                            |
+| --------------------- | ---------------------------------------------------------------------------------------------------------- |
+| `apps/mobile/`        | Expo, React Native y TypeScript; rutas finas y funcionalidades separadas                                   |
+| `apps/simulator/`     | 16 operaciones clínicas, una IA determinista y seis helpers demo, con PostgreSQL                           |
+| `packages/contracts/` | OpenAPI originales preservados, tipos y validación de fronteras; extensión educativa PDF propia versionada |
+| `infra/demo/`         | Contenedores, origen y almacenamiento persistente, migraciones/semillas y configuración privada local      |
+| `infra/powersync/`    | Servicio fijado y reglas de réplica autorizada                                                             |
+| `apps/gateway/`       | Componente previsto para los planes siguientes; aún no implementado                                        |
 
-Las aplicaciones y paquetes se incorporan progresivamente dentro de estas rutas:
+La biblioteca educativa objetivo admite imágenes y PDF offline, y videos solo online. El contrato original de imágenes/video se conserva; la ampliación PDF propia se versiona por separado y no se atribuye al backend externo sin evidencia.
 
-| Ruta prevista                 | Responsabilidad                                                                                    |
-| ----------------------------- | -------------------------------------------------------------------------------------------------- |
-| `apps/mobile/`                | React Native + Expo + TypeScript + Expo Router para Android; registros sintéticos en SQLite local. |
-| `apps/gateway/`               | Pasarela Node.js + Express para chatbot y sesiones/tokens de dispositivo, con autenticación JWT.   |
-| `apps/central-api-simulator/` | Simulador local de la API clínica del otro módulo, con datos sintéticos.                           |
-| `packages/contracts/`         | Contratos y esquemas compartidos cuando se acuerden con el módulo central.                         |
-| `infra/local/`                | Entorno de pruebas locales mediante `podman-compose`.                                              |
+## Requisitos
 
-## Requisitos para el desarrollo local
-
-- Node.js 22.23.2 LTS recomendado (también se admite Node.js 24 LTS). Si se utiliza `nvm`, ejecutar `nvm use` desde la raíz.
-- pnpm 11.19.0, fijado en `package.json`.
-- Dispositivo o emulador Android para validar la app de forma nativa cuando esté disponible.
-- Podman y `podman-compose` para los servicios locales que se agregarán después.
-
-Instalar las herramientas de desarrollo desde la raíz:
+- Node22.23.2 recomendado en `.nvmrc`; también se admite Node24 según package.json.
+- pnpm11.19.0 fijado por el repositorio.
+- Android físico/development build para módulos nativos.
+- Podman con proveedor Compose para el entorno previsto; Docker Compose es una alternativa de comprobación local. La universidad requiere su aceptación operativa propia.
 
 ```bash
 pnpm install --frozen-lockfile
+pnpm check
+pnpm test:local
+pnpm test:ui
+pnpm test:contracts
+pnpm test:simulator
+pnpm build:services
 ```
 
-Comprobar formato, lint, tipos y pruebas unitarias con la suite local:
+Las pruebas HTTP requieren `TEST_DATABASE_URL` con credenciales privadas y una base sintética separada cuyo nombre termine en `_test`:
 
 ```bash
-pnpm check
-pnpm run test:local
+pnpm test:integration
 ```
 
-Iniciar el servidor de desarrollo de la app desde la raíz:
+No ejecutar esta suite sobre la base que usa el teléfono: reinicia datos de prueba. El runner no sustituye PostgreSQL por memoria ni omite la suite cuando falta configuración.
+
+## Ejecutar la aplicación
 
 ```bash
 pnpm --filter @modulo-movil-oncologia/mobile start
+pnpm --filter @modulo-movil-oncologia/mobile run android
 ```
 
-Para compilar y ejecutar la **Development Build** en un dispositivo o emulador Android configurado:
+La build demo existente usa `EXPO_PUBLIC_DEMO_MODE=true`. Las URLs se configuran por entorno; localhost en Android corresponde al teléfono. El protocolo de diagnóstico Android del equipo detalla la compilación del APK y las pruebas PowerSync. Un bundle JavaScript correcto no acredita recepción push ni réplica nativa.
 
-```bash
-pnpm --filter @modulo-movil-oncologia/mobile android
-```
+## Servicios propios y contratos
 
-Para generar e instalar la **Build Demo Release autónoma** (JavaScript embebido y selector A/B para pruebas 100% offline sin Metro ni PC):
+El entorno demo se configura mediante `node infra/demo/configure.mjs` y su definición está en `infra/demo/compose.yaml`. La documentación local del equipo detalla el arranque y las pruebas de persistencia. No imprimir `.env`, tokens ni salidas de Compose con secretos interpolados. Los scripts de configuración no sobrescriben credenciales sobre volúmenes existentes.
 
-```bash
-pnpm --filter @modulo-movil-oncologia/mobile run run:android:demo
-```
+Consultar el [paquete de contratos](packages/contracts/README.md) y el [simulador](apps/simulator/README.md). El gateway no debe convertirse en un segundo emisor clínico: la integración prevista usa SDK PowerSync y uploadData hacia la API clínica conforme al contrato.
 
-Comprobar la salud y compatibilidad de dependencias Expo:
+## Comprobación y revisión
 
-```bash
-pnpm --filter @modulo-movil-oncologia/mobile run doctor
-```
+CI verifica calidad móvil, contratos y HTTP con PostgreSQL. Cada capacidad se acepta con evidencia de su entorno real; pruebas unitarias, compilación y aceptación nativa son resultados distintos.
 
-Generar el bundle JavaScript para Android (valida empaquetado y Metro sin emulador):
-
-```bash
-pnpm --filter @modulo-movil-oncologia/mobile bundle:android
-```
-
-La aplicación aún no contiene PowerSync. Los datos de prueba de signos, síntomas, contexto y descargas educativas se guardan en SQLite y en el sistema de archivos del dispositivo de manera aislada por paciente. QuimioCare cuenta con su propia **Development Build** nativa (`expo-dev-client`) con paquete `cl.ubiobio.quimiocare`, reemplazando el uso de Expo Go para dar soporte completo a dependencias nativas presentes (`expo-sqlite`, `expo-file-system`, `expo-print`, `expo-sharing`) y futuras. La exportación del bundle Android comprueba el empaquetado de JavaScript y no sustituye la revisión en dispositivo o emulador.
-
-El repositorio mantiene un solo `pnpm-lock.yaml` en la raíz. No deben generarse lockfiles dentro
-de `apps/` ni `packages/`. La configuración de workspaces y `nodeLinker: hoisted` está definida en
-`pnpm-workspace.yaml`.
-
-`typecheck` valida recursivamente la configuración raíz y el código TypeScript de todos los paquetes
-del workspace (`apps/*` y `packages/*`). Los futuros componentes se evaluarán automáticamente al
-declarar su script `typecheck`.
-
-## Colaboración
-
-El repositorio ya cuenta con la base Expo (PR5), la navegación principal (PR9), las pantallas visuales previstas (PR10–PR13), la selección de apariencia accesible, la persistencia local de signos, síntomas y contexto en SQLite (SCRUM-19/SCRUM-17/SCRUM-20), la consolidación de la experiencia demostrativa local (reconciliación de copias educativas, reportes PDF y XLSX nativos locales, aislamiento A/B con disclaimers, y cuestionarios médicos asignados con guardado de borradores) y el incremento 4 de Educación multimedia (YouTube online + guías e infografías offline con verificación SHA-256). Los cambios futuros partirán de `main` y mantendrán la separación entre interfaz, datos locales y servicios.
+Los cambios del Plan 01 quedan sin commit hasta la revisión de Javier y hasta que proporcione el mensaje exacto. No se publica una rama ni se integra a main como consecuencia automática de pasar pruebas.

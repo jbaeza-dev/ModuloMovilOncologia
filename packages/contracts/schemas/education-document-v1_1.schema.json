@@ -1,0 +1,92 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "urn:quimiocare:education-document:1.1",
+  "title": "Documento educativo PDF — ampliación propia QuimioCare1.1",
+  "description": "Representación propia independiente de los enums RC3.2; no afirma soporte del módulo externo.",
+  "type": "object",
+  "properties": {
+    "id": {
+      "type": "string",
+      "format": "uuid"
+    },
+    "profesional_id": {
+      "type": "string",
+      "format": "uuid"
+    },
+    "titulo": {
+      "type": "string",
+      "minLength": 1,
+      "pattern": "\\S"
+    },
+    "descripcion": {
+      "type": "string"
+    },
+    "tipo": {
+      "const": "documento"
+    },
+    "formato": {
+      "const": "pdf"
+    },
+    "url": {
+      "type": "string",
+      "minLength": 1,
+      "pattern": "\\S"
+    },
+    "categoria": {
+      "type": "string",
+      "minLength": 1,
+      "pattern": "\\S"
+    },
+    "activo": {
+      "const": true
+    },
+    "fecha_creacion": {
+      "type": "string",
+      "format": "date-time"
+    },
+    "carpeta_id": {
+      "anyOf": [
+        {
+          "type": "string",
+          "format": "uuid"
+        },
+        {
+          "type": "null"
+        }
+      ]
+    },
+    "archivo_mime": {
+      "const": "application/pdf"
+    },
+    "archivo_tamano_bytes": {
+      "type": "integer",
+      "minimum": 1
+    },
+    "archivo_revision": {
+      "type": "string",
+      "format": "uuid"
+    },
+    "archivo_sha256": {
+      "type": "string",
+      "pattern": "^[0-9a-f]{64}$"
+    }
+  },
+  "required": [
+    "id",
+    "profesional_id",
+    "titulo",
+    "descripcion",
+    "tipo",
+    "formato",
+    "url",
+    "categoria",
+    "activo",
+    "fecha_creacion",
+    "archivo_mime",
+    "archivo_tamano_bytes",
+    "archivo_revision",
+    "archivo_sha256"
+  ],
+  "additionalProperties": false,
+  "x-provenance": "Decisión de Javier: PDF educativo offline,25-10-2026; schema propio propuesto para implementar y probar."
+}

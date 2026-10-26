@@ -6,6 +6,7 @@ on:
       - main
     paths:
       - 'apps/mobile/**'
+      - 'packages/**'
       - '.github/workflows/build-apk.yml'
       - 'pnpm-lock.yaml'
   workflow_dispatch:
@@ -15,6 +16,11 @@ on:
         required: true
         type: boolean
         default: true
+      p01_probe_enabled:
+        description: 'Incluir acceso a diagnóstico técnico P01 (no prueba aceptación)'
+        required: true
+        type: boolean
+        default: false
 
 permissions:
   contents: read
@@ -24,20 +30,22 @@ jobs:
     name: Compilar APK Android Release
     runs-on: ubuntu-latest
     timeout-minutes: 45
+    env:
+      EXPO_PUBLIC_DEMO_MODE: ${{ github.event_name == 'workflow_dispatch' && inputs.demo_mode || github.event_name != 'workflow_dispatch' }}
+      EXPO_PUBLIC_P01_PROBE_ENABLED: ${{ github.event_name == 'workflow_dispatch' && inputs.p01_probe_enabled || false }}
 
     steps:
       - name: Checkout del repositorio
-        uses: actions/checkout@v4
+        uses: actions/checkout@v7
+        with:
+          persist-credentials: false
 
-      - name: Configurar Node.js y pnpm
-        uses: pnpm/action-setup@v3
+      - name: Configurar Node.js, pnpm e instalar lockfile
+        uses: pnpm/setup@v3
         with:
           node-version-file: .nvmrc
           cache: true
           require-lockfile: true
-
-      - name: Instalar dependencias del monorrepositorio
-        run: pnpm install --frozen-lockfile
 
       - name: Configurar JDK 17
         uses: actions/setup-java@v4
@@ -46,28 +54,31 @@ jobs:
           java-version: '17'
           cache: 'gradle'
 
-      - name: Generar proyecto nativo Android (Expo Prebuild)
-        env:
-          EXPO_PUBLIC_DEMO_MODE: ${{ github.event.inputs.demo_mode || 'true' }}
+      - name: Verificar tipos y dependencias nativas
+        run: |
+          pnpm run typecheck
+          pnpm --filter @modulo-movil-oncologia/mobile run doctor
+
+      - name: Generar proyecto nativo Android
         run: pnpm --filter @modulo-movil-oncologia/mobile exec expo prebuild --platform android --no-install
 
       - name: Compilar APK Release Demo
         env:
-          EXPO_PUBLIC_DEMO_MODE: ${{ github.event.inputs.demo_mode || 'true' }}
           GRADLE_OPTS: "-Dorg.gradle.jvmargs='-Xmx4096m -XX:MaxMetaspaceSize=1024m -XX:+UseG1GC' -Dorg.gradle.parallel=true"
+        working-directory: apps/mobile/android
         run: |
-          cd apps/mobile/android
           chmod +x gradlew
           ./gradlew assembleRelease \
             --no-daemon \
-            -PEXPO_PUBLIC_DEMO_MODE=${{ github.event.inputs.demo_mode || 'true' }} \
+            -PEXPO_PUBLIC_DEMO_MODE=${EXPO_PUBLIC_DEMO_MODE} \
             -x lint \
             -x lintVitalAnalyzeRelease \
             -x test
 
-      - name: Subir APK como artefacto descargable
+      - name: Subir APK compilado (no acredita interacción ni push)
         uses: actions/upload-artifact@v4
         with:
           name: QuimioCare-Demo-APK
           path: apps/mobile/android/app/build/outputs/apk/release/*.apk
+          if-no-files-found: error
           retention-days: 30

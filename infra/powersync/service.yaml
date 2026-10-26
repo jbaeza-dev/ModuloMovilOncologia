@@ -1,0 +1,41 @@
+# PowerSync Service 1.27.1. Las variables PS_* se inyectan solo en servidor.
+replication:
+  connections:
+    - type: postgresql
+      uri: !env PS_SOURCE_URI
+      sslmode: disable
+
+storage:
+  type: postgresql
+  uri: !env PS_STORAGE_URI
+  sslmode: disable
+
+port: 8080
+sync_config:
+  path: /config/sync-config.yaml
+
+client_auth:
+  audience: ['authenticated']
+  jwks:
+    keys:
+      - kty: oct
+        alg: HS256
+        use: sig
+        k: !env PS_DEMO_JWK
+
+api:
+  tokens:
+    - !env PS_ADMIN_TOKEN
+
+telemetry:
+  disable_telemetry_sharing: true
+
+healthcheck:
+  probes:
+    use_http: true
+    use_filesystem: true
+
+system:
+  logging:
+    level: warn
+    format: json

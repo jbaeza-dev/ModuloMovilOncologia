@@ -5,3 +5,10 @@ coverage/
 .expo/
 pnpm-lock.yaml
 .agents/
+
+# Fuentes contractuales copiadas byte a byte y tipos generados deterministas
+packages/contracts/specs/**
+packages/contracts/fixtures/**
+packages/contracts/schemas/schema-configuracion-epro-v1-objetivo.json
+packages/contracts/schemas/schema-contenido-educativo-objetivo.json
+packages/contracts/src/generated-*.ts

@@ -1,0 +1,11 @@
+# Scripts de contenedores con LF también al clonar en Windows.
+*.sh text eol=lf
+
+# Contratos y fixtures de referencia conservados byte a byte.
+packages/contracts/specs/** -text whitespace=cr-at-eol
+packages/contracts/fixtures/** -text whitespace=cr-at-eol
+packages/contracts/schemas/schema-configuracion-epro-v1-objetivo.json -text whitespace=cr-at-eol
+packages/contracts/schemas/schema-contenido-educativo-objetivo.json -text whitespace=cr-at-eol
+
+# La generación determinista produce LF en cualquier plataforma.
+packages/contracts/src/generated-*.ts text eol=lf

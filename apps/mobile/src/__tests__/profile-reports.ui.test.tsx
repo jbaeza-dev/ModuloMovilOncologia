@@ -226,7 +226,7 @@ describe('Profile y Reports UI (Bloque 5)', () => {
       const configButton = screen.getByText('Configurar aviso');
       expect(configButton).toBeTruthy();
 
-      fireEvent.press(configButton);
+      await fireEvent.press(configButton);
 
       expect(mockRouterPush).toHaveBeenCalledWith({
         pathname: '/recordatorios/editar',
@@ -266,7 +266,7 @@ describe('Profile y Reports UI (Bloque 5)', () => {
       // Desplegable accesible para ver detalles del archivo con minHeight 48
       const toggleDetailsBtn = screen.getByRole('button', { name: 'Ver detalles del archivo' });
       expect(toggleDetailsBtn).toBeTruthy();
-      fireEvent.press(toggleDetailsBtn);
+      await fireEvent.press(toggleDetailsBtn);
 
       // Al expandir, se anuncia a TalkBack y los detalles técnicos quedan visibles
       await waitFor(() => {
@@ -275,7 +275,7 @@ describe('Profile y Reports UI (Bloque 5)', () => {
       });
 
       // Al colapsar, se anuncia nuevamente
-      fireEvent.press(screen.getByRole('button', { name: 'Ocultar detalles del archivo' }));
+      await fireEvent.press(screen.getByRole('button', { name: 'Ocultar detalles del archivo' }));
       await waitFor(() => {
         expect(announceSpy).toHaveBeenCalledWith('Detalles del archivo ocultos');
         expect(screen.queryByText('reporte_paciente-a_30d_2026-10-16T12-00-00.pdf')).toBeNull();
@@ -293,7 +293,7 @@ describe('Profile y Reports UI (Bloque 5)', () => {
         expect(screen.getByText('Eliminar reporte')).toBeTruthy();
       });
 
-      fireEvent.press(screen.getByText('Eliminar reporte'));
+      await fireEvent.press(screen.getByText('Eliminar reporte'));
 
       expect(alertSpy).toHaveBeenCalledWith(
         '¿Eliminar este reporte?',
@@ -336,7 +336,7 @@ describe('Profile y Reports UI (Bloque 5)', () => {
         expect(screen.getByText('Eliminar reporte')).toBeTruthy();
       });
 
-      fireEvent.press(screen.getByText('Eliminar reporte'));
+      await fireEvent.press(screen.getByText('Eliminar reporte'));
 
       expect(alertSpy).toHaveBeenCalled();
       const alertButtons = alertSpy.mock.calls[0]?.[2] as {

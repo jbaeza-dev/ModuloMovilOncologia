@@ -1,0 +1,20 @@
+.git
+.agents
+.audit
+**/node_modules
+**/dist
+**/coverage
+**/.env
+**/.env.*
+**/*.log
+**/*.keystore
+**/*.jks
+**/*.p12
+**/*.pem
+apps/mobile/android
+apps/mobile/ios
+
+# Configuración local de proveedores; no incluir en el servidor ni en Git
+**/google-services.json
+**/*service-account*.json
+**/*service_account*.json

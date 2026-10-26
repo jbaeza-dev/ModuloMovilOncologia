@@ -1,0 +1,290 @@
+[
+  {
+    "servicio": "Clínica",
+    "metodo": "GET",
+    "ruta": "/api/v1/auth/me",
+    "operationId": "obtener_perfil_actual_api_v1_auth_me_get",
+    "resumen": "Obtener perfil del usuario autenticado",
+    "archivo": "openapi/openapi-clinico-rc32-bundle.json"
+  },
+  {
+    "servicio": "Clínica",
+    "metodo": "POST",
+    "ruta": "/api/v1/auth/completar-perfil-paciente",
+    "operationId": "completar_perfil_paciente_api_v1_auth_completar_perfil_paciente_post",
+    "resumen": "Completar datos obligatorios del paciente",
+    "archivo": "openapi/openapi-clinico-rc32-bundle.json"
+  },
+  {
+    "servicio": "Clínica",
+    "metodo": "GET",
+    "ruta": "/api/v1/pacientes/me/perfil-clinico",
+    "operationId": "obtener_perfil_clinico_propio_api_v1_pacientes_me_perfil_clinico_get",
+    "resumen": "Consultar perfil clínico propio del paciente",
+    "archivo": "openapi/openapi-clinico-rc32-bundle.json"
+  },
+  {
+    "servicio": "Clínica",
+    "metodo": "GET",
+    "ruta": "/api/v1/pacientes/me/tratamiento-activo",
+    "operationId": "obtener_tratamiento_activo_propio_api_v1_pacientes_me_tratamiento_activo_get",
+    "resumen": "Consultar tratamiento oncológico activo propio",
+    "archivo": "openapi/openapi-clinico-rc32-bundle.json"
+  },
+  {
+    "servicio": "Clínica",
+    "metodo": "POST",
+    "ruta": "/api/v1/pacientes/me/codigo-vinculacion",
+    "operationId": "generar_codigo_vinculacion_api_v1_pacientes_me_codigo_vinculacion_post",
+    "resumen": "Generar código de vinculación",
+    "archivo": "openapi/openapi-clinico-rc32-bundle.json"
+  },
+  {
+    "servicio": "Clínica",
+    "metodo": "POST",
+    "ruta": "/api/v1/pacientes/me/signos-vitales",
+    "operationId": "registrar_signos_vitales_api_v1_pacientes_me_signos_vitales_post",
+    "resumen": "Registrar medición individual de signos vitales",
+    "archivo": "openapi/openapi-clinico-rc32-bundle.json"
+  },
+  {
+    "servicio": "Clínica",
+    "metodo": "POST",
+    "ruta": "/api/v1/pacientes/me/signos-vitales/sync",
+    "operationId": "sincronizar_signos_vitales_api_v1_pacientes_me_signos_vitales_sync_post",
+    "resumen": "Sincronizar lote de signos vitales (reconciliación móvil)",
+    "archivo": "openapi/openapi-clinico-rc32-bundle.json"
+  },
+  {
+    "servicio": "Clínica",
+    "metodo": "GET",
+    "ruta": "/api/v1/formularios/activo",
+    "operationId": "obtener_formulario_activo_api_v1_formularios_activo_get",
+    "resumen": "Obtener formulario activo para un tipo de tratamiento",
+    "archivo": "openapi/openapi-clinico-rc32-bundle.json"
+  },
+  {
+    "servicio": "Clínica",
+    "metodo": "GET",
+    "ruta": "/api/v1/formularios/{formulario_id}",
+    "operationId": "obtener_formulario_por_id_api_v1_formularios__formulario_id__get",
+    "resumen": "Obtener definición de formulario por ID",
+    "archivo": "openapi/openapi-clinico-rc32-bundle.json"
+  },
+  {
+    "servicio": "Clínica",
+    "metodo": "POST",
+    "ruta": "/api/v1/formularios/{formulario_id}/respuestas",
+    "operationId": "responder_formulario_api_v1_formularios__formulario_id__respuestas_post",
+    "resumen": "Registrar respuestas de paciente a un formulario",
+    "archivo": "openapi/openapi-clinico-rc32-bundle.json"
+  },
+  {
+    "servicio": "Clínica",
+    "metodo": "GET",
+    "ruta": "/api/v1/contenido-educativo",
+    "operationId": "listar_contenido_api_v1_contenido_educativo_get",
+    "resumen": "Listar contenido educativo con filtros",
+    "archivo": "openapi/openapi-clinico-rc32-bundle.json"
+  },
+  {
+    "servicio": "Clínica",
+    "metodo": "GET",
+    "ruta": "/api/v1/contenido-educativo/categorias",
+    "operationId": "obtener_categorias_api_v1_contenido_educativo_categorias_get",
+    "resumen": "Obtener categorias educativas disponibles",
+    "archivo": "openapi/openapi-clinico-rc32-bundle.json"
+  },
+  {
+    "servicio": "Clínica",
+    "metodo": "GET",
+    "ruta": "/api/v1/contenido-educativo/{contenido_id}",
+    "operationId": "obtener_contenido_api_v1_contenido_educativo__contenido_id__get",
+    "resumen": "Obtener contenido educativo por ID",
+    "archivo": "openapi/openapi-clinico-rc32-bundle.json"
+  },
+  {
+    "servicio": "Clínica",
+    "metodo": "GET",
+    "ruta": "/api/v1/terminos/vigente",
+    "operationId": "obtener_terminos_vigentes_api_v1_terminos_vigente_get",
+    "resumen": "Obtener Términos Vigentes",
+    "archivo": "openapi/openapi-clinico-rc32-bundle.json"
+  },
+  {
+    "servicio": "Clínica",
+    "metodo": "GET",
+    "ruta": "/api/v1/pacientes/me/consentimientos",
+    "operationId": "consultar_consentimiento_propio_rc3",
+    "resumen": "Estado de consentimiento propio existente (RAD-94)",
+    "archivo": "openapi/openapi-clinico-rc32-bundle.json"
+  },
+  {
+    "servicio": "Clínica",
+    "metodo": "POST",
+    "ruta": "/api/v1/pacientes/me/consentimientos",
+    "operationId": "registrar_consentimiento_propio_rc3",
+    "resumen": "Aceptación online existente (RAD-94)",
+    "archivo": "openapi/openapi-clinico-rc32-bundle.json"
+  },
+  {
+    "servicio": "IA",
+    "metodo": "POST",
+    "ruta": "/api/v1/chat",
+    "operationId": "chat_endpoint_api_v1_chat_post",
+    "resumen": "Chat Endpoint",
+    "archivo": "openapi/openapi-ia-rc31.json"
+  },
+  {
+    "servicio": "Gateway",
+    "metodo": "GET",
+    "ruta": "/health",
+    "operationId": "gatewaySalud",
+    "resumen": "Consultar salud básica",
+    "archivo": "openapi/openapi-gateway-quimiocare-v1.json"
+  },
+  {
+    "servicio": "Gateway",
+    "metodo": "POST",
+    "ruta": "/api/gateway/dispositivo/push-token",
+    "operationId": "gatewayRegistrarPush",
+    "resumen": "Registrar o actualizar asociación de instalación",
+    "archivo": "openapi/openapi-gateway-quimiocare-v1.json"
+  },
+  {
+    "servicio": "Gateway",
+    "metodo": "GET",
+    "ruta": "/api/gateway/dispositivo/sesiones",
+    "operationId": "gatewayListarSesiones",
+    "resumen": "Listar asociaciones propias",
+    "archivo": "openapi/openapi-gateway-quimiocare-v1.json"
+  },
+  {
+    "servicio": "Gateway",
+    "metodo": "GET",
+    "ruta": "/api/gateway/dispositivo/sesiones/{id}",
+    "operationId": "gatewayConsultarSesion",
+    "resumen": "Consultar una asociación propia",
+    "archivo": "openapi/openapi-gateway-quimiocare-v1.json"
+  },
+  {
+    "servicio": "Gateway",
+    "metodo": "DELETE",
+    "ruta": "/api/gateway/dispositivo/sesiones/{id}",
+    "operationId": "gatewayRevocarSesion",
+    "resumen": "Revocar elegibilidad push de una asociación",
+    "archivo": "openapi/openapi-gateway-quimiocare-v1.json"
+  },
+  {
+    "servicio": "Gateway",
+    "metodo": "POST",
+    "ruta": "/api/gateway/chatbot/consulta",
+    "operationId": "gatewayConsultarIA",
+    "resumen": "Consultar IA sin historial",
+    "archivo": "openapi/openapi-gateway-quimiocare-v1.json"
+  },
+  {
+    "servicio": "Gateway",
+    "metodo": "GET",
+    "ruta": "/api/gateway/recordatorios",
+    "operationId": "gatewayConsultarAgenda",
+    "resumen": "Descargar snapshot de agenda y cumplimientos",
+    "archivo": "openapi/openapi-gateway-quimiocare-v1.json"
+  },
+  {
+    "servicio": "Gateway",
+    "metodo": "POST",
+    "ruta": "/api/gateway/recordatorios",
+    "operationId": "gatewayCrearRecordatorio",
+    "resumen": "Crear recordatorio compartido",
+    "archivo": "openapi/openapi-gateway-quimiocare-v1.json"
+  },
+  {
+    "servicio": "Gateway",
+    "metodo": "GET",
+    "ruta": "/api/gateway/recordatorios/{id}",
+    "operationId": "gatewayConsultarRecordatorio",
+    "resumen": "Consultar recordatorio propio",
+    "archivo": "openapi/openapi-gateway-quimiocare-v1.json"
+  },
+  {
+    "servicio": "Gateway",
+    "metodo": "PUT",
+    "ruta": "/api/gateway/recordatorios/{id}",
+    "operationId": "gatewayReemplazarRecordatorio",
+    "resumen": "Reemplazar configuración de recordatorio",
+    "archivo": "openapi/openapi-gateway-quimiocare-v1.json"
+  },
+  {
+    "servicio": "Gateway",
+    "metodo": "DELETE",
+    "ruta": "/api/gateway/recordatorios/{id}",
+    "operationId": "gatewayEliminarRecordatorio",
+    "resumen": "Eliminar recordatorio de la agenda compartida",
+    "archivo": "openapi/openapi-gateway-quimiocare-v1.json"
+  },
+  {
+    "servicio": "Gateway",
+    "metodo": "POST",
+    "ruta": "/api/gateway/recordatorios/cumplimientos",
+    "operationId": "gatewayRegistrarCumplimientos",
+    "resumen": "Comunicar registros guardados localmente",
+    "archivo": "openapi/openapi-gateway-quimiocare-v1.json"
+  },
+  {
+    "servicio": "Gateway",
+    "metodo": "POST",
+    "ruta": "/api/gateway/notificaciones/acuses",
+    "operationId": "gatewayRegistrarAcuses",
+    "resumen": "Comunicar procesamiento o interacción con avisos",
+    "archivo": "openapi/openapi-gateway-quimiocare-v1.json"
+  },
+  {
+    "servicio": "Demo",
+    "metodo": "POST",
+    "ruta": "/__demo/auth/session",
+    "operationId": "demoCrearSesion",
+    "resumen": "Seleccionar paciente sintético",
+    "archivo": "openapi/openapi-simulador-control-v1.json"
+  },
+  {
+    "servicio": "Demo",
+    "metodo": "POST",
+    "ruta": "/__demo/auth/refresh",
+    "operationId": "demoRenovarSesion",
+    "resumen": "Renovar sesión sintética",
+    "archivo": "openapi/openapi-simulador-control-v1.json"
+  },
+  {
+    "servicio": "Demo",
+    "metodo": "GET",
+    "ruta": "/__demo/escenarios",
+    "operationId": "demoListarEscenarios",
+    "resumen": "Listar escenarios reproducibles",
+    "archivo": "openapi/openapi-simulador-control-v1.json"
+  },
+  {
+    "servicio": "Demo",
+    "metodo": "PUT",
+    "ruta": "/__demo/escenario-activo",
+    "operationId": "demoActivarEscenario",
+    "resumen": "Activar escenario para A o B",
+    "archivo": "openapi/openapi-simulador-control-v1.json"
+  },
+  {
+    "servicio": "Demo",
+    "metodo": "POST",
+    "ruta": "/__demo/reset",
+    "operationId": "demoReiniciarDatos",
+    "resumen": "Reiniciar exclusivamente datos sintéticos",
+    "archivo": "openapi/openapi-simulador-control-v1.json"
+  },
+  {
+    "servicio": "Demo",
+    "metodo": "GET",
+    "ruta": "/__demo/archivos/imagen-prueba.png",
+    "operationId": "demoImagenPrueba",
+    "resumen": "Obtener bytes originales de imagen fixture",
+    "archivo": "openapi/openapi-simulador-control-v1.json"
+  }
+]

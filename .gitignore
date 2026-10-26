@@ -58,3 +58,8 @@ Thumbs.db
 .agents/
 
 # Los archivos de bloqueo del gestor de paquetes se deben versionar.
+
+# Configuración local de proveedores; no incluir en el servidor ni en Git
+**/google-services.json
+**/*service-account*.json
+**/*service_account*.json

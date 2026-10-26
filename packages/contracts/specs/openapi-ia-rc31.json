@@ -1,0 +1,411 @@
+{
+  "openapi": "3.1.0",
+  "info": {
+    "title": "RadiCare IA — chat observado RC3",
+    "version": "RC3.1-avance-2026-10-23",
+    "description": "Chat observado; RAD-120 integrado en código. No acredita despliegue o prueba PARRA; sin memoria comprometida."
+  },
+  "paths": {
+    "/api/v1/chat": {
+      "post": {
+        "tags": [
+          "Chat"
+        ],
+        "summary": "Chat Endpoint",
+        "description": "Chat online stateless quimioterapia. estado_respuesta: respuesta/sin_informacion/cortesia/no_disponible. Error controlado LLM puede ser HTTP 200 no_disponible; errores HTTP usan detail. Sin historial ni conversacion_id.",
+        "operationId": "chat_endpoint_api_v1_chat_post",
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "debug",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "boolean",
+              "default": false,
+              "title": "Debug"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ChatRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Respuesta generada para el paciente según el recorrido del asistente.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ChatResponse"
+                },
+                "examples": {
+                  "respuesta": {
+                    "summary": "Ejemplo sintético de respuesta normal",
+                    "description": "Ejemplo sintético de contrato; no representa una ejecución real del modelo ni recomendación clínica.",
+                    "value": {
+                      "respuesta": "Ejemplo sintético de respuesta generada con respaldo en guías clínicas.",
+                      "fuentes": [],
+                      "requiere_urgencia": false,
+                      "confianza_nivel": "alta",
+                      "estado_respuesta": "respuesta",
+                      "debug": null
+                    }
+                  },
+                  "sin_informacion": {
+                    "summary": "Ejemplo sintético sin información suficiente",
+                    "description": "Ejemplo sintético de contrato para consultas sin evidencia clínica suficiente en las guías.",
+                    "value": {
+                      "respuesta": "No encontré información sobre eso en las guías que tengo disponibles. Le recomiendo consultarlo con su equipo de salud o centro asistencial para que puedan orientarle adecuadamente.",
+                      "fuentes": [],
+                      "requiere_urgencia": false,
+                      "confianza_nivel": "baja",
+                      "estado_respuesta": "sin_informacion",
+                      "debug": null
+                    }
+                  },
+                  "cortesia": {
+                    "summary": "Ejemplo sintético de cortesía",
+                    "description": "Ejemplo sintético de contrato para mensajes de cortesía, saludo o despedida.",
+                    "value": {
+                      "respuesta": "Hola, soy el asistente virtual de RadiCare. Puede preguntarme sobre su tratamiento de quimioterapia y su cuidado.",
+                      "fuentes": [],
+                      "requiere_urgencia": false,
+                      "confianza_nivel": "ninguna",
+                      "estado_respuesta": "cortesia",
+                      "debug": null
+                    }
+                  },
+                  "no_disponible": {
+                    "summary": "Ejemplo sintético de indisponibilidad controlada",
+                    "description": "Ejemplo sintético de contrato para indisponibilidad técnica controlada del generador sin señales de alarma.",
+                    "value": {
+                      "respuesta": "En este momento no puedo responder. Por favor, inténtelo nuevamente en unos minutos o consulte con su equipo de salud.",
+                      "fuentes": [],
+                      "requiere_urgencia": false,
+                      "confianza_nivel": "ninguna",
+                      "estado_respuesta": "no_disponible",
+                      "debug": null
+                    }
+                  },
+                  "no_disponible_con_urgencia": {
+                    "summary": "Ejemplo sintético de indisponibilidad con urgencia",
+                    "description": "Ejemplo sintético de contrato para indisponibilidad técnica controlada conservando la detección de urgencia médica.",
+                    "value": {
+                      "respuesta": "Se han identificado señales que requieren evaluación médica. Por favor acuda a un servicio de urgencias o contacte a su equipo de salud.",
+                      "fuentes": [],
+                      "requiere_urgencia": true,
+                      "confianza_nivel": "ninguna",
+                      "estado_respuesta": "no_disponible",
+                      "debug": null
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Error IA; detail string, ver respuesta RC3",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "required": [
+                    "detail"
+                  ],
+                  "properties": {
+                    "detail": {
+                      "type": "string"
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Error IA; detail string, ver respuesta RC3",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "required": [
+                    "detail"
+                  ],
+                  "properties": {
+                    "detail": {
+                      "type": "string"
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validación sanitizada; detail lista",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "required": [
+                    "detail"
+                  ],
+                  "properties": {
+                    "detail": {
+                      "type": "array",
+                      "items": {
+                        "type": "object",
+                        "additionalProperties": true
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "Error IA; detail string, ver respuesta RC3",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "required": [
+                    "detail"
+                  ],
+                  "properties": {
+                    "detail": {
+                      "type": "string"
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "Error IA; detail string, ver respuesta RC3",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "required": [
+                    "detail"
+                  ],
+                  "properties": {
+                    "detail": {
+                      "type": "string"
+                    }
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    }
+  },
+  "components": {
+    "schemas": {
+      "ChatRequest": {
+        "description": "Solicitud de consulta clínica al asistente.",
+        "properties": {
+          "mensaje": {
+            "description": "Pregunta del paciente",
+            "maxLength": 2000,
+            "minLength": 1,
+            "title": "Mensaje",
+            "type": "string"
+          },
+          "activar_alarmas": {
+            "default": true,
+            "description": "Activa o desactiva la evaluación de alarmas y forzado de urgencia",
+            "title": "Activar Alarmas",
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "mensaje"
+        ],
+        "title": "ChatRequest",
+        "type": "object"
+      },
+      "ChatResponse": {
+        "description": "Respuesta generada para el paciente.",
+        "properties": {
+          "respuesta": {
+            "title": "Respuesta",
+            "type": "string"
+          },
+          "fuentes": {
+            "items": {
+              "$ref": "#/components/schemas/FuenteItem"
+            },
+            "title": "Fuentes",
+            "type": "array"
+          },
+          "requiere_urgencia": {
+            "title": "Requiere Urgencia",
+            "type": "boolean"
+          },
+          "confianza_nivel": {
+            "title": "Confianza Nivel",
+            "type": "string"
+          },
+          "estado_respuesta": {
+            "$ref": "#/components/schemas/EstadoRespuesta",
+            "description": "Estado público del resultado de la consulta clínica ('respuesta', 'sin_informacion', 'cortesia', 'no_disponible')."
+          },
+          "debug": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/DebugInfo"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null
+          }
+        },
+        "required": [
+          "respuesta",
+          "fuentes",
+          "requiere_urgencia",
+          "confianza_nivel",
+          "estado_respuesta"
+        ],
+        "title": "ChatResponse",
+        "type": "object"
+      },
+      "DebugInfo": {
+        "description": "Detalle de depuración para entorno de desarrollo.",
+        "properties": {
+          "origen": {
+            "title": "Origen",
+            "type": "string"
+          },
+          "confianza_score": {
+            "title": "Confianza Score",
+            "type": "number"
+          },
+          "confianza_razon": {
+            "title": "Confianza Razon",
+            "type": "string"
+          },
+          "motivos_alarma": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Motivos Alarma",
+            "type": "array"
+          },
+          "keywords": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Keywords",
+            "type": "array"
+          },
+          "temas": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Temas",
+            "type": "array"
+          },
+          "modelo": {
+            "title": "Modelo",
+            "type": "string"
+          },
+          "tokens_prompt": {
+            "title": "Tokens Prompt",
+            "type": "integer"
+          },
+          "tokens_respuesta": {
+            "title": "Tokens Respuesta",
+            "type": "integer"
+          },
+          "ms_busqueda": {
+            "title": "Ms Busqueda",
+            "type": "integer"
+          },
+          "ms_llm": {
+            "title": "Ms Llm",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "origen",
+          "confianza_score",
+          "confianza_razon",
+          "motivos_alarma",
+          "keywords",
+          "temas",
+          "modelo",
+          "tokens_prompt",
+          "tokens_respuesta",
+          "ms_busqueda",
+          "ms_llm"
+        ],
+        "title": "DebugInfo",
+        "type": "object"
+      },
+      "EstadoRespuesta": {
+        "description": "Estado público del resultado de la consulta clínica.",
+        "enum": [
+          "respuesta",
+          "sin_informacion",
+          "cortesia",
+          "no_disponible"
+        ],
+        "title": "EstadoRespuesta",
+        "type": "string"
+      },
+      "FuenteItem": {
+        "description": "Fuente clínica utilizada en la respuesta.",
+        "properties": {
+          "tema_id": {
+            "title": "Tema Id",
+            "type": "string"
+          },
+          "guia": {
+            "title": "Guia",
+            "type": "integer"
+          },
+          "tema": {
+            "title": "Tema",
+            "type": "string"
+          }
+        },
+        "required": [
+          "tema_id",
+          "guia",
+          "tema"
+        ],
+        "title": "FuenteItem",
+        "type": "object"
+      }
+    },
+    "securitySchemes": {
+      "HTTPBearer": {
+        "type": "http",
+        "scheme": "bearer"
+      }
+    }
+  },
+  "servers": [
+    {
+      "url": "https://parra.chillan.ubiobio.cl/radicare-ia",
+      "description": "Ruta definida PARRA; prueba operativa pendiente"
+    }
+  ],
+  "x-source-commit": "bd3d32d6d3ce8c4b7baa9a369494031ae83bdc9a"
+}

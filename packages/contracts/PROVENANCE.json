@@ -1,0 +1,101 @@
+{
+  "upstream_version": "1.0.0",
+  "clinical": "RC3.2",
+  "ai": "RC3.1",
+  "operations": 36,
+  "source_policy": "Copias byte-a-byte de fuentes sintéticas; los documentos originales se conservan intactos.",
+  "copied": [
+    {
+      "upstream": "openapi/openapi-clinico-rc32-bundle.json",
+      "package": "specs/openapi-clinico-rc32-bundle.json",
+      "bytes": 306893,
+      "sha256": "e23570e6431e38bbae6e0f1b662a445440f7700bfec65293fc272067205d0c2f"
+    },
+    {
+      "upstream": "openapi/openapi-gateway-quimiocare-v1.json",
+      "package": "specs/openapi-gateway-quimiocare-v1.json",
+      "bytes": 83187,
+      "sha256": "137b32d6773cee3ac606976d569c9aa820a1c3b345f376de35474faca8d642b0"
+    },
+    {
+      "upstream": "openapi/openapi-ia-rc31.json",
+      "package": "specs/openapi-ia-rc31.json",
+      "bytes": 13236,
+      "sha256": "a582dc7d08b6e66cb9b1bfbe9714c38e5759cc75a2bb4edf6ece8da8ca69d4e0"
+    },
+    {
+      "upstream": "openapi/openapi-simulador-control-v1.json",
+      "package": "specs/openapi-simulador-control-v1.json",
+      "bytes": 20483,
+      "sha256": "0dfd97a9018d56aaf4842da6f96da24b8066bb046c1558bd79f16a96ff3dd816"
+    },
+    {
+      "upstream": "schemas/schema-configuracion-epro-v1-objetivo.json",
+      "package": "schemas/schema-configuracion-epro-v1-objetivo.json",
+      "bytes": 3478,
+      "sha256": "25ca56a772ef40132b52385b6382d997e3537fe6a2d1af9a13f52bc230c720dd"
+    },
+    {
+      "upstream": "schemas/schema-contenido-educativo-objetivo.json",
+      "package": "schemas/schema-contenido-educativo-objetivo.json",
+      "bytes": 2676,
+      "sha256": "9736eb04bf4c87055ac3de2c3db6f5a660ccdc922c52d7d89e06b419e10fbf5b"
+    },
+    {
+      "upstream": "fixtures/casos-condiciones-tecnicas.json",
+      "package": "fixtures/casos-condiciones-tecnicas.json",
+      "bytes": 10613,
+      "sha256": "996c5cac5a83809c2cffe3a665b57102c284dc78b44031990b4bd880c59b2069"
+    },
+    {
+      "upstream": "fixtures/ejemplos-exclusividades-objetivo.json",
+      "package": "fixtures/ejemplos-exclusividades-objetivo.json",
+      "bytes": 4032,
+      "sha256": "8e79f76f03e3e8a2a1c26bade796c1dfd0fe5f31875299cea7fa01b4df97221e"
+    },
+    {
+      "upstream": "fixtures/filas-origen-fixture-epro.json",
+      "package": "fixtures/filas-origen-fixture-epro.json",
+      "bytes": 65991,
+      "sha256": "6fcddf9519082cf04d79416ec012c4bc6c013051086595712e71f77f9838bdbe"
+    },
+    {
+      "upstream": "fixtures/fixtures-mobile-unificados.json",
+      "package": "fixtures/fixtures-mobile-unificados.json",
+      "bytes": 150055,
+      "sha256": "38ae0779fd338a03e6a0e7b96d1be967704e1a68c29afb1977c2ec76feaae084"
+    },
+    {
+      "upstream": "fixtures/formulario-41-preguntas-provisional-unificado.json",
+      "package": "fixtures/formulario-41-preguntas-provisional-unificado.json",
+      "bytes": 47694,
+      "sha256": "6f828b8399c282707daec7aa1bdbf56e274600bf4f2488149b685e8bb3708358"
+    },
+    {
+      "upstream": "fixtures/imagen-prueba-metadatos-objetivo.json",
+      "package": "fixtures/imagen-prueba-metadatos-objetivo.json",
+      "bytes": 902,
+      "sha256": "b174805e77facce22181a306a85d9a6296921aab569789d88524016b0147bec1"
+    },
+    {
+      "upstream": "fixtures/imagen-prueba.png",
+      "package": "fixtures/imagen-prueba.png",
+      "bytes": 77,
+      "sha256": "3928618d567aa706302b2f1a7278e3758fee6d69637a075813c3ee5a565d747a"
+    },
+    {
+      "upstream": "inventario-endpoints.json",
+      "package": "specs/inventario-endpoints.json",
+      "bytes": 10094,
+      "sha256": "3aef80c4ee284b03a931c30b77fd61d577aa7188f07f63c4448a847875d50fbe"
+    }
+  ],
+  "extensions": [
+    {
+      "file": "schemas/education-document-v1_1.schema.json",
+      "version": "1.1.0",
+      "scope": "own_demo_only",
+      "external_support_confirmed": false
+    }
+  ]
+}

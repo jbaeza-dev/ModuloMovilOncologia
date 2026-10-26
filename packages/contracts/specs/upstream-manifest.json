@@ -1,0 +1,191 @@
+{
+  "version": "1.0.0",
+  "fecha": "2026-10-23",
+  "alcance": "quimioterapia",
+  "base_clinica": "1.0-RC3.2-objetivo-2026-10-23",
+  "openapi_operaciones": {
+    "clinica": 16,
+    "ia": 1,
+    "gateway": 13,
+    "helpers_demo": 6,
+    "total": 36
+  },
+  "nota": "Excluye el propio manifiesto; originales preservados y cambios editoriales identificados. No acredita implementación.",
+  "archivos": [
+    {
+      "archivo": "LEEME_SWAGGER.md",
+      "bytes": 4034,
+      "sha256": "ef3315f12a30e5a05237fe2ce4cddfc9c6f09d43b5487a22c9db011ccc17d3e3"
+    },
+    {
+      "archivo": "README.md",
+      "bytes": 2543,
+      "sha256": "c70a748091d0b1adbb23a28234adeb6f76b9494ca7b7b03458a3df75cb3ee7d4"
+    },
+    {
+      "archivo": "configuracion.example.env",
+      "bytes": 1050,
+      "sha256": "1d3494150d69c2fad60cbde1c966b5b9fe34a09919e5c480302021349fb2216c"
+    },
+    {
+      "archivo": "confirmacion_movil_rc32_para_enviar.md",
+      "bytes": 2330,
+      "sha256": "47c78ebdc64ed1a0ba07c1b95b191a91a89f1066abb8293d77c119d99a8dd084"
+    },
+    {
+      "archivo": "contrato_desarrollo_quimiocare_v1_0.md",
+      "bytes": 44638,
+      "sha256": "d554d9e3fa696bf88019c043af7d3ef9f544b9371cfd136ff7037da246e3e919"
+    },
+    {
+      "archivo": "escenarios_aceptacion_v1.md",
+      "bytes": 10217,
+      "sha256": "f5e663cf813b1c1d34fcfda371083115b0be63019844b52057c1dd294e227fa1"
+    },
+    {
+      "archivo": "fixtures/casos-condiciones-tecnicas.json",
+      "bytes": 10613,
+      "sha256": "996c5cac5a83809c2cffe3a665b57102c284dc78b44031990b4bd880c59b2069"
+    },
+    {
+      "archivo": "fixtures/ejemplos-exclusividades-objetivo.json",
+      "bytes": 4032,
+      "sha256": "8e79f76f03e3e8a2a1c26bade796c1dfd0fe5f31875299cea7fa01b4df97221e"
+    },
+    {
+      "archivo": "fixtures/filas-origen-fixture-epro.json",
+      "bytes": 65991,
+      "sha256": "6fcddf9519082cf04d79416ec012c4bc6c013051086595712e71f77f9838bdbe"
+    },
+    {
+      "archivo": "fixtures/fixtures-mobile-unificados.json",
+      "bytes": 150055,
+      "sha256": "38ae0779fd338a03e6a0e7b96d1be967704e1a68c29afb1977c2ec76feaae084"
+    },
+    {
+      "archivo": "fixtures/formulario-41-preguntas-provisional-unificado.json",
+      "bytes": 47694,
+      "sha256": "6f828b8399c282707daec7aa1bdbf56e274600bf4f2488149b685e8bb3708358"
+    },
+    {
+      "archivo": "fixtures/imagen-prueba-metadatos-objetivo.json",
+      "bytes": 902,
+      "sha256": "b174805e77facce22181a306a85d9a6296921aab569789d88524016b0147bec1"
+    },
+    {
+      "archivo": "fixtures/imagen-prueba.png",
+      "bytes": 77,
+      "sha256": "3928618d567aa706302b2f1a7278e3758fee6d69637a075813c3ee5a565d747a"
+    },
+    {
+      "archivo": "inventario-endpoints.json",
+      "bytes": 10094,
+      "sha256": "3aef80c4ee284b03a931c30b77fd61d577aa7188f07f63c4448a847875d50fbe"
+    },
+    {
+      "archivo": "manual_powersync_v1.md",
+      "bytes": 19613,
+      "sha256": "4874d4a7edbf4754eb4ef312ac0c9a9107538eafd50f4541d2021457f1162e0c"
+    },
+    {
+      "archivo": "openapi/openapi-clinico-rc32-bundle.json",
+      "bytes": 306893,
+      "sha256": "e23570e6431e38bbae6e0f1b662a445440f7700bfec65293fc272067205d0c2f"
+    },
+    {
+      "archivo": "openapi/openapi-gateway-quimiocare-v1.json",
+      "bytes": 83187,
+      "sha256": "137b32d6773cee3ac606976d569c9aa820a1c3b345f376de35474faca8d642b0"
+    },
+    {
+      "archivo": "openapi/openapi-ia-rc31.json",
+      "bytes": 13236,
+      "sha256": "a582dc7d08b6e66cb9b1bfbe9714c38e5759cc75a2bb4edf6ece8da8ca69d4e0"
+    },
+    {
+      "archivo": "openapi/openapi-simulador-control-v1.json",
+      "bytes": 20483,
+      "sha256": "0dfd97a9018d56aaf4842da6f96da24b8066bb046c1558bd79f16a96ff3dd816"
+    },
+    {
+      "archivo": "referencias/cambios-editoriales-swagger.json",
+      "bytes": 2451,
+      "sha256": "1b38cd2002570039bb5ab407aa09a10bcc287d2b3b9e43d45062d71e864fa7d5"
+    },
+    {
+      "archivo": "referencias/condiciones-observadas-rc31.md",
+      "bytes": 4229,
+      "sha256": "20fcbb8dbb7a435a05021aa965b1d04e880d202aeda86327499e051eb2f85270"
+    },
+    {
+      "archivo": "referencias/manifiesto-original-rc32.json",
+      "bytes": 3575,
+      "sha256": "5ad4128ea06d09ab95ba0b3d3e5e2eb09be0df33a1dccf161a9790256a468990"
+    },
+    {
+      "archivo": "referencias/matriz-errores-ack-rc32.md",
+      "bytes": 7840,
+      "sha256": "28e9554cf34d3546d79ac3a8718e79cb6b4757b7592449a3f5f91ea91be18cb8"
+    },
+    {
+      "archivo": "referencias/nota-revision-rc32.md",
+      "bytes": 7129,
+      "sha256": "334f31e07fd0288878cfbd5c8efdfd251c73a174952367329d187149c855d745"
+    },
+    {
+      "archivo": "referencias/openapi-clinico-original-rc32.json",
+      "bytes": 309663,
+      "sha256": "8faba60bb75ff5514f843fb549ab40b4c8bdeb784ff7b6633121bf972c08c9fc"
+    },
+    {
+      "archivo": "referencias/openapi-ia-original-rc31.json",
+      "bytes": 13647,
+      "sha256": "1994dfe30d10c3e55ed57d846c635ad1bab046faf19cf65827c73fc6c403c9b3"
+    },
+    {
+      "archivo": "referencias/origen-powersync-observado.sql",
+      "bytes": 2097,
+      "sha256": "8e77dd11df35cbc51f23156557942e29dbc99dcb5f48804e68e3f8f1bfb0ec81"
+    },
+    {
+      "archivo": "referencias/procedencia.json",
+      "bytes": 5139,
+      "sha256": "31bb4ce190cf51efc6c7dd97058c1e6db43ea5ce02bb8b7d56f847d487be040c"
+    },
+    {
+      "archivo": "referencias/publicacion-powersync-rc32.md",
+      "bytes": 11333,
+      "sha256": "e9f8325ab7638bfaa34898259e4581bd2a476e1d082651a889d66ea7986419af"
+    },
+    {
+      "archivo": "referencias/respuesta-clinica-rc32.md",
+      "bytes": 5655,
+      "sha256": "a764f95909660a8fbf402639f11379e111c2c536329da1ea3f3a19739f6f6f41"
+    },
+    {
+      "archivo": "referencias/schema-configuracion-epro-v1-objetivo.json",
+      "bytes": 3478,
+      "sha256": "25ca56a772ef40132b52385b6382d997e3537fe6a2d1af9a13f52bc230c720dd"
+    },
+    {
+      "archivo": "schemas/schema-configuracion-epro-v1-objetivo.json",
+      "bytes": 3478,
+      "sha256": "25ca56a772ef40132b52385b6382d997e3537fe6a2d1af9a13f52bc230c720dd"
+    },
+    {
+      "archivo": "schemas/schema-contenido-educativo-objetivo.json",
+      "bytes": 2676,
+      "sha256": "9736eb04bf4c87055ac3de2c3db6f5a660ccdc922c52d7d89e06b419e10fbf5b"
+    },
+    {
+      "archivo": "swagger-config.json",
+      "bytes": 614,
+      "sha256": "7a41d86182fce344fa4ac396066c028103f5b47acd7506b6c12f7edd82c06e7d"
+    },
+    {
+      "archivo": "validacion_documental.json",
+      "bytes": 96830,
+      "sha256": "82c50554c3a9461ac28bbf81d410e27f0e422c166f434fdc59d8685a658965ba"
+    }
+  ]
+}
