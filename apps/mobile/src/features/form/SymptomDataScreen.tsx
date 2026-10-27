@@ -1,3 +1,4 @@
+import { clinicalStatusLabel } from '../../data/sync/visible-status';
 import { useCallback, useState } from 'react';
 import { FlatList, StyleSheet, Text, View } from 'react-native';
 
@@ -73,11 +74,7 @@ export function SymptomDataScreen() {
           <InfoCard>
             <SectionTitle>{formatDate(item.fecha_registro)}</SectionTitle>
             <BodyText>{item.descripcion}</BodyText>
-            <StatusPill>
-              {item.estado_envio === 'pendiente' || !item.estado_envio
-                ? 'Pendiente de sincronización'
-                : `Estado: ${item.estado_envio}`}
-            </StatusPill>
+            <StatusPill>{clinicalStatusLabel(item.estado_envio)}</StatusPill>
           </InfoCard>
         )}
         contentContainerStyle={styles.list}
@@ -123,9 +120,7 @@ export function SymptomDataScreen() {
               </InfoCard>
             )}
             {error ? <Text accessibilityRole="alert">{error}</Text> : null}
-            {saved ? (
-              <StatusPill>Guardado en este dispositivo · Pendiente de sincronización</StatusPill>
-            ) : null}
+            {saved ? <StatusPill>Guardado en este dispositivo</StatusPill> : null}
             <SectionTitle>Historial local</SectionTitle>
           </View>
         }

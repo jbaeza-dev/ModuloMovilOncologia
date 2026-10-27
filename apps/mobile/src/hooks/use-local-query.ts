@@ -1,7 +1,9 @@
+import { QueryRevisionContext } from '../providers/QueryRevision';
 import { useFocusEffect } from 'expo-router';
-import { useCallback, useRef, useState } from 'react';
+import { useCallback, useContext, useRef, useState } from 'react';
 
 export function useFocusedValue<T>(load: () => Promise<T>, initial: T) {
+  const dataRevision = useContext(QueryRevisionContext);
   const [value, setValue] = useState<T>(initial);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(false);
@@ -32,12 +34,13 @@ export function useFocusedValue<T>(load: () => Promise<T>, initial: T) {
       return () => {
         active = false;
       };
-    }, [load, revision]),
+    }, [load, revision, dataRevision]),
   );
   return { value, loading, error, refresh: () => setRevision((n) => n + 1) };
 }
 
 export function useFocusedList<T>(load: (offset: number) => Promise<T[]>) {
+  const dataRevision = useContext(QueryRevisionContext);
   const [items, setItems] = useState<T[]>([]);
   const [loading, setLoading] = useState(true);
   const [loadingMore, setLoadingMore] = useState(false);
@@ -72,7 +75,7 @@ export function useFocusedList<T>(load: (offset: number) => Promise<T[]>) {
       return () => {
         generation.current++;
       };
-    }, [load, revision]),
+    }, [load, revision, dataRevision]),
   );
 
   const loadMore = useCallback(async () => {

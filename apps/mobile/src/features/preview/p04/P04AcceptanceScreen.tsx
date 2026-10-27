@@ -1,0 +1,199 @@
+import { useEffect, useState } from 'react';
+import { useLocalSearchParams } from 'expo-router';
+import * as Crypto from 'expo-crypto';
+import { Directory, File, Paths } from 'expo-file-system';
+import { Screen } from '../../../components/Screen';
+import { BodyText, InfoCard } from '../../../components/Visual';
+import { useLocalData } from '../../../providers/LocalDataProvider';
+import { createPatientRepository } from '../../../data/local/repository';
+import { canonical, type ClinicalCommand } from '../../../data/sync/clinical-command';
+import { inventoryLegacy } from '../../../data/sync/migration';
+import { ExpoFileStorageAdapter } from '../../../data/local/files/file-storage-adapter';
+import { createNativeFileCipher, encryptedFile } from '../../../data/sync/native-cipher';
+
+/** Opt-in synthetic acceptance on the same provider/repositories used by the application. */
+export default function P04AcceptanceScreen() {
+  const { clinicalStore: store, patientId, trackOperation } = useLocalData();
+  const params = useLocalSearchParams<{ run?: string; action?: string }>();
+  const [display, setDisplay] = useState('Preparando comprobación de la aplicación…');
+  useEffect(() => {
+    if (!store || !patientId || !params.run || !params.action) return;
+    if (
+      !/^[a-z0-9-]{1,64}$/.test(params.run) ||
+      !['snapshot', 'capture', 'draft', 'resume'].includes(params.action)
+    )
+      return;
+    const run = params.run,
+      action = params.action,
+      activeStore = store;
+    let active = true;
+    void trackOperation(async () => {
+      const result: Record<string, unknown> = {
+        run,
+        action,
+        startedAt: new Date().toISOString(),
+        passed: false,
+        owner: activeStore.scope.owner,
+        patientId,
+      };
+      const db = activeStore.connection;
+      try {
+        if (action === 'capture') {
+          const marker = 'acceptance:' + run + ':capture';
+          let row = await db.first<{ value_json: string }>(
+            'SELECT value_json FROM qc_storage_control WHERE id=?',
+            [marker],
+          );
+          if (!row) {
+            const value = {
+              id: Crypto.randomUUID(),
+              queue: Crypto.randomUUID(),
+              capturedAt: new Date().toISOString(),
+            };
+            await db.run('INSERT INTO qc_storage_control(id,value_json) VALUES (?,?)', [
+              marker,
+              canonical(value),
+            ]);
+            row = { value_json: canonical(value) };
+          }
+          const capture = JSON.parse(row.value_json) as {
+            id: string;
+            queue: string;
+            capturedAt: string;
+          };
+          if (!(await db.first('SELECT id FROM qc_clinical_command WHERE id=?', [capture.id]))) {
+            let first = true;
+            await createPatientRepository(
+              db,
+              patientId,
+              () => {
+                if (first) {
+                  first = false;
+                  return capture.id;
+                }
+                return capture.queue;
+              },
+              () => capture.capturedAt,
+              activeStore.captureHook,
+            ).createVitals({
+              temperatura: 36.6,
+              pulso: 72,
+              presion_sistolica: 120,
+              presion_diastolica: 80,
+              saturacion_o2: 98,
+            });
+          }
+          result.created = capture.id;
+        }
+        if (action === 'draft') {
+          const form = await db.first<{ formulario_id: string; version: string }>(
+            'SELECT formulario_id,version FROM formulario_cache ORDER BY formulario_id,version LIMIT 1',
+          );
+          if (!form) throw new Error('Falta una edición local para probar el borrador.');
+          const key = 'p04-acceptance:' + run;
+          await db.run(
+            'INSERT OR IGNORE INTO borrador_formulario(paciente_id,formulario_id,version,periodo_clave,entrega_id,respuestas_json,guardado_en,version_payload) VALUES (?,?,?,?,?,?,?,2)',
+            [
+              patientId,
+              form.formulario_id,
+              form.version,
+              key,
+              Crypto.randomUUID(),
+              canonical({ syntheticMarker: run }),
+              new Date().toISOString(),
+            ],
+          );
+          const cipher = await createNativeFileCipher(
+            activeStore.scope.environment,
+            activeStore.scope.owner,
+            patientId,
+            true,
+          );
+          const directory = new Directory(
+            cipher.directory!('formularios_locales', patientId),
+            'p04_acceptance',
+          );
+          directory.create({ intermediates: true, idempotent: true });
+          const file = new File(directory, run + '.json'),
+            adapter = new ExpoFileStorageAdapter();
+          await adapter.writeText(file.uri, canonical({ syntheticMarker: run }));
+          if (
+            !encryptedFile(await file.bytes()) ||
+            (await adapter.readText(file.uri)) !== canonical({ syntheticMarker: run })
+          )
+            throw new Error('El borrador de archivo no pasó cifrado/reapertura.');
+          result.encryptedDraftFile = true;
+        }
+        if (action === 'resume') {
+          await activeStore.resume(true);
+          const until = Date.now() + 60000;
+          while (Date.now() < until && (await activeStore.database.getUploadQueueStats()).count > 0)
+            await new Promise((r) => setTimeout(r, 250));
+          if ((await activeStore.database.getUploadQueueStats()).count > 0)
+            throw new Error('Aún hay operaciones SDK pendientes.');
+        }
+        const inventory = await inventoryLegacy(db, activeStore.scope);
+        result.counts = inventory.tables.map((t) => ({ table: t.name, rows: t.rows.length }));
+        for (const table of inventory.tables.filter((t) => t.columns.includes('paciente_id'))) {
+          if (
+            (
+              await db.first<{ n: number }>(
+                'SELECT count(*) n FROM "' + table.name + '" WHERE paciente_id<>?',
+                [patientId],
+              )
+            )?.n !== 0
+          )
+            throw new Error('Hay datos de otra cuenta.');
+        }
+        result.otherAccountRows = 0;
+        result.commands = await Promise.all(
+          (await db.all<ClinicalCommand>('SELECT * FROM qc_clinical_command ORDER BY id')).map(
+            async (c) => ({
+              id: c.id,
+              owner: c.owner,
+              capturedAt: c.captured_at,
+              status: c.status,
+              ack: !!c.ack_json,
+              payloadSha256: await Crypto.digestStringAsync(
+                Crypto.CryptoDigestAlgorithm.SHA256,
+                c.payload_json,
+              ),
+            }),
+          ),
+        );
+        result.sdkPending = (await activeStore.database.getUploadQueueStats()).count;
+        result.cipherVersion = (
+          await db.first<{ cipher_version: string }>('PRAGMA cipher_version')
+        )?.cipher_version;
+        result.catalog = await db.first(
+          "SELECT completed_at,error_code FROM qc_catalog_status WHERE id='catalog'",
+        );
+        result.passed = true;
+      } catch (error) {
+        result.error =
+          error instanceof Error ? error.message : 'No se pudo completar el caso nativo.';
+      } finally {
+        result.finishedAt = new Date().toISOString();
+        const directory = new Directory(Paths.document, 'p04_acceptance');
+        directory.create({ intermediates: true, idempotent: true });
+        new File(directory, run + '_' + action + '.json').write(JSON.stringify(result, null, 2));
+        if (active) setDisplay(JSON.stringify(result, null, 2));
+      }
+    }).catch(() => {
+      if (active) setDisplay('La cuenta cambió antes de completar la comprobación.');
+    });
+    return () => {
+      active = false;
+    };
+  }, [store, patientId, params.run, params.action, trackOperation]);
+  return (
+    <Screen title="Aceptación técnica P04">
+      <InfoCard>
+        <BodyText>
+          Datos sintéticos. Usa la base cifrada y los repositorios de la aplicación.
+        </BodyText>
+        <BodyText>{display}</BodyText>
+      </InfoCard>
+    </Screen>
+  );
+}

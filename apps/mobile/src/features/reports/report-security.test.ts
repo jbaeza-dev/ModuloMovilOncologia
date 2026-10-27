@@ -1,4 +1,5 @@
-import { afterEach, describe, expect, it, vi } from 'vitest';
+import { activateFileCipher } from '../../data/sync/file-protection';
+import { beforeEach, afterEach, describe, expect, it, vi } from 'vitest';
 
 import {
   assertSafeReportFileName,
@@ -710,4 +711,14 @@ describe('gestión de reportes guardados, verificación y tolerancia a fallos', 
       'EACCES: permiso denegado al leer directorio',
     );
   });
+});
+
+// Unit tests exercise storage behavior; native cryptography is verified separately.
+beforeEach(() => {
+  const release = activateFileCipher({
+    owns: () => true,
+    protect: async (_path, bytes) => bytes,
+    unprotect: async (_path, bytes) => bytes,
+  });
+  return release;
 });

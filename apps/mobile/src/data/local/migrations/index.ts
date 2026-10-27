@@ -1,3 +1,4 @@
+import { POWERSYNC_SQL, POWERSYNC_VERSION } from './011_powersync';
 import type { SqlConnection } from '../core/sql';
 import { REGISTROS_SQL, REGISTROS_VERSION } from './001_registros';
 import { CONTEXTO_SQL, CONTEXTO_VERSION } from './002_contexto';
@@ -28,6 +29,7 @@ export const migrations: readonly Migration[] = [
   { version: RECORDATORIOS_LOCALES_VERSION, sql: RECORDATORIOS_LOCALES_SQL },
   { version: FORMULARIOS_DIARIOS_VERSION, sql: FORMULARIOS_DIARIOS_SQL },
   { version: RETIRO_MARKDOWN_EDUCATIVO_VERSION, sql: RETIRO_MARKDOWN_EDUCATIVO_SQL },
+  { version: POWERSYNC_VERSION, sql: POWERSYNC_SQL },
 ];
 
 export async function migrateDatabase(

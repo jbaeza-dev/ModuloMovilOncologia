@@ -1,3 +1,4 @@
+import { ClinicalSyncNotice } from '../features/sync/ClinicalSyncNotice';
 import Feather from '@expo/vector-icons/Feather';
 import { useFonts } from 'expo-font';
 import { router, Stack, useSegments } from 'expo-router';
@@ -48,6 +49,7 @@ export function AppNavigator() {
   return (
     <View style={{ flex: 1 }}>
       <SessionNotice />
+      <ClinicalSyncNotice />
       <StatusBar
         barStyle={theme.colorScheme === 'dark' ? 'light-content' : 'dark-content'}
         backgroundColor={Platform.OS === 'android' ? 'transparent' : undefined}

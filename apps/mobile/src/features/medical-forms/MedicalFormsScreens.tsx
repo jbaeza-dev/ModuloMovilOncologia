@@ -1,7 +1,9 @@
+import { QueryRevisionContext } from '../../providers/QueryRevision';
+import { clinicalStatusLabel } from '../../data/sync/visible-status';
 import Feather from '@expo/vector-icons/Feather';
 import * as Crypto from 'expo-crypto';
 import { router, useLocalSearchParams } from 'expo-router';
-import { useCallback, useEffect, useMemo, useState } from 'react';
+import { useCallback, useContext, useEffect, useMemo, useState } from 'react';
 import { StyleSheet, Text, TextInput, View } from 'react-native';
 
 import { NavigationCard } from '../../components/NavigationCard';
@@ -468,16 +470,17 @@ export function MedicalFormDetailScreen() {
     setBusy(true);
     setFeedback(null);
     try {
-      await runSave(async () => {
-        await repository.confirmSubmission(
+      const savedStatus = await runSave(async () => {
+        const submissionId = await repository.confirmSubmission(
           formDef.formulario_id,
           formDef.version,
           answers,
           stableDeliveryId,
         );
+        return (await repository.getSubmission(submissionId))?.estado_envio ?? null;
       });
       setIsConfirmed(true);
-      setFeedback('Guardado en este dispositivo · Pendiente de envío');
+      setFeedback(clinicalStatusLabel(savedStatus));
     } catch (err) {
       setFeedback(
         err instanceof Error
@@ -517,14 +520,12 @@ export function MedicalFormDetailScreen() {
         <DemoBadge />
         <InfoCard>
           <StatusPill>
-            {isConfirmed
-              ? 'Guardado en este dispositivo · Pendiente de envío'
-              : 'Respuestas verificadas'}
+            {isConfirmed ? (feedback ?? 'Guardado en este dispositivo') : 'Respuestas verificadas'}
           </StatusPill>
           <SectionTitle>Respuestas registradas</SectionTitle>
           <BodyText>
             {isConfirmed
-              ? 'Tu evaluación ha sido confirmada y encolada localmente para su posterior transmisión.'
+              ? 'Tu evaluación ha sido confirmada y conservada en este dispositivo.'
               : 'Verifica tus respuestas antes de confirmar la entrega en este dispositivo.'}
           </BodyText>
         </InfoCard>
@@ -657,6 +658,7 @@ export function MedicalFormDetailScreen() {
 }
 
 export function MedicalFormSubmissionsScreen() {
+  const dataRevision = useContext(QueryRevisionContext);
   const { theme: appTheme } = useAppTheme();
   const styles = createStyles(appTheme.colors);
   const { repository, patientId } = useLocalData();
@@ -708,7 +710,7 @@ export function MedicalFormSubmissionsScreen() {
     return () => {
       mounted = false;
     };
-  }, [fetchBatch, historyAttempt]);
+  }, [fetchBatch, historyAttempt, dataRevision]);
 
   async function handleLoadMore() {
     if (!repository || !patientId || loadingMore || !hasMore) return;
@@ -779,7 +781,7 @@ export function MedicalFormSubmissionsScreen() {
           </View>
 
           <View style={styles.pillRow}>
-            <StatusPill>Guardado en este dispositivo · Pendiente de envío</StatusPill>
+            <StatusPill>{clinicalStatusLabel(sub.estado_envio)}</StatusPill>
           </View>
 
           <VisualButton
@@ -805,6 +807,7 @@ export function MedicalFormSubmissionsScreen() {
 }
 
 export function MedicalFormSubmissionDetailScreen() {
+  const dataRevision = useContext(QueryRevisionContext);
   const { theme: appTheme } = useAppTheme();
   const styles = createStyles(appTheme.colors);
   const { repository, patientId } = useLocalData();
@@ -836,7 +839,7 @@ export function MedicalFormSubmissionDetailScreen() {
     return () => {
       mounted = false;
     };
-  }, [repository, patientId, id]);
+  }, [repository, patientId, id, dataRevision]);
 
   const medicalForm = useMemo(() => (formDef ? toMedicalFormDefinition(formDef) : null), [formDef]);
 
@@ -884,7 +887,7 @@ export function MedicalFormSubmissionDetailScreen() {
     <Screen title={`Entrega: ${submission.titulo}`}>
       <DemoBadge />
       <InfoCard>
-        <StatusPill>Guardado en este dispositivo · Pendiente de envío</StatusPill>
+        <StatusPill>{clinicalStatusLabel(submission.estado_envio)}</StatusPill>
         <DetailRow
           label="Fecha de confirmación"
           value={formatDate(submission.fecha_confirmacion)}
