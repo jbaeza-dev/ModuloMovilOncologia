@@ -29,7 +29,7 @@ try {
   const body = await response.json();
   if (response.status !== 200 || body.servicio !== 'quimiocare-gateway' || body.estado !== 'ok')
     throw new Error('Health incompatible.');
-  if ((await fetch(base + '/api/gateway/dispositivo/sesiones')).status !== 503)
+  if ((await fetch(base + '/api/gateway/dispositivo/sesiones')).status !== 401)
     throw new Error('Ruta protegida abierta.');
   process.stdout.write('Gateway smoke: health, readiness y cierre por defecto correctos.\n');
 } finally {

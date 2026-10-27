@@ -7,12 +7,19 @@ export type SessionState =
   | 'reauthenticating'
   | 'access_denied'
   | 'unconfigured'
-  | 'closing';
+  | 'closing'
+  | 'renewing'
+  | 'expired'
+  | 'service_unavailable'
+  | 'profile_incomplete'
+  | 'terms_pending'
+  | 'clinical_incomplete';
 
 export interface SessionUser {
   readonly id: string;
   readonly name: string;
   readonly isDemo: boolean;
+  readonly localPatientId?: string;
 }
 
 export interface SessionCredentials {

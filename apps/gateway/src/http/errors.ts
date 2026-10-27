@@ -1,4 +1,11 @@
 export type ErrorCode =
+  | 'NO_AUTORIZADO'
+  | 'ACCESO_DENEGADO'
+  | 'REGISTRO_EN_CONFLICTO'
+  | 'SESION_REVOCADA'
+  | 'SESION_NO_ENCONTRADA'
+  | 'VERSION_EN_CONFLICTO'
+  | 'FUNCION_NO_DISPONIBLE'
   | 'ORIGEN_NO_PERMITIDO'
   | 'DATOS_INVALIDOS'
   | 'SOLICITUD_DEMASIADO_GRANDE'
@@ -9,6 +16,13 @@ export type ErrorCode =
   | 'IA_TIEMPO_AGOTADO'
   | 'IA_RESPUESTA_INVALIDA';
 const messages: Record<ErrorCode, string> = {
+  NO_AUTORIZADO: 'Se requiere una sesión válida.',
+  ACCESO_DENEGADO: 'La cuenta no tiene acceso a esta operación.',
+  REGISTRO_EN_CONFLICTO: 'El registro no está disponible para esta asociación.',
+  SESION_REVOCADA: 'La asociación está revocada.',
+  SESION_NO_ENCONTRADA: 'Asociación no encontrada.',
+  VERSION_EN_CONFLICTO: 'La asociación cambió; consulta su versión actual.',
+  FUNCION_NO_DISPONIBLE: 'Esta función aún no está habilitada.',
   ORIGEN_NO_PERMITIDO: 'Origen de navegador no habilitado.',
   DATOS_INVALIDOS: 'Solicitud incompatible con el contrato.',
   SOLICITUD_DEMASIADO_GRANDE: 'El cuerpo supera el límite permitido.',

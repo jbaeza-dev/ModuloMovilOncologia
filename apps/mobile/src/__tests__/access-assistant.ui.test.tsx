@@ -42,6 +42,17 @@ jest.mock('expo-crypto', () => ({
   randomUUID: jest.fn(() => `mock-uuid-${++mockUuidCounter}`),
 }));
 
+jest.mock('../services/session/native-session', () => ({
+  createMobileSession: () => {
+    // The historical context suite tests local teardown, not remote authentication.
+    // eslint-disable-next-line @typescript-eslint/no-require-imports
+    const { DemoSessionAdapter } = require('../services/session/demo-session-adapter');
+    return new DemoSessionAdapter();
+  },
+  createDeviceClient: jest.fn(),
+  registerNativePush: jest.fn(),
+}));
+
 jest.mock('expo-router', () => {
   // eslint-disable-next-line @typescript-eslint/no-require-imports
   const React = require('react');
@@ -808,55 +819,19 @@ describe('Incremento 6: UI de Acceso, Navegación Raíz, Sesión y Asistente', (
   });
 
   describe('Consentimientos Informados (S-03)', () => {
-    it('AccessConsentScreen monta en la jerarquía, muestra términos y estado demostrativo', async () => {
-      let contextRef: ReturnType<typeof useLocalData> | null = null;
-
+    it('AccessConsentScreen never grants a local acceptance without a configured server', async () => {
       await render(
         <LocalDataProvider>
           <AccessConsentScreen />
-          <ContextConsumer onReady={(ctx) => (contextRef = ctx)} />
         </LocalDataProvider>,
       );
-
-      // Verifica encabezados y distintivo demo
       expect(await screen.findByText('Consentimientos')).toBeTruthy();
-      expect(await screen.findByText('VISTA DE DEMOSTRACIÓN · DATOS FICTICIOS')).toBeTruthy();
       expect(
         await screen.findByText(
-          'Revisión y gestión de consentimientos informados y términos versionados de QuimioCare. El contenido actual corresponde a muestras técnicas demostrativas con trazabilidad en el almacenamiento local.',
+          'El servicio de términos no está configurado. Una aceptación local no habilita envíos.',
         ),
       ).toBeTruthy();
-
-      // Términos sembrados automáticamente durante migraciones
-      expect(
-        await screen.findByText(
-          'Consentimiento Informado para Seguimiento Sintomático y Reporte Clínico',
-        ),
-      ).toBeTruthy();
-      expect(await screen.findByText('Términos y Condiciones del Piloto QuimioCare')).toBeTruthy();
-
-      // Sembrar un término de consentimiento en la base de datos de prueba
-      await act(async () => {
-        await contextRef?.database?.run(
-          `INSERT OR REPLACE INTO definicion_terminos_cache (
-             termino_id, version, titulo, contenido_markdown,
-             requerido, vigente_desde, huella_sha256, obtenido_en
-           ) VALUES (
-             'term-synthetic-01', '1.0.0', 'Tratamiento de Datos Sintéticos',
-             'Texto de prueba técnica demostrativa',
-             1, '2026-01-01T00:00:00Z', 'checksum-synthetic', '2026-01-01T00:00:00Z'
-           )`,
-        );
-      });
-
-      // Activar un paciente de prueba para cargar estado de términos
-      await act(async () => {
-        await contextRef?.selectPatient(DEMO_PATIENTS[0].id);
-      });
-
-      // El término debe ser visible en pantalla
-      expect(await screen.findByText('Tratamiento de Datos Sintéticos')).toBeTruthy();
-      expect(await screen.findByText('term-synthetic-01')).toBeTruthy();
+      expect(screen.queryByText('Aceptar términos online')).toBeNull();
     });
   });
 

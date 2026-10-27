@@ -39,8 +39,10 @@ import type { AssistantController } from '../services/assistant/assistant-contro
 import { FakeAssistantAdapter } from '../services/assistant/fake-assistant-adapter';
 import { UnconfiguredAssistantAdapter } from '../services/assistant/unconfigured-assistant-adapter';
 
-import { DemoSessionAdapter, DEMO_USERS } from '../services/session/demo-session-adapter';
-import { UnconfiguredSessionAdapter } from '../services/session/unconfigured-session-adapter';
+import { DEMO_USERS } from '../services/session/demo-session-adapter';
+import { createMobileSession, createDeviceClient } from '../services/session/native-session';
+import { HttpSessionAdapter } from '../services/session/http-session-adapter';
+import type { DeviceClient } from '../services/session/device-client';
 import type { SessionAdapter } from '../services/session/session-adapter';
 import {
   PatientContextManager,
@@ -111,6 +113,8 @@ type DataContextValue = {
   assistantController?: AssistantController | null;
   sessionAdapter: SessionAdapter;
   manager: PatientContextManager;
+  identitySession: HttpSessionAdapter | null;
+  devices: DeviceClient | null;
 };
 
 const DataContext = createContext<DataContextValue | null>(null);
@@ -142,8 +146,14 @@ export function LocalDataProvider({ children }: { children: ReactNode }) {
   );
 
   const sessionAdapter = useMemo<SessionAdapter>(() => {
-    return isDemoMode() ? new DemoSessionAdapter() : new UnconfiguredSessionAdapter();
+    return createMobileSession();
   }, []);
+
+  const identitySession = sessionAdapter instanceof HttpSessionAdapter ? sessionAdapter : null;
+  const devices = useMemo(
+    () => (identitySession ? createDeviceClient(identitySession) : null),
+    [identitySession],
+  );
 
   const assistantAdapter = useMemo(() => {
     return isDemoMode() ? new FakeAssistantAdapter() : new UnconfiguredAssistantAdapter();
@@ -160,6 +170,15 @@ export function LocalDataProvider({ children }: { children: ReactNode }) {
       onStateChange: () => setVersion((v) => v + 1),
     });
   }, [sessionAdapter, assistantAdapter, routerAdapter]);
+
+  useEffect(() => {
+    if (!identitySession) return;
+    const sub = AppState.addEventListener('change', (state) => {
+      if (state === 'active' && identitySession.getCurrentUser())
+        void identitySession.refreshIdentity().catch(() => undefined);
+    });
+    return () => sub.remove();
+  }, [identitySession]);
 
   const patientId = manager.getPatientId();
   const isClosing = manager.getIsClosing();
@@ -181,13 +200,24 @@ export function LocalDataProvider({ children }: { children: ReactNode }) {
     async function open() {
       let native: SQLite.SQLiteDatabase | null = null;
       try {
-        native = await SQLite.openDatabaseAsync('quimiocare_local.db');
+        const databaseName = !isDemoMode()
+          ? 'quimiocare_production_' +
+            (
+              await Crypto.digestStringAsync(
+                Crypto.CryptoDigestAlgorithm.SHA256,
+                identitySession?.config.scope ?? 'unconfigured-production',
+              )
+            ).slice(0, 24) +
+            '.db'
+          : 'quimiocare_local.db';
+        native = await SQLite.openDatabaseAsync(databaseName);
         const connection = createExpoConnection(native);
         await migrateDatabase(connection);
         if (isDemoMode()) {
           await seedPatientContextIfEmpty(connection, DEMO_PATIENTS[0].id, DEMO_PATIENTS[1].id);
           await seedDemoVitalsAndSymptoms(connection, DEMO_PATIENTS[0].id, DEMO_PATIENTS[1].id);
         }
+        if (active) await manager.restoreSession();
         if (active) setDatabase(connection);
         else await native.closeAsync();
       } catch (failure) {
@@ -204,7 +234,7 @@ export function LocalDataProvider({ children }: { children: ReactNode }) {
     return () => {
       active = false;
     };
-  }, [attempt]);
+  }, [attempt, identitySession, manager]);
 
   useEffect(() => {
     if (!database || !patientId) {
@@ -486,6 +516,8 @@ export function LocalDataProvider({ children }: { children: ReactNode }) {
       assistantController: manager.assistantController,
       sessionAdapter: manager.sessionAdapter,
       manager,
+      identitySession,
+      devices,
       runSave,
       changePatient,
     }),
@@ -513,6 +545,8 @@ export function LocalDataProvider({ children }: { children: ReactNode }) {
       runSave,
       changePatient,
       manager,
+      identitySession,
+      devices,
     ],
   );
 
@@ -543,4 +577,8 @@ export function useLocalData(): DataContextValue {
   const context = useContext(DataContext);
   if (!context) throw new Error('LocalDataProvider no está disponible.');
   return context;
+}
+
+export function useOptionalLocalData() {
+  return useContext(DataContext);
 }

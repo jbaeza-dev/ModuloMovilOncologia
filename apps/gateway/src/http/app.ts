@@ -16,6 +16,9 @@ import { databaseReady } from '../persistence/migrations.js';
 import { errorEnvelope, GatewayError } from './errors.js';
 import { createLogger, VERSION } from './logging.js';
 import type { Logger } from './logging.js';
+import { authenticator } from '../auth.js';
+import { devices } from '../devices.js';
+import type { GatewayRegistroPush } from '@quimiocare/contracts';
 interface RequestState {
   requestId: string;
   operation: OperationId | 'readiness' | 'unmatched';
@@ -27,6 +30,8 @@ export function createApp(
   log: Logger = createLogger(),
 ): Express {
   const app = express();
+  const auth = authenticator(config, log);
+  const deviceStore = devices(db, config.cursorKey);
   const states = new WeakMap<Request, RequestState>();
   app.disable('x-powered-by');
   app.disable('etag');
@@ -92,7 +97,7 @@ export function createApp(
         limit: ['G-12', 'G-13'].includes(operation.id) ? 65536 : 16384,
         type: 'application/json',
       }),
-      (req: Request) => {
+      async (req: Request, res: Response) => {
         if (req.res?.writableEnded) return;
         const url = new URL(req.originalUrl, 'http://gateway.invalid');
         const allowedQuery = parametersFor(operation)
@@ -115,8 +120,35 @@ export function createApp(
           }).valid
         )
           throw new GatewayError(422, 'DATOS_INVALIDOS');
-        // P02 is deliberately closed. No decoded bearer or test-only principal can enable protected routes.
-        throw new GatewayError(503, 'AUTENTICACION_NO_CONFIGURADA');
+        const principal = await auth.authorize(req.headers.authorization);
+        if (res.writableEnded || res.destroyed) return;
+        let result: { status: number; body?: unknown };
+        const query = parseQuery(operation.id, url.searchParams) as {
+          limit?: number;
+          cursor?: string;
+        };
+        if (operation.id === 'G-02')
+          result = await deviceStore.register(principal.id, body as GatewayRegistroPush);
+        else if (operation.id === 'G-03')
+          result = {
+            status: 200,
+            body: await deviceStore.list(principal.id, query.limit, query.cursor),
+          };
+        else if (operation.id === 'G-04')
+          result = {
+            status: 200,
+            body: await deviceStore.get(principal.id, String(req.params.id)),
+          };
+        else if (operation.id === 'G-05') {
+          await deviceStore.revoke(principal.id, String(req.params.id));
+          result = { status: 204 };
+        } else throw new GatewayError(503, 'FUNCION_NO_DISPONIBLE');
+        if (!validateResponse(operation.id, result.status, result.body).valid)
+          throw new GatewayError(500, 'ERROR_SERVIDOR');
+        if (!res.writableEnded && !res.destroyed) {
+          if (result.status === 204) res.status(204).end();
+          else res.status(result.status).json(result.body);
+        }
       },
     ];
     switch (operation.method) {

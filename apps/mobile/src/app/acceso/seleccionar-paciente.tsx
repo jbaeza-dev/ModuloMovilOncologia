@@ -10,16 +10,21 @@ import { theme } from '../../theme';
 
 export default function SeleccionarPacienteScreen() {
   const { isClosing, selectPatient, patientId } = useLocalData();
+  const [busy, setBusy] = useState(false);
   const [errorMsg, setErrorMsg] = useState<string | null>(null);
   const { theme: appTheme } = useAppTheme();
   const styles = createStyles(appTheme.colors);
 
   const handleSelect = async (id: string) => {
+    if (busy) return;
+    setBusy(true);
     setErrorMsg(null);
     try {
       await selectPatient(id);
     } catch (err) {
       setErrorMsg(err instanceof Error ? err.message : String(err));
+    } finally {
+      setBusy(false);
     }
   };
 
@@ -38,7 +43,7 @@ export default function SeleccionarPacienteScreen() {
       ) : null}
 
       <ContextGuard
-        isClosing={isClosing}
+        isClosing={isClosing || busy}
         onSelectPatient={handleSelect}
         selectedPatientId={patientId}
       />

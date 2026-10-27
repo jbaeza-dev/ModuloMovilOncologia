@@ -68,6 +68,7 @@ export class PatientContextManager {
   private drainResolvers = new Set<() => void>();
   private activeTeardownPromise: Promise<TeardownResult> | null = null;
   private isClosing = false;
+  private selecting = false;
 
   private nextNotificationAttemptToken = 0;
   private nextNotificationIntentId = 0;
@@ -179,6 +180,7 @@ export class PatientContextManager {
     const outgoingPatientId = this.patientId;
     this.isClosing = true;
     this.patientId = null;
+    this.sessionAdapter.cancelRequests?.();
 
     // Cancelar descargas masivas en curso para el paciente saliente de inmediato.
     // Esto asegura que la descarga se interrumpa tras completar el archivo que
@@ -252,7 +254,11 @@ export class PatientContextManager {
           try {
             await this.sessionAdapter.logout();
           } catch (sessionErr) {
-            console.warn('[Teardown] Excepción al cerrar sesión en adaptador:', sessionErr);
+            cancelSuccess = false;
+            teardownError =
+              'No se pudo conservar el cierre de sesión; reintenta antes de cambiar de cuenta.';
+            console.warn('[Teardown] No se pudo completar el cierre de sesión.');
+            void sessionErr;
           }
         } catch (err) {
           cancelSuccess = false;
@@ -282,43 +288,51 @@ export class PatientContextManager {
     return teardownPromise;
   }
 
-  async selectPatient(newPatientId: string): Promise<void> {
-    // 1. Validar que la selección manual está soportada
-    if (!this.sessionAdapter.selectDemoPatient) {
-      throw new Error('La selección manual de paciente solo está disponible en modo demostración.');
-    }
-
-    // 2. Si existe otro paciente activo, forzar el inicio del cierre de contexto inmediatamente (Fase 1 síncrona)
-    const currentActiveId = this.patientId;
-    let closePromise: Promise<TeardownResult> | null = null;
-    if (currentActiveId && currentActiveId !== newPatientId) {
-      closePromise = this.closeActiveContext('change_patient');
-    }
-
-    // 3. Si ya hay un cierre en curso o se inició recién, esperar que concluya el drenaje
-    if (this.activeTeardownPromise) {
-      await this.activeTeardownPromise;
-    }
-    if (closePromise) {
-      await closePromise;
-    }
-
-    // 4. Seleccionar la identidad en el adaptador de sesión
-    const sessionResult = await this.sessionAdapter.selectDemoPatient(newPatientId);
-    if (!sessionResult.success) {
-      throw new Error(
-        sessionResult.error ?? `Paciente '${newPatientId}' no válido para demostración.`,
-      );
-    }
-
-    // 5. Activar el nuevo contexto
+  async restoreSession(): Promise<void> {
+    const result = await this.sessionAdapter.restore?.();
+    if (result?.success && result.user)
+      this.activateUser(result.user.localPatientId ?? result.user.id, false);
+  }
+  private activateUser(id: string, navigate = true) {
     this.contextEpoch += 1;
-    this.patientId = newPatientId;
-    this.assistantController.setContext(newPatientId, this.contextEpoch);
+    this.patientId = id;
+    this.assistantController.setContext(id, this.contextEpoch);
     this.notify();
-
-    // 6. Navegar hacia (tabs)
-    this.router.replace('/(tabs)');
+    if (navigate) this.router.replace('/(tabs)');
+  }
+  async authenticate(): Promise<void> {
+    if (this.selecting) throw new Error('Ya hay un acceso en curso.');
+    this.selecting = true;
+    try {
+      if (this.patientId) await this.closeActiveContext('manual_close');
+      if (this.activeTeardownPromise) await this.activeTeardownPromise;
+      const result = await this.sessionAdapter.login({});
+      if (!result.success || !result.user)
+        throw new Error(result.error ?? 'No se pudo autenticar la cuenta.');
+      this.activateUser(result.user.localPatientId ?? result.user.id);
+    } finally {
+      this.selecting = false;
+    }
+  }
+  async selectPatient(newPatientId: string): Promise<void> {
+    if (!this.sessionAdapter.selectDemoPatient)
+      throw new Error('La selección manual de paciente solo está disponible en modo demostración.');
+    if (this.selecting) throw new Error('Ya hay un acceso en curso.');
+    this.selecting = true;
+    try {
+      if (this.patientId && this.patientId !== newPatientId)
+        await this.closeActiveContext('change_patient');
+      if (this.activeTeardownPromise) await this.activeTeardownPromise;
+      const previous = this.sessionAdapter.getCurrentUser();
+      if (!this.patientId && previous)
+        throw new Error('Reintenta el cierre de la cuenta anterior antes de cambiar de paciente.');
+      const result = await this.sessionAdapter.selectDemoPatient(newPatientId);
+      if (!result.success || !result.user)
+        throw new Error(result.error ?? 'No se pudo autenticar al paciente de demostración.');
+      this.activateUser(result.user.localPatientId ?? newPatientId);
+    } finally {
+      this.selecting = false;
+    }
   }
 
   async processPendingNotificationIntent(): Promise<NotificationOpenResult> {
