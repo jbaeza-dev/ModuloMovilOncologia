@@ -41,7 +41,7 @@ streams:
         tipo, url, categoria, carpeta_id, activo, fecha_creacion,
         archivo_mime, archivo_tamano_bytes, archivo_revision, archivo_sha256
       FROM contenido_educativo
-      WHERE qc_mobile_eligible = true
+      WHERE qc_mobile_eligible = true AND (tipo = 'imagen' OR tipo = 'video')
         AND auth.parameter('iss') = 'quimiocare-demo'
         AND auth.parameter('role') = 'paciente'
         AND auth.parameter('cohort') = 'quimiocare-demo'

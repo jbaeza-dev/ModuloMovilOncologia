@@ -1,3 +1,4 @@
+import { clinicalStatusLabel } from '../../data/sync/visible-status';
 import type { VitalRecord, VitalWithSyncRecord } from '../../data/local/repository';
 import {
   formatCivilDateDisplay,
@@ -79,7 +80,16 @@ export function getDaySectionTitle(
   return formatCivilDateDisplay(civilDate);
 }
 
-export function getSyncStatusLabel(record: Pick<VitalWithSyncRecord, 'estado_envio'>): string {
+export function getSyncStatusLabel(
+  record: Pick<VitalWithSyncRecord, 'estado_envio' | 'gestor_envio'>,
+): string {
+  if (
+    record.estado_envio &&
+    ['guardado_local', 'pausado', 'aceptado', 'rechazado'].includes(record.estado_envio)
+  )
+    return clinicalStatusLabel(record.estado_envio);
+  if (record.estado_envio === 'pendiente' && record.gestor_envio === 'powersync')
+    return clinicalStatusLabel(record.estado_envio);
   if (record.estado_envio === 'pendiente' || !record.estado_envio) {
     return 'Guardado en este dispositivo';
   }

@@ -158,6 +158,24 @@ describe('vitals-formatters', () => {
   });
 
   describe('formatVitalCardAccessibilityLabel', () => {
+    it('anuncia la captura SDK pendiente sin confundirla con un registro solo local', () => {
+      const record: VitalWithSyncRecord = {
+        ...baseRecord,
+        id: 'sdk-pending',
+        fecha_registro: '2026-10-17T13:30:00.000Z',
+        temperatura: 36.5,
+        estado_envio: 'pendiente',
+        gestor_envio: 'powersync',
+      };
+      const label = formatVitalCardAccessibilityLabel(
+        record,
+        '2026-10-17T15:00:00.000Z',
+        'America/Santiago',
+      );
+      expect(label).toContain('Guardado · Pendiente de envío');
+      expect(label).not.toContain('Aceptado por el servidor');
+    });
+
     it('genera una etiqueta de accesibilidad completa y sin campos nulos', () => {
       const record: VitalWithSyncRecord = {
         ...baseRecord,

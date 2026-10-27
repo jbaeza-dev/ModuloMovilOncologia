@@ -64,5 +64,8 @@
         "expo-sharing"
       ]
     }
+  },
+  "op-sqlite": {
+    "sqlcipher": true
   }
 }

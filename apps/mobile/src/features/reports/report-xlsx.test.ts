@@ -1,4 +1,5 @@
-import { describe, expect, it, vi } from 'vitest';
+import { activateFileCipher } from '../../data/sync/file-protection';
+import { beforeEach, describe, expect, it, vi } from 'vitest';
 import * as XLSX from 'xlsx';
 
 import { deletePatientReport } from '../../data/local/files/report-storage';
@@ -424,4 +425,14 @@ describe('exportador de reportes Excel (.xlsx) con SheetJS', () => {
     // Limpieza
     await deletePatientReport(patientId, result.filename);
   });
+});
+
+// Unit tests exercise storage behavior; native cryptography is verified separately.
+beforeEach(() => {
+  const release = activateFileCipher({
+    owns: () => true,
+    protect: async (_path, bytes) => bytes,
+    unprotect: async (_path, bytes) => bytes,
+  });
+  return release;
 });

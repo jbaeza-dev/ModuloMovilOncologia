@@ -46,11 +46,68 @@ jest.mock('../services/session/native-session', () => ({
   createMobileSession: () => {
     // The historical context suite tests local teardown, not remote authentication.
     // eslint-disable-next-line @typescript-eslint/no-require-imports
-    const { DemoSessionAdapter } = require('../services/session/demo-session-adapter');
-    return new DemoSessionAdapter();
+    const { HttpSessionAdapter } = require('../services/session/http-session-adapter');
+    return new HttpSessionAdapter();
   },
   createDeviceClient: jest.fn(),
   registerNativePush: jest.fn(),
+}));
+
+// The provider keeps real lifecycle/SQL behavior; only native transport and SDK opening
+// are replaced in this UI suite. Android tests verify their real implementations.
+jest.mock('../services/session/http-session-adapter', () => {
+  // eslint-disable-next-line @typescript-eslint/no-require-imports
+  const { DemoSessionAdapter } = require('../services/session/demo-session-adapter');
+  return {
+    HttpSessionAdapter: class extends DemoSessionAdapter {
+      config = { mode: 'demo', scope: 'ui-test' };
+      subscribe = () => () => {};
+      snapshot = {
+        state: 'no_identity',
+        user: null,
+        identity: null,
+        stale: true,
+        consent: null,
+        terms: null,
+        uploadAllowed: false,
+        message: null,
+        revision: 0,
+      };
+      getSnapshot = () => this.snapshot;
+      publicTerms = async () => {};
+      refreshIdentity = async () => {};
+    },
+  };
+});
+jest.mock('../data/sync/native-runtime', () => ({
+  openClinicalStore: async (
+    session: { getCurrentUser: () => { id: string } },
+    patientId: string,
+  ) => {
+    // eslint-disable-next-line @typescript-eslint/no-require-imports
+    const { createExpoConnection } = require('../data/local/core/expo-connection');
+    // eslint-disable-next-line @typescript-eslint/no-require-imports
+    const { migrateDatabase } = require('../data/local/migrations');
+    mockActiveDbInstance = mockCreateFakeNativeDatabase();
+    const native = mockActiveDbInstance;
+    const connection = createExpoConnection(native);
+    await migrateDatabase(connection);
+    await connection.run(
+      'INSERT INTO paciente_cache(paciente_id,nombre,obtenido_en) VALUES (?,?,?)',
+      [patientId, 'Synthetic UI patient', new Date().toISOString()],
+    );
+    const store = {
+      connection,
+      scope: { localPatientId: patientId, owner: session.getCurrentUser().id },
+      closed: false,
+      database: { onChange: () => () => {} },
+      close: async () => {
+        store.closed = true;
+        await native.closeAsync();
+      },
+    };
+    return store;
+  },
 }));
 
 jest.mock('expo-router', () => {
@@ -317,6 +374,33 @@ describe('Incremento 6: UI de Acceso, Navegación Raíz, Sesión y Asistente', (
   });
 
   describe('Navegador Raíz y Stack.Protected en Producción', () => {
+    it('reopens storage after authenticating the same account and retires the prior connector', async () => {
+      const holder = { current: null as LocalDataContext | null };
+      await render(
+        <LocalDataProvider>
+          <ContextConsumer
+            onReady={(ctx) => {
+              holder.current = ctx;
+            }}
+          />
+        </LocalDataProvider>,
+      );
+      await waitFor(() => expect(holder.current).toBeTruthy());
+      await act(async () => {
+        await holder.current!.selectPatient(DEMO_PATIENTS[0].id);
+      });
+      await waitFor(() => expect(holder.current?.clinicalStore).toBeTruthy());
+      const previous = holder.current!.clinicalStore;
+      await act(async () => {
+        await holder.current!.selectPatient(DEMO_PATIENTS[0].id);
+      });
+      await waitFor(() => {
+        expect(holder.current?.clinicalStore).toBeTruthy();
+        expect(holder.current?.clinicalStore).not.toBe(previous);
+      });
+      expect(previous?.closed).toBe(true);
+      expect(holder.current!.patientId).toBe(DEMO_PATIENTS[0].id);
+    });
     it('sin paciente activo, Stack.Protected excluye (tabs) y AppNavigator redirige si se accede a tabs', async () => {
       mockRouteHistory[0] = '/(tabs)';
 
@@ -773,6 +857,7 @@ describe('Incremento 6: UI de Acceso, Navegación Raíz, Sesión y Asistente', (
         await contextRef.selectPatient(DEMO_PATIENTS[0].id);
       });
 
+      await waitFor(() => expect(contextRef.database).toBeTruthy());
       expect(contextRef.patientId).toBe(DEMO_PATIENTS[0].id);
       const coordinator = contextRef.coordinator;
       expect(coordinator).not.toBeNull();
@@ -819,18 +904,14 @@ describe('Incremento 6: UI de Acceso, Navegación Raíz, Sesión y Asistente', (
   });
 
   describe('Consentimientos Informados (S-03)', () => {
-    it('AccessConsentScreen never grants a local acceptance without a configured server', async () => {
+    it('AccessConsentScreen never grants local acceptance without verified terms', async () => {
       await render(
         <LocalDataProvider>
           <AccessConsentScreen />
         </LocalDataProvider>,
       );
       expect(await screen.findByText('Consentimientos')).toBeTruthy();
-      expect(
-        await screen.findByText(
-          'El servicio de términos no está configurado. Una aceptación local no habilita envíos.',
-        ),
-      ).toBeTruthy();
+      expect(await screen.findByText('Sin términos verificados disponibles.')).toBeTruthy();
       expect(screen.queryByText('Aceptar términos online')).toBeNull();
     });
   });
@@ -868,15 +949,13 @@ describe('Incremento 6: UI de Acceso, Navegación Raíz, Sesión y Asistente', (
         </LocalDataProvider>,
       );
 
-      // Esperar a que la base de datos abra
-      await waitFor(() => {
-        expect(contextRef?.database).toBeTruthy();
-      });
-
-      // Seleccionar paciente activo
+      // No clinical database is exposed before authentication.
+      await waitFor(() => expect(contextRef).toBeTruthy());
+      await waitFor(() => expect(contextRef?.database).toBeNull());
       await act(async () => {
         await contextRef?.selectPatient(DEMO_PATIENTS[0].id);
       });
+      await waitFor(() => expect(contextRef?.database).toBeTruthy());
 
       const notifId = 'notif-ui-foreground-1';
       const payload = {

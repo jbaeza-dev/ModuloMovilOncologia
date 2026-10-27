@@ -1,3 +1,5 @@
+import type { ClinicalCaptureHook } from '../sync/legacy-command';
+import { createCatalogRepository } from '../sync/catalog-repository';
 import type { SqlConnection } from './core/sql';
 import { type VitalValues } from './validation';
 import { createFormRepository } from './forms/form-repository';
@@ -26,10 +28,15 @@ export type QueueState =
   | 'enviado'
   | 'error_reintentable'
   | 'requiere_sesion'
-  | 'conflicto';
+  | 'conflicto'
+  | 'guardado_local'
+  | 'pausado'
+  | 'aceptado'
+  | 'rechazado';
 
 export type VitalWithSyncRecord = VitalRecord & {
   estado_envio: QueueState | null;
+  gestor_envio?: 'powersync';
 };
 
 export type SymptomRecord = {
@@ -99,14 +106,16 @@ export function createPatientRepository(
   patientId: string,
   newId: IdFactory,
   now: Clock = () => new Date().toISOString(),
+  clinicalHook?: ClinicalCaptureHook,
 ) {
   if (!patientId) throw new Error('Selecciona un paciente de prueba.');
 
-  const formRepo = createFormRepository(database, patientId, newId, now);
+  const formRepo = createFormRepository(database, patientId, newId, now, clinicalHook);
   const reportRepo = createReportRepository(database, patientId, now);
 
   return {
     ...formRepo,
+    replicatedCatalog: createCatalogRepository(database),
     async createVitals(values: VitalValues): Promise<string> {
       const id = newId();
       const queueId = newId();
@@ -152,6 +161,7 @@ export function createPatientRepository(
             timestamp,
           ],
         );
+        if (clinicalHook) await clinicalHook(tx, queueId);
       });
       return id;
     },
@@ -200,7 +210,7 @@ export function createPatientRepository(
 
     latestVital() {
       return database.first<VitalWithSyncRecord>(
-        `SELECT v.*, c.estado AS estado_envio
+        `SELECT v.*, ${clinicalHook ? "COALESCE((SELECT status FROM qc_clinical_command WHERE id=v.id), CASE WHEN c.estado='enviado' THEN 'enviado' ELSE 'guardado_local' END)" : 'c.estado'} AS estado_envio${clinicalHook ? ", 'powersync' AS gestor_envio" : ''}
          FROM signos_vitales AS v
          LEFT JOIN cola_envio AS c
            ON c.tipo_entidad = 'signos_vitales' AND c.registro_id = v.id
@@ -212,7 +222,7 @@ export function createPatientRepository(
 
     vital(id: string) {
       return database.first<VitalWithSyncRecord>(
-        `SELECT v.*, c.estado AS estado_envio
+        `SELECT v.*, ${clinicalHook ? "COALESCE((SELECT status FROM qc_clinical_command WHERE id=v.id), CASE WHEN c.estado='enviado' THEN 'enviado' ELSE 'guardado_local' END)" : 'c.estado'} AS estado_envio${clinicalHook ? ", 'powersync' AS gestor_envio" : ''}
          FROM signos_vitales AS v
          LEFT JOIN cola_envio AS c
            ON c.tipo_entidad = 'signos_vitales' AND c.registro_id = v.id
@@ -223,7 +233,7 @@ export function createPatientRepository(
 
     vitals(since: string, limit = 30, offset = 0) {
       return database.all<VitalWithSyncRecord>(
-        `SELECT v.*, c.estado AS estado_envio
+        `SELECT v.*, ${clinicalHook ? "COALESCE((SELECT status FROM qc_clinical_command WHERE id=v.id), CASE WHEN c.estado='enviado' THEN 'enviado' ELSE 'guardado_local' END)" : 'c.estado'} AS estado_envio${clinicalHook ? ", 'powersync' AS gestor_envio" : ''}
          FROM signos_vitales AS v
          LEFT JOIN cola_envio AS c
            ON c.tipo_entidad = 'signos_vitales' AND c.registro_id = v.id
@@ -247,7 +257,7 @@ export function createPatientRepository(
 
     symptoms(limit = 30, offset = 0) {
       return database.all<SymptomWithSyncRecord>(
-        `SELECT s.*, c.estado AS estado_envio
+        `SELECT s.*, ${clinicalHook ? "'guardado_local'" : 'c.estado'} AS estado_envio
          FROM sintomas AS s
          LEFT JOIN cola_envio AS c
            ON c.tipo_entidad = 'sintomas' AND c.registro_id = s.id
@@ -258,6 +268,13 @@ export function createPatientRepository(
     },
 
     async pendingCount() {
+      if (clinicalHook) {
+        const row = await database.first<{ total: number }>(
+          `SELECT count(*) total FROM qc_clinical_command WHERE status IN ('pendiente','pausado') AND id IN (SELECT id FROM signos_vitales WHERE paciente_id=? UNION SELECT id FROM respuesta_formulario WHERE paciente_id=?)`,
+          [patientId, patientId],
+        );
+        return row?.total ?? 0;
+      }
       const row = await database.first<{ total: number }>(
         "SELECT count(*) AS total FROM cola_envio WHERE paciente_id = ? AND estado = 'pendiente'",
         [patientId],
@@ -422,7 +439,7 @@ export function createPatientRepository(
       ]);
     },
 
-    ...createFormRepository(database, patientId, newId, now),
+    ...createFormRepository(database, patientId, newId, now, clinicalHook),
     ...createClinicalContextRepository(database, patientId),
     ...createConsentRepository(database, patientId, newId, now),
     reports: reportRepo,

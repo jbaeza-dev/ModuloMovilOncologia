@@ -1,3 +1,9 @@
+import {
+  protectClinicalFile,
+  readClinicalFile,
+  isClinicalFile,
+  assertClinicalFileContext,
+} from '../../sync/file-protection';
 import { Directory, File } from 'expo-file-system';
 
 /**
@@ -48,22 +54,23 @@ export class ExpoFileStorageAdapter implements FileStorageAdapter {
 
   async readText(targetPath: string): Promise<string> {
     const file = new File(toAbsoluteFileUri(targetPath));
-    return file.text();
+    if (!isClinicalFile(targetPath)) return file.text();
+    return new TextDecoder().decode(await readClinicalFile(targetPath, await file.bytes()));
   }
 
   async writeText(targetPath: string, content: string): Promise<void> {
     const file = new File(toAbsoluteFileUri(targetPath));
-    await file.write(content);
+    await file.write(await protectClinicalFile(targetPath, new TextEncoder().encode(content)));
   }
 
   async readBinary(targetPath: string): Promise<Uint8Array> {
     const file = new File(toAbsoluteFileUri(targetPath));
-    return file.bytes();
+    return readClinicalFile(targetPath, await file.bytes());
   }
 
   async writeBinary(targetPath: string, content: Uint8Array): Promise<void> {
     const file = new File(toAbsoluteFileUri(targetPath));
-    await file.write(content);
+    await file.write(await protectClinicalFile(targetPath, content));
   }
 
   async deleteFile(targetPath: string): Promise<boolean> {
@@ -83,6 +90,8 @@ export class ExpoFileStorageAdapter implements FileStorageAdapter {
     destinationPath: string,
     options?: { overwrite?: boolean },
   ): Promise<void> {
+    assertClinicalFileContext(sourcePath);
+    assertClinicalFileContext(destinationPath);
     const source = new File(toAbsoluteFileUri(sourcePath));
     const dest = new File(toAbsoluteFileUri(destinationPath));
     await source.move(dest, { overwrite: options?.overwrite ?? false });

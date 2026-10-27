@@ -1,3 +1,4 @@
+import type { ClinicalCaptureHook } from '../../sync/legacy-command';
 import type { SqlConnection } from '../core/sql';
 import {
   type DailyDraftData,
@@ -111,6 +112,7 @@ export function createFormRepository(
   patientId: string,
   newId: IdFactory,
   now: Clock = () => new Date().toISOString(),
+  clinicalHook?: ClinicalCaptureHook,
 ) {
   if (!patientId) throw new Error('Selecciona un paciente de prueba.');
 
@@ -490,6 +492,7 @@ export function createFormRepository(
           ) VALUES (?, ?, 'respuesta_formulario', ?, ?, 'pendiente', ?, ?)`,
           [queueId, patientId, deliveryId, queuePayload, timestamp, timestamp],
         );
+        if (clinicalHook) await clinicalHook(tx, queueId);
 
         // 7. Consumo condicional del borrador (solo si su entrega_id coincide con el deliveryId confirmado)
         await tx.run(
@@ -925,6 +928,7 @@ export function createFormRepository(
           ) VALUES (?, ?, 'respuesta_formulario', ?, ?, 'pendiente', ?, ?)`,
           [queueId, patientId, deliveryId, queuePayload, timestamp, timestamp],
         );
+        if (clinicalHook) await clinicalHook(tx, queueId);
 
         // 7. Eliminación condicional del borrador
         await tx.run(
@@ -960,7 +964,7 @@ export function createFormRepository(
            f.titulo,
            f.duracion_estimada_min,
            r.fecha_confirmacion,
-           c.estado AS estado_envio
+           ${clinicalHook ? "COALESCE((SELECT status FROM qc_clinical_command WHERE id=r.id), CASE WHEN c.estado='enviado' THEN 'enviado' ELSE 'guardado_local' END)" : 'c.estado'} AS estado_envio
          FROM respuesta_formulario r
          JOIN formulario_cache f
            ON f.formulario_id = r.formulario_id AND f.version = r.version
@@ -985,7 +989,7 @@ export function createFormRepository(
            r.*,
            f.titulo,
            f.descripcion,
-           c.estado AS estado_envio
+           ${clinicalHook ? "COALESCE((SELECT status FROM qc_clinical_command WHERE id=r.id), CASE WHEN c.estado='enviado' THEN 'enviado' ELSE 'guardado_local' END)" : 'c.estado'} AS estado_envio
          FROM respuesta_formulario r
          JOIN formulario_cache f
            ON f.formulario_id = r.formulario_id AND f.version = r.version

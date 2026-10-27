@@ -39,7 +39,7 @@ describe('migraciones SQLite', () => {
     await migrateDatabase(second);
     expect(
       (await second.first<{ user_version: number }>('PRAGMA user_version'))?.user_version,
-    ).toBe(10);
+    ).toBe(11);
     expect(
       (await createPatientRepository(second, patientA, ids()).vitals('2026-01-01', 30, 0)).map(
         (row) => row.id,
@@ -146,11 +146,11 @@ describe('migraciones SQLite', () => {
 
   it('rechaza una versión de base posterior sin modificarla', async () => {
     const database = open();
-    await database.exec('PRAGMA user_version = 11');
+    await database.exec('PRAGMA user_version = 12');
     await expect(migrateDatabase(database)).rejects.toThrow('versión más reciente');
     expect(
       (await database.first<{ user_version: number }>('PRAGMA user_version'))?.user_version,
-    ).toBe(11);
+    ).toBe(12);
   });
 
   it('migra de versión 3 a 4 preservando registros previos de cola_envio y ampliando CHECK para nuevos tipos', async () => {
@@ -281,7 +281,7 @@ describe('migraciones SQLite', () => {
     // 2. Aplicar todas las migraciones (hasta v10)
     await migrateDatabase(database);
     const v7 = await database.first<{ user_version: number }>('PRAGMA user_version');
-    expect(v7?.user_version).toBe(10);
+    expect(v7?.user_version).toBe(11);
 
     // Verificar que los datos previos se conservaron intactos
     const vital = await database.first<{ id: string }>(
@@ -321,7 +321,7 @@ describe('migraciones SQLite', () => {
     // 2. Aplicar todas las migraciones (hasta v10)
     await migrateDatabase(database);
     const v = await database.first<{ user_version: number }>('PRAGMA user_version');
-    expect(v?.user_version).toBe(10);
+    expect(v?.user_version).toBe(11);
 
     // 3. Comprobar que la descarga previa conserva sus valores y tiene los nuevos defaults
     const prev = await database.first<{
@@ -533,7 +533,7 @@ describe('migraciones SQLite', () => {
     await migrateDatabase(database);
 
     const versionRow = await database.first<{ user_version: number }>('PRAGMA user_version');
-    expect(versionRow?.user_version).toBe(10);
+    expect(versionRow?.user_version).toBe(11);
 
     // 4. Verificar integridad referencial completa
     const fkErrors = await database.all('PRAGMA foreign_key_check');
@@ -640,7 +640,7 @@ describe('migraciones SQLite', () => {
     await migrateDatabase(database);
 
     const versionRow = await database.first<{ user_version: number }>('PRAGMA user_version');
-    expect(versionRow?.user_version).toBe(10);
+    expect(versionRow?.user_version).toBe(11);
 
     // 4. Verificar integridad referencial
     const fkErrors = await database.all('PRAGMA foreign_key_check');

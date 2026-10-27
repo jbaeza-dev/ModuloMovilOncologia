@@ -1,3 +1,4 @@
+import { scopedClinicalDirectory } from '../../data/sync/file-protection';
 import { Directory, Paths } from 'expo-file-system';
 
 import {
@@ -120,7 +121,10 @@ const defaultExpoAdapter = new ExpoFileStorageAdapter();
 
 export function getPatientDraftDirectory(pacienteId: string): Directory {
   assertSafeId(pacienteId, 'pacienteId');
-  return new Directory(Paths.document, 'formularios_locales', pacienteId, 'borradores');
+  const scoped = scopedClinicalDirectory('formularios_locales', pacienteId);
+  return scoped
+    ? new Directory(scoped, 'borradores')
+    : new Directory(Paths.document, 'formularios_locales', pacienteId, 'borradores');
 }
 
 export function getDraftFileName(formularioId: string, version: string): string {

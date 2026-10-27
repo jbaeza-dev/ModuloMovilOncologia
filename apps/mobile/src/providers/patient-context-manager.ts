@@ -178,6 +178,7 @@ export class PatientContextManager {
     this.contextEpoch += 1;
     const currentEpoch = this.contextEpoch;
     const outgoingPatientId = this.patientId;
+    const outgoingCoordinator = this.coordinator;
     this.isClosing = true;
     this.patientId = null;
     this.sessionAdapter.cancelRequests?.();
@@ -232,9 +233,10 @@ export class PatientContextManager {
           }
 
           // 2. Cancelar agenda nativa del paciente saliente con el coordinador activo
-          if (this.coordinator && outgoingPatientId) {
+          if (outgoingCoordinator && outgoingPatientId) {
             try {
-              const cancelResult = await this.coordinator.cancelPatientSchedule(outgoingPatientId);
+              const cancelResult =
+                await outgoingCoordinator.cancelPatientSchedule(outgoingPatientId);
               cancelSuccess = cancelResult.success && cancelResult.pendingCount === 0;
               pendingCount = cancelResult.pendingCount;
               if (!cancelSuccess) {
@@ -320,8 +322,7 @@ export class PatientContextManager {
     if (this.selecting) throw new Error('Ya hay un acceso en curso.');
     this.selecting = true;
     try {
-      if (this.patientId && this.patientId !== newPatientId)
-        await this.closeActiveContext('change_patient');
+      if (this.patientId) await this.closeActiveContext('change_patient');
       if (this.activeTeardownPromise) await this.activeTeardownPromise;
       const previous = this.sessionAdapter.getCurrentUser();
       if (!this.patientId && previous)

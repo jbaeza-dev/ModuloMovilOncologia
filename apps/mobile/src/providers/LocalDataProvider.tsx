@@ -1,5 +1,7 @@
+import type { ClinicalStore } from '../data/sync/native-runtime';
+import { openClinicalStore } from '../data/sync/native-runtime';
+import { QueryRevisionContext } from './QueryRevision';
 import * as Crypto from 'expo-crypto';
-import * as SQLite from 'expo-sqlite';
 import {
   createContext,
   type ReactNode,
@@ -16,14 +18,8 @@ import * as Notifications from 'expo-notifications';
 
 import { Screen } from '../components/Screen';
 import { BodyText, VisualButton } from '../components/Visual';
-import { createExpoConnection } from '../data/local/core/expo-connection';
 import { ExpoFileStorageAdapter } from '../data/local/files/file-storage-adapter';
-import { migrateDatabase } from '../data/local/migrations';
-import {
-  createPatientRepository,
-  seedDemoVitalsAndSymptoms,
-  seedPatientContextIfEmpty,
-} from '../data/local/repository';
+import { createPatientRepository } from '../data/local/repository';
 import type { SqlConnection } from '../data/local/core/sql';
 import { cleanupRetiredEducationalCopies } from '../data/local/education/retired-copy-cleanup';
 import { importLegacyDrafts } from '../features/medical-forms/form-legacy-import';
@@ -88,6 +84,7 @@ export type FormImportWarning = {
 type Repository = ReturnType<typeof createPatientRepository>;
 type DataContextValue = {
   database: SqlConnection | null;
+  clinicalStore?: ClinicalStore | null;
   patientId: string | null;
   repository: Repository | null;
   coordinator: NotificationCoordinator | null;
@@ -120,7 +117,11 @@ type DataContextValue = {
 const DataContext = createContext<DataContextValue | null>(null);
 
 export function LocalDataProvider({ children }: { children: ReactNode }) {
-  const [database, setDatabase] = useState<SqlConnection | null>(null);
+  const [storage, setStorage] = useState<{ store: ClinicalStore; epoch: number } | null>(null);
+  const [sessionRestored, setSessionRestored] = useState(false);
+  const [queryRevision, setQueryRevision] = useState(0);
+  const openJobs = useRef<Promise<void>>(Promise.resolve());
+  const restoreStarted = useRef(false);
   const [error, setError] = useState<string | null>(null);
   const [attempt, setAttempt] = useState(0);
   const [saving, setSaving] = useState(false);
@@ -181,7 +182,33 @@ export function LocalDataProvider({ children }: { children: ReactNode }) {
   }, [identitySession]);
 
   const patientId = manager.getPatientId();
+  const contextEpoch = manager.getContextEpoch();
   const isClosing = manager.getIsClosing();
+  const clinicalStore =
+    storage &&
+    storage.epoch === contextEpoch &&
+    !storage.store.closed &&
+    storage.store.scope.localPatientId === patientId &&
+    storage.store.scope.owner === identitySession?.getCurrentUser()?.id
+      ? storage.store
+      : null;
+  const database = clinicalStore?.connection ?? null;
+  const labOnly =
+    process.env.EXPO_PUBLIC_P04_LAB_ONLY === 'true' &&
+    process.env.EXPO_PUBLIC_P04_PROBE_ENABLED === 'true' &&
+    isDemoMode();
+  useEffect(() => {
+    if (restoreStarted.current) return;
+    restoreStarted.current = true;
+    if (labOnly) {
+      setSessionRestored(true);
+      return;
+    }
+    void manager
+      .restoreSession()
+      .catch(() => undefined)
+      .finally(() => setSessionRestored(true));
+  }, [manager, labOnly]);
 
   useEffect(() => {
     manager.setDatabase(database);
@@ -196,45 +223,63 @@ export function LocalDataProvider({ children }: { children: ReactNode }) {
   }, []);
 
   useEffect(() => {
-    let active = true;
-    async function open() {
-      let native: SQLite.SQLiteDatabase | null = null;
-      try {
-        const databaseName = !isDemoMode()
-          ? 'quimiocare_production_' +
-            (
-              await Crypto.digestStringAsync(
-                Crypto.CryptoDigestAlgorithm.SHA256,
-                identitySession?.config.scope ?? 'unconfigured-production',
-              )
-            ).slice(0, 24) +
-            '.db'
-          : 'quimiocare_local.db';
-        native = await SQLite.openDatabaseAsync(databaseName);
-        const connection = createExpoConnection(native);
-        await migrateDatabase(connection);
-        if (isDemoMode()) {
-          await seedPatientContextIfEmpty(connection, DEMO_PATIENTS[0].id, DEMO_PATIENTS[1].id);
-          await seedDemoVitalsAndSymptoms(connection, DEMO_PATIENTS[0].id, DEMO_PATIENTS[1].id);
-        }
-        if (active) await manager.restoreSession();
-        if (active) setDatabase(connection);
-        else await native.closeAsync();
-      } catch (failure) {
-        if (native) await native.closeAsync().catch(() => undefined);
-        if (active)
-          setError(
-            failure instanceof Error
-              ? failure.message
-              : 'No se pudo abrir el almacenamiento local.',
+    if (!sessionRestored || !patientId || !identitySession || labOnly) return;
+    let active = true,
+      current: ClinicalStore | null = null,
+      unwatch: (() => void) | null = null;
+    const previous = openJobs.current;
+    const pending = previous
+      .catch(() => undefined)
+      .then(async () => {
+        if (!active) return;
+        setError(null);
+        try {
+          current = await openClinicalStore(identitySession, patientId);
+          if (!active) {
+            await current.close();
+            return;
+          }
+          const store = current;
+          unwatch = store.database.onChange(
+            {
+              onChange: () => {
+                if (active) setQueryRevision((n) => n + 1);
+              },
+            },
+            {
+              tables: [
+                'qc_clinical_command',
+                'qc_storage_control',
+                'qc_catalog_status',
+                'qc_definition_snapshot',
+                'signos_vitales',
+                'respuesta_formulario',
+              ],
+              throttleMs: 150,
+            },
           );
-      }
-    }
-    void open();
+          setStorage({ store, epoch: contextEpoch });
+        } catch (failure) {
+          if (active)
+            setError(
+              failure instanceof Error
+                ? failure.message
+                : 'No se pudo abrir el almacenamiento cifrado.',
+            );
+        }
+      });
+    openJobs.current = pending;
     return () => {
       active = false;
+      unwatch?.();
+      openJobs.current = pending.then(async () => {
+        if (current) {
+          await manager.getActiveTeardownPromise();
+          await current.close();
+        }
+      });
     };
-  }, [attempt, identitySession, manager]);
+  }, [sessionRestored, patientId, identitySession, labOnly, attempt, contextEpoch]);
 
   useEffect(() => {
     if (!database || !patientId) {
@@ -247,11 +292,16 @@ export function LocalDataProvider({ children }: { children: ReactNode }) {
     setFormImportStatus('importing');
     setFormImportError(null);
     const adapter = new ExpoFileStorageAdapter();
-    cleanupRetiredEducationalCopies(database, patientId, { adapter }).catch((err) => {
-      console.warn('Fallo en limpieza de copias educativas retiradas:', err);
-    });
+    manager
+      .trackOperation(() => cleanupRetiredEducationalCopies(database, patientId, { adapter }))
+      .catch((err) => {
+        console.warn('Fallo en limpieza de copias educativas retiradas:', err);
+      });
 
-    importLegacyDrafts(patientId, database, adapter, undefined, Crypto.randomUUID)
+    manager
+      .trackOperation(() =>
+        importLegacyDrafts(patientId, database, adapter, undefined, Crypto.randomUUID),
+      )
       .then((counts) => {
         if (active) {
           setFormImportStatus('ready');
@@ -279,16 +329,22 @@ export function LocalDataProvider({ children }: { children: ReactNode }) {
     return () => {
       active = false;
     };
-  }, [database, patientId, importAttempt]);
+  }, [database, patientId, importAttempt, manager]);
 
   const formStorageReady = formImportStatus === 'ready';
 
   const repository = useMemo(
     () =>
       database && patientId
-        ? createPatientRepository(database, patientId, Crypto.randomUUID)
+        ? createPatientRepository(
+            database,
+            patientId,
+            Crypto.randomUUID,
+            undefined,
+            clinicalStore?.captureHook,
+          )
         : null,
-    [database, patientId],
+    [database, patientId, clinicalStore],
   );
 
   const notificationAdapter = useMemo(() => new ExpoNotificationAdapter(), []);
@@ -392,10 +448,8 @@ export function LocalDataProvider({ children }: { children: ReactNode }) {
     };
   }, [coordinator, reconcileReminders, manager]);
 
-  // Manejo de eventos y toques de notificaciones locales
+  // Capture intents before the account database opens; the manager validates owner before navigation.
   useEffect(() => {
-    if (!database) return;
-
     // Procesar respuesta previa de arranque (cold start)
     try {
       const last = Notifications.getLastNotificationResponse();
@@ -493,6 +547,7 @@ export function LocalDataProvider({ children }: { children: ReactNode }) {
   const context = useMemo<DataContextValue>(
     () => ({
       database,
+      clinicalStore,
       patientId,
       repository,
       coordinator,
@@ -523,6 +578,7 @@ export function LocalDataProvider({ children }: { children: ReactNode }) {
     }),
     [
       database,
+      clinicalStore,
       patientId,
       repository,
       coordinator,
@@ -563,14 +619,18 @@ export function LocalDataProvider({ children }: { children: ReactNode }) {
         />
       </Screen>
     );
-  if (!database)
+  if (!sessionRestored || (!labOnly && patientId && !database))
     return (
       <Screen title="Preparando almacenamiento">
         <BodyText>Abriendo la base de datos local…</BodyText>
       </Screen>
     );
 
-  return <DataContext.Provider value={context}>{children}</DataContext.Provider>;
+  return (
+    <QueryRevisionContext.Provider value={queryRevision}>
+      <DataContext.Provider value={context}>{children}</DataContext.Provider>
+    </QueryRevisionContext.Provider>
+  );
 }
 
 export function useLocalData(): DataContextValue {

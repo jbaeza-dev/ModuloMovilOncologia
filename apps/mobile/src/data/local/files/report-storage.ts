@@ -1,3 +1,11 @@
+import { scopedClinicalDirectory } from '../../sync/file-protection';
+import { clinicalFileLease } from '../../sync/file-protection';
+import {
+  protectClinicalFile,
+  readClinicalFile,
+  assertClinicalFileContext,
+  isClinicalFile,
+} from '../../sync/file-protection';
 import { Directory, File, Paths } from 'expo-file-system';
 import * as Sharing from 'expo-sharing';
 
@@ -39,7 +47,10 @@ export function parseFormatFromReportFilename(fileName: string): ReportFileForma
 
 export function getPatientReportDirectory(pacienteId: string): Directory {
   assertSafeId(pacienteId, 'pacienteId');
-  return new Directory(Paths.document, 'reportes_locales', pacienteId);
+  const scoped = scopedClinicalDirectory('reportes_locales', pacienteId);
+  return scoped
+    ? new Directory(scoped)
+    : new Directory(Paths.document, 'reportes_locales', pacienteId);
 }
 
 export interface PatientReportItem {
@@ -72,16 +83,20 @@ export interface BinaryReportStorageAdapter {
 export class ExpoBinaryReportStorageAdapter implements BinaryReportStorageAdapter {
   async writeBytes(fileUri: string, bytes: Uint8Array): Promise<void> {
     const file = new File(fileUri);
-    await file.write(bytes);
+    await file.write(await protectClinicalFile(fileUri, bytes));
   }
 
   async copyFile(sourceUri: string, targetUri: string): Promise<void> {
     const source = new File(sourceUri);
     const target = new File(targetUri);
-    await source.copy(target);
+    await target.write(
+      await protectClinicalFile(targetUri, await readClinicalFile(sourceUri, await source.bytes())),
+    );
   }
 
   async moveFile(sourceUri: string, targetUri: string): Promise<void> {
+    assertClinicalFileContext(sourceUri);
+    assertClinicalFileContext(targetUri);
     const source = new File(sourceUri);
     const target = new File(targetUri);
     await source.move(target);
@@ -159,7 +174,7 @@ export async function withPatientReportLock<T>(
 }
 
 export function extractPatientIdFromReportUri(uri: string): string | null {
-  const match = uri.match(/[/\\]reportes_locales[/\\]([^/\\]+)[/\\]/);
+  const match = uri.match(/[/\\]reportes_locales[/\\](?:[0-9a-f]{24}[/\\])?([^/\\]+)[/\\]/);
   return match ? match[1] : null;
 }
 
@@ -539,11 +554,26 @@ export async function shareReportFile(
         : 'Compartir reporte de signos vitales y síntomas (Excel)';
     const uti = format === 'pdf' ? 'com.adobe.pdf' : 'org.openxmlformats.spreadsheetml.sheet';
 
-    await Sharing.shareAsync(fileUri, {
-      mimeType,
-      dialogTitle,
-      UTI: uti,
-    });
+    let temporary: File | null = null;
+    const assertCurrent = clinicalFileLease(fileUri);
+    try {
+      let shareUri = fileUri;
+      if (isClinicalFile(fileUri)) {
+        const bytes = await readClinicalFile(fileUri, await new File(fileUri).bytes());
+        const crypto = await import('expo-crypto');
+        assertCurrent();
+        const directory = new Directory(Paths.cache, 'qc_share');
+        directory.create({ intermediates: true, idempotent: true });
+        temporary = new File(directory, 'qc_share_' + crypto.randomUUID() + '.' + format);
+        temporary.create({ overwrite: false });
+        temporary.write(bytes);
+        shareUri = temporary.uri;
+      }
+      assertCurrent();
+      await Sharing.shareAsync(shareUri, { mimeType, dialogTitle, UTI: uti });
+    } finally {
+      if (temporary?.exists) temporary.delete();
+    }
     return 'shared_sheet_opened';
   } catch {
     return 'sharing_unavailable';
@@ -552,6 +582,16 @@ export async function shareReportFile(
 
 export async function shareReportPdf(pdfUri: string): Promise<ShareReportResult> {
   return shareReportFile(pdfUri, 'pdf');
+}
+
+/** Only derived plaintext share copies from a previous process; encrypted originals remain. */
+export function cleanupTransientReportExports() {
+  const directory = new Directory(Paths.cache, 'qc_share');
+  if (!directory.exists) return;
+  for (const entry of directory.list()) {
+    if (entry instanceof File && /^qc_share_[0-9a-f-]{36}\.(pdf|xlsx)$/.test(entry.name))
+      entry.delete();
+  }
 }
 
 /**
