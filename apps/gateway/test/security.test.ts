@@ -43,7 +43,7 @@ describe('Helmet and explicit browser origin policy', () => {
         const response = await fetch(base + '/api/gateway/dispositivo/sesiones', {
           headers: { origin: 'https://operator.example.test' },
         });
-        expect(response.status).toBe(503);
+        expect(response.status).toBe(401);
         expect(response.headers.get('access-control-allow-origin')).toBe(
           'https://operator.example.test',
         );

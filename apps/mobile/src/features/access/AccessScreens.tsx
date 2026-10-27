@@ -1,30 +1,20 @@
 import { router } from 'expo-router';
-import { useCallback, useState } from 'react';
+import { useState } from 'react';
 import { StyleSheet, Text, View } from 'react-native';
 
 import { Screen } from '../../components/Screen';
 import {
   BodyText,
   DemoBadge,
-  DetailRow,
-  EmptyState,
   InfoCard,
   ProgressBar,
   SectionTitle,
-  StatusPill,
   VisualButton,
   VisualField,
 } from '../../components/Visual';
-import { listCachedTerms } from '../../data/local/consents/consent-repository';
-import type {
-  ConsentStatusInfo,
-  TermDefinitionRecord,
-} from '../../data/local/consents/consent-types';
-import { formatDate } from '../../data/local/repository';
-import { useFocusedValue } from '../../hooks/use-local-query';
-import { useLocalData } from '../../providers/LocalDataProvider';
 import { useAppTheme } from '../../providers/ThemeProvider';
 import { theme } from '../../theme';
+import { useIdentity } from './SessionScreens';
 import { isDemoMode } from '../../utils/environment';
 
 function AccessIntro({ subtitle }: { subtitle: string }) {
@@ -40,6 +30,9 @@ function AccessIntro({ subtitle }: { subtitle: string }) {
 }
 
 export function LoginScreen() {
+  const { session, data, snapshot } = useIdentity();
+  const [busy, setBusy] = useState(false),
+    [feedback, setFeedback] = useState<string | null>(null);
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   return (
@@ -49,9 +42,11 @@ export function LoginScreen() {
       <InfoCard>
         <SectionTitle>Servicios de acceso</SectionTitle>
         <BodyText>
-          Los servicios centrales de autenticación no están configurados en esta entrega. Para
-          evaluar el módulo móvil de forma independiente, puedes seleccionar una identidad de prueba
-          local.
+          {session?.config.mode === 'demo'
+            ? 'Accede con una cuenta sintética del simulador. Sus datos locales se conservan al cerrar sesión.'
+            : session
+              ? 'Accede con Google mediante el proveedor central.'
+              : 'El proveedor de autenticación no está configurado. Las cuentas de prueba requieren configurar el simulador.'}
         </BodyText>
       </InfoCard>
       {isDemoMode() ? (
@@ -76,7 +71,44 @@ export function LoginScreen() {
         placeholder="Autenticación central no configurada"
         editable={false}
       />
-      <VisualButton label="Iniciar sesión · No configurado" disabled />
+      {feedback ? <BodyText>{feedback}</BodyText> : null}
+      {snapshot.state === 'closing' && snapshot.user && !data?.patientId ? (
+        <InfoCard>
+          <BodyText>
+            El cierre anterior no se ha completado. Reintenta antes de entrar con otra cuenta.
+          </BodyText>
+          <VisualButton
+            label="Reintentar cierre anterior"
+            disabled={data?.isClosing}
+            onPress={() => {
+              void data
+                ?.closeActiveContext('manual_close')
+                .then((result) =>
+                  setFeedback(
+                    result.success
+                      ? 'Sesión anterior cerrada.'
+                      : (result.error ?? 'No se pudo completar el cierre.'),
+                  ),
+                );
+            }}
+          />
+        </InfoCard>
+      ) : null}
+      {session?.config.mode === 'production' ? (
+        <VisualButton
+          label="Continuar con Google"
+          disabled={busy || !data}
+          onPress={() => {
+            setBusy(true);
+            void data?.manager
+              .authenticate()
+              .catch((e) => setFeedback(e instanceof Error ? e.message : 'No se pudo acceder.'))
+              .finally(() => setBusy(false));
+          }}
+        />
+      ) : (
+        <VisualButton label="Iniciar sesión · No configurado" disabled />
+      )}
       <VisualButton
         label="¿Olvidaste tu contraseña?"
         secondary
@@ -154,218 +186,7 @@ export function RegisterScreen() {
   );
 }
 
-type TermWithEvaluation = {
-  term: TermDefinitionRecord;
-  status: ConsentStatusInfo | null;
-  validity: {
-    isValid: boolean;
-    isFuture: boolean;
-    isExpired: boolean;
-  };
-};
-
-function evaluateTermValidity(term: TermDefinitionRecord) {
-  const now = Date.now();
-  const desde = Date.parse(term.vigente_desde);
-  const hasta = term.vigente_hasta ? Date.parse(term.vigente_hasta) : null;
-  const isFuture = !isNaN(desde) && now < desde;
-  const isExpired = hasta !== null && !isNaN(hasta) && now > hasta;
-  return {
-    isValid: !isFuture && !isExpired,
-    isFuture,
-    isExpired,
-  };
-}
-
-export function AccessConsentScreen() {
-  const { theme: appTheme } = useAppTheme();
-  const styles = createStyles(appTheme.colors);
-  const { database, repository, patientId, runSave, saving } = useLocalData();
-  const [busy, setBusy] = useState(false);
-  const [feedback, setFeedback] = useState<string | null>(null);
-
-  const loadData = useCallback(async (): Promise<TermWithEvaluation[]> => {
-    if (!database) return [];
-    const terms = await listCachedTerms(database);
-    const result: TermWithEvaluation[] = [];
-    for (const term of terms) {
-      let status: ConsentStatusInfo | null = null;
-      if (repository && patientId) {
-        status = await repository.getConsentStatus(term.termino_id, term.version);
-      }
-      result.push({
-        term,
-        status,
-        validity: evaluateTermValidity(term),
-      });
-    }
-    return result;
-  }, [database, repository, patientId]);
-
-  const {
-    value: termsData,
-    loading,
-    error,
-    refresh,
-  } = useFocusedValue(loadData, [] as TermWithEvaluation[]);
-
-  async function handleGrant(terminoId: string, version: string) {
-    if (busy || saving || !repository || !patientId) return;
-    setBusy(true);
-    setFeedback(null);
-    try {
-      await runSave(async () => {
-        await repository.grantConsent(terminoId, version);
-      });
-      setFeedback('Consentimiento otorgado y registrado en este dispositivo.');
-      await refresh();
-    } catch (e) {
-      setFeedback(e instanceof Error ? e.message : 'Error al registrar el consentimiento.');
-    } finally {
-      setBusy(false);
-    }
-  }
-
-  async function handleRevoke(consentId: string) {
-    if (busy || saving || !repository || !patientId) return;
-    setBusy(true);
-    setFeedback(null);
-    try {
-      await runSave(async () => {
-        await repository.revokeConsent(consentId);
-      });
-      setFeedback('Consentimiento revocado y registrado en este dispositivo.');
-      await refresh();
-    } catch (e) {
-      setFeedback(e instanceof Error ? e.message : 'Error al revocar el consentimiento.');
-    } finally {
-      setBusy(false);
-    }
-  }
-
-  return (
-    <Screen title="Consentimientos">
-      <DemoBadge />
-      <BodyText>
-        Revisión y gestión de consentimientos informados y términos versionados de QuimioCare. El
-        contenido actual corresponde a muestras técnicas demostrativas con trazabilidad en el
-        almacenamiento local.
-      </BodyText>
-
-      {feedback ? (
-        <InfoCard>
-          <Text style={styles.feedbackText}>{feedback}</Text>
-        </InfoCard>
-      ) : null}
-
-      {loading ? (
-        <InfoCard>
-          <BodyText>Consultando términos y consentimientos…</BodyText>
-        </InfoCard>
-      ) : error ? (
-        <InfoCard>
-          <BodyText>No se pudo consultar el registro de consentimientos.</BodyText>
-          <VisualButton label="Reintentar" onPress={refresh} />
-        </InfoCard>
-      ) : !termsData || termsData.length === 0 ? (
-        <EmptyState
-          icon="file-text"
-          title="No hay definiciones de términos registradas"
-          description="El almacenamiento local no contiene términos ni consentimientos configurados para consulta."
-        />
-      ) : (
-        termsData.map(({ term, status, validity }) => (
-          <InfoCard key={`${term.termino_id}-${term.version}`}>
-            <View style={styles.termHeader}>
-              <SectionTitle>{term.titulo}</SectionTitle>
-              <StatusPill>Muestra técnica demostrativa</StatusPill>
-            </View>
-            <DetailRow label="Identificador" value={term.termino_id} />
-            <DetailRow label="Versión" value={`v${term.version}`} />
-            <DetailRow label="Vigente desde" value={formatDate(term.vigente_desde)} />
-            {term.vigente_hasta ? (
-              <DetailRow label="Vigente hasta" value={formatDate(term.vigente_hasta)} />
-            ) : null}
-
-            {validity.isFuture ? (
-              <StatusPill variant="danger">
-                Vigencia futura · No disponible para aceptación
-              </StatusPill>
-            ) : validity.isExpired ? (
-              <StatusPill variant="danger">Versión no vigente · Aceptación cerrada</StatusPill>
-            ) : null}
-
-            <View style={styles.contentBox}>
-              <Text style={styles.contentText}>{term.contenido_markdown}</Text>
-            </View>
-
-            <View style={styles.statusRow}>
-              {!patientId ? (
-                <>
-                  <StatusPill>Requiere sesión activa</StatusPill>
-                  <BodyText style={styles.hintText}>
-                    Para otorgar o revocar consentimientos debes iniciar sesión o seleccionar un
-                    paciente de prueba.
-                  </BodyText>
-                  {isDemoMode() ? (
-                    <VisualButton
-                      label="Seleccionar paciente de prueba"
-                      secondary
-                      onPress={() => router.navigate('/acceso/seleccionar-paciente')}
-                    />
-                  ) : null}
-                </>
-              ) : status?.estado === 'otorgado' ? (
-                <>
-                  <StatusPill>
-                    Consentimiento otorgado el{' '}
-                    {formatDate(status.activeConsent!.fecha_otorgamiento)}
-                  </StatusPill>
-                  <StatusPill>Guardado en este dispositivo · Pendiente de envío</StatusPill>
-                  <VisualButton
-                    label="Revocar consentimiento"
-                    secondary
-                    onPress={() => handleRevoke(status.activeConsent!.id)}
-                    disabled={busy || saving}
-                  />
-                </>
-              ) : status?.estado === 'revocado' ? (
-                <>
-                  <StatusPill>
-                    Consentimiento revocado el {formatDate(status.lastConsent!.fecha_revocacion!)}
-                  </StatusPill>
-                  <StatusPill>Guardado en este dispositivo · Pendiente de envío</StatusPill>
-                  {validity.isValid ? (
-                    <VisualButton
-                      label="Aceptar consentimiento nuevamente"
-                      onPress={() => handleGrant(term.termino_id, term.version)}
-                      disabled={busy || saving}
-                    />
-                  ) : (
-                    <VisualButton label="Aceptar consentimiento" disabled />
-                  )}
-                </>
-              ) : (
-                <>
-                  <StatusPill>No otorgado</StatusPill>
-                  {validity.isValid ? (
-                    <VisualButton
-                      label="Aceptar consentimiento"
-                      onPress={() => handleGrant(term.termino_id, term.version)}
-                      disabled={busy || saving}
-                    />
-                  ) : (
-                    <VisualButton label="Aceptar consentimiento (no vigente)" disabled />
-                  )}
-                </>
-              )}
-            </View>
-          </InfoCard>
-        ))
-      )}
-    </Screen>
-  );
-}
+export { OnlineConsentScreen as AccessConsentScreen } from './SessionScreens';
 
 export function RecoverScreen() {
   const [email, setEmail] = useState('');

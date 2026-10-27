@@ -20,7 +20,7 @@ afterEvaluate {
     tasks.matching { it.name.startsWith("createBundle") && it.name.endsWith("JsAndAssets") }.configureEach {
         def demoModeVal = findProperty("EXPO_PUBLIC_DEMO_MODE") ?: (System.getenv("EXPO_PUBLIC_DEMO_MODE") ?: "")
         inputs.property("EXPO_PUBLIC_DEMO_MODE", demoModeVal)
-        ["EXPO_PUBLIC_P01_PROBE_ENABLED", "EXPO_PUBLIC_P01_CLINICAL_URL", "EXPO_PUBLIC_P01_POWERSYNC_URL", "EXPO_PUBLIC_P01_EXPO_PROJECT_ID"].each { key ->
+        ["EXPO_PUBLIC_APP_ENV", "EXPO_PUBLIC_CLINICAL_URL", "EXPO_PUBLIC_GATEWAY_URL", "EXPO_PUBLIC_AUTH_URL", "EXPO_PUBLIC_AUTH_ISSUER", "EXPO_PUBLIC_AUTH_AUDIENCE", "EXPO_PUBLIC_AUTH_PUBLIC_KEY", "EXPO_PUBLIC_AUTH_REDIRECT_URI", "EXPO_PUBLIC_EXPO_PROJECT_ID", "EXPO_PUBLIC_P01_PROBE_ENABLED", "EXPO_PUBLIC_P01_CLINICAL_URL", "EXPO_PUBLIC_P01_POWERSYNC_URL", "EXPO_PUBLIC_P01_EXPO_PROJECT_ID"].each { key ->
             inputs.property(key, System.getenv(key) ?: "")
         }
         

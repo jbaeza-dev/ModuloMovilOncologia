@@ -31,8 +31,9 @@ export function ContextGuard({ isClosing, onSelectPatient, selectedPatientId }: 
         <InfoCard>
           <Text style={styles.header}>Selecciona un paciente de prueba</Text>
           <BodyText>
-            Solo se utilizarán datos sintéticos locales guardados en este dispositivo. Esta
-            selección no representa una sesión autenticada con el servidor central.
+            Accede al simulador con una cuenta sintética. Sus capturas locales se mantienen
+            separadas. Este acceso de demostración requiere el servicio configurado y no reproduce
+            Google central.
           </BodyText>
         </InfoCard>
       )}

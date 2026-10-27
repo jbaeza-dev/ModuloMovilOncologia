@@ -37,7 +37,7 @@ afterAll(async () => {
   await new Promise<void>((resolve) => server.close(() => resolve()));
   await db.end();
 });
-describe('Real HTTP boundary with all protected routes closed', () => {
+describe('Real HTTP boundary with verified authentication', () => {
   it('serves contractual liveness without claiming database readiness', async () => {
     const r = await fetch(base + '/health');
     const body: unknown = await r.json();
@@ -53,10 +53,10 @@ describe('Real HTTP boundary with all protected routes closed', () => {
       const r = await fetch(base + '/api/gateway/dispositivo/sesiones', {
         headers: authorization ? { authorization } : {},
       });
-      expect(r.status).toBe(503);
+      expect(r.status).toBe(401);
       const body: unknown = await r.json();
-      expect(body).toMatchObject({ error: { codigo: 'AUTENTICACION_NO_CONFIGURADA' } });
-      expect(validateResponse('G-03', 503, body).valid).toBe(true);
+      expect(body).toMatchObject({ error: { codigo: 'NO_AUTORIZADO' } });
+      expect(validateResponse('G-03', 401, body).valid).toBe(true);
     },
   );
   it('normalizes malformed JSON without echoing it', async () => {
@@ -92,7 +92,7 @@ describe('Real HTTP boundary with all protected routes closed', () => {
     };
     const items = Array.from({ length: 100 }, () => ({ ...item, operacion_id: randomUUID() }));
     expect(Buffer.byteLength(JSON.stringify({ items }))).toBeGreaterThan(16384);
-    expect((await post('/api/gateway/notificaciones/acuses', { items })).status).toBe(503);
+    expect((await post('/api/gateway/notificaciones/acuses', { items })).status).toBe(401);
     expect(
       (await post('/api/gateway/notificaciones/acuses', { items: [...items, item] })).status,
     ).toBe(422);

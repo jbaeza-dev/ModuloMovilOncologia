@@ -7,7 +7,9 @@ export interface GatewayConfig {
   aiUrl: string;
   authIssuer: string;
   authAudience: string;
-  authAlgorithm: 'HS256';
+  authAlgorithm: 'HS256' | 'RS256' | 'ES256';
+  authJwksUrl?: string;
+  cursorKey: string;
   authVerifyKey: string;
   dependencyTimeoutMs: number;
   aiTimeoutMs: number;
@@ -92,10 +94,16 @@ export function readConfig(env: NodeJS.ProcessEnv = process.env): GatewayConfig 
   const authIssuer = required('AUTH_EXPECTED_ISSUER');
   if (appEnv === 'production' && authIssuer.toLowerCase().includes('demo'))
     throw new ConfigurationError('AUTH_EXPECTED_ISSUER');
-  const authVerifyKey = required('AUTH_VERIFY_KEY');
-  if (Buffer.byteLength(authVerifyKey) < 32) throw new ConfigurationError('AUTH_VERIFY_KEY');
-  if (required('AUTH_ALLOWED_ALGORITHM') !== 'HS256')
+  const authAlgorithm = required('AUTH_ALLOWED_ALGORITHM');
+  if (!['HS256', 'RS256', 'ES256'].includes(authAlgorithm))
     throw new ConfigurationError('AUTH_ALLOWED_ALGORITHM');
+  const authVerifyKey = authAlgorithm === 'HS256' ? required('AUTH_VERIFY_KEY') : '';
+  if (authAlgorithm === 'HS256' && (Buffer.byteLength(authVerifyKey) < 32 || env.AUTH_JWKS_URL))
+    throw new ConfigurationError('AUTH_VERIFY_KEY');
+  const authJwksUrl = authAlgorithm === 'HS256' ? undefined : dependencyUrl('AUTH_JWKS_URL');
+  if (authJwksUrl && env.AUTH_VERIFY_KEY) throw new ConfigurationError('AUTH_VERIFY_KEY');
+  const cursorKey = env.GATEWAY_CURSOR_KEY ?? (authAlgorithm === 'HS256' ? authVerifyKey : '');
+  if (Buffer.byteLength(cursorKey) < 32) throw new ConfigurationError('GATEWAY_CURSOR_KEY');
   if (required('PUSH_PROVIDER') !== 'expo') throw new ConfigurationError('PUSH_PROVIDER');
   if ((env.AGENDA_TIMEZONE ?? 'America/Santiago') !== 'America/Santiago')
     throw new ConfigurationError('AGENDA_TIMEZONE');
@@ -113,7 +121,9 @@ export function readConfig(env: NodeJS.ProcessEnv = process.env): GatewayConfig 
     aiUrl: dependencyUrl('AI_API_URL'),
     authIssuer,
     authAudience: required('AUTH_EXPECTED_AUDIENCE'),
-    authAlgorithm: 'HS256',
+    authAlgorithm: authAlgorithm as GatewayConfig['authAlgorithm'],
+    ...(authJwksUrl ? { authJwksUrl } : {}),
+    cursorKey,
     authVerifyKey,
     dependencyTimeoutMs,
     aiTimeoutMs,

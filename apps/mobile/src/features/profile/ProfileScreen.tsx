@@ -90,6 +90,7 @@ export function ProfileScreen() {
         href="/perfil/consentimientos"
         compact
       />
+      <NavigationCard title="Sesión y dispositivos" icon="shield" href="/perfil/sesion" compact />
       <ConfirmLogoutButton />
     </Screen>
   );
@@ -454,8 +455,8 @@ export function PreferencesScreen() {
         <SectionTitle>Cuenta y seguridad</SectionTitle>
         <BodyText>
           {isDemoMode()
-            ? 'Sesión demostrativa local. Puedes conmutar de paciente o salir hacia el acceso público.'
-            : 'La gestión de la cuenta se integrará con el flujo de identidad.'}
+            ? 'Acceso al simulador con datos sintéticos. Puedes cambiar de paciente o cerrar sesión conservando sus capturas.'
+            : 'Consulta el estado de tu sesión y los dispositivos asociados a tu cuenta.'}
         </BodyText>
         {isDemoMode() ? (
           <VisualButton
@@ -465,6 +466,7 @@ export function PreferencesScreen() {
             onPress={() => void closeActiveContext('change_patient')}
           />
         ) : null}
+        <NavigationCard title="Sesión y dispositivos" icon="shield" href="/perfil/sesion" compact />
         <ConfirmLogoutButton />
       </InfoCard>
     </Screen>
