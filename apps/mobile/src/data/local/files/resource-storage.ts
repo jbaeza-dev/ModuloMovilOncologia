@@ -1,3 +1,4 @@
+import { scopedClinicalDirectory } from '../../sync/file-protection';
 import { Directory, File, Paths } from 'expo-file-system';
 
 import { ExpoFileStorageAdapter, type FileStorageAdapter } from './file-storage-adapter';
@@ -95,7 +96,10 @@ const defaultExpoAdapter = new ExpoFileStorageAdapter();
 
 export function getPatientResourceDirectory(pacienteId: string): Directory {
   assertSafeId(pacienteId, 'pacienteId');
-  return new Directory(Paths.document, 'recursos_educativos', pacienteId);
+  const scoped = scopedClinicalDirectory('recursos_educativos', pacienteId);
+  return scoped
+    ? new Directory(scoped)
+    : new Directory(Paths.document, 'recursos_educativos', pacienteId);
 }
 
 /**
@@ -465,6 +469,7 @@ export function resourceFileExists(
       }
     }
   }
+  if (rutaLocal) return false;
   const dir = baseDirResolver
     ? new Directory(baseDirResolver(pacienteId))
     : getPatientResourceDirectory(pacienteId);

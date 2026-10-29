@@ -124,12 +124,14 @@ describe('Online consent in the actual screen and session adapter', () => {
     expect(await screen.findByText('Términos de prueba online')).toBeTruthy();
     await waitFor(() =>
       expect(
-        screen.getByRole('button', { name: 'Aceptar términos online' }).props.accessibilityState
-          .disabled,
+        screen.getByRole('button', { name: 'Acepto y autorizo el tratamiento de mis datos' }).props
+          .accessibilityState.disabled,
       ).toBe(false),
     );
     expect(session.getSnapshot().uploadAllowed).toBe(false);
-    await fireEvent.press(screen.getByRole('button', { name: 'Aceptar términos online' }));
+    await fireEvent.press(
+      screen.getByRole('button', { name: 'Acepto y autorizo el tratamiento de mis datos' }),
+    );
     expect(await screen.findByText('Aceptación confirmada por el servidor.')).toBeTruthy();
     expect(session.getSnapshot().uploadAllowed).toBe(true);
     expect(bodies).toEqual([
@@ -141,11 +143,13 @@ describe('Online consent in the actual screen and session adapter', () => {
     await render(<OnlineConsentScreen />);
     await waitFor(() =>
       expect(
-        screen.getByRole('button', { name: 'Aceptar términos online' }).props.accessibilityState
-          .disabled,
+        screen.getByRole('button', { name: 'Acepto y autorizo el tratamiento de mis datos' }).props
+          .accessibilityState.disabled,
       ).toBe(false),
     );
-    await fireEvent.press(screen.getByRole('button', { name: 'Aceptar términos online' }));
+    await fireEvent.press(
+      screen.getByRole('button', { name: 'Acepto y autorizo el tratamiento de mis datos' }),
+    );
     expect(await screen.findByText('La cuenta no tiene permiso para esta operación.')).toBeTruthy();
     expect(session.getSnapshot().uploadAllowed).toBe(false);
     expect(screen.queryByText('Aceptación confirmada por el servidor.')).toBeNull();
@@ -157,6 +161,8 @@ describe('Online consent in the actual screen and session adapter', () => {
         'El servicio de términos no está configurado. Una aceptación local no habilita envíos.',
       ),
     ).toBeTruthy();
-    expect(screen.queryByRole('button', { name: 'Aceptar términos online' })).toBeNull();
+    expect(
+      screen.queryByRole('button', { name: 'Acepto y autorizo el tratamiento de mis datos' }),
+    ).toBeNull();
   });
 });

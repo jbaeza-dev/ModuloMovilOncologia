@@ -1,1 +1,1 @@
-export { FormSectionScreen as default } from '../../../features/medical-forms/FormSectionScreen';
+export { EproQuestionnaireRoute as default } from '../../../features/medical-forms/GlobalEproScreens';

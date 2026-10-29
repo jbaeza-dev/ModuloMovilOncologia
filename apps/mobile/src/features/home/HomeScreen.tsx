@@ -6,8 +6,8 @@ import { ConfirmLogoutButton } from '../../components/ConfirmLogoutButton';
 import { NavigationCard } from '../../components/NavigationCard';
 import { Screen } from '../../components/Screen';
 import { InfoCard, SectionTitle, StatusPill, VisualButton } from '../../components/Visual';
-import type { DailyFormStatus } from '../../data/local/forms/form-types';
-import { selectDailyFormAssignment } from '../../data/local/forms/form-repository';
+import { useEproRepository } from '../medical-forms/use-epro-repository';
+import { eproHomeDescription } from './epro-home-status';
 import type { PatientProfileRecord } from '../../data/local/repository';
 import { useFocusedValue } from '../../hooks/use-local-query';
 import { useReminderStatus } from '../../hooks/use-reminder-status';
@@ -50,6 +50,7 @@ export function resolveHomeGreeting(options: {
 }
 
 export function HomeScreen() {
+  const epro = useEproRepository();
   const { theme: appTheme } = useAppTheme();
   const styles = createStyles(appTheme.colors);
   const scrollRef = useRef<ScrollView | null>(null);
@@ -75,21 +76,16 @@ export function HomeScreen() {
     null as PatientProfileRecord | null,
   );
 
-  const loadDailyStatus = useCallback(async () => {
-    if (!repository || typeof repository.listAssignedForms !== 'function') return null;
-    try {
-      const assigned = await repository.listAssignedForms();
-      const primary = selectDailyFormAssignment(assigned);
-      if (!primary) return null;
-      return await repository.getDailyFormStatus(primary.formulario_id);
-    } catch {
-      return null;
-    }
-  }, [repository]);
+  const loadDailyStatus = useCallback(() => epro?.hub() ?? Promise.resolve(null), [epro]);
 
-  const { value: dailyStatus, refresh: refreshDailyStatus } = useFocusedValue(
+  const {
+    value: dailyStatus,
+    loading: loadingDailyStatus,
+    error: dailyStatusError,
+    refresh: refreshDailyStatus,
+  } = useFocusedValue(
     loadDailyStatus,
-    null as DailyFormStatus | null,
+    null as Awaited<ReturnType<NonNullable<typeof epro>['hub']>> | null,
   );
 
   useEffect(() => {
@@ -354,7 +350,7 @@ export function HomeScreen() {
   };
 
   return (
-    <Screen isRoot showProfile scrollRef={scrollRef}>
+    <Screen isRoot showProfile showHelp scrollRef={scrollRef}>
       <View style={styles.introduction}>
         <Text accessibilityRole="header" style={styles.title}>
           {greetingText}
@@ -378,11 +374,11 @@ export function HomeScreen() {
         <NavigationCard
           title="Cómo me siento hoy"
           description={
-            dailyStatus?.hasSubmittedToday
-              ? 'Seguimiento de hoy completado. Puedes revisarlo o actualizarlo.'
-              : dailyStatus?.hasActiveDraft
-                ? 'Tienes un seguimiento en curso para hoy.'
-                : 'Completa tu cuestionario diario de seguimiento.'
+            loadingDailyStatus
+              ? 'Consultando tu seguimiento…'
+              : dailyStatusError
+                ? 'No se pudo consultar tu seguimiento. Abre el cuestionario para reintentar.'
+                : eproHomeDescription(dailyStatus)
           }
           icon="clipboard"
           href="/formulario"

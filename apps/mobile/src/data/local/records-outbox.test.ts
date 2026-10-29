@@ -114,9 +114,9 @@ describe('validación estructural', () => {
     expect(parseVitalInput({ ...blank, temperature: '36,8' }).temperatura).toBe(36.8);
     expect(parseVitalInput({ ...blank, temperature: '36.8' }).temperatura).toBe(36.8);
   });
-  it('rechaza mediciones vacías, presión incompleta y números inválidos', () => {
+  it('rechaza mediciones vacías y números inválidos, y admite presión aislada', () => {
     expect(() => parseVitalInput(blank)).toThrow(InputError);
-    expect(() => parseVitalInput({ ...blank, systolic: '120' })).toThrow(InputError);
+    expect(parseVitalInput({ ...blank, systolic: '120' }).presion_sistolica).toBe(120);
     expect(() => parseVitalInput({ ...blank, pulse: '72.5' })).toThrow(InputError);
     expect(() => parseVitalInput({ ...blank, saturation: '101' })).toThrow(InputError);
     expect(() => parseVitalInput({ ...blank, temperature: 'Infinity' })).toThrow(InputError);

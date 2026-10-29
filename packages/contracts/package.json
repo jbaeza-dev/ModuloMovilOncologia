@@ -12,6 +12,11 @@
     "./fixtures": {
       "types": "./src/fixtures.ts",
       "import": "./dist/src/fixtures.js"
+    },
+    "./forms": {
+      "types": "./src/forms.ts",
+      "react-native": "./src/forms.ts",
+      "import": "./dist/src/forms.js"
     }
   },
   "scripts": {

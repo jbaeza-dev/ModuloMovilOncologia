@@ -1,3 +1,5 @@
+import { scopeEducationalCopies } from './native-education-files';
+import { cleanupRetiredEducationalCopies } from '../local/education/retired-copy-cleanup';
 import * as Crypto from 'expo-crypto';
 import { cleanupTransientReportExports } from '../local/files/report-storage';
 import { File } from 'expo-file-system';
@@ -205,6 +207,7 @@ export async function openClinicalStore(
       [localPatientId, user.name ?? 'Paciente', new Date().toISOString()],
     );
     await migrateClinicalFiles(localPatientId, cipher, connection, undefined, !lab);
+    if (!lab) await scopeEducationalCopies(localPatientId, cipher, connection);
     deactivate = activateFileCipher(cipher);
     unregisterSession = session.registerConnector(() => store.disconnect());
     unregisterStatus = database.registerListener({
@@ -216,7 +219,15 @@ export async function openClinicalStore(
         projection = projection.then(async () => {
           if (store.closed) return;
           try {
-            await publishCatalog(database, connection, new Date(checkpoint).toISOString());
+            await publishCatalog(
+              database,
+              connection,
+              new Date(checkpoint).toISOString(),
+              localPatientId,
+            );
+            await cleanupRetiredEducationalCopies(connection, localPatientId).catch(
+              () => undefined,
+            );
           } catch {
             if (!store.closed)
               await connection.run(

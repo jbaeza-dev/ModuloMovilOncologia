@@ -1,7 +1,7 @@
 import type { ClinicalCaptureHook } from '../sync/legacy-command';
 import { createCatalogRepository } from '../sync/catalog-repository';
 import type { SqlConnection } from './core/sql';
-import { type VitalValues } from './validation';
+import { normalizeVitalValues, validateCaptureTimestamp, type VitalValues } from './validation';
 import { createFormRepository } from './forms/form-repository';
 import { seedMedicalFormsDemo } from './forms/form-seed';
 import { createClinicalContextRepository } from './clinical-context/clinical-context-repository';
@@ -116,10 +116,12 @@ export function createPatientRepository(
   return {
     ...formRepo,
     replicatedCatalog: createCatalogRepository(database),
-    async createVitals(values: VitalValues): Promise<string> {
+    async createVitals(input: VitalValues): Promise<string> {
+      const values = normalizeVitalValues(input);
       const id = newId();
       const queueId = newId();
       const timestamp = now();
+      validateCaptureTimestamp(timestamp);
       await database.transaction(async (tx) => {
         await tx.run(
           `INSERT INTO signos_vitales (

@@ -74,7 +74,8 @@ export class InMemoryEducationalCatalogReader implements EducationalCatalogReade
   }
 }
 
-let activeCatalogReader: EducationalCatalogReader = new InMemoryEducationalCatalogReader();
+// Legacy diagnostic injection only. Normal UI uses a scoped replicated reader.
+let activeCatalogReader: EducationalCatalogReader = new InMemoryEducationalCatalogReader([]);
 
 export function getEducationalCatalogReader(): EducationalCatalogReader {
   return activeCatalogReader;

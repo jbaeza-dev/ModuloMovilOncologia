@@ -24,6 +24,7 @@ describe('executeYouTubeLaunch', () => {
   } as unknown as AppRepository;
 
   beforeEach(() => {
+    vi.restoreAllMocks();
     vi.clearAllMocks();
     resetYouTubeLaunchDebounceForTesting();
     vi.mocked(Network.getNetworkStateAsync).mockResolvedValue({
@@ -31,6 +32,7 @@ describe('executeYouTubeLaunch', () => {
       isInternetReachable: true,
     } as Network.NetworkState);
     vi.mocked(Linking.openURL).mockResolvedValue(undefined as never);
+    vi.mocked(Linking.canOpenURL).mockResolvedValue(false);
   });
 
   it('emite un aviso explicativo y no lanza la URL cuando el dispositivo está offline', async () => {
@@ -54,7 +56,7 @@ describe('executeYouTubeLaunch', () => {
     expect(mockRepo.education.recordYouTubeInteraction).not.toHaveBeenCalled();
   });
 
-  it('en modo demostración abre la portada de YouTube y rastrea la persistencia en background', async () => {
+  it('con datos clínicos de demostración abre el video elegido, no la portada de YouTube', async () => {
     vi.spyOn(EnvModule, 'isDemoMode').mockReturnValue(true);
 
     const result = await executeYouTubeLaunch({
@@ -67,12 +69,28 @@ describe('executeYouTubeLaunch', () => {
 
     expect(result.success).toBe(true);
     expect(result.openedVia).toBe('web');
-    expect(Linking.openURL).toHaveBeenCalledWith('https://www.youtube.com');
+    expect(Linking.openURL).toHaveBeenCalledWith('https://www.youtube.com/watch?v=dQw4w9WgXcQ');
     expect(mockRepo.education.recordYouTubeInteraction).toHaveBeenCalledWith({
       contentId: 'res-vid-1',
       youtubeVideoId: 'dQw4w9WgXcQ',
       versionOrigen: '1.0.0',
     });
+  });
+
+  it('no reemplaza un enlace ausente o inválido por la portada ni registra una apertura falsa', async () => {
+    for (const youtubeVideoId of [undefined, 'bad-id']) {
+      resetYouTubeLaunchDebounceForTesting();
+      const result = await executeYouTubeLaunch({
+        resourceId: 'invalid',
+        youtubeVideoId,
+        version: '1',
+        patientId: 'patient-1',
+        repository: mockRepo,
+      });
+      expect(result).toMatchObject({ success: false, error: expect.stringContaining('válido') });
+    }
+    expect(Linking.openURL).not.toHaveBeenCalled();
+    expect(mockRepo.education.recordYouTubeInteraction).not.toHaveBeenCalled();
   });
 
   it('en modo normal delega en launchYouTubeVideo y persiste la interacción', async () => {

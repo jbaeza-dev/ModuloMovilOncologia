@@ -2,7 +2,10 @@ export interface FileCipher {
   protect(path: string, plaintext: Uint8Array): Promise<Uint8Array>;
   unprotect(path: string, ciphertext: Uint8Array): Promise<Uint8Array>;
   owns(path: string): boolean;
-  directory?(root: 'reportes_locales' | 'formularios_locales', patientId: string): string;
+  directory?(
+    root: 'reportes_locales' | 'formularios_locales' | 'recursos_educativos',
+    patientId: string,
+  ): string;
 }
 let active: { cipher: FileCipher; generation: symbol } | null = null;
 export function activateFileCipher(cipher: FileCipher) {
@@ -32,7 +35,7 @@ export function clinicalFileLease(path: string): () => void {
   };
 }
 export function scopedClinicalDirectory(
-  root: 'reportes_locales' | 'formularios_locales',
+  root: 'reportes_locales' | 'formularios_locales' | 'recursos_educativos',
   patientId: string,
 ): string | null {
   return active?.cipher.directory?.(root, patientId) ?? null;
@@ -56,4 +59,13 @@ export async function readClinicalFile(path: string, bytes: Uint8Array): Promise
   if (active?.generation !== context.generation)
     throw new Error('El contexto cambió durante la lectura.');
   return result;
+}
+
+/** Captures the file context even for nonclinical educational bytes. */
+export function resourceContextLease(): () => void {
+  const generation = active?.generation;
+  return () => {
+    if (active?.generation !== generation)
+      throw new Error('El contexto cambió durante la operación de archivo.');
+  };
 }

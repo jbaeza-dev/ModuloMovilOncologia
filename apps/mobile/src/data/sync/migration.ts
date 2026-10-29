@@ -148,8 +148,10 @@ export async function migrateOwner(
     await checkpoint(phase);
   };
   await savePhase('preparar');
-  if (inventory.version !== 11)
-    throw new Error('El origen debe estar cercado por la migración 11 antes de transferir.');
+  if (![11, 12].includes(inventory.version))
+    throw new Error(
+      'El origen debe estar cercado por una migración admitida (11 o 12) antes de transferir.',
+    );
   await savePhase('detener_emisor');
   await copyLegacyInventory(inventory, target);
   await savePhase('copiar');

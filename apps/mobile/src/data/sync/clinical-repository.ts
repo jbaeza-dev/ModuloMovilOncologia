@@ -1,3 +1,6 @@
+import { validateFormAnswers } from '@quimiocare/contracts/forms';
+import { contractForm } from './contract-form';
+import { validateCaptureTimestamp } from '../local/validation';
 import type { ClinicalResponderFormularioRequestSchema } from '@quimiocare/contracts';
 import type { SqlConnection } from '../local/core/sql';
 import {
@@ -8,12 +11,15 @@ import {
 } from './clinical-command';
 import type { DefinitionSnapshot } from './catalog';
 
-export async function saveContractEpro(
+export async function saveContractEproInTransaction(
   connection: SqlConnection,
   scope: ClinicalScope,
   definition: DefinitionSnapshot,
   request: ClinicalResponderFormularioRequestSchema,
 ) {
+  const edition = contractForm(definition);
+  validateFormAnswers(edition, request.respuestas);
+  validateCaptureTimestamp(request.fecha_respuesta);
   const formId = String(definition.form.id),
     version = Number(definition.form.version);
   const codes: Record<string, string> = {},
@@ -36,7 +42,8 @@ export async function saveContractEpro(
     captured_at: request.fecha_respuesta,
     payload_json: canonical(payload),
   });
-  await connection.transaction(async (tx) => {
+  const tx = connection;
+  {
     await tx.run(
       'INSERT OR IGNORE INTO formulario_cache(formulario_id,version,titulo,descripcion,configuracion_json,obtenido_en) VALUES (?,?,?,?,?,?)',
       [
@@ -81,6 +88,18 @@ export async function saveContractEpro(
       payload,
       capturedAt: request.fecha_respuesta,
     });
-  });
+  }
+  return request.id;
+}
+
+export async function saveContractEpro(
+  connection: SqlConnection,
+  scope: ClinicalScope,
+  definition: DefinitionSnapshot,
+  request: ClinicalResponderFormularioRequestSchema,
+) {
+  await connection.transaction((tx) =>
+    saveContractEproInTransaction(tx, scope, definition, request).then(() => undefined),
+  );
   return request.id;
 }

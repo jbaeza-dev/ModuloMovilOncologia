@@ -1,9 +1,7 @@
-import * as Linking from 'expo-linking';
 import * as Network from 'expo-network';
 
-import { launchYouTubeVideo, type LaunchYouTubeResult } from '../../data/local/education/youtube';
+import { launchYouTubeVideo, parseYouTubeVideoId } from '../../data/local/education/youtube';
 import type { AppRepository } from '../../data/local/repository';
-import { isDemoMode } from '../../utils/environment';
 
 export interface ExecuteYouTubeLaunchOptions {
   resourceId: string;
@@ -63,22 +61,11 @@ export async function executeYouTubeLaunch(
     // Si la API nativa de red falla en emulador o stub, se procede con la apertura
   }
 
-  // 2. Apertura (modo demostrativo acordado o video definitivo)
-  let result: LaunchYouTubeResult;
-
-  if (isDemoMode() || !options.youtubeVideoId) {
-    try {
-      await Linking.openURL('https://www.youtube.com');
-      result = { success: true, openedVia: 'web' };
-    } catch {
-      return {
-        success: false,
-        error: 'No se pudo abrir YouTube en este dispositivo.',
-      };
-    }
-  } else {
-    result = await launchYouTubeVideo(options.youtubeVideoId);
-  }
+  // 2. A real catalog video retains its own destination even with synthetic clinical accounts.
+  const videoId = options.youtubeVideoId ? parseYouTubeVideoId(options.youtubeVideoId) : null;
+  if (!videoId)
+    return { success: false, error: 'Este video no tiene un enlace de YouTube válido.' };
+  const result = await launchYouTubeVideo(videoId);
 
   // 3. Persistencia rastreada si la apertura fue exitosa y el contexto sigue vigente
   if (result.success && options.patientId && options.repository) {
@@ -118,7 +105,7 @@ export async function executeYouTubeLaunch(
 
       await targetRepository.education.recordYouTubeInteraction({
         contentId: options.resourceId,
-        youtubeVideoId: options.youtubeVideoId ?? 'demo',
+        youtubeVideoId: videoId,
         versionOrigen: options.version,
       });
     };

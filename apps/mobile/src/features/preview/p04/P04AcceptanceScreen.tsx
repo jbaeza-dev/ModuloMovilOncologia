@@ -10,17 +10,20 @@ import { canonical, type ClinicalCommand } from '../../../data/sync/clinical-com
 import { inventoryLegacy } from '../../../data/sync/migration';
 import { ExpoFileStorageAdapter } from '../../../data/local/files/file-storage-adapter';
 import { createNativeFileCipher, encryptedFile } from '../../../data/sync/native-cipher';
+import { computeSha256 } from '../../../utils/crypto';
+import { isPathInPatientMediaDirectory } from '../../../data/local/files/educational-storage';
+import { runEducationalPromotionProbe } from '../p05/file-promotion-probe';
 
 /** Opt-in synthetic acceptance on the same provider/repositories used by the application. */
 export default function P04AcceptanceScreen() {
   const { clinicalStore: store, patientId, trackOperation } = useLocalData();
-  const params = useLocalSearchParams<{ run?: string; action?: string }>();
+  const params = useLocalSearchParams<{ run?: string; action?: string; phase?: string }>();
   const [display, setDisplay] = useState('Preparando comprobación de la aplicación…');
   useEffect(() => {
     if (!store || !patientId || !params.run || !params.action) return;
     if (
       !/^[a-z0-9-]{1,64}$/.test(params.run) ||
-      !['snapshot', 'capture', 'draft', 'resume'].includes(params.action)
+      !['snapshot', 'capture', 'draft', 'resume', 'education-crash'].includes(params.action)
     )
       return;
     const run = params.run,
@@ -38,6 +41,8 @@ export default function P04AcceptanceScreen() {
       };
       const db = activeStore.connection;
       try {
+        if (action === 'education-crash')
+          await runEducationalPromotionProbe(activeStore, patientId, run, params.phase);
         if (action === 'capture') {
           const marker = 'acceptance:' + run + ':capture';
           let row = await db.first<{ value_json: string }>(
@@ -162,12 +167,107 @@ export default function P04AcceptanceScreen() {
           ),
         );
         result.sdkPending = (await activeStore.database.getUploadQueueStats()).count;
+        // Read-only P05 evidence: identities/hashes and dates, never answer values or codes.
+        result.operationalEvents = await db.all(
+          'SELECT id,owner,record_id,kind,captured_at FROM qc_operational_event ORDER BY id',
+        );
+        result.eproLocal = await Promise.all(
+          (
+            await db.all<{ id: string; value_json: string }>(
+              "SELECT id,value_json FROM qc_storage_control WHERE id LIKE 'epro:draft:%' OR id LIKE 'epro:capture:%' ORDER BY id",
+            )
+          ).map(async (row) => {
+            const value = JSON.parse(row.value_json);
+            return {
+              key: row.id,
+              id: value.id,
+              owner: value.owner,
+              environment: value.environment,
+              formId: value.definition.form.id,
+              edition: value.definition.form.version,
+              instrumentVersion: value.definition.form.configuracion?.instrumento_version,
+              definitionSha256: await computeSha256(canonical(value.definition)),
+              context: value.context,
+              section: value.section,
+              revision: value.revision,
+              answerCount: Object.keys(value.answers).length,
+              answersSha256: await computeSha256(canonical(value.answers)),
+              submittedAt: value.submittedAt ?? null,
+            };
+          }),
+        );
+        const link = await db.first<{ value_json: string }>(
+          'SELECT value_json FROM qc_storage_control WHERE id=?',
+          ['rest:link-code:' + activeStore.scope.owner],
+        );
+        if (link) {
+          const value = JSON.parse(link.value_json);
+          result.linkCode = {
+            kind: value.kind,
+            requestedAt: value.requestedAt,
+            expiresAt: value.expiresAt ?? null,
+            retryAfter: value.retryAfter ?? null,
+            codeSha256:
+              typeof value.code === 'string' ? await computeSha256(canonical(value.code)) : null,
+          };
+        }
+        const copies = await createPatientRepository(
+          db,
+          patientId,
+          Crypto.randomUUID,
+        ).education.listLocalCopies();
+        result.educationalCopies = [];
+        for (const copy of copies) {
+          const path = copy.rutaAbsoluta ?? copy.rutaRelativa;
+          const contained =
+            !!path && isPathInPatientMediaDirectory(path, patientId, copy.contentId);
+          const file = contained ? new File(path) : null;
+          const exists = !!file?.exists;
+          const bytes = exists ? await file!.bytes() : null;
+          (result.educationalCopies as unknown[]).push({
+            contentId: copy.contentId,
+            state: copy.estado ?? null,
+            revision: copy.metadataLocal?.versionOrigen ?? null,
+            downloadedAt: copy.descargadoEn,
+            declaredReviewed: copy.revisionDeclarada,
+            expectedBytes: copy.tamanoBytes,
+            expectedSha256: copy.metadataLocal?.sha256 ?? null,
+            contained,
+            exists,
+            observedBytes: bytes?.length ?? 0,
+            observedSha256: bytes ? await computeSha256(bytes) : null,
+          });
+        }
         result.cipherVersion = (
           await db.first<{ cipher_version: string }>('PRAGMA cipher_version')
         )?.cipher_version;
         result.catalog = await db.first(
           "SELECT completed_at,error_code FROM qc_catalog_status WHERE id='catalog'",
         );
+        // Definition diagnostics contain metadata only, never answers or credentials.
+        result.replicatedDefinitions = await db.all(
+          'SELECT id,activo,configuracion FROM formulario ORDER BY id',
+        );
+        result.replicatedQuestionCounts = await db.all(
+          'SELECT formulario_id,count(*) AS n FROM pregunta GROUP BY formulario_id ORDER BY formulario_id',
+        );
+        result.completeDefinitions = (
+          await db.all<{ id: string; retired: number; snapshot_json: string }>(
+            'SELECT id,retired,snapshot_json FROM qc_definition_snapshot ORDER BY id',
+          )
+        ).map((row) => {
+          const snapshot = JSON.parse(row.snapshot_json) as {
+            form: { activo: unknown; configuracion: unknown };
+            questions: unknown[];
+          };
+          return {
+            id: row.id,
+            retired: row.retired,
+            active: snapshot.form.activo,
+            config: snapshot.form.configuracion,
+            questions: snapshot.questions.length,
+          };
+        });
         result.passed = true;
       } catch (error) {
         result.error =
@@ -185,7 +285,7 @@ export default function P04AcceptanceScreen() {
     return () => {
       active = false;
     };
-  }, [store, patientId, params.run, params.action, trackOperation]);
+  }, [store, patientId, params.run, params.action, params.phase, trackOperation]);
   return (
     <Screen title="Aceptación técnica P04">
       <InfoCard>

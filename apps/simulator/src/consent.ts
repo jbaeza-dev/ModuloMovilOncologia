@@ -1,11 +1,11 @@
 import type { SqlClient } from './db.js';
 import { one } from './db.js';
 import { ApiError } from './errors.js';
-import { NEW_TERMS_ID, ORIGINAL_TERMS_ID } from './seed-data.js';
+import { APPROVED_TERMS_ID, FUTURE_TERMS_ID } from './seed-data.js';
 import type { ObjectValue, ScenarioState } from './types.js';
 
 export function currentTermsId(state?: ScenarioState): string {
-  return state?.escenario === 'TERMINOS_NUEVOS' ? NEW_TERMS_ID : ORIGINAL_TERMS_ID;
+  return state?.escenario === 'TERMINOS_NUEVOS' ? FUTURE_TERMS_ID : APPROVED_TERMS_ID;
 }
 
 export async function getTerms(client: SqlClient, id: string, code = 'TERMINOS_PLATAFORMA') {

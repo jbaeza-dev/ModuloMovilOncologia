@@ -20,7 +20,9 @@ La validación de configuración ePRO comprueba JSON Schema, no reemplaza el gra
 
 specs/, schemas/ y fixtures/ incluyen copias verificadas. PROVENANCE.json registra hash/tamaño por archivo y upstream-manifest.json conserva el manifiesto original. Los ejemplos son datos sintéticos; provisionalForm sigue siendo el fixture provisional histórico, no constancia de validación del instrumento actual.
 
-La ampliación propia 1.1 representa PDF con tipo=documento, formato=pdf y MIME application/pdf: schema separado education-document-v1_1.schema.json y validateEducationDocument. No se agregan tipos al OpenAPI RC3.2 original. El servidor debe decidir explícitamente qué perfil de biblioteca ofrece y documentar esa ampliación; la app no debe enviar esa representación a un sistema externo que no la soporte. La descarga/renderizado offline se acepta en P05; validar metadatos no demuestra bytes, visor ni derechos editoriales.
+La ampliación propia 1.1 de PDF educativo (schema `education-document-v1_1.schema.json` y `validateEducationDocument`) se conserva como antecedente. El alcance activo admite imágenes PNG/JPEG offline y videos externos solo online: no se publica ni habilita un visor PDF educativo. Esta decisión no elimina los reportes PDF/XLSX de la app ni altera el OpenAPI original.
+
+`quimiocare-terminos-v3_0.json` contiene una edición propia de términos, privacidad y consentimiento aprobada por el responsable del proyecto. Es distinta de las muestras 1.0/2.0 y no declara aprobación institucional. La aceptación debe apuntar al UUID de la definición efectivamente presentada; una edición nueva no reescribe actos anteriores.
 
 ## Comandos
 

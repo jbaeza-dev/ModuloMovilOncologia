@@ -4,19 +4,28 @@ import { once } from 'node:events';
 import type { Server } from 'node:http';
 import { createHash } from 'node:crypto';
 import { fixtures, validateResponse } from '@quimiocare/contracts';
+import {
+  activeQuestionIds,
+  visibleAnswers,
+  type FormEdition,
+  type AnswerValue,
+} from '@quimiocare/contracts/forms';
 import { createSimulator } from '../src/app.js';
 import { openDatabase, migrate } from '../src/db.js';
 import type { Database } from '../src/db.js';
 import { readConfig } from '../src/config.js';
 import {
   FORMS,
+  FOLLOWUP_FORM,
   EDUCATION_ID,
   resetDatabase,
   seedDatabase,
   mobileFixtures,
   ORIGINAL_TERMS_ID,
+  APPROVED_TERMS_ID,
 } from '../src/seed-data.js';
 import { PATIENTS } from '../src/types.js';
+import { publishEducationMaterials, readEducationMaterials } from '../src/education-materials.js';
 import type { ObjectValue, Scenario } from '../src/types.js';
 
 const databaseUrl = process.env.TEST_DATABASE_URL;
@@ -237,6 +246,67 @@ describe('authenticated HTTP against persistent PostgreSQL', () => {
     await scenario('SERVICIO_NO_DISPONIBLE');
     expect((await call('/api/v1/auth/me', { token: a.access_token })).status).toBe(503);
   });
+  it('publishes the approved edition without rewriting old texts or accepting an old act as current', async () => {
+    const a = await session();
+    const old = (
+      await db.query('SELECT definicion FROM qc_demo_terminos WHERE id=$1', [ORIGINAL_TERMS_ID])
+    ).rows[0].definicion;
+    const operation = randomUUID();
+    const input = {
+      definicion_terminos_id: ORIGINAL_TERMS_ID,
+      operacion_id: operation,
+      codigo: 'TERMINOS_PLATAFORMA',
+    };
+    await db.query(
+      'INSERT INTO qc_demo_consentimiento(id,paciente_id,definicion_id,request,otorgado_el) VALUES($1,$2,$3,$4,now())',
+      [operation, PATIENTS.A, ORIGINAL_TERMS_ID, input],
+    );
+    await seedDatabase(db, config.publicBaseUrl);
+    expect(
+      (await db.query('SELECT definicion FROM qc_demo_terminos WHERE id=$1', [ORIGINAL_TERMS_ID]))
+        .rows[0].definicion,
+    ).toEqual(old);
+    expect(
+      (await db.query('SELECT id FROM qc_demo_consentimiento WHERE id=$1', [operation])).rows,
+    ).toHaveLength(1);
+    const current = await call('/api/v1/terminos/vigente');
+    expect(current.status).toBe(200);
+    expect(current.body).toEqual(fixtures.approvedTerms);
+    expect(current.body.id).toBe(APPROVED_TERMS_ID);
+    const state = await call('/api/v1/pacientes/me/consentimientos', { token: a.access_token });
+    expect(state.body.requiere_aceptacion).toBe(true);
+    expect(state.body.historial_previo).toHaveLength(1);
+    expect(
+      (
+        await call('/api/v1/pacientes/me/consentimientos', {
+          method: 'POST',
+          token: a.access_token,
+          body: input,
+        })
+      ).status,
+    ).toBe(200);
+    expect(
+      (
+        await call('/api/v1/pacientes/me/consentimientos', {
+          method: 'POST',
+          token: a.access_token,
+          body: { ...input, operacion_id: randomUUID() },
+        })
+      ).status,
+    ).toBe(409);
+    await accept(a.access_token);
+    expect(
+      (await call('/api/v1/pacientes/me/consentimientos', { token: a.access_token })).body
+        .requiere_aceptacion,
+    ).toBe(false);
+    await db.query(
+      "UPDATE qc_demo_terminos SET definicion=jsonb_set(definicion,'{texto_completo}','\"changed without new edition\"'::jsonb) WHERE id=$1",
+      [APPROVED_TERMS_ID],
+    );
+    await expect(seedDatabase(db, config.publicBaseUrl)).rejects.toThrow(
+      'se requiere una identidad nueva',
+    );
+  });
   it('requires current consent and resolves replay before old-version checks, including revocation', async () => {
     const a = await session();
     expect(
@@ -449,14 +519,14 @@ describe('authenticated HTTP against persistent PostgreSQL', () => {
     await accept(a.access_token);
     const form = await call('/api/v1/formularios/activo', { token: a.access_token });
     expect(form.body.preguntas as unknown[]).toHaveLength(41);
-    expect(form.body.id).toBe(FORMS[0]!.id);
+    expect(form.body.id).toBe(FOLLOWUP_FORM.id);
     expect(
       (await call(`/api/v1/formularios/${form.body.id}`, { token: a.access_token })).status,
     ).toBe(200);
     const raw = (mobileFixtures.operaciones['API-10'] as unknown as { request: ObjectValue })
       .request;
     const input = { ...raw, id: randomUUID() };
-    const path = `/api/v1/formularios/${form.body.id}/respuestas`;
+    const path = `/api/v1/formularios/${FORMS[0]!.id}/respuestas`;
     await scenario('ACK_EPRO_PERDIDO');
     await expect(
       call(path, { method: 'POST', token: a.access_token, body: input }),
@@ -508,6 +578,71 @@ describe('authenticated HTTP against persistent PostgreSQL', () => {
       ).toBe(expected);
     }
   });
+  it('accepts the actual frozen ePRO edition, enforces its compound rule, and replays one durable capture', async () => {
+    const a = await session();
+    await accept(a.access_token);
+    const edition = FOLLOWUP_FORM as unknown as FormEdition;
+    const values: Record<string, AnswerValue> = {};
+    const question = (code: string) => edition.preguntas.find((q) => q.codigo === code)!;
+    // Mechanically choose source options for synthetic transport validation; no clinical rules are invented.
+    values[question('P0.1').id] = 'no';
+    values[question('P6').id] = 'si';
+    for (let pass = 0; pass < edition.preguntas.length; pass++) {
+      const active = activeQuestionIds(
+        edition,
+        Object.entries(values).map(([pregunta_id, valor]) => ({ pregunta_id, valor })),
+      );
+      for (const q of edition.preguntas)
+        if (active.has(q.id) && !Object.hasOwn(values, q.id) && q.requerida !== false)
+          values[q.id] =
+            q.tipo === 'booleano'
+              ? false
+              : q.tipo === 'numerico'
+                ? 0
+                : q.tipo === 'opcion_multiple'
+                  ? [q.opciones![0]!.codigo]
+                  : (q.opciones?.[0]?.codigo ?? 'Synthetic');
+    }
+    const answers = visibleAnswers(
+      edition,
+      Object.entries(values).map(([pregunta_id, valor]) => ({ pregunta_id, valor })),
+    );
+    expect(answers.some((answer) => answer.pregunta_id === question('P6.2').id)).toBe(true);
+    const path = `/api/v1/formularios/${edition.id}/respuestas`;
+    const invalid = await call(path, {
+      method: 'POST',
+      token: a.access_token,
+      body: {
+        id: randomUUID(),
+        fecha_respuesta: new Date().toISOString(),
+        respuestas: answers.filter((answer) => answer.pregunta_id !== question('P6.2').id),
+      },
+    });
+    expect(invalid.status).toBe(422);
+    const input = {
+      id: randomUUID(),
+      fecha_respuesta: new Date().toISOString(),
+      respuestas: answers,
+    };
+    await scenario('ACK_EPRO_PERDIDO');
+    await expect(
+      call(path, { method: 'POST', token: a.access_token, body: input }),
+    ).rejects.toThrow();
+    expect((await call(path, { method: 'POST', token: a.access_token, body: input })).status).toBe(
+      201,
+    );
+    const fresh = openDatabase(databaseUrl!);
+    try {
+      const saved = await fresh.query('SELECT paciente_id,request FROM qc_demo_epro WHERE id=$1', [
+        input.id,
+      ]);
+      expect(saved.rows).toHaveLength(1);
+      expect(saved.rows[0].paciente_id).toBe(PATIENTS.A);
+      expect(saved.rows[0].request).toMatchObject(input);
+    } finally {
+      await fresh.end();
+    }
+  });
   it('filters education before pagination and preserves integrity metadata and original image bytes', async () => {
     const a = await session();
     const page = await call('/api/v1/contenido-educativo?skip=0&limit=1&categoria=quimioterapia', {
@@ -545,6 +680,76 @@ describe('authenticated HTTP against persistent PostgreSQL', () => {
       (await db.query('SELECT activo FROM contenido_educativo WHERE id=$1', [EDUCATION_ID])).rows[0]
         .activo,
     ).toBe(false);
+  });
+  it('publishes the current site inventory, retires its named old images and preserves bytes and acts', async () => {
+    const a = await session();
+    await accept(a.access_token);
+    const actsBefore = (await db.query('SELECT * FROM qc_demo_consentimiento ORDER BY id')).rows;
+    const manifest = await readEducationMaterials();
+    // Simulate the two old, previously published entries present on an existing installation.
+    for (const id of manifest.retiredIds) {
+      await db.query(
+        `INSERT INTO contenido_educativo
+         (id,profesional_id,titulo,descripcion,tipo,url,categoria,activo,fecha_creacion)
+         VALUES($1,$2,'Versión anterior','Referencia histórica','video',
+          'https://www.youtube.com/watch?v=SYS6iRyqjOQ','Archivo anterior',true,NOW())`,
+        [id, manifest.syntheticPublisherId],
+      );
+    }
+    expect(await publishEducationMaterials(db, base)).toMatchObject({
+      images: 42,
+      onlineVideos: 44,
+    });
+    const firstPage = await call('/api/v1/contenido-educativo?limit=100', {
+      token: a.access_token,
+    });
+    expect(firstPage.status).toBe(200);
+    expect(firstPage.body.total).toBe(86);
+    for (const id of manifest.retiredIds) {
+      expect(
+        (await db.query('SELECT activo FROM contenido_educativo WHERE id=$1', [id])).rows[0].activo,
+      ).toBe(false);
+      expect(
+        (await call('/api/v1/contenido-educativo/' + id, { token: a.access_token })).status,
+      ).toBe(404);
+    }
+    const rows = firstPage.body.contenidos as ObjectValue[];
+    expect(rows.map((row) => row.id)).toEqual(manifest.items.map((item) => item.id));
+    expect(rows.every((row) => ['imagen', 'video'].includes(String(row.tipo)))).toBe(true);
+    for (const item of manifest.items.filter((item) => item.type === 'imagen')) {
+      const row = rows.find((value) => value.id === item.id)!;
+      const response = await fetch(String(row.url));
+      expect(response.status).toBe(200);
+      expect(response.headers.get('content-type')).toBe(item.mime);
+      const bytes = Buffer.from(await response.arrayBuffer());
+      expect(bytes.length).toBe(item.bytes);
+      expect(createHash('sha256').update(bytes).digest('hex')).toBe(item.sha256);
+    }
+    const dates = rows.map((row) => row.fecha_creacion);
+    await publishEducationMaterials(db, base);
+    expect(
+      (await call('/api/v1/contenido-educativo?limit=100', { token: a.access_token })).body
+        .contenidos,
+    ).toEqual(rows);
+    expect(dates).toHaveLength(86);
+    expect((await db.query('SELECT * FROM qc_demo_consentimiento ORDER BY id')).rows).toEqual(
+      actsBefore,
+    );
+    const image = rows.find((row) => row.tipo === 'imagen')!;
+    await db.query('UPDATE contenido_educativo SET archivo_sha256=$2 WHERE id=$1', [
+      image.id,
+      '0'.repeat(64),
+    ]);
+    expect((await fetch(String(image.url))).status).toBe(503);
+    await db.query('UPDATE contenido_educativo SET activo=false WHERE id=$1', [image.id]);
+    expect((await fetch(String(image.url))).status).toBe(404);
+    expect(
+      (await call('/api/v1/contenido-educativo/' + String(image.id), { token: a.access_token }))
+        .status,
+    ).toBe(404);
+    expect(
+      (await call('/api/v1/contenido-educativo?limit=100', { token: a.access_token })).body.total,
+    ).toBe(85);
   });
   it('generates server link codes, expires them after24h and does not invent GET recovery', async () => {
     const a = await session();

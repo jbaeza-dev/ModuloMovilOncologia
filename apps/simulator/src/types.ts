@@ -56,6 +56,8 @@ export interface FormDefinition {
   version: number;
   activo: boolean;
   version_condiciones: number;
+  version_reglas_compuestas?: number;
+  configuracion?: ObjectValue;
   preguntas: Question[];
   fecha_creacion: string;
 }

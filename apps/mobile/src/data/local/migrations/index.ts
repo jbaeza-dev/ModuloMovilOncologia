@@ -1,4 +1,8 @@
 import { POWERSYNC_SQL, POWERSYNC_VERSION } from './011_powersync';
+import {
+  PRESION_INDEPENDIENTE_SQL,
+  PRESION_INDEPENDIENTE_VERSION,
+} from './012_presion_independiente';
 import type { SqlConnection } from '../core/sql';
 import { REGISTROS_SQL, REGISTROS_VERSION } from './001_registros';
 import { CONTEXTO_SQL, CONTEXTO_VERSION } from './002_contexto';
@@ -30,6 +34,7 @@ export const migrations: readonly Migration[] = [
   { version: FORMULARIOS_DIARIOS_VERSION, sql: FORMULARIOS_DIARIOS_SQL },
   { version: RETIRO_MARKDOWN_EDUCATIVO_VERSION, sql: RETIRO_MARKDOWN_EDUCATIVO_SQL },
   { version: POWERSYNC_VERSION, sql: POWERSYNC_SQL },
+  { version: PRESION_INDEPENDIENTE_VERSION, sql: PRESION_INDEPENDIENTE_SQL },
 ];
 
 export async function migrateDatabase(

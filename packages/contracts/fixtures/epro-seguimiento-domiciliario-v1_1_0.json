@@ -1,0 +1,2115 @@
+{
+  "formulario": {
+    "id": "65bb1b2b-e646-5870-9328-ea328410bf83",
+    "codigo": "SEGUIMIENTO_DOMICILIARIO_EPRO",
+    "titulo": "Seguimiento domiciliario diario",
+    "descripcion": "Cuestionario diario de seguimiento de síntomas para pacientes en quimioterapia.",
+    "tratamiento": "quimioterapia",
+    "version": 1,
+    "activo": true,
+    "version_condiciones": 1,
+    "version_reglas_compuestas": 1,
+    "configuracion": {
+      "version_condiciones": 1,
+      "version_reglas_compuestas": 1,
+      "instrumento_version": "1.1.0",
+      "instrumento_codigo": "SEGUIMIENTO_DOMICILIARIO_EPRO",
+      "preguntas_esperadas": 41,
+      "secciones": [
+        {
+          "id": "sec-modulo-0",
+          "titulo": "Contexto y dispositivos",
+          "orden": 0
+        },
+        {
+          "id": "sec-modulo-1",
+          "titulo": "Fiebre e infección",
+          "orden": 1
+        },
+        {
+          "id": "sec-modulo-2",
+          "titulo": "Náuseas y vómitos",
+          "orden": 2
+        },
+        {
+          "id": "sec-modulo-3",
+          "titulo": "Tránsito intestinal",
+          "orden": 3
+        },
+        {
+          "id": "sec-modulo-4",
+          "titulo": "Boca y garganta",
+          "orden": 4
+        },
+        {
+          "id": "sec-modulo-5",
+          "titulo": "Sistema nervioso en manos y pies",
+          "orden": 5
+        },
+        {
+          "id": "sec-modulo-6",
+          "titulo": "Piel y extremidades",
+          "orden": 6
+        },
+        {
+          "id": "sec-modulo-7",
+          "titulo": "Sangrados y moretones",
+          "orden": 7
+        },
+        {
+          "id": "sec-modulo-8",
+          "titulo": "Respiración y sistema cardiovascular",
+          "orden": 8
+        },
+        {
+          "id": "sec-modulo-9",
+          "titulo": "Energía, ánimo y dolor general",
+          "orden": 9
+        },
+        {
+          "id": "sec-modulo-10",
+          "titulo": "Comentario abierto",
+          "orden": 10
+        }
+      ],
+      "provisional": false
+    },
+    "preguntas": [
+      {
+        "id": "554020f3-a947-5dc7-9771-5362e933b3e2",
+        "codigo": "P0.1",
+        "titulo": "¿Tienes instalado un catéter para tu quimioterapia (como un \"Port-a-cath\" debajo de la piel en el pecho o un catéter PICC en el brazo)?",
+        "texto": null,
+        "tipo": "opcion_unica",
+        "requerida": true,
+        "orden": 0,
+        "opciones": [
+          {
+            "codigo": "si",
+            "etiqueta": "Sí",
+            "orden": 0
+          },
+          {
+            "codigo": "no",
+            "etiqueta": "No",
+            "orden": 1
+          }
+        ],
+        "configuracion": {
+          "modulo": "sec-modulo-0",
+          "metadata": {
+            "source_code": "P0.1",
+            "source_type": "single_choice"
+          }
+        }
+      },
+      {
+        "id": "5a0a85c7-479c-5740-833c-0396644a4996",
+        "codigo": "P0.1.1",
+        "titulo": "¿Cómo se ve y se siente la zona de tu piel donde está el catéter?",
+        "texto": null,
+        "tipo": "opcion_multiple",
+        "requerida": true,
+        "orden": 1,
+        "opciones": [
+          {
+            "codigo": "normal_sin_cambios",
+            "etiqueta": "Se ve normal, sin dolor ni cambios.",
+            "orden": 0
+          },
+          {
+            "codigo": "sensible_picazon",
+            "etiqueta": "Está un poco sensible o con leve picazón, pero sin cambios en la piel.",
+            "orden": 1
+          },
+          {
+            "codigo": "roja_caliente_hinchada",
+            "etiqueta": "Está roja, caliente al tocarla o hinchada.",
+            "orden": 2
+          },
+          {
+            "codigo": "liquido_pus_sangre",
+            "etiqueta": "Sale líquido, pus o sangre por el sitio del catéter.",
+            "orden": 3
+          },
+          {
+            "codigo": "dolor_cuello_hombro_brazo",
+            "etiqueta": "Siento dolor o hinchazón en el cuello, hombro o en todo el brazo del lado del catéter.",
+            "orden": 4
+          }
+        ],
+        "configuracion": {
+          "modulo": "sec-modulo-0",
+          "metadata": {
+            "source_code": "P0.1.1",
+            "source_type": "multiple_choice"
+          },
+          "opciones_exclusivas": ["normal_sin_cambios"],
+          "requerida_si_activa": true,
+          "depende_de": "P0.1",
+          "valor_activador": "si"
+        }
+      },
+      {
+        "id": "c8f853a0-9f8f-5790-8ad0-90bea32d5064",
+        "codigo": "P1",
+        "titulo": "¿Has sentido fiebre, cuerpo cortado, sudoración fría o escalofríos (tiritones) en las últimas 24 horas?",
+        "texto": null,
+        "tipo": "opcion_unica",
+        "requerida": true,
+        "orden": 2,
+        "opciones": [
+          {
+            "codigo": "si",
+            "etiqueta": "Sí",
+            "orden": 0
+          },
+          {
+            "codigo": "no",
+            "etiqueta": "No",
+            "orden": 1
+          }
+        ],
+        "configuracion": {
+          "modulo": "sec-modulo-1",
+          "metadata": {
+            "source_code": "P1",
+            "source_type": "single_choice"
+          }
+        }
+      },
+      {
+        "id": "f2dd1b1e-8757-5fc9-bef8-007a43402f39",
+        "codigo": "P1.1",
+        "titulo": "¿Qué síntomas has tenido exactamente?",
+        "texto": null,
+        "tipo": "opcion_unica",
+        "requerida": true,
+        "orden": 3,
+        "opciones": [
+          {
+            "codigo": "calor_decaimiento",
+            "etiqueta": "Solo sensación de calor o decaimiento, sin tiritones.",
+            "orden": 0
+          },
+          {
+            "codigo": "tiritones_suaves",
+            "etiqueta": "Escalofríos o tiritones suaves que pasaron rápido.",
+            "orden": 1
+          },
+          {
+            "codigo": "tiritones_fuertes",
+            "etiqueta": "Escalofríos o tiritones fuertes e incontrolables (aunque el termómetro marque temperatura normal).",
+            "orden": 2
+          }
+        ],
+        "configuracion": {
+          "modulo": "sec-modulo-1",
+          "metadata": {
+            "source_code": "P1.1",
+            "source_type": "single_choice"
+          },
+          "requerida_si_activa": true,
+          "depende_de": "P1",
+          "valor_activador": "si"
+        }
+      },
+      {
+        "id": "0fea348b-6643-59c3-bbf5-dcaee42a806d",
+        "codigo": "P1.2",
+        "titulo": "¿Te tomaste la temperatura con un termómetro (en la axila o en la boca)?",
+        "texto": null,
+        "tipo": "opcion_unica",
+        "requerida": true,
+        "orden": 4,
+        "opciones": [
+          {
+            "codigo": "menos_37_5",
+            "etiqueta": "Menos de 37.5 (Normal).",
+            "orden": 0
+          },
+          {
+            "codigo": "37_5_a_37_9",
+            "etiqueta": "Entre 37.5 a 37.9 (Febrícula).",
+            "orden": 1
+          },
+          {
+            "codigo": "38_a_38_2_mantenida",
+            "etiqueta": "Entre 38 a 38.2 y se ha mantenido así por más de 1 hora.",
+            "orden": 2
+          },
+          {
+            "codigo": "38_3_mas",
+            "etiqueta": "38.3 o más en una sola toma.",
+            "orden": 3
+          },
+          {
+            "codigo": "no_tomada",
+            "etiqueta": "No me he tomado la temperatura con termómetro.",
+            "orden": 4
+          }
+        ],
+        "configuracion": {
+          "modulo": "sec-modulo-1",
+          "metadata": {
+            "source_code": "P1.2",
+            "source_type": "single_choice"
+          },
+          "requerida_si_activa": true,
+          "depende_de": "P1",
+          "valor_activador": "si"
+        }
+      },
+      {
+        "id": "fbd1f928-4004-5f22-86fe-f20044c15c3a",
+        "codigo": "P1.3",
+        "titulo": "¿Tomaste algún medicamento que baja la fiebre o para el dolor (como Paracetamol, Dipirona/Metamizol o Ibuprofeno) en las últimas 6 horas?",
+        "texto": null,
+        "tipo": "opcion_unica",
+        "requerida": true,
+        "orden": 5,
+        "opciones": [
+          {
+            "codigo": "no",
+            "etiqueta": "No he tomado nada.",
+            "orden": 0
+          },
+          {
+            "codigo": "si",
+            "etiqueta": "Sí, tomé un medicamento.",
+            "orden": 1
+          }
+        ],
+        "configuracion": {
+          "modulo": "sec-modulo-1",
+          "metadata": {
+            "source_code": "P1.3",
+            "source_type": "single_choice"
+          },
+          "requerida_si_activa": true,
+          "depende_de": "P1",
+          "valor_activador": "si"
+        }
+      },
+      {
+        "id": "62cad15d-e006-52e6-b09d-c31bba961582",
+        "codigo": "P1.4",
+        "titulo": "¿Tienes alguna otra molestia que pueda indicar resfrío o infección?",
+        "texto": null,
+        "tipo": "opcion_multiple",
+        "requerida": true,
+        "orden": 6,
+        "opciones": [
+          {
+            "codigo": "garganta_tos",
+            "etiqueta": "Dolor de garganta o tos nueva.",
+            "orden": 0
+          },
+          {
+            "codigo": "ardor_orinar",
+            "etiqueta": "Ardor o dolor al orinar.",
+            "orden": 1
+          },
+          {
+            "codigo": "ninguna",
+            "etiqueta": "Ninguna de las anteriores.",
+            "orden": 2
+          }
+        ],
+        "configuracion": {
+          "modulo": "sec-modulo-1",
+          "metadata": {
+            "source_code": "P1.4",
+            "source_type": "multiple_choice"
+          },
+          "opciones_exclusivas": ["ninguna"],
+          "requerida_si_activa": true,
+          "depende_de": "P1",
+          "valor_activador": "si"
+        }
+      },
+      {
+        "id": "10316e52-d26d-5b9c-9934-d994f275a531",
+        "codigo": "P2",
+        "titulo": "¿Has tenido náuseas (asco o ganas de vomitar) o vómitos en las últimas 24 horas?",
+        "texto": null,
+        "tipo": "opcion_unica",
+        "requerida": true,
+        "orden": 7,
+        "opciones": [
+          {
+            "codigo": "si",
+            "etiqueta": "Sí",
+            "orden": 0
+          },
+          {
+            "codigo": "no",
+            "etiqueta": "No",
+            "orden": 1
+          }
+        ],
+        "configuracion": {
+          "modulo": "sec-modulo-2",
+          "metadata": {
+            "source_code": "P2",
+            "source_type": "single_choice"
+          }
+        }
+      },
+      {
+        "id": "7a2fbed9-10ba-5e47-a89e-cf79a2c54923",
+        "codigo": "P2.1",
+        "titulo": "¿Qué tan fuertes han sido las náuseas (ganas de vomitar)?",
+        "texto": null,
+        "tipo": "opcion_unica",
+        "requerida": true,
+        "orden": 8,
+        "opciones": [
+          {
+            "codigo": "leves",
+            "etiqueta": "Leves: Siento asco, pero puedo comer y tomar líquidos casi normal.",
+            "orden": 0
+          },
+          {
+            "codigo": "moderadas",
+            "etiqueta": "Moderadas: Me cuesta comer, he comido bastante menos de lo habitual, pero logro tomar líquidos.",
+            "orden": 1
+          },
+          {
+            "codigo": "severas",
+            "etiqueta": "Severas: El asco es constante y no me permite comer ni tomar casi nada de líquido.",
+            "orden": 2
+          }
+        ],
+        "configuracion": {
+          "modulo": "sec-modulo-2",
+          "metadata": {
+            "source_code": "P2.1",
+            "source_type": "single_choice"
+          },
+          "requerida_si_activa": true,
+          "depende_de": "P2",
+          "valor_activador": "si"
+        }
+      },
+      {
+        "id": "09e4242c-ad3b-524a-9402-0d08056d3eb6",
+        "codigo": "P2.2",
+        "titulo": "¿Has llegado a vomitar en las últimas 24 horas?",
+        "texto": null,
+        "tipo": "opcion_unica",
+        "requerida": true,
+        "orden": 9,
+        "opciones": [
+          {
+            "codigo": "no_vomito",
+            "etiqueta": "No he vomitado, solo tengo náuseas.",
+            "orden": 0
+          },
+          {
+            "codigo": "vomito_1_2",
+            "etiqueta": "Sí, vomité 1 o 2 veces en el día.",
+            "orden": 1
+          },
+          {
+            "codigo": "vomito_3_5",
+            "etiqueta": "Sí, he vomitado entre 3 y 5 veces en el día.",
+            "orden": 2
+          },
+          {
+            "codigo": "vomito_6_mas",
+            "etiqueta": "Sí, he vomitado 6 veces o más, o vomito todo lo que intento tragar (incluso el agua).",
+            "orden": 3
+          }
+        ],
+        "configuracion": {
+          "modulo": "sec-modulo-2",
+          "metadata": {
+            "source_code": "P2.2",
+            "source_type": "single_choice"
+          },
+          "requerida_si_activa": true,
+          "depende_de": "P2",
+          "valor_activador": "si"
+        }
+      },
+      {
+        "id": "b4a9e489-869b-55e3-9154-88492542497f",
+        "codigo": "P2.3",
+        "titulo": "¿Cómo están funcionando los medicamentos contra las náuseas que te recetó tu médico?",
+        "texto": null,
+        "tipo": "opcion_unica",
+        "requerida": true,
+        "orden": 10,
+        "opciones": [
+          {
+            "codigo": "alivian_bien",
+            "etiqueta": "Me alivian bastante bien.",
+            "orden": 0
+          },
+          {
+            "codigo": "alivian_poco",
+            "etiqueta": "Me alivian muy poco, sigo con muchas molestias.",
+            "orden": 1
+          },
+          {
+            "codigo": "vomita_medicamentos",
+            "etiqueta": "No los puedo tomar porque los vomito apenas los trago.",
+            "orden": 2
+          },
+          {
+            "codigo": "no_tomados",
+            "etiqueta": "Aún no los he tomado.",
+            "orden": 3
+          }
+        ],
+        "configuracion": {
+          "modulo": "sec-modulo-2",
+          "metadata": {
+            "source_code": "P2.3",
+            "source_type": "single_choice"
+          },
+          "requerida_si_activa": true,
+          "depende_de": "P2",
+          "valor_activador": "si"
+        }
+      },
+      {
+        "id": "66a078f8-ba00-568f-b434-7475846e6f3a",
+        "codigo": "P2.4",
+        "titulo": "Si vomitaste, ¿notaste algo extraño en el vómito?",
+        "texto": null,
+        "tipo": "opcion_unica",
+        "requerida": true,
+        "orden": 11,
+        "opciones": [
+          {
+            "codigo": "normal_comida_liquido",
+            "etiqueta": "No, era solo comida o líquido normal/amarillento.",
+            "orden": 0
+          },
+          {
+            "codigo": "sangre_granos_cafe",
+            "etiqueta": "Sí, tenía sangre roja o parecía tener \"granos de café\" oscuros.",
+            "orden": 1
+          }
+        ],
+        "configuracion": {
+          "modulo": "sec-modulo-2",
+          "metadata": {
+            "source_code": "P2.4",
+            "source_type": "single_choice"
+          },
+          "requerida_si_activa": true,
+          "activacion_compuesta": {
+            "op": "todas",
+            "condiciones": [
+              {
+                "op": "igual",
+                "codigo": "P2",
+                "valor": "si"
+              },
+              {
+                "op": "en",
+                "codigo": "P2.2",
+                "valores": ["vomito_1_2", "vomito_3_5", "vomito_6_mas"]
+              }
+            ]
+          }
+        }
+      },
+      {
+        "id": "8db420d2-2e46-58e9-8581-6e03ea9a6890",
+        "codigo": "P3.A",
+        "titulo": "¿Has tenido diarrea (deposiciones líquidas o sueltas) en las últimas 24 horas?",
+        "texto": null,
+        "tipo": "opcion_unica",
+        "requerida": true,
+        "orden": 12,
+        "opciones": [
+          {
+            "codigo": "si",
+            "etiqueta": "Sí",
+            "orden": 0
+          },
+          {
+            "codigo": "no",
+            "etiqueta": "No",
+            "orden": 1
+          }
+        ],
+        "configuracion": {
+          "modulo": "sec-modulo-3",
+          "metadata": {
+            "source_code": "P3.A",
+            "source_type": "single_choice"
+          }
+        }
+      },
+      {
+        "id": "73ca7a0b-f60d-5f73-be3b-298df0f0a1bf",
+        "codigo": "P3.A.1",
+        "titulo": "¿Cuántas veces has tenido diarrea hoy (en comparación con tu ritmo normal)?",
+        "texto": null,
+        "tipo": "opcion_unica",
+        "requerida": true,
+        "orden": 13,
+        "opciones": [
+          {
+            "codigo": "1_a_3",
+            "etiqueta": "De 1 a 3 veces en el día (Leve).",
+            "orden": 0
+          },
+          {
+            "codigo": "4_a_6",
+            "etiqueta": "De 4 a 6 veces en el día (Moderada).",
+            "orden": 1
+          },
+          {
+            "codigo": "7_mas",
+            "etiqueta": "7 veces o más en el día, o me despierta por la noche / no alcanzo a llegar al baño (Severa).",
+            "orden": 2
+          }
+        ],
+        "configuracion": {
+          "modulo": "sec-modulo-3",
+          "metadata": {
+            "source_code": "P3.A.1",
+            "source_type": "single_choice"
+          },
+          "requerida_si_activa": true,
+          "depende_de": "P3.A",
+          "valor_activador": "si"
+        }
+      },
+      {
+        "id": "2fa63244-2cab-5074-9deb-872378b64503",
+        "codigo": "P3.A.2",
+        "titulo": "¿Cómo se ven las deposiciones y qué otros síntomas sientes en el abdomen?",
+        "texto": null,
+        "tipo": "opcion_multiple",
+        "requerida": true,
+        "orden": 14,
+        "opciones": [
+          {
+            "codigo": "liquidas_leves",
+            "etiqueta": "Son solo líquidas, con molestias leves o sin dolor.",
+            "orden": 0
+          },
+          {
+            "codigo": "mucosidad_sangre",
+            "etiqueta": "Tienen mucosidad o hilos de sangre roja.",
+            "orden": 1
+          },
+          {
+            "codigo": "negras_alquitran",
+            "etiqueta": "Son de color negro brillante (como alquitrán) y de olor muy fuerte.",
+            "orden": 2
+          },
+          {
+            "codigo": "retorcijones_dolor_fuerte",
+            "etiqueta": "Siento retorcijones o dolor abdominal muy fuerte que no se pasa.",
+            "orden": 3
+          }
+        ],
+        "configuracion": {
+          "modulo": "sec-modulo-3",
+          "metadata": {
+            "source_code": "P3.A.2",
+            "source_type": "multiple_choice"
+          },
+          "opciones_exclusivas": ["liquidas_leves"],
+          "requerida_si_activa": true,
+          "depende_de": "P3.A",
+          "valor_activador": "si"
+        }
+      },
+      {
+        "id": "78bed9bb-168c-5fb1-ab29-322d1d086bd5",
+        "codigo": "P3.A.3",
+        "titulo": "¿Has notado signos de deshidratación por la diarrea?",
+        "texto": null,
+        "tipo": "opcion_multiple",
+        "requerida": true,
+        "orden": 15,
+        "opciones": [
+          {
+            "codigo": "bien_hidratado",
+            "etiqueta": "No, me siento bien hidratado/a.",
+            "orden": 0
+          },
+          {
+            "codigo": "mucha_sed_boca_seca",
+            "etiqueta": "Tengo mucha sed y la boca muy seca o pastosa.",
+            "orden": 1
+          },
+          {
+            "codigo": "orina_poca_oscura",
+            "etiqueta": "Orino muy poco y la orina es muy oscura (color té cargado).",
+            "orden": 2
+          },
+          {
+            "codigo": "mareo_de_pie",
+            "etiqueta": "Me mareo mucho cuando intento ponerme de pie.",
+            "orden": 3
+          }
+        ],
+        "configuracion": {
+          "modulo": "sec-modulo-3",
+          "metadata": {
+            "source_code": "P3.A.3",
+            "source_type": "multiple_choice"
+          },
+          "opciones_exclusivas": ["bien_hidratado"],
+          "requerida_si_activa": true,
+          "depende_de": "P3.A",
+          "valor_activador": "si"
+        }
+      },
+      {
+        "id": "14cbc860-346a-5abb-a624-62c87433e70b",
+        "codigo": "P3.B",
+        "titulo": "¿Has tenido estreñimiento (dificultad para ir al baño o deposiciones muy duras)?",
+        "texto": null,
+        "tipo": "opcion_unica",
+        "requerida": true,
+        "orden": 16,
+        "opciones": [
+          {
+            "codigo": "si",
+            "etiqueta": "Sí",
+            "orden": 0
+          },
+          {
+            "codigo": "no",
+            "etiqueta": "No",
+            "orden": 1
+          }
+        ],
+        "configuracion": {
+          "modulo": "sec-modulo-3",
+          "metadata": {
+            "source_code": "P3.B",
+            "source_type": "single_choice"
+          }
+        }
+      },
+      {
+        "id": "e506700e-c272-5c55-8ba7-ffb314c31c3a",
+        "codigo": "P3.B.1",
+        "titulo": "¿Cuántos días llevas sin poder hacer deposiciones?",
+        "texto": null,
+        "tipo": "opcion_unica",
+        "requerida": true,
+        "orden": 17,
+        "opciones": [
+          {
+            "codigo": "1_a_2",
+            "etiqueta": "1 a 2 días.",
+            "orden": 0
+          },
+          {
+            "codigo": "3_a_4",
+            "etiqueta": "3 a 4 días.",
+            "orden": 1
+          },
+          {
+            "codigo": "5_mas",
+            "etiqueta": "5 días o más.",
+            "orden": 2
+          }
+        ],
+        "configuracion": {
+          "modulo": "sec-modulo-3",
+          "metadata": {
+            "source_code": "P3.B.1",
+            "source_type": "single_choice"
+          },
+          "requerida_si_activa": true,
+          "depende_de": "P3.B",
+          "valor_activador": "si"
+        }
+      },
+      {
+        "id": "87aa348d-8496-5cd2-b099-96da283499a1",
+        "codigo": "P3.B.2",
+        "titulo": "¿Tienes el abdomen muy hinchado, duro, con dolor fuerte o no puedes eliminar gases?",
+        "texto": null,
+        "tipo": "opcion_unica",
+        "requerida": true,
+        "orden": 18,
+        "opciones": [
+          {
+            "codigo": "no",
+            "etiqueta": "No, solo la molestia de no ir al baño.",
+            "orden": 0
+          },
+          {
+            "codigo": "si",
+            "etiqueta": "Sí, tengo dolor fuerte, abdomen duro o vómitos junto con el estreñimiento.",
+            "orden": 1
+          }
+        ],
+        "configuracion": {
+          "modulo": "sec-modulo-3",
+          "metadata": {
+            "source_code": "P3.B.2",
+            "source_type": "single_choice"
+          },
+          "requerida_si_activa": true,
+          "depende_de": "P3.B",
+          "valor_activador": "si"
+        }
+      },
+      {
+        "id": "a6ef21e8-aea8-5610-9214-19947a75e68b",
+        "codigo": "P4",
+        "titulo": "¿Sientes dolor, ardor, enrojecimiento o tienes llagas (heridas) dentro de la boca, lengua, encías o al tragar?",
+        "texto": null,
+        "tipo": "opcion_unica",
+        "requerida": true,
+        "orden": 19,
+        "opciones": [
+          {
+            "codigo": "si",
+            "etiqueta": "Sí",
+            "orden": 0
+          },
+          {
+            "codigo": "no",
+            "etiqueta": "No",
+            "orden": 1
+          }
+        ],
+        "configuracion": {
+          "modulo": "sec-modulo-4",
+          "metadata": {
+            "source_code": "P4",
+            "source_type": "single_choice"
+          }
+        }
+      },
+      {
+        "id": "2b30c64b-d398-535d-a7f1-3699221e144d",
+        "codigo": "P4.1",
+        "titulo": "¿Qué observas dentro de tu boca?",
+        "texto": null,
+        "tipo": "opcion_multiple",
+        "requerida": true,
+        "orden": 20,
+        "opciones": [
+          {
+            "codigo": "roja_seca_sensible",
+            "etiqueta": "Solo está roja, seca o sensible, sin heridas visibles.",
+            "orden": 0
+          },
+          {
+            "codigo": "llagas_ulceras_pequenas",
+            "etiqueta": "Tengo llagas o úlceras pequeñas.",
+            "orden": 1
+          },
+          {
+            "codigo": "placas_blancas",
+            "etiqueta": "Tengo placas blancas (como leche cortada) en la lengua o mejillas.",
+            "orden": 2
+          },
+          {
+            "codigo": "heridas_sangran",
+            "etiqueta": "Las heridas sangran solas o al comer.",
+            "orden": 3
+          }
+        ],
+        "configuracion": {
+          "modulo": "sec-modulo-4",
+          "metadata": {
+            "source_code": "P4.1",
+            "source_type": "multiple_choice"
+          },
+          "requerida_si_activa": true,
+          "depende_de": "P4",
+          "valor_activador": "si"
+        }
+      },
+      {
+        "id": "17d94be7-d73d-5b86-b95a-5b48a7ae7bb0",
+        "codigo": "P4.2",
+        "titulo": "¿Cómo afecta esto a tu alimentación hoy?",
+        "texto": null,
+        "tipo": "opcion_unica",
+        "requerida": true,
+        "orden": 21,
+        "opciones": [
+          {
+            "codigo": "normales_blandos",
+            "etiqueta": "Me molesta un poco, pero puedo comer alimentos normales o blandos sin problema.",
+            "orden": 0
+          },
+          {
+            "codigo": "papillas_sopas_liquidos",
+            "etiqueta": "Me duele bastante; solo puedo comer papillas, sopas o líquidos, pero logro alimentarme.",
+            "orden": 1
+          },
+          {
+            "codigo": "poco_agua_dificultad",
+            "etiqueta": "El dolor es tan intenso que solo puedo pasar un poco de agua o líquidos con mucha dificultad.",
+            "orden": 2
+          },
+          {
+            "codigo": "no_tragar_nada",
+            "etiqueta": "No puedo tragar absolutamente nada, ni agua ni mis medicamentos en pastillas.",
+            "orden": 3
+          }
+        ],
+        "configuracion": {
+          "modulo": "sec-modulo-4",
+          "metadata": {
+            "source_code": "P4.2",
+            "source_type": "single_choice"
+          },
+          "requerida_si_activa": true,
+          "depende_de": "P4",
+          "valor_activador": "si"
+        }
+      },
+      {
+        "id": "adf9c0e0-5493-55ff-b7d1-89fd6524c601",
+        "codigo": "P5",
+        "titulo": "¿Sientes hormigueo, adormecimiento, \"corrientazos\" o dolor en los dedos de las manos o de los pies?",
+        "texto": null,
+        "tipo": "opcion_unica",
+        "requerida": true,
+        "orden": 22,
+        "opciones": [
+          {
+            "codigo": "si",
+            "etiqueta": "Sí",
+            "orden": 0
+          },
+          {
+            "codigo": "no",
+            "etiqueta": "No",
+            "orden": 1
+          }
+        ],
+        "configuracion": {
+          "modulo": "sec-modulo-5",
+          "metadata": {
+            "source_code": "P5",
+            "source_type": "single_choice"
+          }
+        }
+      },
+      {
+        "id": "75b814e2-417b-5037-850a-a30cfe7c7acd",
+        "codigo": "P5.1",
+        "titulo": "¿Cómo afecta esta sensación a tus actividades diarias?",
+        "texto": null,
+        "tipo": "opcion_unica",
+        "requerida": true,
+        "orden": 23,
+        "opciones": [
+          {
+            "codigo": "leve_hormigueo",
+            "etiqueta": "Es solo un hormigueo leve que no me molesta para hacer mis cosas.",
+            "orden": 0
+          },
+          {
+            "codigo": "cosas_finas_manos",
+            "etiqueta": "Me cuesta hacer cosas finas con las manos (como abrocharme botones, escribir, abrir frascos o sostener una taza sin que se caiga).",
+            "orden": 1
+          },
+          {
+            "codigo": "caminar_equilibrio_pies",
+            "etiqueta": "Me cuesta caminar bien, siento que no piso firme, tropiezo o pierdo el equilibrio por tener los pies dormidos.",
+            "orden": 2
+          }
+        ],
+        "configuracion": {
+          "modulo": "sec-modulo-5",
+          "metadata": {
+            "source_code": "P5.1",
+            "source_type": "single_choice"
+          },
+          "requerida_si_activa": true,
+          "depende_de": "P5",
+          "valor_activador": "si"
+        }
+      },
+      {
+        "id": "22da5d8d-5e3a-578d-af82-ff03c5988d50",
+        "codigo": "P5.2",
+        "titulo": "¿Sientes calambres o dolor en la garganta o en las manos cuando tocas cosas frías o tomas líquidos fríos?",
+        "texto": null,
+        "tipo": "opcion_unica",
+        "requerida": true,
+        "orden": 24,
+        "opciones": [
+          {
+            "codigo": "no",
+            "etiqueta": "No.",
+            "orden": 0
+          },
+          {
+            "codigo": "molestia_frio_pasa_rapido",
+            "etiqueta": "Sí, me da molestia o dolor con el frío, pero pasa rápido al calentarme.",
+            "orden": 1
+          },
+          {
+            "codigo": "cierra_garganta_cuesta_respirar",
+            "etiqueta": "Sí, siento que se me cierra la garganta o me cuesta respirar al tomar o respirar algo frío.",
+            "orden": 2
+          }
+        ],
+        "configuracion": {
+          "modulo": "sec-modulo-5",
+          "metadata": {
+            "source_code": "P5.2",
+            "source_type": "single_choice"
+          },
+          "requerida_si_activa": true,
+          "depende_de": "P5",
+          "valor_activador": "si"
+        }
+      },
+      {
+        "id": "6485f59f-b405-587e-9356-e9d86d77617c",
+        "codigo": "P5.3",
+        "titulo": "En comparación con tu ciclo anterior de quimioterapia, ¿esta sensación ha cambiado?",
+        "texto": null,
+        "tipo": "opcion_unica",
+        "requerida": true,
+        "orden": 25,
+        "opciones": [
+          {
+            "codigo": "igual_o_suave",
+            "etiqueta": "Está igual o es más suave.",
+            "orden": 0
+          },
+          {
+            "codigo": "nueva_empeorado_no_quita",
+            "etiqueta": "Es nueva o ha empeorado y ya no se quita entre un ciclo y otro.",
+            "orden": 1
+          }
+        ],
+        "configuracion": {
+          "modulo": "sec-modulo-5",
+          "metadata": {
+            "source_code": "P5.3",
+            "source_type": "single_choice"
+          },
+          "requerida_si_activa": true,
+          "depende_de": "P5",
+          "valor_activador": "si"
+        }
+      },
+      {
+        "id": "050b468b-72b9-5f02-80a3-a82dc88d3d97",
+        "codigo": "P6",
+        "titulo": "¿Has notado enrojecimiento, hinchazón, dolor o descamación en las palmas de las manos, plantas de los pies o en el brazo donde te pusieron el suero?",
+        "texto": null,
+        "tipo": "opcion_unica",
+        "requerida": true,
+        "orden": 26,
+        "opciones": [
+          {
+            "codigo": "si",
+            "etiqueta": "Sí",
+            "orden": 0
+          },
+          {
+            "codigo": "no",
+            "etiqueta": "No",
+            "orden": 1
+          }
+        ],
+        "configuracion": {
+          "modulo": "sec-modulo-6",
+          "metadata": {
+            "source_code": "P6",
+            "source_type": "single_choice"
+          }
+        }
+      },
+      {
+        "id": "7820ab08-780f-5cd4-8033-f4696e820439",
+        "codigo": "P6.1",
+        "titulo": "En las palmas de tus manos o plantas de tus pies, ¿qué síntomas tienes?",
+        "texto": null,
+        "tipo": "opcion_unica",
+        "requerida": true,
+        "orden": 27,
+        "opciones": [
+          {
+            "codigo": "nada",
+            "etiqueta": "No tengo nada en las palmas ni plantas.",
+            "orden": 0
+          },
+          {
+            "codigo": "rojas_secas_sin_dolor",
+            "etiqueta": "Están un poco rojas o secas, pero no me duelen al caminar ni al usar las manos.",
+            "orden": 1
+          },
+          {
+            "codigo": "rojas_hinchadas_pelando_dolor",
+            "etiqueta": "Están rojas, hinchadas, se están pelando y me duelen al caminar o al sostener objetos.",
+            "orden": 2
+          },
+          {
+            "codigo": "ampollas_heridas_dolor_severo",
+            "etiqueta": "Tienen ampollas, heridas abiertas o costras, y el dolor no me deja caminar ni usar mis manos.",
+            "orden": 3
+          }
+        ],
+        "configuracion": {
+          "modulo": "sec-modulo-6",
+          "metadata": {
+            "source_code": "P6.1",
+            "source_type": "single_choice"
+          },
+          "requerida_si_activa": true,
+          "depende_de": "P6",
+          "valor_activador": "si"
+        }
+      },
+      {
+        "id": "c8b9ef40-bdb9-59b2-8522-2aa57ed5b65e",
+        "codigo": "P6.2",
+        "titulo": "En la vena del brazo donde te pasaron la quimioterapia (si no usas catéter central), ¿notaste algo?",
+        "texto": null,
+        "tipo": "opcion_unica",
+        "requerida": true,
+        "orden": 28,
+        "opciones": [
+          {
+            "codigo": "todo_normal",
+            "etiqueta": "Todo normal.",
+            "orden": 0
+          },
+          {
+            "codigo": "morado_pinchazo_sin_dolor",
+            "etiqueta": "Está un poco morado por el pinchazo, pero sin dolor importante.",
+            "orden": 1
+          },
+          {
+            "codigo": "hinchado_rojo_duro_caliente_arde",
+            "etiqueta": "Está muy hinchado, rojo, duro, caliente o me arde/duele mucho esa zona del brazo.",
+            "orden": 2
+          }
+        ],
+        "configuracion": {
+          "modulo": "sec-modulo-6",
+          "metadata": {
+            "source_code": "P6.2",
+            "source_type": "single_choice"
+          },
+          "requerida_si_activa": true,
+          "activacion_compuesta": {
+            "op": "todas",
+            "condiciones": [
+              {
+                "op": "igual",
+                "codigo": "P6",
+                "valor": "si"
+              },
+              {
+                "op": "igual",
+                "codigo": "P0.1",
+                "valor": "no"
+              }
+            ]
+          }
+        }
+      },
+      {
+        "id": "5949fbe0-d1e7-5f73-89f7-27690aead369",
+        "codigo": "P7",
+        "titulo": "¿Has tenido algún tipo de sangrado o te han salido moretones o puntitos rojos en la piel sin haberte golpeado?",
+        "texto": null,
+        "tipo": "opcion_unica",
+        "requerida": true,
+        "orden": 29,
+        "opciones": [
+          {
+            "codigo": "si",
+            "etiqueta": "Sí",
+            "orden": 0
+          },
+          {
+            "codigo": "no",
+            "etiqueta": "No",
+            "orden": 1
+          }
+        ],
+        "configuracion": {
+          "modulo": "sec-modulo-7",
+          "metadata": {
+            "source_code": "P7",
+            "source_type": "single_choice"
+          }
+        }
+      },
+      {
+        "id": "60384164-ea6c-5c1d-8dea-db58103fdad3",
+        "codigo": "P7.1",
+        "titulo": "¿Qué tipo de sangrado o marcas has notado?",
+        "texto": null,
+        "tipo": "opcion_multiple",
+        "requerida": true,
+        "orden": 30,
+        "opciones": [
+          {
+            "codigo": "pequeno_sangrado_menos_5min",
+            "etiqueta": "Pequeño sangrado de encías al cepillarme los dientes o gotitas de sangre al sonarme la nariz, que se detiene en menos de 5 minutos.",
+            "orden": 0
+          },
+          {
+            "codigo": "moretones_petequias",
+            "etiqueta": "Me salieron varios moretones nuevos sin golpearme o muchos puntitos rojos pequeños en las piernas o brazos (petequias).",
+            "orden": 1
+          },
+          {
+            "codigo": "sangrado_nariz_encias_10_15min",
+            "etiqueta": "Sangrado de nariz o encías abundante que no se detiene después de apretar durante 10 a 15 minutos.",
+            "orden": 2
+          },
+          {
+            "codigo": "orina_sangre_ardor",
+            "etiqueta": "Orina de color rojo o rosado (con sangre) o ardor fuerte al orinar.",
+            "orden": 3
+          },
+          {
+            "codigo": "sangrado_vaginal_tos_sangre",
+            "etiqueta": "Sangrado vaginal abundante fuera de mi regla normal, o tos con sangre.",
+            "orden": 4
+          }
+        ],
+        "configuracion": {
+          "modulo": "sec-modulo-7",
+          "metadata": {
+            "source_code": "P7.1",
+            "source_type": "multiple_choice"
+          },
+          "requerida_si_activa": true,
+          "depende_de": "P7",
+          "valor_activador": "si"
+        }
+      },
+      {
+        "id": "15bb3d5f-9cc0-5640-ab54-a79097516865",
+        "codigo": "P8",
+        "titulo": "¿Sientes falta de aire al respirar, dolor en el pecho, palpitaciones o se te ha hinchado alguna pierna?",
+        "texto": null,
+        "tipo": "opcion_unica",
+        "requerida": true,
+        "orden": 31,
+        "opciones": [
+          {
+            "codigo": "si",
+            "etiqueta": "Sí",
+            "orden": 0
+          },
+          {
+            "codigo": "no",
+            "etiqueta": "No",
+            "orden": 1
+          }
+        ],
+        "configuracion": {
+          "modulo": "sec-modulo-8",
+          "metadata": {
+            "source_code": "P8",
+            "source_type": "single_choice"
+          }
+        }
+      },
+      {
+        "id": "807be783-830c-5dd9-b6d8-511aa35bf2b4",
+        "codigo": "P8.1",
+        "titulo": "¿Cómo es la falta de aire o dificultad para respirar?",
+        "texto": null,
+        "tipo": "opcion_unica",
+        "requerida": true,
+        "orden": 32,
+        "opciones": [
+          {
+            "codigo": "no_falta_aire",
+            "etiqueta": "No tengo falta de aire.",
+            "orden": 0
+          },
+          {
+            "codigo": "canso_escaleras_rapido",
+            "etiqueta": "Me canso un poco más de lo normal al subir escaleras o caminar rápido, pero se me pasa al descansar.",
+            "orden": 1
+          },
+          {
+            "codigo": "falta_aire_minimas_almohadas",
+            "etiqueta": "Me falta el aire haciendo cosas mínimas (como vestirme o ir al baño) o necesito dormir con más almohadas para no ahogarme.",
+            "orden": 2
+          },
+          {
+            "codigo": "falta_aire_reposo",
+            "etiqueta": "Me falta el aire estando totalmente quieto/a y en reposo.",
+            "orden": 3
+          }
+        ],
+        "configuracion": {
+          "modulo": "sec-modulo-8",
+          "metadata": {
+            "source_code": "P8.1",
+            "source_type": "single_choice"
+          },
+          "requerida_si_activa": true,
+          "depende_de": "P8",
+          "valor_activador": "si"
+        }
+      },
+      {
+        "id": "53fee419-7ea3-5c0f-b353-60bde1ac76ea",
+        "codigo": "P8.2",
+        "titulo": "¿Tienes alguno de estos síntomas en el pecho?",
+        "texto": null,
+        "tipo": "opcion_multiple",
+        "requerida": true,
+        "orden": 33,
+        "opciones": [
+          {
+            "codigo": "ninguno",
+            "etiqueta": "Ninguno.",
+            "orden": 0
+          },
+          {
+            "codigo": "dolor_presion_pesadez",
+            "etiqueta": "Dolor, presión o pesadez en el centro del pecho.",
+            "orden": 1
+          },
+          {
+            "codigo": "palpitaciones_reposo",
+            "etiqueta": "Siento que el corazón me late muy rápido o desordenado (palpitaciones) estando en reposo.",
+            "orden": 2
+          }
+        ],
+        "configuracion": {
+          "modulo": "sec-modulo-8",
+          "metadata": {
+            "source_code": "P8.2",
+            "source_type": "multiple_choice"
+          },
+          "opciones_exclusivas": ["ninguno"],
+          "requerida_si_activa": true,
+          "depende_de": "P8",
+          "valor_activador": "si"
+        }
+      },
+      {
+        "id": "845a2723-0c25-552d-aebb-1b042f2465a0",
+        "codigo": "P8.3",
+        "titulo": "¿Se te han hinchado las piernas o los tobillos?",
+        "texto": null,
+        "tipo": "opcion_unica",
+        "requerida": true,
+        "orden": 34,
+        "opciones": [
+          {
+            "codigo": "no",
+            "etiqueta": "No.",
+            "orden": 0
+          },
+          {
+            "codigo": "tobillos_hinchados_final_dia",
+            "etiqueta": "Sí, ambos tobillos están un poco hinchados al final del día.",
+            "orden": 1
+          },
+          {
+            "codigo": "una_pierna_repente_duele_caliente",
+            "etiqueta": "Sí, una sola pierna (o pantorrilla) se hinchó de repente, me duele, está roja o caliente.",
+            "orden": 2
+          }
+        ],
+        "configuracion": {
+          "modulo": "sec-modulo-8",
+          "metadata": {
+            "source_code": "P8.3",
+            "source_type": "single_choice"
+          },
+          "requerida_si_activa": true,
+          "depende_de": "P8",
+          "valor_activador": "si"
+        }
+      },
+      {
+        "id": "afaa20bd-edc8-5977-ad1b-57ff7e9f0367",
+        "codigo": "P9.A",
+        "titulo": "¿Has sentido un cansancio extremo o fatiga que no se alivia aunque duermas o descanses?",
+        "texto": null,
+        "tipo": "opcion_unica",
+        "requerida": true,
+        "orden": 35,
+        "opciones": [
+          {
+            "codigo": "si",
+            "etiqueta": "Sí",
+            "orden": 0
+          },
+          {
+            "codigo": "no",
+            "etiqueta": "No",
+            "orden": 1
+          }
+        ],
+        "configuracion": {
+          "modulo": "sec-modulo-9",
+          "metadata": {
+            "source_code": "P9.A",
+            "source_type": "single_choice"
+          }
+        }
+      },
+      {
+        "id": "75d770e6-20cd-574c-8988-c5037fefd1f7",
+        "codigo": "P9.A.1",
+        "titulo": "¿Qué tanto te limita este cansancio hoy?",
+        "texto": null,
+        "tipo": "opcion_unica",
+        "requerida": true,
+        "orden": 36,
+        "opciones": [
+          {
+            "codigo": "ecog_1",
+            "etiqueta": "Me siento cansado/a, pero puedo levantarme y hacer casi todas mis actividades del día.",
+            "orden": 0
+          },
+          {
+            "codigo": "ecog_2",
+            "etiqueta": "Paso menos de la mitad del día en cama o en el sillón; puedo bañarme y vestirme solo/a, pero no puedo trabajar ni hacer tareas de la casa.",
+            "orden": 1
+          },
+          {
+            "codigo": "ecog_3_4",
+            "etiqueta": "Paso más de la mitad del día en cama; me cuesta mucho levantarme incluso para bañarme, vestirme o comer.",
+            "orden": 2
+          },
+          {
+            "codigo": "emergencia",
+            "etiqueta": "Además del cansancio, me siento confundido/a, me cuesta mucho despertar o me he desmayado.",
+            "orden": 3
+          }
+        ],
+        "configuracion": {
+          "modulo": "sec-modulo-9",
+          "metadata": {
+            "source_code": "P9.A.1",
+            "source_type": "single_choice"
+          },
+          "requerida_si_activa": true,
+          "depende_de": "P9.A",
+          "valor_activador": "si"
+        }
+      },
+      {
+        "id": "eba3ee50-b7aa-5a44-be05-ef5121f70f76",
+        "codigo": "P9.B",
+        "titulo": "¿Tienes algún dolor en el cuerpo (huesos, músculos, cabeza o zona de tu enfermedad)?",
+        "texto": null,
+        "tipo": "opcion_unica",
+        "requerida": true,
+        "orden": 37,
+        "opciones": [
+          {
+            "codigo": "si",
+            "etiqueta": "Sí",
+            "orden": 0
+          },
+          {
+            "codigo": "no",
+            "etiqueta": "No",
+            "orden": 1
+          }
+        ],
+        "configuracion": {
+          "modulo": "sec-modulo-9",
+          "metadata": {
+            "source_code": "P9.B",
+            "source_type": "single_choice"
+          }
+        }
+      },
+      {
+        "id": "ef33c17d-91f5-5a5c-940c-098fc0d789e1",
+        "codigo": "P9.B.1",
+        "titulo": "¿Qué tan intenso es el dolor en este momento?",
+        "texto": null,
+        "tipo": "opcion_unica",
+        "requerida": true,
+        "orden": 38,
+        "opciones": [
+          {
+            "codigo": "leve",
+            "etiqueta": "Dolor Leve (1 a 3): Molesta un poco, pero me deja dormir y hacer mis cosas.",
+            "orden": 0
+          },
+          {
+            "codigo": "moderado",
+            "etiqueta": "Dolor Moderado (4 a 6): Me interrumpe mis actividades o el sueño.",
+            "orden": 1
+          },
+          {
+            "codigo": "intenso",
+            "etiqueta": "Dolor Intenso o Insoportable (7 a 10): No me deja estar tranquilo/a ni dormir.",
+            "orden": 2
+          }
+        ],
+        "configuracion": {
+          "modulo": "sec-modulo-9",
+          "metadata": {
+            "source_code": "P9.B.1",
+            "source_type": "single_choice"
+          },
+          "requerida_si_activa": true,
+          "depende_de": "P9.B",
+          "valor_activador": "si"
+        }
+      },
+      {
+        "id": "977d8a51-b57b-5a23-b732-1d5acb76699c",
+        "codigo": "P9.B.2",
+        "titulo": "¿Cómo responde el dolor a los analgésicos que te dejó tu médico?",
+        "texto": null,
+        "tipo": "opcion_unica",
+        "requerida": true,
+        "orden": 39,
+        "opciones": [
+          {
+            "codigo": "alivia_bien",
+            "etiqueta": "El dolor se pasa bien cuando tomo mis medicamentos.",
+            "orden": 0
+          },
+          {
+            "codigo": "alivia_parcial",
+            "etiqueta": "El dolor baja un poco, pero vuelve antes de que me toque la siguiente dosis.",
+            "orden": 1
+          },
+          {
+            "codigo": "no_se_pasa_o_subito",
+            "etiqueta": "El dolor no se pasa con nada o apareció de forma súbita y muy violenta.",
+            "orden": 2
+          }
+        ],
+        "configuracion": {
+          "modulo": "sec-modulo-9",
+          "metadata": {
+            "source_code": "P9.B.2",
+            "source_type": "single_choice"
+          },
+          "requerida_si_activa": true,
+          "depende_de": "P9.B",
+          "valor_activador": "si"
+        }
+      },
+      {
+        "id": "24b670c9-0889-52ef-9250-551c53c91914",
+        "codigo": "P10",
+        "titulo": "¿Hay algún otro síntoma, duda o comentario que quieras contarle a tu equipo médico o de enfermería y que no hayamos preguntado arriba?",
+        "texto": null,
+        "tipo": "texto_libre",
+        "requerida": false,
+        "orden": 40,
+        "opciones": [],
+        "configuracion": {
+          "modulo": "sec-modulo-10",
+          "metadata": {
+            "source_code": "P10",
+            "source_type": "text"
+          },
+          "max_length": 500
+        }
+      }
+    ],
+    "fecha_creacion": "2026-10-28T00:00:00Z"
+  },
+  "configuracion_formulario_en_origen": {
+    "version_condiciones": 1,
+    "version_reglas_compuestas": 1,
+    "instrumento_version": "1.1.0",
+    "instrumento_codigo": "SEGUIMIENTO_DOMICILIARIO_EPRO",
+    "preguntas_esperadas": 41,
+    "secciones": [
+      {
+        "id": "sec-modulo-0",
+        "titulo": "Contexto y dispositivos",
+        "orden": 0
+      },
+      {
+        "id": "sec-modulo-1",
+        "titulo": "Fiebre e infección",
+        "orden": 1
+      },
+      {
+        "id": "sec-modulo-2",
+        "titulo": "Náuseas y vómitos",
+        "orden": 2
+      },
+      {
+        "id": "sec-modulo-3",
+        "titulo": "Tránsito intestinal",
+        "orden": 3
+      },
+      {
+        "id": "sec-modulo-4",
+        "titulo": "Boca y garganta",
+        "orden": 4
+      },
+      {
+        "id": "sec-modulo-5",
+        "titulo": "Sistema nervioso en manos y pies",
+        "orden": 5
+      },
+      {
+        "id": "sec-modulo-6",
+        "titulo": "Piel y extremidades",
+        "orden": 6
+      },
+      {
+        "id": "sec-modulo-7",
+        "titulo": "Sangrados y moretones",
+        "orden": 7
+      },
+      {
+        "id": "sec-modulo-8",
+        "titulo": "Respiración y sistema cardiovascular",
+        "orden": 8
+      },
+      {
+        "id": "sec-modulo-9",
+        "titulo": "Energía, ánimo y dolor general",
+        "orden": 9
+      },
+      {
+        "id": "sec-modulo-10",
+        "titulo": "Comentario abierto",
+        "orden": 10
+      }
+    ],
+    "provisional": false
+  },
+  "trazabilidad": {
+    "sourcePath": "apps/mobile/src/features/medical-forms/fixtures/seguimiento-domiciliario.ts",
+    "sourceVersion": "1.1.0",
+    "sourceSha256": "b3b9c3574549ca47a7f4ae86d1306e6da33fb7181ab850eb9ad462d54c167866",
+    "sourceSha256Lf": "74dd4856a7f87507af0fdd7910943a491e2c89ad56470ed1202c103672f71f4f",
+    "confirmation": "Javier confirma la edición entregada y validada por el profesor/enfermería, y autoriza conservar sus reglas mediante ampliación versionada.",
+    "technicalMapping": [
+      {
+        "sourceCode": "P0.1",
+        "questionId": "554020f3-a947-5dc7-9771-5362e933b3e2",
+        "originalCondition": null,
+        "publishedCondition": null
+      },
+      {
+        "sourceCode": "P0.1.1",
+        "questionId": "5a0a85c7-479c-5740-833c-0396644a4996",
+        "originalCondition": {
+          "op": "eq",
+          "questionId": "P0.1",
+          "value": "si"
+        },
+        "publishedCondition": {
+          "depende_de": "P0.1",
+          "valor_activador": "si",
+          "requerida_si_activa": true
+        }
+      },
+      {
+        "sourceCode": "P1",
+        "questionId": "c8f853a0-9f8f-5790-8ad0-90bea32d5064",
+        "originalCondition": null,
+        "publishedCondition": null
+      },
+      {
+        "sourceCode": "P1.1",
+        "questionId": "f2dd1b1e-8757-5fc9-bef8-007a43402f39",
+        "originalCondition": {
+          "op": "eq",
+          "questionId": "P1",
+          "value": "si"
+        },
+        "publishedCondition": {
+          "depende_de": "P1",
+          "valor_activador": "si",
+          "requerida_si_activa": true
+        }
+      },
+      {
+        "sourceCode": "P1.2",
+        "questionId": "0fea348b-6643-59c3-bbf5-dcaee42a806d",
+        "originalCondition": {
+          "op": "eq",
+          "questionId": "P1",
+          "value": "si"
+        },
+        "publishedCondition": {
+          "depende_de": "P1",
+          "valor_activador": "si",
+          "requerida_si_activa": true
+        }
+      },
+      {
+        "sourceCode": "P1.3",
+        "questionId": "fbd1f928-4004-5f22-86fe-f20044c15c3a",
+        "originalCondition": {
+          "op": "eq",
+          "questionId": "P1",
+          "value": "si"
+        },
+        "publishedCondition": {
+          "depende_de": "P1",
+          "valor_activador": "si",
+          "requerida_si_activa": true
+        }
+      },
+      {
+        "sourceCode": "P1.4",
+        "questionId": "62cad15d-e006-52e6-b09d-c31bba961582",
+        "originalCondition": {
+          "op": "eq",
+          "questionId": "P1",
+          "value": "si"
+        },
+        "publishedCondition": {
+          "depende_de": "P1",
+          "valor_activador": "si",
+          "requerida_si_activa": true
+        }
+      },
+      {
+        "sourceCode": "P2",
+        "questionId": "10316e52-d26d-5b9c-9934-d994f275a531",
+        "originalCondition": null,
+        "publishedCondition": null
+      },
+      {
+        "sourceCode": "P2.1",
+        "questionId": "7a2fbed9-10ba-5e47-a89e-cf79a2c54923",
+        "originalCondition": {
+          "op": "eq",
+          "questionId": "P2",
+          "value": "si"
+        },
+        "publishedCondition": {
+          "depende_de": "P2",
+          "valor_activador": "si",
+          "requerida_si_activa": true
+        }
+      },
+      {
+        "sourceCode": "P2.2",
+        "questionId": "09e4242c-ad3b-524a-9402-0d08056d3eb6",
+        "originalCondition": {
+          "op": "eq",
+          "questionId": "P2",
+          "value": "si"
+        },
+        "publishedCondition": {
+          "depende_de": "P2",
+          "valor_activador": "si",
+          "requerida_si_activa": true
+        }
+      },
+      {
+        "sourceCode": "P2.3",
+        "questionId": "b4a9e489-869b-55e3-9154-88492542497f",
+        "originalCondition": {
+          "op": "eq",
+          "questionId": "P2",
+          "value": "si"
+        },
+        "publishedCondition": {
+          "depende_de": "P2",
+          "valor_activador": "si",
+          "requerida_si_activa": true
+        }
+      },
+      {
+        "sourceCode": "P2.4",
+        "questionId": "66a078f8-ba00-568f-b434-7475846e6f3a",
+        "originalCondition": {
+          "op": "all",
+          "conditions": [
+            {
+              "op": "eq",
+              "questionId": "P2",
+              "value": "si"
+            },
+            {
+              "op": "in",
+              "questionId": "P2.2",
+              "values": ["vomito_1_2", "vomito_3_5", "vomito_6_mas"]
+            }
+          ]
+        },
+        "publishedCondition": {
+          "op": "todas",
+          "condiciones": [
+            {
+              "op": "igual",
+              "codigo": "P2",
+              "valor": "si"
+            },
+            {
+              "op": "en",
+              "codigo": "P2.2",
+              "valores": ["vomito_1_2", "vomito_3_5", "vomito_6_mas"]
+            }
+          ]
+        }
+      },
+      {
+        "sourceCode": "P3.A",
+        "questionId": "8db420d2-2e46-58e9-8581-6e03ea9a6890",
+        "originalCondition": null,
+        "publishedCondition": null
+      },
+      {
+        "sourceCode": "P3.A.1",
+        "questionId": "73ca7a0b-f60d-5f73-be3b-298df0f0a1bf",
+        "originalCondition": {
+          "op": "eq",
+          "questionId": "P3.A",
+          "value": "si"
+        },
+        "publishedCondition": {
+          "depende_de": "P3.A",
+          "valor_activador": "si",
+          "requerida_si_activa": true
+        }
+      },
+      {
+        "sourceCode": "P3.A.2",
+        "questionId": "2fa63244-2cab-5074-9deb-872378b64503",
+        "originalCondition": {
+          "op": "eq",
+          "questionId": "P3.A",
+          "value": "si"
+        },
+        "publishedCondition": {
+          "depende_de": "P3.A",
+          "valor_activador": "si",
+          "requerida_si_activa": true
+        }
+      },
+      {
+        "sourceCode": "P3.A.3",
+        "questionId": "78bed9bb-168c-5fb1-ab29-322d1d086bd5",
+        "originalCondition": {
+          "op": "eq",
+          "questionId": "P3.A",
+          "value": "si"
+        },
+        "publishedCondition": {
+          "depende_de": "P3.A",
+          "valor_activador": "si",
+          "requerida_si_activa": true
+        }
+      },
+      {
+        "sourceCode": "P3.B",
+        "questionId": "14cbc860-346a-5abb-a624-62c87433e70b",
+        "originalCondition": null,
+        "publishedCondition": null
+      },
+      {
+        "sourceCode": "P3.B.1",
+        "questionId": "e506700e-c272-5c55-8ba7-ffb314c31c3a",
+        "originalCondition": {
+          "op": "eq",
+          "questionId": "P3.B",
+          "value": "si"
+        },
+        "publishedCondition": {
+          "depende_de": "P3.B",
+          "valor_activador": "si",
+          "requerida_si_activa": true
+        }
+      },
+      {
+        "sourceCode": "P3.B.2",
+        "questionId": "87aa348d-8496-5cd2-b099-96da283499a1",
+        "originalCondition": {
+          "op": "eq",
+          "questionId": "P3.B",
+          "value": "si"
+        },
+        "publishedCondition": {
+          "depende_de": "P3.B",
+          "valor_activador": "si",
+          "requerida_si_activa": true
+        }
+      },
+      {
+        "sourceCode": "P4",
+        "questionId": "a6ef21e8-aea8-5610-9214-19947a75e68b",
+        "originalCondition": null,
+        "publishedCondition": null
+      },
+      {
+        "sourceCode": "P4.1",
+        "questionId": "2b30c64b-d398-535d-a7f1-3699221e144d",
+        "originalCondition": {
+          "op": "eq",
+          "questionId": "P4",
+          "value": "si"
+        },
+        "publishedCondition": {
+          "depende_de": "P4",
+          "valor_activador": "si",
+          "requerida_si_activa": true
+        }
+      },
+      {
+        "sourceCode": "P4.2",
+        "questionId": "17d94be7-d73d-5b86-b95a-5b48a7ae7bb0",
+        "originalCondition": {
+          "op": "eq",
+          "questionId": "P4",
+          "value": "si"
+        },
+        "publishedCondition": {
+          "depende_de": "P4",
+          "valor_activador": "si",
+          "requerida_si_activa": true
+        }
+      },
+      {
+        "sourceCode": "P5",
+        "questionId": "adf9c0e0-5493-55ff-b7d1-89fd6524c601",
+        "originalCondition": null,
+        "publishedCondition": null
+      },
+      {
+        "sourceCode": "P5.1",
+        "questionId": "75b814e2-417b-5037-850a-a30cfe7c7acd",
+        "originalCondition": {
+          "op": "eq",
+          "questionId": "P5",
+          "value": "si"
+        },
+        "publishedCondition": {
+          "depende_de": "P5",
+          "valor_activador": "si",
+          "requerida_si_activa": true
+        }
+      },
+      {
+        "sourceCode": "P5.2",
+        "questionId": "22da5d8d-5e3a-578d-af82-ff03c5988d50",
+        "originalCondition": {
+          "op": "eq",
+          "questionId": "P5",
+          "value": "si"
+        },
+        "publishedCondition": {
+          "depende_de": "P5",
+          "valor_activador": "si",
+          "requerida_si_activa": true
+        }
+      },
+      {
+        "sourceCode": "P5.3",
+        "questionId": "6485f59f-b405-587e-9356-e9d86d77617c",
+        "originalCondition": {
+          "op": "eq",
+          "questionId": "P5",
+          "value": "si"
+        },
+        "publishedCondition": {
+          "depende_de": "P5",
+          "valor_activador": "si",
+          "requerida_si_activa": true
+        }
+      },
+      {
+        "sourceCode": "P6",
+        "questionId": "050b468b-72b9-5f02-80a3-a82dc88d3d97",
+        "originalCondition": null,
+        "publishedCondition": null
+      },
+      {
+        "sourceCode": "P6.1",
+        "questionId": "7820ab08-780f-5cd4-8033-f4696e820439",
+        "originalCondition": {
+          "op": "eq",
+          "questionId": "P6",
+          "value": "si"
+        },
+        "publishedCondition": {
+          "depende_de": "P6",
+          "valor_activador": "si",
+          "requerida_si_activa": true
+        }
+      },
+      {
+        "sourceCode": "P6.2",
+        "questionId": "c8b9ef40-bdb9-59b2-8522-2aa57ed5b65e",
+        "originalCondition": {
+          "op": "all",
+          "conditions": [
+            {
+              "op": "eq",
+              "questionId": "P6",
+              "value": "si"
+            },
+            {
+              "op": "eq",
+              "questionId": "P0.1",
+              "value": "no"
+            }
+          ]
+        },
+        "publishedCondition": {
+          "op": "todas",
+          "condiciones": [
+            {
+              "op": "igual",
+              "codigo": "P6",
+              "valor": "si"
+            },
+            {
+              "op": "igual",
+              "codigo": "P0.1",
+              "valor": "no"
+            }
+          ]
+        }
+      },
+      {
+        "sourceCode": "P7",
+        "questionId": "5949fbe0-d1e7-5f73-89f7-27690aead369",
+        "originalCondition": null,
+        "publishedCondition": null
+      },
+      {
+        "sourceCode": "P7.1",
+        "questionId": "60384164-ea6c-5c1d-8dea-db58103fdad3",
+        "originalCondition": {
+          "op": "eq",
+          "questionId": "P7",
+          "value": "si"
+        },
+        "publishedCondition": {
+          "depende_de": "P7",
+          "valor_activador": "si",
+          "requerida_si_activa": true
+        }
+      },
+      {
+        "sourceCode": "P8",
+        "questionId": "15bb3d5f-9cc0-5640-ab54-a79097516865",
+        "originalCondition": null,
+        "publishedCondition": null
+      },
+      {
+        "sourceCode": "P8.1",
+        "questionId": "807be783-830c-5dd9-b6d8-511aa35bf2b4",
+        "originalCondition": {
+          "op": "eq",
+          "questionId": "P8",
+          "value": "si"
+        },
+        "publishedCondition": {
+          "depende_de": "P8",
+          "valor_activador": "si",
+          "requerida_si_activa": true
+        }
+      },
+      {
+        "sourceCode": "P8.2",
+        "questionId": "53fee419-7ea3-5c0f-b353-60bde1ac76ea",
+        "originalCondition": {
+          "op": "eq",
+          "questionId": "P8",
+          "value": "si"
+        },
+        "publishedCondition": {
+          "depende_de": "P8",
+          "valor_activador": "si",
+          "requerida_si_activa": true
+        }
+      },
+      {
+        "sourceCode": "P8.3",
+        "questionId": "845a2723-0c25-552d-aebb-1b042f2465a0",
+        "originalCondition": {
+          "op": "eq",
+          "questionId": "P8",
+          "value": "si"
+        },
+        "publishedCondition": {
+          "depende_de": "P8",
+          "valor_activador": "si",
+          "requerida_si_activa": true
+        }
+      },
+      {
+        "sourceCode": "P9.A",
+        "questionId": "afaa20bd-edc8-5977-ad1b-57ff7e9f0367",
+        "originalCondition": null,
+        "publishedCondition": null
+      },
+      {
+        "sourceCode": "P9.A.1",
+        "questionId": "75d770e6-20cd-574c-8988-c5037fefd1f7",
+        "originalCondition": {
+          "op": "eq",
+          "questionId": "P9.A",
+          "value": "si"
+        },
+        "publishedCondition": {
+          "depende_de": "P9.A",
+          "valor_activador": "si",
+          "requerida_si_activa": true
+        }
+      },
+      {
+        "sourceCode": "P9.B",
+        "questionId": "eba3ee50-b7aa-5a44-be05-ef5121f70f76",
+        "originalCondition": null,
+        "publishedCondition": null
+      },
+      {
+        "sourceCode": "P9.B.1",
+        "questionId": "ef33c17d-91f5-5a5c-940c-098fc0d789e1",
+        "originalCondition": {
+          "op": "eq",
+          "questionId": "P9.B",
+          "value": "si"
+        },
+        "publishedCondition": {
+          "depende_de": "P9.B",
+          "valor_activador": "si",
+          "requerida_si_activa": true
+        }
+      },
+      {
+        "sourceCode": "P9.B.2",
+        "questionId": "977d8a51-b57b-5a23-b732-1d5acb76699c",
+        "originalCondition": {
+          "op": "eq",
+          "questionId": "P9.B",
+          "value": "si"
+        },
+        "publishedCondition": {
+          "depende_de": "P9.B",
+          "valor_activador": "si",
+          "requerida_si_activa": true
+        }
+      },
+      {
+        "sourceCode": "P10",
+        "questionId": "24b670c9-0889-52ef-9250-551c53c91914",
+        "originalCondition": null,
+        "publishedCondition": null
+      }
+    ],
+    "clinicalContentChanged": false,
+    "provisionalReferenceUnchanged": true
+  }
+}

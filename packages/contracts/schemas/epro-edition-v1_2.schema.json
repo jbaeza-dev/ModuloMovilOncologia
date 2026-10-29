@@ -1,0 +1,300 @@
+{
+  "description": "Esquema de respuesta completa de un formulario publicado.",
+  "properties": {
+    "id": {
+      "description": "UUID del formulario",
+      "example": "3fa85f64-5717-4562-b3fc-2c963f66afa6",
+      "format": "uuid",
+      "title": "Id",
+      "type": "string"
+    },
+    "codigo": {
+      "description": "Código único identificador del formulario",
+      "example": "FORM_QUIMIO_MVP",
+      "title": "Codigo",
+      "type": "string"
+    },
+    "titulo": {
+      "description": "Título principal del instrumento",
+      "example": "Cuestionario de Seguimiento - Quimioterapia",
+      "title": "Titulo",
+      "type": "string"
+    },
+    "descripcion": {
+      "anyOf": [
+        {
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "description": "Descripción explicativa",
+      "example": "Formulario diario de monitoreo de síntomas para quimioterapia",
+      "title": "Descripcion"
+    },
+    "tratamiento": {
+      "description": "Tipo de tratamiento médico asociado",
+      "example": "quimioterapia",
+      "title": "Tratamiento",
+      "type": "string"
+    },
+    "version": {
+      "description": "Número de versión publicada inmutable",
+      "example": 1,
+      "title": "Version",
+      "type": "integer",
+      "minimum": 1
+    },
+    "activo": {
+      "description": "Indica si es la versión activa del tratamiento",
+      "example": true,
+      "title": "Activo",
+      "type": "boolean"
+    },
+    "version_condiciones": {
+      "type": "integer",
+      "const": 1
+    },
+    "preguntas": {
+      "description": "Lista ordenada de preguntas",
+      "items": {
+        "description": "Esquema de pregunta en un formulario de seguimiento.",
+        "properties": {
+          "id": {
+            "description": "UUID de la pregunta",
+            "example": "7c9e6679-7425-40de-944b-e07fc1f90ae7",
+            "format": "uuid",
+            "title": "Id",
+            "type": "string"
+          },
+          "codigo": {
+            "description": "Código estable de la pregunta",
+            "example": "PREG_NAUSEAS",
+            "title": "Codigo",
+            "type": "string"
+          },
+          "titulo": {
+            "description": "Título o texto de la pregunta",
+            "example": "¿Ha presentado náuseas en las últimas 24 horas?",
+            "title": "Titulo",
+            "type": "string"
+          },
+          "texto": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "description": "Texto largo o de ayuda",
+            "example": "¿Ha presentado náuseas en las últimas 24 horas?",
+            "title": "Texto"
+          },
+          "tipo": {
+            "description": "Valores públicos canónicos del tipo de pregunta, no los aliases históricos en mayúsculas.",
+            "example": "opcion_unica",
+            "title": "Tipo",
+            "type": "string",
+            "enum": [
+              "texto_libre",
+              "numerico",
+              "opcion_unica",
+              "opcion_multiple",
+              "escala_likert",
+              "booleano"
+            ]
+          },
+          "requerida": {
+            "default": true,
+            "description": "Obligatoriedad general. En contrato condicional 1, una dependiente usa requerida_si_activa solo cuando aplica.",
+            "example": true,
+            "title": "Requerida",
+            "type": "boolean"
+          },
+          "orden": {
+            "description": "Posición o secuencia en el cuestionario",
+            "example": 1,
+            "title": "Orden",
+            "type": "integer"
+          },
+          "opciones": {
+            "description": "Lista de opciones configuradas",
+            "items": {
+              "$ref": "urn:quimiocare:clinical#/components/schemas/OpcionPreguntaSchema"
+            },
+            "title": "Opciones",
+            "type": "array"
+          },
+          "configuracion": {
+            "oneOf": [
+              {
+                "$ref": "urn:quimiocare:clinical#/components/schemas/ConfiguracionEproRC32"
+              },
+              {
+                "$ref": "#/$defs/compoundConfiguration"
+              }
+            ]
+          }
+        },
+        "required": ["id", "codigo", "titulo", "tipo", "orden"],
+        "title": "PreguntaSchema",
+        "type": "object",
+        "allOf": [
+          {
+            "if": {
+              "properties": {
+                "configuracion": {
+                  "required": ["opciones_exclusivas"]
+                }
+              },
+              "required": ["configuracion"]
+            },
+            "then": {
+              "properties": {
+                "tipo": {
+                  "const": "opcion_multiple"
+                }
+              }
+            }
+          }
+        ]
+      },
+      "title": "Preguntas",
+      "type": "array",
+      "minItems": 1
+    },
+    "fecha_creacion": {
+      "description": "Fecha de creación del formulario en formato ISO 8601 UTC",
+      "format": "date-time",
+      "title": "Fecha Creacion",
+      "type": "string"
+    },
+    "version_reglas_compuestas": {
+      "type": "integer",
+      "const": 1
+    }
+  },
+  "required": [
+    "id",
+    "codigo",
+    "titulo",
+    "tratamiento",
+    "version",
+    "activo",
+    "preguntas",
+    "fecha_creacion",
+    "version_condiciones",
+    "version_reglas_compuestas"
+  ],
+  "title": "QuimioCare ePRO 1.2 — ampliación explícita de reglas compuestas",
+  "type": "object",
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "urn:quimiocare:epro-edition:1.2",
+  "$defs": {
+    "compoundConfiguration": {
+      "type": "object",
+      "required": ["activacion_compuesta", "requerida_si_activa"],
+      "properties": {
+        "requerida_si_activa": {
+          "type": "boolean"
+        },
+        "min_value": {
+          "type": "number"
+        },
+        "max_value": {
+          "type": "number"
+        },
+        "max_length": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "modulo": {},
+        "es_madre": {},
+        "id_web_original": {},
+        "metadata": {},
+        "opciones_exclusivas": {
+          "type": "array",
+          "items": {
+            "type": "string",
+            "minLength": 1
+          },
+          "uniqueItems": true,
+          "default": [],
+          "description": "Códigos exactos de opciones que solo pueden seleccionarse de manera individual. Solo opcion_multiple, con marcador explícito de contrato 1. Soporte de código pendiente.",
+          "x-implementation-status": "pendiente"
+        },
+        "activacion_compuesta": {
+          "$ref": "#/$defs/condition"
+        }
+      },
+      "additionalProperties": false
+    },
+    "condition": {
+      "oneOf": [
+        {
+          "type": "object",
+          "required": ["op", "condiciones"],
+          "properties": {
+            "op": {
+              "const": "todas"
+            },
+            "condiciones": {
+              "type": "array",
+              "minItems": 1,
+              "maxItems": 16,
+              "items": {
+                "$ref": "#/$defs/condition"
+              }
+            }
+          },
+          "additionalProperties": false
+        },
+        {
+          "type": "object",
+          "required": ["op", "codigo", "valor"],
+          "properties": {
+            "op": {
+              "const": "igual"
+            },
+            "codigo": {
+              "type": "string",
+              "minLength": 1
+            },
+            "valor": {
+              "type": ["string", "boolean", "number"]
+            }
+          },
+          "additionalProperties": false
+        },
+        {
+          "type": "object",
+          "required": ["op", "codigo", "valores"],
+          "properties": {
+            "op": {
+              "const": "en"
+            },
+            "codigo": {
+              "type": "string",
+              "minLength": 1
+            },
+            "valores": {
+              "type": "array",
+              "minItems": 1,
+              "maxItems": 32,
+              "uniqueItems": true,
+              "items": {
+                "type": ["string", "boolean", "number"]
+              }
+            }
+          },
+          "additionalProperties": false
+        }
+      ]
+    }
+  }
+}

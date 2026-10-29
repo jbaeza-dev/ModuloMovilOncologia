@@ -3,7 +3,7 @@ import { resolve } from 'node:path';
 import { afterEach, describe, expect, it } from 'vitest';
 import type { CommonPowerSyncDatabase } from '@powersync/common';
 import { completeDefinition, publishCatalog } from './catalog';
-import { createSqliteTestHarness } from '../local/testing/sqlite-test-harness';
+import { createSqliteTestHarness, patientA, patientB } from '../local/testing/sqlite-test-harness';
 import { migrateDatabase } from '../local/migrations';
 
 const fixture = JSON.parse(
@@ -38,6 +38,42 @@ const server = (
   }) as unknown as CommonPowerSyncDatabase;
 
 describe('P04 complete catalog publication', () => {
+  it('retires a formerly published image only for the active patient, preserving unrelated legacy copies', async () => {
+    const local = harness.open();
+    await migrateDatabase(local);
+    const image = {
+      id: '8384c56c-0b01-5629-9108-0ec27217646e',
+      titulo: 'Synthetic',
+      descripcion: null,
+      tipo: 'imagen',
+      url: 'https://example.test/one.png',
+      categoria: 'Synthetic',
+      activo: 1,
+      fecha_creacion: '2026-10-27T00:00:00Z',
+      archivo_mime: 'image/png',
+      archivo_tamano_bytes: 77,
+      archivo_revision: '38a00cb5-7f84-5076-9c22-2378dad7ea71',
+      archivo_sha256: 'a'.repeat(64),
+    };
+    for (const patient of [patientA, patientB]) {
+      await local.run('INSERT INTO paciente_cache(paciente_id,nombre,obtenido_en) VALUES (?,?,?)', [
+        patient,
+        'Synthetic',
+        '2026-10-27T00:00:00Z',
+      ]);
+      for (const content of [image.id, 'legacy-image'])
+        await local.run(
+          "INSERT INTO descarga(paciente_id,contenido_id,formato) VALUES (?,?,'png')",
+          [patient, content],
+        );
+    }
+    await publishCatalog(server([], [], [image]), local, '2026-10-27T00:00:00Z', patientA);
+    await publishCatalog(server([], [], []), local, '2026-10-27T01:00:00Z', patientA);
+    const retired = await local.all<{ paciente_id: string; contenido_id: string }>(
+      'SELECT paciente_id,contenido_id FROM descarga WHERE retirado_en IS NOT NULL',
+    );
+    expect(retired).toEqual([{ paciente_id: patientA, contenido_id: image.id }]);
+  });
   it('preserves typed false and zero in conditional configuration', () => {
     const rows = structuredClone(questions);
     rows[1].configuracion = {
@@ -67,6 +103,24 @@ describe('P04 complete catalog publication', () => {
       requerida_si_activa: true,
     };
     expect(() => completeDefinition(form, cyclic)).toThrow('Ciclo');
+  });
+  it('rejects a numeric activator for a boolean parent instead of coercing false to zero', () => {
+    const rows = structuredClone(questions);
+    rows[1].configuracion = {
+      depende_de: 'MADRE_DEMO',
+      valor_activador: 0,
+      requerida_si_activa: true,
+    };
+    expect(() => completeDefinition(form, rows)).toThrow('activador');
+  });
+  it('rejects malformed or duplicated option codes before displaying an edition', () => {
+    const rows = structuredClone(questions);
+    rows[0].tipo = 'opcion_unica';
+    rows[0].opciones = [
+      { codigo: 'A', etiqueta: 'A' },
+      { codigo: 'A', etiqueta: 'Duplicado' },
+    ];
+    expect(() => completeDefinition(form, rows)).toThrow('duplicadas');
   });
   it('keeps the last coherent snapshot if a later checkpoint is incomplete', async () => {
     const local = harness.open();

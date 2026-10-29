@@ -1,3 +1,9 @@
+import {
+  deriveConditionsVersion,
+  validateFormDefinition,
+  type FormQuestion,
+} from '@quimiocare/contracts/forms';
+import { eligibleEducation, assertEducationRevisions } from './education-catalog';
 import type { CommonPowerSyncDatabase } from '@powersync/common';
 import type { SqlConnection } from '../local/core/sql';
 import { object, isUuid } from '../../services/session/response-checks';
@@ -71,6 +77,22 @@ export function completeDefinition(
         throw new Error('Pregunta incompleta o incoherente.');
       ids.add(row.id);
       codes.add(row.codigo);
+      const optionCodes = options.map((option) => {
+        if (
+          !object(option) ||
+          typeof option.codigo !== 'string' ||
+          !option.codigo ||
+          typeof option.etiqueta !== 'string'
+        )
+          throw new Error('Opciones de pregunta inválidas.');
+        return option.codigo;
+      });
+      if (
+        new Set(optionCodes).size !== optionCodes.length ||
+        (['opcion_unica', 'opcion_multiple', 'escala_likert'].includes(String(row.tipo)) &&
+          !optionCodes.length)
+      )
+        throw new Error('Opciones de pregunta incompletas o duplicadas.');
       return {
         ...row,
         requerida: boolean(row.requerida),
@@ -80,62 +102,17 @@ export function completeDefinition(
       };
     })
     .sort((a, b) => Number(a.orden) - Number(b.orden) || String(a.id).localeCompare(String(b.id)));
-  const hasConditions = questions.some(
-    (q) =>
-      Object.hasOwn(q.configuracion, 'valor_activador') ||
-      Object.hasOwn(q.configuracion, 'requerida_si_activa'),
-  );
-  const explicit = Object.hasOwn(configuration, 'version_condiciones');
-  const version = explicit ? configuration.version_condiciones : hasConditions ? 1 : 0;
-  if (version !== 0 && version !== 1) throw new Error('Marcador condicional inválido.');
-  if (version === 0 && hasConditions)
-    throw new Error('La edición legada no puede ocultar condiciones.');
-  const parents = new Map<string, string>();
-  for (const q of questions) {
-    const config = q.configuracion;
-    if (Object.hasOwn(config, 'opciones_exclusivas')) {
-      if (
-        configuration.version_condiciones !== 1 ||
-        !explicit ||
-        q.tipo !== 'opcion_multiple' ||
-        !Array.isArray(config.opciones_exclusivas) ||
-        config.opciones_exclusivas.some((v) => typeof v !== 'string') ||
-        new Set(config.opciones_exclusivas).size !== config.opciones_exclusivas.length
-      )
-        throw new Error('Exclusividad de edición inválida.');
-      const optionCodes = new Set(
-        q.opciones.map((o) => (object(o) ? (o.codigo ?? o.value ?? o.valor) : undefined)),
-      );
-      if (config.opciones_exclusivas.some((v) => !optionCodes.has(v)))
-        throw new Error('Opción exclusiva ajena a la pregunta.');
-    }
-    if (
-      version === 1 &&
-      ['depende_de', 'valor_activador', 'requerida_si_activa'].some((k) => Object.hasOwn(config, k))
-    ) {
-      const parent = questions.find((p) => p.codigo === config.depende_de);
-      if (
-        !parent ||
-        parent.id === q.id ||
-        typeof config.depende_de !== 'string' ||
-        !Object.hasOwn(config, 'valor_activador') ||
-        typeof config.requerida_si_activa !== 'boolean' ||
-        !['booleano', 'numerico', 'opcion_unica', 'escala_likert'].includes(String(parent.tipo)) ||
-        !['string', 'boolean', 'number'].includes(typeof config.valor_activador)
-      )
-        throw new Error('Dependencia condicional inválida.');
-      parents.set(String(q.codigo), String(parent.codigo));
-    }
-  }
-  for (const code of parents.keys()) {
-    const seen = new Set<string>();
-    let current: string | undefined = code;
-    while (current) {
-      if (seen.has(current)) throw new Error('Ciclo condicional inválido.');
-      seen.add(current);
-      current = parents.get(current);
-    }
-  }
+  const typedQuestions = questions as unknown as FormQuestion[];
+  const version = deriveConditionsVersion(configuration, typedQuestions);
+  validateFormDefinition({
+    id: String(form.id),
+    version: Number(form.version),
+    version_condiciones: version,
+    ...(Object.hasOwn(configuration, 'version_reglas_compuestas')
+      ? { version_reglas_compuestas: configuration.version_reglas_compuestas as number }
+      : {}),
+    preguntas: typedQuestions,
+  });
   return {
     form: {
       ...form,
@@ -152,6 +129,7 @@ export async function publishCatalog(
   db: CommonPowerSyncDatabase,
   local: SqlConnection,
   completedAt: string,
+  localPatientId?: string,
 ) {
   const input = await db.readTransaction(async (tx) => ({
     forms: await tx.getAll<Record<string, unknown>>('SELECT * FROM formulario ORDER BY id'),
@@ -181,35 +159,16 @@ export async function publishCatalog(
     }
     snapshots.push(next);
   }
-  for (const row of input.education) {
-    if (
-      !isUuid(row.id) ||
-      !boolean(row.activo) ||
-      !['imagen', 'video'].includes(String(row.tipo)) ||
-      typeof row.descripcion !== 'string' ||
-      typeof row.url !== 'string' ||
-      !row.url.trim() ||
-      typeof row.categoria !== 'string' ||
-      !row.categoria.trim()
-    )
-      throw new Error('Catálogo educativo incompleto.');
-    if (
-      row.tipo === 'imagen' &&
-      (!['image/png', 'image/jpeg'].includes(String(row.archivo_mime)) ||
-        !Number.isInteger(row.archivo_tamano_bytes) ||
-        Number(row.archivo_tamano_bytes) <= 0 ||
-        !isUuid(row.archivo_revision) ||
-        !/^[0-9a-f]{64}$/.test(String(row.archivo_sha256)))
-    )
-      throw new Error('Imagen sin metadata de publicación.');
-    if (
-      row.tipo === 'video' &&
-      ['archivo_mime', 'archivo_tamano_bytes', 'archivo_revision', 'archivo_sha256'].some(
-        (k) => row[k] !== null,
-      )
-    )
-      throw new Error('Video con metadata de archivo no permitida.');
-  }
+  if (input.education.some((row) => !['imagen', 'video'].includes(String(row.tipo))))
+    throw new Error('El catálogo educativo replicó un formato no permitido.');
+  const education = eligibleEducation(input.education);
+  const previousEducation = await local.first<{ value_json: string }>(
+    "SELECT value_json FROM qc_storage_control WHERE id='education:checkpoint'",
+  );
+  const previousRows: Record<string, unknown>[] = previousEducation
+    ? JSON.parse(previousEducation.value_json)
+    : [];
+  assertEducationRevisions(previousRows, education);
   await local.transaction(async (tx) => {
     await tx.run('UPDATE qc_definition_snapshot SET retired=1');
     for (const snapshot of snapshots) {
@@ -218,9 +177,19 @@ export async function publishCatalog(
         [String(snapshot.form.id), canonical(snapshot), completedAt, snapshot.form.activo ? 0 : 1],
       );
     }
+    if (localPatientId) {
+      const visible = new Set(education.map((row) => row.id));
+      for (const old of previousRows) {
+        if (typeof old.id === 'string' && !visible.has(old.id))
+          await tx.run(
+            'UPDATE descarga SET retirado_en=? WHERE paciente_id=? AND contenido_id=? AND retirado_en IS NULL',
+            [completedAt, localPatientId, old.id],
+          );
+      }
+    }
     await tx.run(
       'INSERT INTO qc_storage_control(id,value_json) VALUES (?,?) ON CONFLICT(id) DO UPDATE SET value_json=excluded.value_json',
-      ['education:checkpoint', canonical(input.education)],
+      ['education:checkpoint', canonical(education)],
     );
     await tx.run(
       'INSERT INTO qc_catalog_status(id,completed_at,error_code) VALUES (?,?,NULL) ON CONFLICT(id) DO UPDATE SET completed_at=excluded.completed_at,error_code=NULL',
@@ -230,6 +199,6 @@ export async function publishCatalog(
   return {
     forms: snapshots.length,
     questions: input.questions.length,
-    education: input.education.length,
+    education: education.length,
   };
 }

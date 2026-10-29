@@ -1,4 +1,5 @@
 import { randomUUID } from 'node:crypto';
+import { isDeepStrictEqual } from 'node:util';
 import { fixtures } from '@quimiocare/contracts';
 import type { Database, SqlClient } from './db.js';
 import { one, transaction } from './db.js';
@@ -15,8 +16,12 @@ export const FORMS = [
   (fixtures.conditions as unknown as { formulario: FormDefinition }).formulario,
   (fixtures.exclusivityExamples as unknown as { formulario: FormDefinition }).formulario,
 ];
+export const FOLLOWUP_FORM = fixtures.followupForm.formulario as unknown as FormDefinition;
+export const ACTIVE_FORMS = [FOLLOWUP_FORM, FORMS[1]!, FORMS[2]!];
 export const ORIGINAL_TERMS_ID = '783218b5-da7c-5495-83b4-dfd5330ced29';
 export const NEW_TERMS_ID = 'e93105f1-ffcf-5b99-84af-772808e39991';
+export const APPROVED_TERMS_ID = fixtures.approvedTerms.id;
+export const FUTURE_TERMS_ID = '788d0474-3c28-5833-9b04-4cdfb6919ef8';
 export const EDUCATION_ID = '8384c56c-0b01-5629-9108-0ec27217646e';
 
 async function seedInto(client: SqlClient, publicBaseUrl: string): Promise<void> {
@@ -61,11 +66,45 @@ async function seedInto(client: SqlClient, publicBaseUrl: string): Promise<void>
       [id, 'TERMINOS_PLATAFORMA', version, definition],
     );
   }
-  for (const form of FORMS) {
-    const config: ObjectValue = {
-      version_condiciones: form.version_condiciones,
-      provisional: true,
-    };
+  // New identities preserve all previously accepted definitions byte-for-content.
+  const approved = structuredClone(fixtures.approvedTerms);
+  for (const definition of [
+    approved,
+    {
+      ...approved,
+      id: FUTURE_TERMS_ID,
+      version: '4.0',
+      titulo: 'Prueba de actualización de términos — QuimioCare',
+      texto_completo:
+        'EDICIÓN TÉCNICA DE PRUEBA: este escenario simula una actualización; no acredita una nueva aprobación institucional.\n\n' +
+        approved.texto_completo,
+    },
+  ]) {
+    await client.query(
+      'INSERT INTO qc_demo_terminos(id,codigo,version,definicion) VALUES($1,$2,$3,$4) ON CONFLICT(id) DO NOTHING',
+      [definition.id, definition.codigo, definition.version, definition],
+    );
+    const stored = await one<{ definicion: ObjectValue }>(
+      client,
+      'SELECT definicion FROM qc_demo_terminos WHERE id=$1',
+      [definition.id],
+    );
+    if (!stored || !isDeepStrictEqual(stored.definicion, definition))
+      throw new ApiError(
+        503,
+        'HTTP_503',
+        'La edición de términos ya existe con otro contenido; se requiere una identidad nueva.',
+      );
+  }
+  for (const form of [...FORMS, FOLLOWUP_FORM]) {
+    const config: ObjectValue =
+      form.id === FOLLOWUP_FORM.id
+        ? fixtures.followupForm.configuracion_formulario_en_origen
+        : {
+            version_condiciones: form.version_condiciones,
+            provisional: true,
+          };
+
     await client.query(
       `INSERT INTO formulario(id,codigo,titulo,descripcion,tratamiento,version,activo,configuracion,fecha_creacion)
       VALUES($1,$2,$3,$4,$5,$6,$7,$8,$9) ON CONFLICT DO NOTHING`,
@@ -76,11 +115,16 @@ async function seedInto(client: SqlClient, publicBaseUrl: string): Promise<void>
         form.descripcion ?? null,
         form.tratamiento,
         form.version,
-        form.activo,
+        form.id === FOLLOWUP_FORM.id,
         config,
         form.fecha_creacion,
       ],
     );
+    if (form.id !== FOLLOWUP_FORM.id)
+      await client.query('UPDATE formulario SET activo=false WHERE id=$1 AND codigo=$2', [
+        form.id,
+        form.codigo,
+      ]);
     for (const q of form.preguntas) {
       await client.query(
         `INSERT INTO pregunta(id,formulario_id,codigo,titulo,texto,tipo,requerida,orden,opciones,configuracion)

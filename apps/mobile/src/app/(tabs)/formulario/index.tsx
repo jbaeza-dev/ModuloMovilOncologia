@@ -1,1 +1,1 @@
-export { DailyFollowUpScreen as default } from '../../../features/medical-forms/DailyFollowUpScreen';
+export { GlobalEproHubScreen as default } from '../../../features/medical-forms/GlobalEproScreens';

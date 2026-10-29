@@ -25,6 +25,10 @@ export function formatVitalsSummary(
 
   if (record.presion_sistolica !== null && record.presion_diastolica !== null) {
     parts.push(`Presión: ${record.presion_sistolica}/${record.presion_diastolica} mmHg`);
+  } else if (record.presion_sistolica !== null) {
+    parts.push(`Presión sistólica: ${record.presion_sistolica} mmHg`);
+  } else if (record.presion_diastolica !== null) {
+    parts.push(`Presión diastólica: ${record.presion_diastolica} mmHg`);
   }
 
   if (record.temperatura !== null) {

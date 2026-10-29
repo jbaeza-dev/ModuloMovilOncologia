@@ -9,6 +9,17 @@ const mockRouterBack = jest.fn();
 const mockRouterReplace = jest.fn();
 const mockRouterNavigate = jest.fn();
 const mockRouterPush = jest.fn();
+const mockEpro = {
+  hub: jest.fn().mockResolvedValue({
+    status: { completed_at: '2026-10-28T01:00:00Z' },
+    current: {},
+    drafts: [],
+    captures: [],
+  }),
+};
+jest.mock('../features/medical-forms/use-epro-repository', () => ({
+  useEproRepository: () => mockEpro,
+}));
 const mockRouterCanGoBack = jest.fn(() => mockNavIndex > 0);
 
 jest.mock('expo-router', () => {
@@ -386,9 +397,11 @@ describe('Screen, NavigationCard, rutas de Inicio y reinicio dirigido (Bloque 1 
     alertSpy.mockRestore();
   });
 
-  it('P-05: SymptomDataScreen presenta el encabezado «Registrar síntomas»', async () => {
+  it('P-05: conserva síntomas libres como historial y dirige las capturas nuevas al ePRO', async () => {
     await render(<SymptomDataScreen />);
-    expect(screen.getByText('Registrar síntomas')).toBeTruthy();
+    expect(screen.getByText('Historial de síntomas libres')).toBeTruthy();
+    expect(screen.queryByLabelText('Describe el síntoma')).toBeNull();
+    expect(screen.getByRole('button', { name: 'Abrir seguimiento ePRO' })).toBeTruthy();
   });
 
   it('RegisterVitalsDataScreen distingue flecha Volver (router.back) de Ver historial de mediciones (router.navigate)', async () => {

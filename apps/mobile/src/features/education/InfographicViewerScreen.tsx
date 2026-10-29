@@ -1,3 +1,4 @@
+import { verifiedLocalImageCopy } from './infographic-storage-service';
 import Feather from '@expo/vector-icons/Feather';
 import { Asset } from 'expo-asset';
 import { router, useLocalSearchParams } from 'expo-router';
@@ -23,7 +24,7 @@ import { useFocusedValue } from '../../hooks/use-local-query';
 import { useLocalData } from '../../providers/LocalDataProvider';
 import { useAppTheme } from '../../providers/ThemeProvider';
 import { theme } from '../../theme';
-import { getEducationalCatalogReader } from './educational-catalog-service';
+import { useEducationalCatalog } from './use-educational-catalog';
 import { ZoomableImageView, type ZoomableImageViewRef } from './ZoomableImageView';
 
 const BUNDLED_ASSETS: Record<string, number> = {
@@ -32,6 +33,7 @@ const BUNDLED_ASSETS: Record<string, number> = {
 };
 
 export function InfographicViewerScreen() {
+  const catalogReader = useEducationalCatalog();
   const { theme: appTheme } = useAppTheme();
   const { patientId, repository, isClosing } = useLocalData();
   const styles = useStyles();
@@ -80,8 +82,8 @@ export function InfographicViewerScreen() {
 
   const loadResourceData = useCallback(async () => {
     if (!recurso) return null;
-    return getEducationalCatalogReader().getResourceById(recurso);
-  }, [recurso]);
+    return catalogReader.getResourceById(recurso);
+  }, [recurso, catalogReader]);
 
   const { value: catalogResource, loading: loadingCatalog } = useFocusedValue(
     loadResourceData,
@@ -90,13 +92,19 @@ export function InfographicViewerScreen() {
 
   const loadLocalCopy = useCallback(async () => {
     if (!repository || !patientId || !recurso) return null;
-    return repository.education.getLocalCopy(recurso);
+    const copy = await repository.education.getLocalCopy(recurso);
+    return copy ? verifiedLocalImageCopy(copy, patientId) : null;
   }, [repository, patientId, recurso]);
 
   const { value: localCopy, loading: loadingCopy } = useFocusedValue(loadLocalCopy, null);
 
+  const hasOlderCopy = Boolean(
+    localCopy &&
+    catalogResource &&
+    localCopy.metadataLocal?.versionOrigen !== catalogResource.version,
+  );
   const effectiveResource: EducationalResource | null =
-    catalogResource ??
+    (hasOlderCopy ? null : catalogResource) ??
     (localCopy
       ? {
           id: recurso ?? localCopy.contentId,
@@ -125,6 +133,13 @@ export function InfographicViewerScreen() {
     async function resolveSource() {
       // 1. Prioridad: copia local descargada si existe físicamente
       if (patientId && localCopy?.rutaRelativa) {
+        if (localCopy.estado === 'error') {
+          if (active) {
+            setResolvedImageUri(null);
+            setImageError(true);
+          }
+          return;
+        }
         const fileOk = resourceFileExists(patientId, localCopy.contentId, localCopy.rutaRelativa);
         if (fileOk) {
           if (active) setResolvedImageUri(localCopy.rutaRelativa);
@@ -242,15 +257,73 @@ export function InfographicViewerScreen() {
 
   const accessibleTextContent =
     effectiveResource.textoAccesible ??
-    catalogResource?.textoAccesible ??
     localCopy?.metadataLocal?.textoAccesible ??
     effectiveResource.description ??
     'No hay descripción textual disponible para esta infografía.';
 
   return (
-    <View style={styles.rootContainer}>
+    <SafeAreaView style={styles.rootContainer}>
+      {/* Controles fuera del área de imagen para no ocultar el título del original */}
+      <View style={styles.headerSafeArea}>
+        <View style={styles.headerBar}>
+          <Pressable
+            accessibilityRole="button"
+            accessibilityLabel="Cerrar visor de infografía"
+            onPress={handleClose}
+            style={styles.closeButton}
+          >
+            <Feather name="x" size={24} color="#FFFFFF" />
+            <Text style={styles.closeButtonText}>Cerrar</Text>
+          </Pressable>
+
+          <Text
+            accessibilityRole="header"
+            numberOfLines={1}
+            ellipsizeMode="tail"
+            style={styles.headerTitle}
+          >
+            {effectiveResource.title}
+          </Text>
+
+          <View style={styles.headerActions}>
+            <Pressable
+              ref={textButtonRef}
+              collapsable={false}
+              accessibilityRole="button"
+              accessibilityLabel="Leer contenido en texto accesible de la infografía"
+              onPress={handleOpenModal}
+              style={styles.headerActionButton}
+            >
+              <Feather name="file-text" size={18} color="#FFFFFF" />
+              <Text style={styles.headerActionButtonText}>Texto accesible</Text>
+            </Pressable>
+
+            <Pressable
+              accessibilityRole="button"
+              accessibilityLabel="Opciones accesibles de zoom"
+              accessibilityState={{ expanded: showZoomOptions }}
+              onPress={() => setShowZoomOptions((prev) => !prev)}
+              style={[
+                styles.headerActionButton,
+                showZoomOptions && styles.headerActionButtonActive,
+              ]}
+            >
+              <Feather name="zoom-in" size={18} color="#FFFFFF" />
+              <Text style={styles.headerActionButtonText}>Zoom</Text>
+            </Pressable>
+          </View>
+        </View>
+      </View>
+
       {/* 1. Visor interactivo principal a pantalla completa con fondo oscuro */}
       <View style={styles.viewerFrame}>
+        {localCopy &&
+        catalogResource &&
+        localCopy.metadataLocal?.versionOrigen !== catalogResource.version ? (
+          <BodyText>
+            Copia de una revisión anterior; hay una nueva publicación para descargar.
+          </BodyText>
+        ) : null}
         {imageError ? (
           <View style={styles.errorContainer}>
             <Feather name="alert-triangle" size={36} color={appTheme.colors.error} />
@@ -302,59 +375,7 @@ export function InfographicViewerScreen() {
         ) : null}
       </View>
 
-      {/* 2. Barra superior superpuesta con botón de cierre, título y accesibilidad */}
-      <SafeAreaView edges={['top', 'left', 'right']} style={styles.topOverlaySafeArea}>
-        <View style={styles.headerBar}>
-          <Pressable
-            accessibilityRole="button"
-            accessibilityLabel="Cerrar visor de infografía"
-            onPress={handleClose}
-            style={styles.closeButton}
-          >
-            <Feather name="x" size={24} color="#FFFFFF" />
-            <Text style={styles.closeButtonText}>Cerrar</Text>
-          </Pressable>
-
-          <Text
-            accessibilityRole="header"
-            numberOfLines={1}
-            ellipsizeMode="tail"
-            style={styles.headerTitle}
-          >
-            {effectiveResource.title}
-          </Text>
-
-          <View style={styles.headerActions}>
-            <Pressable
-              ref={textButtonRef}
-              collapsable={false}
-              accessibilityRole="button"
-              accessibilityLabel="Leer contenido en texto accesible de la infografía"
-              onPress={handleOpenModal}
-              style={styles.headerActionButton}
-            >
-              <Feather name="file-text" size={18} color="#FFFFFF" />
-              <Text style={styles.headerActionButtonText}>Texto accesible</Text>
-            </Pressable>
-
-            <Pressable
-              accessibilityRole="button"
-              accessibilityLabel="Opciones accesibles de zoom"
-              accessibilityState={{ expanded: showZoomOptions }}
-              onPress={() => setShowZoomOptions((prev) => !prev)}
-              style={[
-                styles.headerActionButton,
-                showZoomOptions && styles.headerActionButtonActive,
-              ]}
-            >
-              <Feather name="zoom-in" size={18} color="#FFFFFF" />
-              <Text style={styles.headerActionButtonText}>Zoom</Text>
-            </Pressable>
-          </View>
-        </View>
-      </SafeAreaView>
-
-      {/* 3. Controles alternativos de ampliación (discretos y flotantes) */}
+      {/* Controles fuera de la imagen y del área de navegación del sistema. */}
       {showZoomOptions ? (
         <View
           style={styles.floatingZoomContainer}
@@ -410,6 +431,7 @@ export function InfographicViewerScreen() {
             <View style={styles.modalHeader}>
               <View
                 ref={modalTitleRef}
+                style={styles.modalTitle}
                 collapsable={false}
                 accessible={true}
                 accessibilityRole="header"
@@ -436,7 +458,7 @@ export function InfographicViewerScreen() {
           </View>
         </View>
       </Modal>
-    </View>
+    </SafeAreaView>
   );
 }
 
@@ -458,16 +480,10 @@ function useStyles() {
       justifyContent: 'center',
       alignItems: 'center',
     },
-    topOverlaySafeArea: {
-      position: 'absolute',
-      top: 0,
-      left: 0,
-      right: 0,
-      zIndex: 20,
-      backgroundColor: 'rgba(0, 0, 0, 0.72)',
-    },
+    headerSafeArea: { backgroundColor: '#141414' },
     headerBar: {
       flexDirection: 'row',
+      flexWrap: 'wrap',
       alignItems: 'center',
       paddingHorizontal: 12,
       paddingVertical: 8,
@@ -495,11 +511,14 @@ function useStyles() {
       marginHorizontal: 4,
     },
     headerActions: {
+      width: '100%',
       flexDirection: 'row',
+      flexWrap: 'wrap',
       alignItems: 'center',
       gap: 6,
     },
     headerActionButton: {
+      flexShrink: 1,
       flexDirection: 'row',
       alignItems: 'center',
       minWidth: 48,
@@ -513,15 +532,15 @@ function useStyles() {
       backgroundColor: appTheme.colors.primary,
     },
     headerActionButtonText: {
+      flexShrink: 1,
       fontSize: 13,
       fontWeight: '600',
       color: '#FFFFFF',
     },
     floatingZoomContainer: {
-      position: 'absolute',
-      bottom: 28,
       alignSelf: 'center',
       flexDirection: 'row',
+      flexWrap: 'wrap',
       alignItems: 'center',
       backgroundColor: 'rgba(20, 20, 20, 0.92)',
       borderRadius: 9999,
@@ -529,7 +548,7 @@ function useStyles() {
       paddingVertical: 4,
       borderWidth: 1,
       borderColor: 'rgba(255, 255, 255, 0.25)',
-      zIndex: 20,
+      marginVertical: 4,
       gap: 4,
     },
     floatingZoomButton: {
@@ -608,8 +627,11 @@ function useStyles() {
       justifyContent: 'space-between',
       alignItems: 'center',
       marginBottom: 12,
+      gap: 8,
     },
+    modalTitle: { flex: 1 },
     modalCloseIcon: {
+      flexShrink: 0,
       minWidth: 48,
       minHeight: 48,
       justifyContent: 'center',

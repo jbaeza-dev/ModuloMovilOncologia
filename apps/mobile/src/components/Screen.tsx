@@ -24,6 +24,7 @@ type Props = {
   title?: string;
   isRoot?: boolean;
   showProfile?: boolean;
+  showHelp?: boolean;
   scroll?: boolean;
   scrollRef?: RefObject<ScrollView | null>;
   bottomAction?: ReactNode;
@@ -36,6 +37,7 @@ export function Screen({
   title,
   isRoot = false,
   showProfile = false,
+  showHelp = false,
   scroll = true,
   scrollRef,
   bottomAction,
@@ -76,6 +78,20 @@ export function Screen({
             style={({ pressed }) => [styles.headerAction, pressed && styles.pressed]}
           >
             <Feather name="arrow-left" size={24} color={appTheme.colors.text} accessible={false} />
+          </Pressable>
+        ) : showHelp ? (
+          <Pressable
+            accessibilityRole="button"
+            accessibilityLabel="Abrir ayuda"
+            onPress={() => router.navigate('/asistente', { withAnchor: true })}
+            style={({ pressed }) => [styles.headerAction, pressed && styles.pressed]}
+          >
+            <Feather
+              name="help-circle"
+              size={24}
+              color={appTheme.colors.primary}
+              accessible={false}
+            />
           </Pressable>
         ) : (
           <View style={styles.headerAction} />

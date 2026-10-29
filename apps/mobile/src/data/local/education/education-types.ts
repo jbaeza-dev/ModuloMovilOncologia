@@ -14,6 +14,9 @@ export type EducationalAssetRef =
   | {
       type: 'remote';
       url: string;
+      expectedBytes?: number;
+      expectedSha256?: string;
+      revision?: string;
       extension: 'md' | 'png' | 'jpg' | 'jpeg';
       mimeType: string;
     };
@@ -29,6 +32,7 @@ export interface EducationalResource {
   version: string;
   estimatedReadTimeMinutes?: number;
   youtubeVideoId?: string;
+  videoUrl?: string;
   asset?: EducationalAssetRef;
   contentMarkdown?: string;
   textoAccesible?: string;
