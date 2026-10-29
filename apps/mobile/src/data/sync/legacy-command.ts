@@ -80,6 +80,7 @@ export async function transferLegacyCommand(
       payload,
       capturedAt: String(record.fecha_registro),
       legacyQueueId: queue.id,
+      registeredAt: strict ? String(history.creado_localmente_en) : null,
     });
     return 'transferred';
   }
@@ -119,6 +120,7 @@ export async function transferLegacyCommand(
     kind: 'epro',
     capturedAt: String(record.fecha_confirmacion),
     legacyQueueId: queue.id,
+    registeredAt: strict ? String(history.creado_localmente_en) : null,
     payload: {
       id: record.id,
       formulario_id: record.formulario_id,

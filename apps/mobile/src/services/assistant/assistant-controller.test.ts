@@ -3,6 +3,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { AssistantController } from './assistant-controller';
 import { FakeAssistantAdapter } from './fake-assistant-adapter';
 import { UnconfiguredAssistantAdapter } from './unconfigured-assistant-adapter';
+import { AssistantFailure } from './assistant-types';
 
 describe('AssistantController', () => {
   beforeEach(() => {
@@ -79,9 +80,9 @@ describe('AssistantController', () => {
     expect(controller.getMessages()[0].sender).toBe('user');
   });
 
-  it('timeout a los 15 s distinguiéndose de falta de red y descartando respuestas tardías', async () => {
+  it('permite el presupuesto del servidor de 60 s y vence a los 90 s descartando respuestas tardías', async () => {
     const adapter = new FakeAssistantAdapter({
-      simulatedDelayMs: 20000,
+      simulatedDelayMs: 95000,
       ignoreAbortSignal: true,
     });
     const controller = new AssistantController(adapter, 'paciente-a');
@@ -89,15 +90,17 @@ describe('AssistantController', () => {
     const sendPromise = controller.send('consulta con timeout');
     expect(controller.getState()).toBe('sending');
 
-    // Avanzar a 14.9s: aún en sending
-    await vi.advanceTimersByTimeAsync(14900);
+    await vi.advanceTimersByTimeAsync(60000);
+    expect(controller.getState()).toBe('sending');
+    // Margen de transporte y renovación antes de alcanzar 90 segundos.
+    await vi.advanceTimersByTimeAsync(29900);
     expect(controller.getState()).toBe('sending');
 
-    // Avanzar a 15s: salta el timeout
+    // A los 90 segundos vence la espera local.
     await vi.advanceTimersByTimeAsync(200);
     expect(controller.getState()).toBe('timeout');
 
-    // Permitir que el adaptador complete su promesa tardía a los 20s
+    // Permitir que el adaptador complete su promesa tardía a los 95 segundos.
     await vi.advanceTimersByTimeAsync(6000);
     await sendPromise;
 
@@ -108,14 +111,14 @@ describe('AssistantController', () => {
 
   it('si el abort por timeout dispara el catch por rechazo nativo, el estado se preserva en timeout y no cancelled', async () => {
     // FakeAssistantAdapter lanza AbortError cuando signal se aborta
-    const adapter = new FakeAssistantAdapter({ simulatedDelayMs: 20000 });
+    const adapter = new FakeAssistantAdapter({ simulatedDelayMs: 95000 });
     const controller = new AssistantController(adapter, 'paciente-a');
 
     const sendPromise = controller.send('consulta que abortará por timeout');
     expect(controller.getState()).toBe('sending');
 
-    // Avanzar a los 15 segundos: salta el timer de timeout y aborta el controller
-    await vi.advanceTimersByTimeAsync(15100);
+    // La espera de 90 segundos aborta el transporte sin confundirlo con cancelación manual.
+    await vi.advanceTimersByTimeAsync(90100);
     await sendPromise;
 
     // Aunque el adaptador rechazó con AbortError, el controlador mantiene 'timeout'
@@ -268,6 +271,64 @@ describe('AssistantController', () => {
     expect(controller.getMessages().length).toBe(50);
   });
 
+  it('salir vacía también texto de reintento y descarta una respuesta física posterior', async () => {
+    const controller = new AssistantController(
+      new FakeAssistantAdapter({ simulatedDelayMs: 100, ignoreAbortSignal: true }),
+      'paciente-a',
+    );
+    const pending = controller.send('texto privado de la sesión');
+    controller.closeConversation();
+    expect(controller.getMessages()).toEqual([]);
+    expect(controller.getLastSubmittedText()).toBeNull();
+    expect(controller.getLastRequestId()).toBeNull();
+    await vi.advanceTimersByTimeAsync(150);
+    await pending;
+    expect(controller.getState()).toBe('idle');
+    expect(controller.getMessages()).toEqual([]);
+  });
+  it('un 200 no_disponible conserva sus campos y se presenta como indisponibilidad', async () => {
+    const metadata = {
+      respuesta: 'Servicio no disponible.',
+      fuentes: [],
+      requiere_urgencia: true,
+      confianza_nivel: 'baja',
+      estado_respuesta: 'no_disponible' as const,
+      debug: null,
+    };
+    const controller = new AssistantController(
+      {
+        isConfigured: true,
+        sendMessage: async () => ({
+          replyText: metadata.respuesta,
+          isDemo: true,
+          requestId: 'consulta',
+          response: metadata,
+        }),
+      },
+      'paciente-a',
+    );
+    await controller.send('consulta');
+    expect(controller.getState()).toBe('unavailable');
+    expect(controller.getMessages()[1]?.response).toEqual(metadata);
+  });
+  it('conserva el error contractual solo en RAM y lo elimina al cerrar el chat', async () => {
+    const failure = new AssistantFailure('server_error', 503, {
+      detail: 'Servicio no disponible.',
+    });
+    const controller = new AssistantController(
+      {
+        isConfigured: true,
+        sendMessage: async () => {
+          throw failure;
+        },
+      },
+      'paciente-a',
+    );
+    await controller.send('consulta');
+    expect(controller.getLastFailure()).toBe(failure);
+    controller.closeConversation();
+    expect(controller.getLastFailure()).toBeNull();
+  });
   it('expone isConfigured según el adaptador y notifica al cambiarlo', () => {
     const unconfigured = new UnconfiguredAssistantAdapter();
     const controller = new AssistantController(unconfigured, 'paciente-a');

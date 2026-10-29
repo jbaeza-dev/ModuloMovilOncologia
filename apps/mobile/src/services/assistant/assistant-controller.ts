@@ -5,6 +5,7 @@ import type {
   AssistantState,
   AttemptRecord,
 } from './assistant-types';
+import { AssistantFailure } from './assistant-types';
 
 export class AssistantController {
   private state: AssistantState = 'idle';
@@ -14,6 +15,7 @@ export class AssistantController {
   private contextEpoch = 0;
   private lastSubmittedText: string | null = null;
   private lastRequestId: string | null = null;
+  private lastFailure: AssistantFailure | null = null;
   private readonly listeners = new Set<() => void>();
 
   constructor(
@@ -30,6 +32,7 @@ export class AssistantController {
         return v.toString(16);
       });
     },
+    private readonly timeoutMs = 90000,
   ) {}
 
   getState(): AssistantState {
@@ -51,6 +54,9 @@ export class AssistantController {
   getLastRequestId(): string | null {
     return this.lastRequestId;
   }
+  getLastFailure(): AssistantFailure | null {
+    return this.lastFailure;
+  }
 
   subscribe(listener: () => void): () => void {
     this.listeners.add(listener);
@@ -61,7 +67,7 @@ export class AssistantController {
 
   setAdapter(adapter: AssistantAdapter): void {
     this.adapter = adapter;
-    this.notify();
+    this.closeConversation();
   }
 
   async send(text: string, isRetry = false): Promise<void> {
@@ -71,7 +77,7 @@ export class AssistantController {
     }
 
     const trimmed = text.trim();
-    if (!trimmed || trimmed.length > 2000) {
+    if (!trimmed || Array.from(trimmed).length > 2000) {
       return;
     }
 
@@ -97,6 +103,7 @@ export class AssistantController {
     }
 
     this.attemptGen += 1;
+    this.lastFailure = null;
     const thisAttemptGen = this.attemptGen;
     const thisEpoch = this.contextEpoch;
     const controller = new AbortController();
@@ -116,7 +123,7 @@ export class AssistantController {
           this.activeAttempt = null;
           this.setState('timeout');
         }
-      }, 15000),
+      }, this.timeoutMs),
       terminated: false,
     };
 
@@ -147,8 +154,11 @@ export class AssistantController {
         text: response.replyText,
         timestamp: new Date().toISOString(),
         isDemo: response.isDemo,
+        ...(response.response ? { response: response.response } : {}),
       });
-      this.setState('response');
+      this.setState(
+        response.response?.estado_respuesta === 'no_disponible' ? 'unavailable' : 'response',
+      );
     } catch (err) {
       clearTimeout(attempt.timer);
 
@@ -159,6 +169,7 @@ export class AssistantController {
 
       attempt.terminated = true;
       this.activeAttempt = null;
+      this.lastFailure = errorOrNull(err);
 
       if (attempt.controller.signal.aborted) {
         this.setState('cancelled');
@@ -205,6 +216,18 @@ export class AssistantController {
 
   clearMemoryMessages(): void {
     this.messages = [];
+    this.lastFailure = null;
+    this.lastSubmittedText = null;
+    this.lastRequestId = null;
+    this.notify();
+  }
+  closeConversation(): void {
+    this.abortCurrentAttempt('superseded');
+    this.messages = [];
+    this.lastFailure = null;
+    this.lastSubmittedText = null;
+    this.lastRequestId = null;
+    this.state = 'idle';
     this.notify();
   }
 
@@ -253,4 +276,7 @@ export class AssistantController {
       }
     });
   }
+}
+function errorOrNull(value: unknown): AssistantFailure | null {
+  return value instanceof AssistantFailure ? value : null;
 }

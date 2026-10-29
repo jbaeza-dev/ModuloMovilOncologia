@@ -1,7 +1,10 @@
+import type { AiChatResponse } from '@quimiocare/contracts';
+
 export type AssistantState =
   | 'idle'
   | 'sending'
   | 'response'
+  | 'unavailable'
   | 'offline'
   | 'error'
   | 'timeout'
@@ -24,6 +27,7 @@ export interface AssistantMessage {
   readonly text: string;
   readonly timestamp: string;
   readonly isDemo?: boolean;
+  readonly response?: AiChatResponse;
 }
 
 export interface SendMessageOptions {
@@ -36,6 +40,17 @@ export interface AssistantResponse {
   readonly replyText: string;
   readonly isDemo: boolean;
   readonly requestId: string;
+  readonly response?: AiChatResponse;
+}
+
+export class AssistantFailure extends Error {
+  constructor(
+    readonly code: AssistantErrorCode,
+    readonly status = 0,
+    readonly body: unknown = null,
+  ) {
+    super('No fue posible completar la consulta.');
+  }
 }
 
 export interface AttemptRecord {

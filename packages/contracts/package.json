@@ -17,6 +17,11 @@
       "types": "./src/forms.ts",
       "react-native": "./src/forms.ts",
       "import": "./dist/src/forms.js"
+    },
+    "./agenda": {
+      "types": "./src/agenda.ts",
+      "react-native": "./src/agenda.ts",
+      "import": "./dist/src/agenda.js"
     }
   },
   "scripts": {

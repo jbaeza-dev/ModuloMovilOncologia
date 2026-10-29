@@ -1,4 +1,5 @@
 import { POWERSYNC_SQL, POWERSYNC_VERSION } from './011_powersync';
+import { AGENDA_COMPARTIDA_SQL, AGENDA_COMPARTIDA_VERSION } from './013_agenda_compartida';
 import {
   PRESION_INDEPENDIENTE_SQL,
   PRESION_INDEPENDIENTE_VERSION,
@@ -35,6 +36,7 @@ export const migrations: readonly Migration[] = [
   { version: RETIRO_MARKDOWN_EDUCATIVO_VERSION, sql: RETIRO_MARKDOWN_EDUCATIVO_SQL },
   { version: POWERSYNC_VERSION, sql: POWERSYNC_SQL },
   { version: PRESION_INDEPENDIENTE_VERSION, sql: PRESION_INDEPENDIENTE_SQL },
+  { version: AGENDA_COMPARTIDA_VERSION, sql: AGENDA_COMPARTIDA_SQL },
 ];
 
 export async function migrateDatabase(

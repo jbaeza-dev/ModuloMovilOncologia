@@ -81,5 +81,23 @@ services:
       retries: 6
       start_period: 10s
 
+  gateway-worker:
+    <<: *gateway
+    restart: unless-stopped
+    command: ['node', 'apps/gateway/dist/worker.js']
+    environment:
+      APP_ENV: demo
+      GATEWAY_DATABASE_URL: postgresql://qc_gateway:${GATEWAY_DATABASE_PASSWORD:?Ejecutar configure-gateway.mjs}@postgres-origin:5432/qc_gateway_demo
+      CLINICAL_API_URL: http://clinical:3002
+      AI_API_URL: http://ai:3003
+      AUTH_EXPECTED_ISSUER: quimiocare-demo
+      AUTH_EXPECTED_AUDIENCE: authenticated
+      AUTH_ALLOWED_ALGORITHM: HS256
+      AUTH_VERIFY_KEY: ${DEMO_SIGNING_KEY:?Ejecutar configure.mjs}
+      PUSH_PROVIDER: expo
+      EXPO_ACCESS_TOKEN: ${EXPO_ACCESS_TOKEN:-}
+    depends_on:
+      gateway-migrate: { condition: service_completed_successfully }
+
   ai:
     ports: !reset []

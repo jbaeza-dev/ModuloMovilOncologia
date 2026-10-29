@@ -2,6 +2,7 @@ module.exports = {
   preset: 'jest-expo',
   moduleNameMapper: {
     '^@quimiocare/contracts/forms$': '<rootDir>/../../packages/contracts/src/forms.ts',
+    '^@quimiocare/contracts/agenda$': '<rootDir>/../../packages/contracts/src/agenda.ts',
   },
   testMatch: ['**/__tests__/**/*.ui.test.[jt]s?(x)'],
   transformIgnorePatterns: [

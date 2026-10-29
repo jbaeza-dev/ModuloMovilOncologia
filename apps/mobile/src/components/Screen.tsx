@@ -28,6 +28,7 @@ type Props = {
   scroll?: boolean;
   scrollRef?: RefObject<ScrollView | null>;
   bottomAction?: ReactNode;
+  fixedHeader?: ReactNode;
   onScroll?: (event: NativeSyntheticEvent<NativeScrollEvent>) => void;
   scrollEventThrottle?: number;
 };
@@ -41,6 +42,7 @@ export function Screen({
   scroll = true,
   scrollRef,
   bottomAction,
+  fixedHeader,
   onScroll,
   scrollEventThrottle,
 }: Props) {
@@ -113,6 +115,7 @@ export function Screen({
           <View style={styles.headerAction} />
         )}
       </View>
+      {fixedHeader}
       <KeyboardAvoidingView
         style={styles.body}
         behavior={Platform.OS === 'ios' ? 'padding' : 'height'}

@@ -5,6 +5,8 @@ export type ErrorCode =
   | 'SESION_REVOCADA'
   | 'SESION_NO_ENCONTRADA'
   | 'VERSION_EN_CONFLICTO'
+  | 'OPERACION_EN_CONFLICTO'
+  | 'RECORDATORIO_NO_ENCONTRADO'
   | 'FUNCION_NO_DISPONIBLE'
   | 'ORIGEN_NO_PERMITIDO'
   | 'DATOS_INVALIDOS'
@@ -21,7 +23,9 @@ const messages: Record<ErrorCode, string> = {
   REGISTRO_EN_CONFLICTO: 'El registro no está disponible para esta asociación.',
   SESION_REVOCADA: 'La asociación está revocada.',
   SESION_NO_ENCONTRADA: 'Asociación no encontrada.',
-  VERSION_EN_CONFLICTO: 'La asociación cambió; consulta su versión actual.',
+  VERSION_EN_CONFLICTO: 'El registro cambió; consulta su versión actual.',
+  OPERACION_EN_CONFLICTO: 'La operación no coincide con el registro original.',
+  RECORDATORIO_NO_ENCONTRADO: 'Recordatorio no encontrado.',
   FUNCION_NO_DISPONIBLE: 'Esta función aún no está habilitada.',
   ORIGEN_NO_PERMITIDO: 'Origen de navegador no habilitado.',
   DATOS_INVALIDOS: 'Solicitud incompatible con el contrato.',

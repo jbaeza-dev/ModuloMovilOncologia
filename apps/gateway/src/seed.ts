@@ -8,9 +8,10 @@ export async function seedDemo(db: ReturnType<typeof openDatabase>) {
       '964d32f1-6941-579f-9f08-b60342194da9',
       '2dcb04f2-a2ad-5ea4-b711-9acd7e570002',
     ])
-      await client.query('INSERT INTO gw_agenda(owner_id) VALUES($1) ON CONFLICT DO NOTHING', [
-        owner,
-      ]);
+      await client.query(
+        'INSERT INTO gw_agenda(owner_id,version) VALUES($1,1) ON CONFLICT DO NOTHING',
+        [owner],
+      );
   });
 }
 // Separate opt-in seed; the server never seeds or resets operational tables.

@@ -18,7 +18,15 @@ import { createLogger, VERSION } from './logging.js';
 import type { Logger } from './logging.js';
 import { authenticator } from '../auth.js';
 import { devices } from '../devices.js';
-import type { GatewayRegistroPush } from '@quimiocare/contracts';
+import { agendaStore } from '../agenda.js';
+import { dependencyClients } from '../dependencies.js';
+import type {
+  GatewayRegistroPush,
+  GatewayCrearRecordatorio,
+  GatewayReemplazarRecordatorio,
+  GatewayRegistrarCumplimientos,
+  GatewayRegistrarAcuses,
+} from '@quimiocare/contracts';
 interface RequestState {
   requestId: string;
   operation: OperationId | 'readiness' | 'unmatched';
@@ -32,6 +40,8 @@ export function createApp(
   const app = express();
   const auth = authenticator(config, log);
   const deviceStore = devices(db, config.cursorKey);
+  const agenda = agendaStore(db, config.agendaMaxReminders);
+  const dependencies = dependencyClients(config, log);
   const states = new WeakMap<Request, RequestState>();
   app.disable('x-powered-by');
   app.disable('etag');
@@ -126,6 +136,9 @@ export function createApp(
         const query = parseQuery(operation.id, url.searchParams) as {
           limit?: number;
           cursor?: string;
+          desde?: string;
+          hasta?: string;
+          version_esperada?: number;
         };
         if (operation.id === 'G-02')
           result = await deviceStore.register(principal.id, body as GatewayRegistroPush);
@@ -142,6 +155,40 @@ export function createApp(
         else if (operation.id === 'G-05') {
           await deviceStore.revoke(principal.id, String(req.params.id));
           result = { status: 204 };
+        } else if (operation.id === 'G-06') {
+          const input = body as { mensaje: string; activar_alarmas?: boolean };
+          result = await dependencies.queryAi(principal.token, {
+            mensaje: input.mensaje,
+            activar_alarmas: input.activar_alarmas ?? true,
+          });
+        } else if (operation.id === 'G-07') {
+          result = { status: 200, body: await agenda.list(principal.id, query.desde, query.hasta) };
+        } else if (operation.id === 'G-08') {
+          result = await agenda.create(principal.id, body as GatewayCrearRecordatorio);
+        } else if (operation.id === 'G-09') {
+          result = { status: 200, body: await agenda.get(principal.id, String(req.params.id)) };
+        } else if (operation.id === 'G-10') {
+          result = {
+            status: 200,
+            body: await agenda.replace(
+              principal.id,
+              String(req.params.id),
+              body as GatewayReemplazarRecordatorio,
+            ),
+          };
+        } else if (operation.id === 'G-11') {
+          await agenda.remove(principal.id, String(req.params.id), query.version_esperada!);
+          result = { status: 204 };
+        } else if (operation.id === 'G-12') {
+          result = {
+            status: 200,
+            body: await agenda.complete(principal.id, body as GatewayRegistrarCumplimientos),
+          };
+        } else if (operation.id === 'G-13') {
+          result = {
+            status: 200,
+            body: await agenda.acknowledge(principal.id, body as GatewayRegistrarAcuses),
+          };
         } else throw new GatewayError(503, 'FUNCION_NO_DISPONIBLE');
         if (!validateResponse(operation.id, result.status, result.body).valid)
           throw new GatewayError(500, 'ERROR_SERVIDOR');

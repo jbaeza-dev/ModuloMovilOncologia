@@ -2,7 +2,12 @@ import { readFile } from 'node:fs/promises';
 import { createHash } from 'node:crypto';
 import { transaction } from './database.js';
 import type { Database } from './database.js';
-export const MIGRATIONS = ['001-devices.sql', '002-agenda.sql'] as const;
+export const MIGRATIONS = [
+  '001-devices.sql',
+  '002-agenda.sql',
+  '003-agenda-history.sql',
+  '004-dispatch-attempts.sql',
+] as const;
 export async function migrate(db: Database, target: number = MIGRATIONS.length): Promise<void> {
   if (!Number.isInteger(target) || target < 1 || target > MIGRATIONS.length)
     throw new Error('Versión de migración inválida.');

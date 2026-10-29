@@ -1,7 +1,7 @@
 import Feather from '@expo/vector-icons/Feather';
 import * as Crypto from 'expo-crypto';
-import { router } from 'expo-router';
-import { useEffect, useMemo, useRef, useState } from 'react';
+import { router, useFocusEffect } from 'expo-router';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
   type NativeScrollEvent,
   type NativeSyntheticEvent,
@@ -9,7 +9,6 @@ import {
   type ScrollView,
   StyleSheet,
   Text,
-  useWindowDimensions,
   View,
 } from 'react-native';
 
@@ -26,20 +25,17 @@ import {
 import { useLocalData } from '../../providers/LocalDataProvider';
 import { useAppTheme } from '../../providers/ThemeProvider';
 import { AssistantController } from '../../services/assistant/assistant-controller';
-import { FakeAssistantAdapter } from '../../services/assistant/fake-assistant-adapter';
 import { UnconfiguredAssistantAdapter } from '../../services/assistant/unconfigured-assistant-adapter';
 import { theme } from '../../theme';
-import { isDemoMode } from '../../utils/environment';
 
 export function AssistantScreen() {
   const { theme: appTheme } = useAppTheme();
   const styles = createStyles(appTheme.colors);
   const { patientId, assistantController: contextController, closeActiveContext } = useLocalData();
-  const { fontScale, height } = useWindowDimensions();
 
   const controller = useMemo(() => {
     if (contextController) return contextController;
-    const adapter = isDemoMode() ? new FakeAssistantAdapter() : new UnconfiguredAssistantAdapter();
+    const adapter = new UnconfiguredAssistantAdapter();
     return new AssistantController(
       adapter,
       patientId,
@@ -73,22 +69,29 @@ export function AssistantScreen() {
   );
   const responseCounterRef = useRef(0);
 
-  useEffect(() => {
-    setState(controller.getState());
-    setMessages(controller.getMessages());
-    setIsConfigured(controller.isConfigured);
-    const unsubscribe = controller.subscribe(() => {
+  useFocusEffect(
+    useCallback(() => {
       setState(controller.getState());
       setMessages(controller.getMessages());
       setIsConfigured(controller.isConfigured);
-    });
-    return () => {
-      unsubscribe();
-      if (controller.getState() === 'sending') {
-        controller.abort();
-      }
-    };
-  }, [controller]);
+      const unsubscribe = controller.subscribe(() => {
+        setState(controller.getState());
+        setMessages(controller.getMessages());
+        setIsConfigured(controller.isConfigured);
+      });
+      return () => {
+        unsubscribe();
+        controller.closeConversation();
+        setState('idle');
+        setMessages([]);
+        setInput('');
+        setLatestAnnouncement('');
+        setHasNewUnreadResponse(false);
+        lastAssistantMsgIdRef.current = null;
+        lastUserMsgIdRef.current = null;
+      };
+    }, [controller, patientId]),
+  );
 
   useEffect(() => {
     if (messages.length === 0) return;
@@ -143,7 +146,19 @@ export function AssistantScreen() {
   };
 
   const isSending = state === 'sending';
-  const canSend = !isSending && input.trim().length > 0 && input.length <= 2000;
+  const characterCount = Array.from(input).length;
+  const canSend = !isSending && input.trim().length > 0 && characterCount <= 2000;
+  const fixedHeader = (
+    <View style={styles.scopeNotice}>
+      <Text accessibilityRole="header" style={styles.scopeTitle}>
+        Asistente QuimioCare
+      </Text>
+      <Text style={styles.scopeText}>
+        Este asistente ofrece orientación de autocuidado. Sus respuestas no constituyen un
+        diagnóstico ni una prescripción y no sustituyen la consulta médica.
+      </Text>
+    </View>
+  );
 
   const handleSend = () => {
     if (!canSend) return;
@@ -169,7 +184,7 @@ export function AssistantScreen() {
 
   if (!isConfigured || state === 'not_configured') {
     return (
-      <Screen title="Asistente QuimioCare">
+      <Screen fixedHeader={fixedHeader}>
         <DemoBadge />
         <InfoCard>
           <SectionTitle>Servicio no configurado</SectionTitle>
@@ -183,9 +198,8 @@ export function AssistantScreen() {
     );
   }
 
-  const isNearLimit = input.length >= 1800;
-  const isAtLimit = input.length >= 2000;
-  const useScrollableInput = fontScale > 1.3 || height < 500;
+  const isNearLimit = characterCount >= 1800;
+  const isAtLimit = characterCount >= 2000;
 
   const newResponseChip = hasNewUnreadResponse ? (
     <Pressable
@@ -207,7 +221,7 @@ export function AssistantScreen() {
         onChangeText={setInput}
         placeholder="Escribe aquí tu consulta..."
         multiline
-        maxLength={2000}
+        maxLength={4000}
       />
       <View style={styles.counterRow}>
         <Text
@@ -217,10 +231,15 @@ export function AssistantScreen() {
             isAtLimit && styles.counterTextLimit,
           ]}
         >
-          {`${input.length} / 2000`}
+          {`${characterCount} / 2000`}
           {isNearLimit ? ' (límite cercano)' : ''}
         </Text>
       </View>
+      {characterCount > 2000 ? (
+        <Text accessibilityRole="alert" style={styles.counterTextLimit}>
+          Reduce la consulta a un máximo de 2000 caracteres.
+        </Text>
+      ) : null}
       <VisualButton label="Enviar consulta" disabled={!canSend} onPress={handleSend} />
       <BodyText style={styles.disclaimerText}>
         La conversación se conserva temporalmente en memoria durante la sesión y no se registra en
@@ -231,27 +250,12 @@ export function AssistantScreen() {
 
   return (
     <Screen
-      title="Asistente QuimioCare"
+      fixedHeader={fixedHeader}
       scrollRef={scrollRef}
       onScroll={handleScroll}
       scrollEventThrottle={16}
-      bottomAction={
-        !useScrollableInput ? (
-          <>
-            {newResponseChip}
-            {inputSection}
-          </>
-        ) : undefined
-      }
     >
       <DemoBadge />
-      <InfoCard>
-        <SectionTitle>Orientación general</SectionTitle>
-        <BodyText>
-          Este asistente ofrece orientación general. No diagnostica, prescribe ni sustituye a tu
-          equipo de salud.
-        </BodyText>
-      </InfoCard>
 
       {messages.length === 0 ? (
         <EmptyState
@@ -271,16 +275,39 @@ export function AssistantScreen() {
                   styles.bubbleWrapper,
                   isUser ? styles.userWrapper : styles.assistantWrapper,
                 ]}
-                accessible={true}
-                accessibilityRole="text"
-                accessibilityLabel={`${senderLabel}: ${msg.text}`}
               >
                 <Text
                   style={isUser ? styles.userBubble : styles.assistantBubble}
-                  accessible={false}
+                  accessibilityLabel={`${senderLabel}: ${msg.text}`}
                 >
                   {msg.text}
                 </Text>
+                {msg.response ? (
+                  <View style={styles.responseMetadata}>
+                    <Text
+                      style={styles.metadataText}
+                    >{`Estado: ${responseStateLabel(msg.response.estado_respuesta)}. Confianza informada: ${msg.response.confianza_nivel}.`}</Text>
+                    <Text style={styles.metadataText}>
+                      {msg.response.fuentes.length
+                        ? `Fuentes: ${msg.response.fuentes.map((source) => `${source.tema} (guía ${source.guia})`).join(' · ')}`
+                        : 'Sin fuentes informadas.'}
+                    </Text>
+                    {msg.response.requiere_urgencia ? (
+                      <View
+                        accessible
+                        accessibilityRole="alert"
+                        accessibilityLiveRegion="assertive"
+                        style={styles.urgencyNotice}
+                      >
+                        <Text style={styles.urgencyText}>
+                          La respuesta del asistente indica urgencia. Busca ayuda por los canales
+                          habituales de salud; no esperes una respuesta ni la sincronización de la
+                          app. QuimioCare no avisó automáticamente a profesionales.
+                        </Text>
+                      </View>
+                    ) : null}
+                  </View>
+                ) : null}
               </View>
             );
           })}
@@ -297,10 +324,10 @@ export function AssistantScreen() {
         <InfoCard>
           <View
             accessibilityLiveRegion="polite"
-            accessibilityLabel="Procesando demostración"
+            accessibilityLabel="Procesando consulta"
             style={styles.sendingRow}
           >
-            <Text style={styles.sendingText}>Procesando demostración…</Text>
+            <Text style={styles.sendingText}>Procesando consulta…</Text>
             <VisualButton label="Cancelar" secondary onPress={handleCancel} />
           </View>
         </InfoCard>
@@ -308,8 +335,8 @@ export function AssistantScreen() {
         <InfoCard>
           <SectionTitle>Sin conexión</SectionTitle>
           <BodyText>
-            No se pudo conectar con el servicio del asistente. Tu consulta se conservó en este
-            dispositivo.
+            No se pudo conectar con el servicio del asistente. El texto permanece solo en memoria
+            mientras sigas en este chat.
           </BodyText>
           <VisualButton label="Reintentar consulta" onPress={handleRetry} />
         </InfoCard>
@@ -317,37 +344,67 @@ export function AssistantScreen() {
         <InfoCard>
           <SectionTitle>Tiempo de espera superado</SectionTitle>
           <BodyText>
-            La respuesta tardó más de 15 segundos en completarse. Puedes reintentar cuando gustes.
+            No se obtuvo una respuesta dentro del tiempo de espera. El servicio podría haber
+            procesado la consulta. Puedes decidir si reintentas.
           </BodyText>
           <VisualButton label="Reintentar consulta" onPress={handleRetry} />
         </InfoCard>
       ) : state === 'cancelled' ? (
         <InfoCard>
           <SectionTitle>Consulta cancelada</SectionTitle>
-          <BodyText>La consulta en curso fue cancelada por el usuario.</BodyText>
+          <BodyText>
+            Dejaste de esperar la respuesta. El servicio podría seguir procesando la consulta.
+          </BodyText>
+        </InfoCard>
+      ) : state === 'unavailable' ? (
+        <InfoCard>
+          <SectionTitle>Asistente no disponible</SectionTitle>
+          <BodyText>El servicio no tiene una respuesta disponible en este momento.</BodyText>
+          <VisualButton label="Reintentar consulta" onPress={handleRetry} />
         </InfoCard>
       ) : state === 'error' ? (
         <InfoCard>
           <SectionTitle>No se pudo procesar</SectionTitle>
           <BodyText>
-            Ocurrió un error inesperado al procesar tu consulta. Puedes intentar nuevamente.
+            {serviceDetail(controller.getLastFailure()?.body) ??
+              'No fue posible procesar la consulta. Puedes decidir si reintentas.'}
           </BodyText>
           <VisualButton label="Reintentar consulta" onPress={handleRetry} />
         </InfoCard>
       ) : null}
 
-      {useScrollableInput ? (
-        <>
-          {newResponseChip}
-          {inputSection}
-        </>
-      ) : null}
+      {newResponseChip}
+      {inputSection}
     </Screen>
   );
 }
 
 function createStyles(colors: ReturnType<typeof useAppTheme>['theme']['colors']) {
   return StyleSheet.create({
+    scopeNotice: {
+      paddingHorizontal: theme.spacing.md,
+      paddingBottom: theme.spacing.sm,
+      backgroundColor: colors.background,
+      borderBottomColor: colors.border,
+      borderBottomWidth: 1,
+    },
+    scopeTitle: {
+      fontSize: 22,
+      lineHeight: 28,
+      fontWeight: '700',
+      color: colors.text,
+      marginBottom: theme.spacing.xs,
+    },
+    scopeText: { fontSize: 14, lineHeight: 20, color: colors.text },
+    responseMetadata: { gap: theme.spacing.xs, marginTop: theme.spacing.xs, maxWidth: '100%' },
+    metadataText: { fontSize: 13, lineHeight: 19, color: colors.secondary },
+    urgencyNotice: {
+      padding: theme.spacing.sm,
+      borderColor: colors.error,
+      borderWidth: 1,
+      borderRadius: theme.radius.md,
+    },
+    urgencyText: { color: colors.error, fontSize: 14, lineHeight: 20 },
     chat: {
       gap: theme.spacing.sm,
       marginVertical: theme.spacing.sm,
@@ -451,4 +508,29 @@ function createStyles(colors: ReturnType<typeof useAppTheme>['theme']['colors'])
       color: 'transparent',
     },
   });
+}
+function responseStateLabel(state: string): string {
+  return (
+    (
+      {
+        respuesta: 'respuesta',
+        sin_informacion: 'sin información suficiente',
+        cortesia: 'cortesía',
+        no_disponible: 'no disponible',
+      } as Record<string, string>
+    )[state] ?? state
+  );
+}
+function serviceDetail(body: unknown): string | null {
+  if (!body || typeof body !== 'object' || Array.isArray(body)) return null;
+  const value = body as Record<string, unknown>;
+  if (typeof value.detail === 'string') return value.detail;
+  if (
+    value.error &&
+    typeof value.error === 'object' &&
+    'mensaje' in value.error &&
+    typeof value.error.mensaje === 'string'
+  )
+    return value.error.mensaje;
+  return null;
 }

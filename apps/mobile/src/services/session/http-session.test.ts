@@ -180,6 +180,116 @@ function harness(vault = new Vault()) {
 }
 const login = (h: ReturnType<typeof harness>, index = 0) =>
   h.session.selectDemoPatient(DEMO_USERS[index]!.id);
+describe('Transporte de chat con presupuesto propio y sin replay automático', () => {
+  it('conserva errores del gateway sin pausar el contexto clínico por una caída del asistente', async () => {
+    const h = harness();
+    await login(h);
+    const before = h.session.getSnapshot();
+    const detail = { detail: 'Servicio IA no disponible.' };
+    vi.mocked(h.fake).mockResolvedValueOnce(
+      new Response(JSON.stringify(detail), {
+        status: 503,
+        headers: { 'content-type': 'application/json' },
+      }),
+    );
+    expect(
+      await h.session.request(
+        'gateway',
+        '/api/gateway/chatbot/consulta',
+        'POST',
+        { mensaje: 'consulta' },
+        { preserveServiceErrors: true, retryUnauthorized: false },
+      ),
+    ).toEqual({ status: 503, body: detail });
+    expect(h.session.getSnapshot().stale).toBe(before.stale);
+    expect(h.session.getSnapshot().uploadAllowed).toBe(before.uploadAllowed);
+  });
+  it('no repite el POST de una consulta que recibe 401', async () => {
+    const h = harness();
+    await login(h);
+    const before = vi.mocked(h.fake).mock.calls.length;
+    vi.mocked(h.fake).mockResolvedValueOnce(
+      new Response('{}', { status: 401, headers: { 'content-type': 'application/json' } }),
+    );
+    await expect(
+      h.session.request(
+        'gateway',
+        '/api/gateway/chatbot/consulta',
+        'POST',
+        { mensaje: 'consulta' },
+        { retryUnauthorized: false, preserveServiceErrors: true },
+      ),
+    ).rejects.toMatchObject({ kind: 'expired' });
+    expect(vi.mocked(h.fake).mock.calls.length - before).toBe(1);
+  });
+  it('permite esperar más de 60 segundos sin usar el timeout corto del perfil', async () => {
+    vi.useFakeTimers();
+    try {
+      const h = harness();
+      await login(h);
+      vi.mocked(h.fake).mockImplementationOnce(
+        async () =>
+          new Promise<Response>((resolve) =>
+            setTimeout(
+              () =>
+                resolve(
+                  new Response('{"ok":true}', { headers: { 'content-type': 'application/json' } }),
+                ),
+              61000,
+            ),
+          ),
+      );
+      const pending = h.session.request(
+        'gateway',
+        '/api/gateway/chatbot/consulta',
+        'POST',
+        { mensaje: 'consulta' },
+        { timeoutMs: 75000, retryUnauthorized: false, preserveServiceErrors: true },
+      );
+      await vi.advanceTimersByTimeAsync(61001);
+      await expect(pending).resolves.toEqual({ status: 200, body: { ok: true } });
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+  it('propaga la cancelación de la consulta a fetch sin cerrar la identidad', async () => {
+    const h = harness();
+    await login(h);
+    const c = new AbortController();
+    let start!: () => void;
+    const started = new Promise<void>((resolve) => {
+      start = resolve;
+    });
+    vi.mocked(h.fake).mockImplementationOnce(
+      async (_input, init) =>
+        new Promise<Response>((_resolve, reject) => {
+          init?.signal?.addEventListener(
+            'abort',
+            () => {
+              const error = new Error('cancelled');
+              error.name = 'AbortError';
+              reject(error);
+            },
+            { once: true },
+          );
+          start();
+        }),
+    );
+    const pending = h.session.request(
+      'gateway',
+      '/api/gateway/chatbot/consulta',
+      'POST',
+      { mensaje: 'consulta' },
+      { signal: c.signal, timeoutMs: 75000, retryUnauthorized: false, preserveServiceErrors: true },
+    );
+    const rejected = expect(pending).rejects.toMatchObject({ name: 'AbortError' });
+    await started;
+    c.abort();
+    await rejected;
+    expect(h.session.getCurrentUser()?.id).toBe(owner);
+  });
+});
+
 describe('HTTP identity, credentials and account isolation', () => {
   it('uses authenticated C14 for the active account and public C14 before login', async () => {
     const h = harness();
