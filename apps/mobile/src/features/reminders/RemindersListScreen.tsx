@@ -1,4 +1,5 @@
 import Feather from '@expo/vector-icons/Feather';
+import { SharedAgendaScreen } from './SharedAgendaScreen';
 import { router, useFocusEffect } from 'expo-router';
 import { useCallback, useMemo, useState } from 'react';
 import { Linking, Pressable, StyleSheet, Text, View } from 'react-native';
@@ -66,6 +67,10 @@ function getStatusCoverageText(res: CoordinatorResult | null): string {
 }
 
 export function RemindersListScreen() {
+  const { identitySession } = useLocalData();
+  return identitySession ? <SharedAgendaScreen /> : <LegacyRemindersListScreen />;
+}
+function LegacyRemindersListScreen() {
   const { theme: appTheme } = useAppTheme();
   const styles = useStyles();
   const {

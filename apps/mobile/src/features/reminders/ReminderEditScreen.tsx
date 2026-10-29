@@ -1,4 +1,5 @@
 import Feather from '@expo/vector-icons/Feather';
+import { SharedAgendaEditScreen } from './SharedAgendaEditScreen';
 import { router, useLocalSearchParams, useNavigation } from 'expo-router';
 import { usePreventRemove } from 'expo-router/react-navigation';
 import { useEffect, useMemo, useRef, useState } from 'react';
@@ -106,6 +107,10 @@ export const UNSAVED_CHANGES_TITLE = '¿Salir sin guardar los cambios?';
 export const UNSAVED_CHANGES_MESSAGE = 'Tienes modificaciones sin guardar en este recordatorio.';
 
 export function ReminderEditScreen() {
+  const { identitySession } = useLocalData();
+  return identitySession ? <SharedAgendaEditScreen /> : <LegacyReminderEditScreen />;
+}
+function LegacyReminderEditScreen() {
   const { theme: appTheme } = useAppTheme();
   const styles = useStyles();
   const navigation = useNavigation();

@@ -148,9 +148,9 @@ export async function migrateOwner(
     await checkpoint(phase);
   };
   await savePhase('preparar');
-  if (![11, 12].includes(inventory.version))
+  if (![11, 12, 13].includes(inventory.version))
     throw new Error(
-      'El origen debe estar cercado por una migración admitida (11 o 12) antes de transferir.',
+      'El origen debe estar cercado por una migración admitida (11, 12 o 13) antes de transferir.',
     );
   await savePhase('detener_emisor');
   await copyLegacyInventory(inventory, target);

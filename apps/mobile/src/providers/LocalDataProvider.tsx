@@ -15,6 +15,7 @@ import {
 import { AppState } from 'react-native';
 import { router, type Href } from 'expo-router';
 import * as Notifications from 'expo-notifications';
+import * as Network from 'expo-network';
 
 import { Screen } from '../components/Screen';
 import { BodyText, VisualButton } from '../components/Visual';
@@ -32,12 +33,16 @@ import {
   type CoordinatorResult,
 } from '../services/reminders/notification-coordinator';
 import type { AssistantController } from '../services/assistant/assistant-controller';
-import { FakeAssistantAdapter } from '../services/assistant/fake-assistant-adapter';
+import { HttpAssistantAdapter } from '../services/assistant/http-assistant-adapter';
 import { UnconfiguredAssistantAdapter } from '../services/assistant/unconfigured-assistant-adapter';
 
 import { DEMO_USERS } from '../services/session/demo-session-adapter';
 import { createMobileSession, createDeviceClient } from '../services/session/native-session';
 import { HttpSessionAdapter } from '../services/session/http-session-adapter';
+import { AgendaClient } from '../services/agenda/agenda-client';
+import { activateNativeAgenda, handleAgendaNotification } from '../services/agenda/native-agenda';
+import { notificationPayload, localAgendaData } from '../services/agenda/agenda-coordinator';
+import type { AgendaCoordinator } from '../services/agenda/agenda-coordinator';
 import type { DeviceClient } from '../services/session/device-client';
 import type { SessionAdapter } from '../services/session/session-adapter';
 import {
@@ -59,10 +64,10 @@ export type ScopedCoordinatorState = {
 
 try {
   Notifications.setNotificationHandler({
-    handleNotification: async () => ({
-      shouldShowBanner: true,
-      shouldShowList: true,
-      shouldPlaySound: true,
+    handleNotification: async (notification) => ({
+      shouldShowBanner: !notificationPayload(notification.request.content.data),
+      shouldShowList: !notificationPayload(notification.request.content.data),
+      shouldPlaySound: !notificationPayload(notification.request.content.data),
       shouldSetBadge: false,
     }),
   });
@@ -112,6 +117,10 @@ type DataContextValue = {
   manager: PatientContextManager;
   identitySession: HttpSessionAdapter | null;
   devices: DeviceClient | null;
+  sharedAgenda?: AgendaClient | null;
+  agendaCoordinator?: AgendaCoordinator | null;
+  agendaBackgroundReady?: boolean;
+  prepareAgenda?: () => Promise<void>;
 };
 
 const DataContext = createContext<DataContextValue | null>(null);
@@ -122,6 +131,7 @@ export function LocalDataProvider({ children }: { children: ReactNode }) {
   const [queryRevision, setQueryRevision] = useState(0);
   const openJobs = useRef<Promise<void>>(Promise.resolve());
   const restoreStarted = useRef(false);
+  const networkConnectedRef = useRef(false);
   const [error, setError] = useState<string | null>(null);
   const [attempt, setAttempt] = useState(0);
   const [saving, setSaving] = useState(false);
@@ -157,8 +167,10 @@ export function LocalDataProvider({ children }: { children: ReactNode }) {
   );
 
   const assistantAdapter = useMemo(() => {
-    return isDemoMode() ? new FakeAssistantAdapter() : new UnconfiguredAssistantAdapter();
-  }, []);
+    return identitySession
+      ? new HttpAssistantAdapter(identitySession)
+      : new UnconfiguredAssistantAdapter();
+  }, [identitySession]);
 
   const [, setVersion] = useState(0);
 
@@ -193,6 +205,51 @@ export function LocalDataProvider({ children }: { children: ReactNode }) {
       ? storage.store
       : null;
   const database = clinicalStore?.connection ?? null;
+  const sharedAgenda = useMemo(
+    () =>
+      identitySession && clinicalStore
+        ? new AgendaClient(
+            identitySession,
+            clinicalStore.connection,
+            clinicalStore.scope.environment,
+          )
+        : null,
+    [identitySession, clinicalStore],
+  );
+  const [agendaCoordinator, setAgendaCoordinator] = useState<AgendaCoordinator | null>(null);
+  const [agendaBackgroundReady, setAgendaBackgroundReady] = useState(false);
+  const agendaRuntime = useRef<Awaited<ReturnType<typeof activateNativeAgenda>>>(null);
+  const prepareAgenda = useCallback(
+    async () =>
+      manager.trackOperation(async () => {
+        if (!identitySession || !clinicalStore) return;
+        const runtime = await activateNativeAgenda(identitySession, clinicalStore);
+        if (
+          clinicalStore.closed ||
+          identitySession.getCurrentUser()?.id !== clinicalStore.scope.owner
+        ) {
+          runtime?.dispose();
+          return;
+        }
+        agendaRuntime.current?.dispose();
+        agendaRuntime.current = runtime;
+        setAgendaCoordinator(runtime?.coordinator ?? null);
+        setAgendaBackgroundReady(runtime?.taskRegistered ?? false);
+      }),
+    [identitySession, clinicalStore, manager],
+  );
+  useEffect(() => {
+    let active = true;
+    void prepareAgenda().catch(() => {
+      if (active) setAgendaBackgroundReady(false);
+    });
+    return () => {
+      active = false;
+      const outgoing = agendaRuntime.current;
+      agendaRuntime.current = null;
+      void Promise.resolve(manager.getActiveTeardownPromise()).then(() => outgoing?.dispose());
+    };
+  }, [prepareAgenda, manager]);
   const labOnly =
     process.env.EXPO_PUBLIC_P04_LAB_ONLY === 'true' &&
     process.env.EXPO_PUBLIC_P04_PROBE_ENABLED === 'true' &&
@@ -254,6 +311,7 @@ export function LocalDataProvider({ children }: { children: ReactNode }) {
                 'qc_definition_snapshot',
                 'signos_vitales',
                 'respuesta_formulario',
+                'qc_gateway_outbox',
               ],
               throttleMs: 150,
             },
@@ -404,10 +462,63 @@ export function LocalDataProvider({ children }: { children: ReactNode }) {
         });
       }
 
-      const result = await coordinator.reconcile(
-        currentId,
-        () => manager.getPatientId() === currentId && manager.getContextEpoch() === epoch,
-      );
+      let result: CoordinatorResult;
+      if (sharedAgenda) {
+        // Retire this owner's legacy jobs even before registering a new push association.
+        const legacy = await coordinator.cancelPatientSchedule(currentId);
+        if (!legacy.success || legacy.pendingCount) {
+          result = {
+            status: 'programacion_pendiente',
+            motivoPendiente: 'cancelacion_regla_previa',
+            totalDeseadas: 0,
+            programadasConfirmadas: 0,
+            cubiertoHastaIso: null,
+            truncadas: 0,
+            reglasAfectadas: [],
+            incidencias: ['Quedan avisos anteriores pendientes de cancelar en este teléfono.'],
+          };
+        } else {
+          // Cancel locally completed occurrences before any potentially slow network request.
+          await agendaCoordinator?.reconcile();
+          try {
+            await sharedAgenda.refresh();
+          } catch {
+            sharedAgenda.assert();
+          }
+          const coverage = await agendaCoordinator?.reconcile();
+          result = coverage
+            ? {
+                status: !coverage.permission
+                  ? 'permiso_denegado'
+                  : coverage.pendingCancellations
+                    ? 'programacion_pendiente'
+                    : 'programada',
+                totalDeseadas: coverage.wanted,
+                programadasConfirmadas: coverage.confirmed,
+                cubiertoHastaIso: coverage.until,
+                truncadas: coverage.truncated,
+                reglasAfectadas: [],
+                incidencias: coverage.pendingCancellations
+                  ? ['Quedan cancelaciones nativas pendientes.']
+                  : [],
+              }
+            : {
+                status: 'programacion_pendiente',
+                totalDeseadas: 0,
+                programadasConfirmadas: 0,
+                cubiertoHastaIso: null,
+                truncadas: 0,
+                reglasAfectadas: [],
+                incidencias: [
+                  'Activa las notificaciones de este dispositivo para programar su respaldo.',
+                ],
+              };
+        }
+      } else
+        result = await coordinator.reconcile(
+          currentId,
+          () => manager.getPatientId() === currentId && manager.getContextEpoch() === epoch,
+        );
 
       if (manager.getPatientId() === currentId && manager.getContextEpoch() === epoch) {
         setScopedCoordinatorState({
@@ -421,13 +532,13 @@ export function LocalDataProvider({ children }: { children: ReactNode }) {
 
       return result;
     },
-    [coordinator, manager],
+    [coordinator, manager, sharedAgenda, agendaCoordinator],
   );
 
   // Reconciliación al seleccionar paciente
   useEffect(() => {
     if (patientId && coordinator) {
-      void reconcileReminders();
+      void reconcileReminders().catch(() => undefined);
     }
   }, [patientId, coordinator, reconcileReminders]);
 
@@ -439,14 +550,29 @@ export function LocalDataProvider({ children }: { children: ReactNode }) {
           console.warn('Error al procesar notificación pendiente al volver a primer plano:', err);
         });
         if (coordinator) {
-          void reconcileReminders();
+          void prepareAgenda()
+            .then(() => reconcileReminders())
+            .catch(() => undefined);
         }
       }
     });
     return () => {
       subscription.remove();
     };
-  }, [coordinator, reconcileReminders, manager]);
+  }, [coordinator, reconcileReminders, manager, prepareAgenda]);
+
+  useEffect(() => {
+    const sub = Network.addNetworkStateListener((state) => {
+      const next = state.isConnected === true && state.isInternetReachable !== false;
+      const wasConnected = networkConnectedRef.current;
+      networkConnectedRef.current = next;
+      if (next && !wasConnected && manager.getPatientId())
+        void prepareAgenda()
+          .then(() => reconcileReminders())
+          .catch(() => undefined);
+    });
+    return () => sub.remove();
+  }, [prepareAgenda, reconcileReminders, manager]);
 
   // Capture intents before the account database opens; the manager validates owner before navigation.
   useEffect(() => {
@@ -457,6 +583,14 @@ export function LocalDataProvider({ children }: { children: ReactNode }) {
         Notifications.clearLastNotificationResponse();
         const data = last.notification.request.content.data;
         const identifier = last.notification.request.identifier;
+        if (localAgendaData(data)) {
+          void handleAgendaNotification(data, true)
+            .then((destination) => {
+              if (typeof destination === 'string' && destination.startsWith('/'))
+                router.push(destination as Href);
+            })
+            .catch(() => undefined);
+        }
         if (isValidNotificationPayload(data)) {
           const dedupeKey = `${data.notificacionId}:${identifier || 'cold'}`;
           void manager.handleNotificationOpen(data, dedupeKey).catch((err) => {
@@ -475,6 +609,14 @@ export function LocalDataProvider({ children }: { children: ReactNode }) {
       responseSub = Notifications.addNotificationResponseReceivedListener((response) => {
         const data = response.notification.request.content.data;
         const identifier = response.notification.request.identifier;
+        if (localAgendaData(data)) {
+          void handleAgendaNotification(data, true)
+            .then((destination) => {
+              if (typeof destination === 'string' && destination.startsWith('/'))
+                router.push(destination as Href);
+            })
+            .catch(() => undefined);
+        }
         if (isValidNotificationPayload(data)) {
           const dedupeKey = `${data.notificacionId}:${identifier || 'listener'}`;
           void manager.handleNotificationOpen(data, dedupeKey).catch((err) => {
@@ -485,6 +627,9 @@ export function LocalDataProvider({ children }: { children: ReactNode }) {
 
       receivedSub = Notifications.addNotificationReceivedListener((notification) => {
         const data = notification.request.content.data;
+        if (notificationPayload(data) || localAgendaData(data)) {
+          void handleAgendaNotification(data).catch(() => undefined);
+        }
         if (isValidNotificationPayload(data)) {
           const currentId = manager.getPatientId();
           const currentEpoch = manager.getContextEpoch();
@@ -511,7 +656,12 @@ export function LocalDataProvider({ children }: { children: ReactNode }) {
       responseSub?.remove();
       receivedSub?.remove();
     };
-  }, [database, repository, manager]);
+  }, [database, repository, manager, agendaCoordinator]);
+
+  useEffect(() => {
+    if (!sharedAgenda || !agendaCoordinator) return;
+    void reconcileReminders().catch(() => undefined);
+  }, [queryRevision, sharedAgenda, agendaCoordinator, reconcileReminders]);
 
   const runSave = useCallback(
     async <T,>(work: () => Promise<T>): Promise<T> => {
@@ -573,6 +723,10 @@ export function LocalDataProvider({ children }: { children: ReactNode }) {
       manager,
       identitySession,
       devices,
+      sharedAgenda,
+      agendaCoordinator,
+      agendaBackgroundReady,
+      prepareAgenda,
       runSave,
       changePatient,
     }),
@@ -603,6 +757,10 @@ export function LocalDataProvider({ children }: { children: ReactNode }) {
       manager,
       identitySession,
       devices,
+      sharedAgenda,
+      agendaCoordinator,
+      agendaBackgroundReady,
+      prepareAgenda,
     ],
   );
 

@@ -1,4 +1,5 @@
 import { useFocusEffect } from 'expo-router';
+import { sharedReminderStatus } from '../services/agenda/shared-reminder-status';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 
 import type { ReminderStatusSnapshot, ReminderType } from '../data/local/reminders/reminder-types';
@@ -28,6 +29,86 @@ interface ScopedSnapshotState {
 const MAX_TIMEOUT_MS = 2_147_483_647;
 
 export function useReminderStatus(options: UseReminderStatusOptions = {}) {
+  const data = useLocalData(),
+    legacy = useLegacyReminderStatus(options, !data.sharedAgenda);
+  const [scoped, setScoped] = useState<{
+      agenda: typeof data.sharedAgenda;
+      evaluation: ReminderStatusEvaluation;
+    } | null>(null),
+    [tick, setTick] = useState(0),
+    [retrying, setRetrying] = useState(false);
+  useFocusEffect(
+    useCallback(() => {
+      let active = true;
+      const agenda = data.sharedAgenda;
+      if (!agenda || !data.database) return;
+      void (async () => {
+        try {
+          const snapshot = await agenda.read(),
+            coverage = (await data.agendaCoordinator?.coverage()) ?? null,
+            jobs = await data.database!.all<{
+              occurrence_id: string;
+              native_id: string;
+              state: string;
+            }>(
+              'SELECT occurrence_id,native_id,state FROM qc_agenda_job WHERE owner=? AND environment=? AND session_id=?',
+              [
+                data.agendaCoordinator?.binding.owner ?? '',
+                data.agendaCoordinator?.binding.environment ?? '',
+                data.agendaCoordinator?.binding.sessionId ?? '',
+              ],
+            );
+          agenda.assert();
+          const evaluation = sharedReminderStatus(
+            snapshot.rules,
+            snapshot.completed,
+            jobs,
+            coverage,
+            options.now?.() ?? new Date().toISOString(),
+            options.tipo === 'medicacion' ? 'medicacion' : 'signos',
+            options.ruleId,
+          );
+          if (active) setScoped({ agenda, evaluation });
+        } catch {
+          if (active) setScoped({ agenda, evaluation: createQueryErrorReminderStatus() });
+        }
+      })();
+      return () => {
+        active = false;
+      };
+    }, [
+      data.sharedAgenda,
+      data.agendaCoordinator,
+      data.database,
+      data.remindersRevision,
+      tick,
+      options.tipo,
+      options.ruleId,
+      options.now,
+    ]),
+  );
+  const refresh = useCallback(() => setTick((n) => n + 1), []);
+  const retryScheduling = useCallback(async () => {
+    setRetrying(true);
+    try {
+      await data.reconcileReminders();
+      refresh();
+    } finally {
+      setRetrying(false);
+    }
+  }, [data.reconcileReminders, refresh]);
+  if (!data.sharedAgenda) return legacy;
+  return {
+    loading: scoped?.agenda !== data.sharedAgenda,
+    evaluation:
+      scoped?.agenda === data.sharedAgenda ? scoped.evaluation : createQueryErrorReminderStatus(),
+    snapshot: null,
+    retryingScheduling: retrying,
+    refresh,
+    retryScheduling,
+  };
+}
+function useLegacyReminderStatus(options: UseReminderStatusOptions, enabled: boolean) {
   const {
     repository,
     patientId,
@@ -73,7 +154,7 @@ export function useReminderStatus(options: UseReminderStatusOptions = {}) {
       const targetPatientId = patientId;
       const targetEpoch = manager?.getContextEpoch?.() ?? 0;
 
-      if (!repository || !targetPatientId) {
+      if (!enabled || !repository || !targetPatientId) {
         setScopedState(null);
         setLoading(false);
         return () => {
@@ -124,7 +205,15 @@ export function useReminderStatus(options: UseReminderStatusOptions = {}) {
       return () => {
         focusedRef.current = false;
       };
-    }, [repository, patientId, manager, notificationAdapter, remindersRevision, localRefreshTick]),
+    }, [
+      repository,
+      patientId,
+      manager,
+      notificationAdapter,
+      remindersRevision,
+      localRefreshTick,
+      enabled,
+    ]),
   );
 
   const validScopedState =

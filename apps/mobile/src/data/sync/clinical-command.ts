@@ -1,4 +1,6 @@
 import type { SqlConnection } from '../local/core/sql';
+import { agendaDate } from '@quimiocare/contracts/agenda';
+import { enqueueOperational } from '../agenda/operational-outbox';
 import { isUuid, object } from '../../services/session/response-checks';
 
 export type ClinicalKind = 'signos' | 'epro';
@@ -122,6 +124,7 @@ export async function enqueueClinicalCommand(
     payload: Record<string, unknown>;
     capturedAt: string;
     legacyQueueId?: string | null;
+    registeredAt?: string | null;
   },
   now = new Date().toISOString(),
 ) {
@@ -179,8 +182,30 @@ export async function enqueueClinicalCommand(
     ],
   );
   await tx.run(
-    `INSERT INTO qc_operational_event(id, owner, record_id, kind, captured_at) VALUES (?, ?, ?, ?, ?)`,
-    ['clinical:' + command.id, scope.owner, command.id, input.kind, command.captured_at],
+    `INSERT INTO qc_operational_event(id, owner, record_id, kind, captured_at, registered_at) VALUES (?, ?, ?, ?, ?, ?)`,
+    [
+      'clinical:' + command.id,
+      scope.owner,
+      command.id,
+      input.kind,
+      command.captured_at,
+      input.registeredAt === undefined ? now : input.registeredAt,
+    ],
   );
+  const registeredAt = input.registeredAt === undefined ? now : input.registeredAt;
+  if (registeredAt !== null)
+    await enqueueOperational(
+      tx,
+      scope,
+      'completion',
+      {
+        operacion_id: command.id,
+        tipo_registro: input.kind,
+        fecha_local: agendaDate(registeredAt),
+        zona_horaria: 'America/Santiago',
+        registrado_en: registeredAt,
+      },
+      registeredAt,
+    );
   return true;
 }

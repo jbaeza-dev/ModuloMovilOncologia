@@ -1,4 +1,6 @@
 import { useEffect, useState } from 'react';
+import * as Notifications from 'expo-notifications';
+import { localAgendaData } from '../../../services/agenda/agenda-coordinator';
 import { useLocalSearchParams } from 'expo-router';
 import * as Crypto from 'expo-crypto';
 import { Directory, File, Paths } from 'expo-file-system';
@@ -241,6 +243,43 @@ export default function P04AcceptanceScreen() {
         result.cipherVersion = (
           await db.first<{ cipher_version: string }>('PRAGMA cipher_version')
         )?.cipher_version;
+        result.schemaVersion = (
+          await db.first<{ user_version: number }>('PRAGMA user_version')
+        )?.user_version;
+        // Read-only P06 operational proof. Never include a token, clinical value or chat message.
+        if (result.schemaVersion === 13) {
+          result.presentedAgendaNotices = (await Notifications.getPresentedNotificationsAsync())
+            .filter((n) => localAgendaData(n.request.content.data))
+            .map((n) => ({ identifier: n.request.identifier, data: n.request.content.data }));
+          result.nativeScheduledAgenda = (await Notifications.getAllScheduledNotificationsAsync())
+            .filter((n) => localAgendaData(n.content.data))
+            .map((n) => ({ identifier: n.identifier, data: n.content.data }));
+          const scope = [activeStore.scope.owner, activeStore.scope.environment];
+          result.agendaState = await db.all(
+            'SELECT version,server_time,synchronized_at FROM qc_agenda_state WHERE owner=? AND environment=?',
+            scope,
+          );
+          result.agendaRules = await db.all(
+            'SELECT id FROM qc_agenda_rule WHERE owner=? AND environment=? ORDER BY id',
+            scope,
+          );
+          result.agendaJobs = await db.all(
+            'SELECT session_id,occurrence_id,native_id,backup_at,state,processed_at,claim_until FROM qc_agenda_job WHERE owner=? AND environment=? ORDER BY backup_at,occurrence_id',
+            [...scope],
+          );
+          result.agendaCoverage = await db.all(
+            'SELECT session_id,value_json FROM qc_agenda_coverage WHERE owner=? AND environment=?',
+            scope,
+          );
+          result.gatewayOutbox = await db.all(
+            'SELECT id,kind,body_json,status,acked_at,error_code FROM qc_gateway_outbox WHERE owner=? AND environment=? ORDER BY created_at,id',
+            scope,
+          );
+          result.operationalSaveTimes = await db.all(
+            'SELECT record_id,kind,registered_at,status FROM qc_operational_event WHERE owner=? ORDER BY id',
+            [activeStore.scope.owner],
+          );
+        }
         result.catalog = await db.first(
           "SELECT completed_at,error_code FROM qc_catalog_status WHERE id='catalog'",
         );

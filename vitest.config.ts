@@ -8,6 +8,7 @@ export default defineConfig({
   },
   resolve: {
     alias: {
+      '@quimiocare/contracts/agenda': resolve(__dirname, 'packages/contracts/src/agenda.ts'),
       '@quimiocare/contracts/forms': resolve(__dirname, 'packages/contracts/src/forms.ts'),
       'react-native': resolve(__dirname, 'test-stubs/react-native.js'),
       'expo-file-system': resolve(__dirname, 'test-stubs/expo-file-system.js'),

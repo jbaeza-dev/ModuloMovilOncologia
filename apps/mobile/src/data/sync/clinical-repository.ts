@@ -43,6 +43,7 @@ export async function saveContractEproInTransaction(
     payload_json: canonical(payload),
   });
   const tx = connection;
+  const savedAt = new Date().toISOString();
   {
     await tx.run(
       'INSERT OR IGNORE INTO formulario_cache(formulario_id,version,titulo,descripcion,configuracion_json,obtenido_en) VALUES (?,?,?,?,?,?)',
@@ -80,13 +81,14 @@ export async function saveContractEproInTransaction(
         String(version),
         canonical(answers),
         request.fecha_respuesta,
-        request.fecha_respuesta,
+        savedAt,
       ],
     );
     await enqueueClinicalCommand(tx, scope, {
       kind: 'epro',
       payload,
       capturedAt: request.fecha_respuesta,
+      registeredAt: savedAt,
     });
   }
   return request.id;

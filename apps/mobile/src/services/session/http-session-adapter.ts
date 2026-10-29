@@ -24,6 +24,17 @@ interface StoredSession {
   credentials: Credentials;
   identity: IdentityCache | null;
 }
+export interface SessionRequestOptions {
+  signal?: AbortSignal;
+  timeoutMs?: number;
+  retryUnauthorized?: boolean;
+  preserveServiceErrors?: boolean;
+}
+function cancelledRequest(): Error {
+  const error = new Error('Solicitud cancelada.');
+  error.name = 'AbortError';
+  return error;
+}
 export class HttpSessionAdapter implements SessionAdapter {
   readonly config: SessionConfig;
   readonly vault: CredentialVault;
@@ -109,13 +120,23 @@ export class HttpSessionAdapter implements SessionAdapter {
     path: string,
     init: RequestInit,
     epoch: number,
+    options: SessionRequestOptions = {},
   ): Promise<{ status: number; body: unknown }> {
+    const timeoutMs = options.timeoutMs ?? 12000;
+    if (!Number.isSafeInteger(timeoutMs) || timeoutMs < 100 || timeoutMs > 130000)
+      throw new SessionFailure('invalid');
     const controller = new AbortController(),
       parent = this.controller.signal;
+    if (options.signal?.aborted) throw cancelledRequest();
     const abort = () => controller.abort();
     parent.addEventListener('abort', abort, { once: true });
+    options.signal?.addEventListener('abort', abort, { once: true });
     if (parent.aborted) controller.abort();
-    const timer = setTimeout(abort, 12000);
+    let timedOut = false;
+    const timer = setTimeout(() => {
+      timedOut = true;
+      abort();
+    }, timeoutMs);
     try {
       const response = await this.fetcher(base + path, {
         ...init,
@@ -139,11 +160,14 @@ export class HttpSessionAdapter implements SessionAdapter {
       return { status: response.status, body };
     } catch (error) {
       this.assert(epoch);
+      if (options.signal?.aborted) throw cancelledRequest();
+      if (timedOut) throw new SessionFailure('unavailable', 408);
       if (error instanceof SessionFailure) throw error;
       throw new SessionFailure('unavailable');
     } finally {
       clearTimeout(timer);
       parent.removeEventListener('abort', abort);
+      options.signal?.removeEventListener('abort', abort);
     }
   }
   private user(owner: string, name?: string): SessionUser {
@@ -382,6 +406,7 @@ export class HttpSessionAdapter implements SessionAdapter {
     path: string,
     method = 'GET',
     body?: unknown,
+    options: SessionRequestOptions = {},
   ): Promise<{ status: number; body: unknown }> {
     if (!this.current) throw new SessionFailure('expired');
     if (!/^\/[A-Za-z0-9_/?=&%.-]*$/.test(path) || path.startsWith('//') || path.includes('..'))
@@ -403,13 +428,15 @@ export class HttpSessionAdapter implements SessionAdapter {
           ...(serialized !== undefined ? { body: serialized } : {}),
         },
         epoch,
+        options,
       );
     try {
       const token = await this.accessToken();
       this.assert(epoch, owner);
+      if (options.signal?.aborted) throw cancelledRequest();
       let r = await invoke(token);
       this.assert(epoch, owner);
-      if (r.status === 401) {
+      if (r.status === 401 && options.retryUnauthorized !== false) {
         const refreshed = await this.accessToken(token);
         this.assert(epoch, owner);
         r = await invoke(refreshed);
@@ -417,13 +444,15 @@ export class HttpSessionAdapter implements SessionAdapter {
       }
       if (r.status === 401) throw new SessionFailure('expired', 401);
       if (r.status === 403) throw new SessionFailure('denied', 403);
-      if (r.status >= 500 || r.status === 429) throw new SessionFailure('unavailable', r.status);
+      if (!options.preserveServiceErrors && (r.status >= 500 || r.status === 429))
+        throw new SessionFailure('unavailable', r.status);
       return r;
     } catch (error) {
       this.assert(epoch, owner);
       if (
         error instanceof SessionFailure &&
-        ['expired', 'unavailable', 'denied'].includes(error.kind)
+        (['expired', 'denied'].includes(error.kind) ||
+          (error.kind === 'unavailable' && !options.preserveServiceErrors))
       )
         this.markFailure(error);
       throw error;

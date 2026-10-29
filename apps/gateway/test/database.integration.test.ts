@@ -17,7 +17,7 @@ const owner = randomUUID(),
   otherOwner = randomUUID();
 async function eraseGatewayTestTables() {
   await db.query(
-    'DROP TABLE IF EXISTS gw_receipt, gw_dispatch, gw_daily_state, gw_completion_event, gw_reminder, gw_agenda, gw_device, gw_schema_migration CASCADE',
+    'DROP TABLE IF EXISTS gw_dispatch_attempt, gw_receipt, gw_dispatch, gw_daily_state, gw_completion_event, gw_reminder_revision, gw_reminder, gw_agenda, gw_device, gw_schema_migration CASCADE',
   );
   await db.query('DROP FUNCTION IF EXISTS gw_push_digest(text)');
 }
@@ -65,7 +65,7 @@ describe('PostgreSQL migrations and operational invariants', () => {
     expect((await db.query('SELECT id FROM gw_device')).rows).toEqual([{ id: session }]);
     expect(
       (await db.query('SELECT version FROM gw_schema_migration ORDER BY version')).rows,
-    ).toEqual([{ version: 1 }, { version: 2 }]);
+    ).toEqual(MIGRATIONS.map((_, index) => ({ version: index + 1 })));
   });
   it('serializes concurrent migrations on distinct connections', async () => {
     await eraseGatewayTestTables();
@@ -73,7 +73,45 @@ describe('PostgreSQL migrations and operational invariants', () => {
     await databaseReady(second);
     expect(
       (await db.query('SELECT count(*)::integer AS n FROM gw_schema_migration')).rows[0]?.n,
-    ).toBe(2);
+    ).toBe(MIGRATIONS.length);
+  });
+  it('upgrades v2 preserving reminders, zero-version agendas and existing receipt ownership', async () => {
+    await eraseGatewayTestTables();
+    await migrate(db, 2);
+    const session = await device(),
+      record = await reminder(),
+      operation = randomUUID();
+    const occurrence = `${record}:1:2026-10-29:0800`;
+    await db.query(
+      'INSERT INTO gw_dispatch(occurrence_id,session_id,owner_id,reminder_id,reminder_version,scheduled_at,backup_at,expires_at) VALUES($1,$2,$3,$4,1,now(),now(),now())',
+      [occurrence, session, owner, record],
+    );
+    await db.query(
+      "INSERT INTO gw_receipt(operation_id,owner_id,occurrence_id,session_id,event,occurred_at,request_hash) VALUES($1,$2,$3,$4,'abierto',now(),$5)",
+      [operation, owner, occurrence, session, 'a'.repeat(64)],
+    );
+    await migrate(db);
+    await migrate(second);
+    await databaseReady(db);
+    expect(
+      (await db.query('SELECT version::int FROM gw_agenda WHERE owner_id=$1', [owner])).rows[0]
+        ?.version,
+    ).toBe(1);
+    expect(
+      (
+        await db.query(
+          'SELECT reminder_id,reminder_version FROM gw_receipt WHERE operation_id=$1',
+          [operation],
+        )
+      ).rows[0],
+    ).toEqual({ reminder_id: record, reminder_version: 1 });
+    expect(
+      (
+        await db.query('SELECT configuration FROM gw_reminder_revision WHERE reminder_id=$1', [
+          record,
+        ])
+      ).rows[0]?.configuration,
+    ).toMatchObject({ tipo: 'epro', horas: ['08:00'], activo: true });
   });
   it('rejects incompatible/tampered migration history', async () => {
     await db.query('UPDATE gw_schema_migration SET checksum=$1 WHERE version=1', ['b'.repeat(64)]);

@@ -15,6 +15,9 @@ import { AppState } from 'react-native';
 import type { SqlValue } from '../data/local/core/sql';
 
 jest.setTimeout(15000);
+jest.mock('expo-network', () => ({
+  addNetworkStateListener: jest.fn(() => ({ remove: jest.fn() })),
+}));
 configure({ asyncUtilTimeout: 8000 });
 
 // Router history simulation for Stack and navigation tests
@@ -52,6 +55,10 @@ jest.mock('../services/session/native-session', () => ({
   createDeviceClient: jest.fn(),
   registerNativePush: jest.fn(),
 }));
+jest.mock('../services/agenda/native-agenda', () => ({
+  activateNativeAgenda: jest.fn(async () => null),
+  handleAgendaNotification: jest.fn(async () => null),
+}));
 
 // The provider keeps real lifecycle/SQL behavior; only native transport and SDK opening
 // are replaced in this UI suite. Android tests verify their real implementations.
@@ -61,6 +68,9 @@ jest.mock('../services/session/http-session-adapter', () => {
   return {
     HttpSessionAdapter: class extends DemoSessionAdapter {
       config = { mode: 'demo', scope: 'ui-test' };
+      signal = new AbortController().signal;
+      getContextSignal = () => this.signal;
+      request = async () => ({ status: 503, body: {} });
       subscribe = () => () => {};
       snapshot = {
         state: 'no_identity',
@@ -76,6 +86,18 @@ jest.mock('../services/session/http-session-adapter', () => {
       getSnapshot = () => this.snapshot;
       publicTerms = async () => {};
       refreshIdentity = async () => {};
+    },
+  };
+});
+// This historical lifecycle suite injects a transport double; HTTP contracts are tested separately.
+jest.mock('../services/assistant/http-assistant-adapter', () => {
+  // eslint-disable-next-line @typescript-eslint/no-require-imports
+  const { FakeAssistantAdapter } = require('../services/assistant/fake-assistant-adapter');
+  return {
+    HttpAssistantAdapter: class extends FakeAssistantAdapter {
+      constructor() {
+        super({ simulatedDelayMs: 10 });
+      }
     },
   };
 });
@@ -346,7 +368,7 @@ import { LocalDataProvider, DEMO_PATIENTS, useLocalData } from '../providers/Loc
 import { FakeAssistantAdapter } from '../services/assistant/fake-assistant-adapter';
 import { UnconfiguredSessionAdapter } from '../services/session/unconfigured-session-adapter';
 import { UnconfiguredAssistantAdapter } from '../services/assistant/unconfigured-assistant-adapter';
-import type { AssistantMessage } from '../services/assistant/assistant-types';
+import { AssistantFailure, type AssistantMessage } from '../services/assistant/assistant-types';
 
 type LocalDataContext = ReturnType<typeof useLocalData>;
 
@@ -600,12 +622,94 @@ describe('Incremento 6: UI de Acceso, Navegación Raíz, Sesión y Asistente', (
 
       expect(
         await screen.findByText(
-          'Este asistente ofrece orientación general. No diagnostica, prescribe ni sustituye a tu equipo de salud.',
+          'Este asistente ofrece orientación de autocuidado. Sus respuestas no constituyen un diagnóstico ni una prescripción y no sustituyen la consulta médica.',
         ),
       ).toBeTruthy();
       expect(await screen.findByText('0 / 2000')).toBeTruthy();
     });
 
+    it('conserva el aviso con no_disponible, fuentes y urgencia sin afirmar un aviso profesional', async () => {
+      let contextRef = {} as LocalDataContext;
+      await render(
+        <LocalDataProvider>
+          <AssistantScreen />
+          <ContextConsumer
+            onReady={(ctx) => {
+              contextRef = ctx;
+            }}
+          />
+        </LocalDataProvider>,
+      );
+      await waitFor(() => {
+        expect(contextRef.assistantController).toBeTruthy();
+      });
+      const metadata = {
+        respuesta: 'Resultado de prueba no disponible.',
+        fuentes: [{ tema_id: 'fuente', guia: 1, tema: 'Guía sintética' }],
+        requiere_urgencia: true,
+        confianza_nivel: 'baja',
+        estado_respuesta: 'no_disponible' as const,
+        debug: null,
+      };
+      await act(async () => {
+        contextRef.assistantController?.setAdapter({
+          isConfigured: true,
+          sendMessage: async () => ({
+            replyText: metadata.respuesta,
+            isDemo: true,
+            requestId: 'consulta-sintetica',
+            response: metadata,
+          }),
+        });
+      });
+      await fireEvent.changeText(screen.getByLabelText('Escribe tu consulta'), 'consulta');
+      await fireEvent.press(screen.getByText('Enviar consulta'));
+      expect(await screen.findByText('Asistente no disponible')).toBeOnTheScreen();
+      expect(screen.getByText('Fuentes: Guía sintética (guía 1)')).toBeOnTheScreen();
+      expect(screen.getByText(/Confianza informada: baja/)).toBeOnTheScreen();
+      expect(screen.getByRole('alert')).toHaveTextContent(
+        /QuimioCare no avisó automáticamente a profesionales\./,
+      );
+      expect(
+        screen.getByText(
+          'Este asistente ofrece orientación de autocuidado. Sus respuestas no constituyen un diagnóstico ni una prescripción y no sustituyen la consulta médica.',
+        ),
+      ).toBeOnTheScreen();
+    });
+    it('conserva el aviso permanente al mostrar detail de un error contractual', async () => {
+      let contextRef = {} as LocalDataContext;
+      await render(
+        <LocalDataProvider>
+          <AssistantScreen />
+          <ContextConsumer
+            onReady={(ctx) => {
+              contextRef = ctx;
+            }}
+          />
+        </LocalDataProvider>,
+      );
+      await waitFor(() => {
+        expect(contextRef.assistantController).toBeTruthy();
+      });
+      await act(async () => {
+        contextRef.assistantController?.setAdapter({
+          isConfigured: true,
+          sendMessage: async () => {
+            throw new AssistantFailure('server_error', 503, {
+              detail: 'Servicio sintético indisponible.',
+            });
+          },
+        });
+      });
+      await fireEvent.changeText(screen.getByLabelText('Escribe tu consulta'), 'consulta');
+      await fireEvent.press(screen.getByText('Enviar consulta'));
+      expect(await screen.findByText('Servicio sintético indisponible.')).toBeOnTheScreen();
+      expect(
+        screen.getByText(
+          'Este asistente ofrece orientación de autocuidado. Sus respuestas no constituyen un diagnóstico ni una prescripción y no sustituyen la consulta médica.',
+        ),
+      ).toBeOnTheScreen();
+    });
     it('al cancelar la consulta en curso, restaura el texto previo en el campo de entrada', async () => {
       let contextRef = {} as LocalDataContext;
 
@@ -626,7 +730,7 @@ describe('Incremento 6: UI de Acceso, Navegación Raíz, Sesión y Asistente', (
       const sendBtn = screen.getByText('Enviar consulta');
       await fireEvent.press(sendBtn);
 
-      expect(await screen.findByText('Procesando demostración…')).toBeTruthy();
+      expect(await screen.findByText('Procesando consulta…')).toBeTruthy();
       const cancelBtn = screen.getByText('Cancelar');
 
       await fireEvent.press(cancelBtn);
@@ -662,7 +766,9 @@ describe('Incremento 6: UI de Acceso, Navegación Raíz, Sesión y Asistente', (
       await screen.unmount();
 
       // El intento en curso debe haber sido abortado
-      expect(controller?.getState()).toBe('cancelled');
+      expect(controller?.getState()).not.toBe('sending');
+      expect(controller?.getMessages()).toEqual([]);
+      expect(controller?.getLastSubmittedText()).toBeNull();
     });
 
     it('muestra estado sin conexión con botón de reintento si el adaptador simula offline', async () => {

@@ -1,4 +1,5 @@
 /// <reference types="jest" />
+jest.mock('../services/session/native-session', () => ({ registerNativePush: jest.fn() }));
 
 import { act, fireEvent, render, screen, waitFor, within } from '@testing-library/react-native';
 import React from 'react';
