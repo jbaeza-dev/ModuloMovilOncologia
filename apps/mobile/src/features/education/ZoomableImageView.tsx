@@ -543,6 +543,7 @@ export const ZoomableImageView = forwardRef<ZoomableImageViewRef, ZoomableImageV
 const styles = StyleSheet.create({
   container: {
     flex: 1,
+    alignSelf: 'stretch',
     backgroundColor: '#000000',
     justifyContent: 'center',
     alignItems: 'center',

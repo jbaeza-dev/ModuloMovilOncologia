@@ -6,7 +6,7 @@ import {
   getEducationalCatalogReader,
   type EducationalCatalogReader,
 } from './educational-catalog-service';
-import { downloadAndSaveInfographic } from './infographic-storage-service';
+import { downloadAndSaveInfographic, verifiedLocalImageCopy } from './infographic-storage-service';
 
 export interface BulkDownloadProgress {
   current: number;
@@ -252,10 +252,14 @@ async function executeBulkDownload(options: RunBulkDownloadOptions): Promise<Bul
         ? resourceFileExists(patientId, resource.id, copy.rutaRelativa)
         : false;
 
+    const verified =
+      copy && resource.asset?.type === 'remote'
+        ? await verifiedLocalImageCopy(copy, patientId)
+        : copy;
     const versionLocal = copy?.metadataLocal?.versionOrigen;
     const isUpToDate =
       physicallyPresent &&
-      copy?.estado !== 'error' &&
+      verified?.estado !== 'error' &&
       Boolean(versionLocal) &&
       versionLocal === resource.version;
 
@@ -326,6 +330,7 @@ async function executeBulkDownload(options: RunBulkDownloadOptions): Promise<Bul
       const existingCopy = copyMap.get(currentResource.id);
       await downloadAndSaveInfographic({
         resource: currentResource,
+        signal,
         patientId,
         repository,
         database,

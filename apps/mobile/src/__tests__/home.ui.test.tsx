@@ -5,6 +5,11 @@ import React from 'react';
 import { Linking } from 'react-native';
 
 const mockRouterPush = jest.fn();
+const mockEproHub = jest.fn();
+const mockEpro = { hub: (...args: unknown[]) => mockEproHub(...args) };
+jest.mock('../features/medical-forms/use-epro-repository', () => ({
+  useEproRepository: () => mockEpro,
+}));
 const mockRouterNavigate = jest.fn();
 const mockChangePatient = jest.fn();
 
@@ -158,6 +163,7 @@ jest.mock('../hooks/use-reminder-status', () => ({
 }));
 
 import { HomeScreen, resolveHomeGreeting } from '../features/home/HomeScreen';
+import { getCivilDateInTimeZone } from '../services/forms/daily-form-context';
 import type {
   ReminderDeviceAvailability,
   ReminderDomainStatus,
@@ -169,6 +175,30 @@ describe('HomeScreen UI tests (Bloque 2)', () => {
     mockDemoMode = true;
     mockLocalData.patientId = 'paciente-demo-001';
     mockRepository.profile.mockResolvedValue(mockProfile);
+    mockEproHub.mockResolvedValue({
+      status: { completed_at: '2026-10-28T01:00:00Z' },
+      current: {},
+      drafts: [],
+      captures: [],
+    });
+  });
+
+  it('shows local ePRO completion without depending on a legacy assignment or claiming server delivery', async () => {
+    mockEproHub.mockResolvedValue({
+      status: { completed_at: '2026-10-28T01:00:00Z' },
+      current: {},
+      drafts: [],
+      captures: [{ context: { fechaSeguimiento: getCivilDateInTimeZone() } }],
+    });
+    await render(<HomeScreen />);
+    expect(
+      await screen.findByText(
+        'Seguimiento de hoy guardado. Revisa su estado de envío en el historial.',
+      ),
+    ).toBeTruthy();
+    expect(
+      screen.queryByText('Seguimiento de hoy completado. Puedes revisarlo o actualizarlo.'),
+    ).toBeNull();
   });
 
   const statesToTest: Array<{

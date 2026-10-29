@@ -120,6 +120,24 @@ jest.mock('../data/local/files/resource-storage', () => ({
   reconcileResourceCopies: jest.fn().mockResolvedValue({}),
 }));
 
+// Byte verification is tested with real buffers separately; these tests exercise screen states.
+jest.mock('../features/education/infographic-storage-service', () => {
+  const actual = jest.requireActual('../features/education/infographic-storage-service');
+  return {
+    ...actual,
+    verifiedLocalImageCopy: async (copy: unknown) => copy,
+    verifiedLocalImageCopies: async (copies: unknown) => copies,
+  };
+});
+// Screen-only fixtures are explicit here. Production uses the scoped replicated reader.
+jest.mock('../features/education/use-educational-catalog', () => ({
+  useEducationalCatalog: () => {
+    // eslint-disable-next-line @typescript-eslint/no-require-imports
+    return require('../features/education/educational-catalog-service').getEducationalCatalogReader();
+  },
+  CatalogStatusNotice: () => null,
+}));
+
 import { router } from 'expo-router';
 import LegacyVisorRedirect from '../app/(tabs)/educacion/visor';
 import LegacyCopiesRedirect from '../app/(tabs)/educacion/copias';
@@ -503,8 +521,8 @@ describe('Pruebas de interfaz (UI) para módulo de Educación', () => {
       );
       await fireEvent.press(videoCard);
 
-      // Debe abrir enlace de YouTube en modo demo
-      expect(mockOpenURL).toHaveBeenCalledWith('https://www.youtube.com');
+      // El catálogo conserva el video elegido, incluso con datos clínicos de demostración.
+      expect(mockOpenURL).toHaveBeenCalledWith('vnd.youtube:psfP_n8eP40');
 
       // Debe registrar la interacción en SQLite
       expect(mockRepository.education.recordYouTubeInteraction).toHaveBeenCalledWith(
@@ -862,6 +880,30 @@ describe('Pruebas de interfaz (UI) para módulo de Educación', () => {
       );
     });
 
+    it('no presenta una muestra antigua fuera del catálogo como imagen educativa vigente ni borra su archivo', async () => {
+      mockUseLocalSearchParams.mockReturnValue({ filtro: 'offline' });
+      mockRepository.education.listLocalCopies.mockResolvedValueOnce([
+        {
+          patientId: 'paciente-a',
+          contentId: 'edu-infografia-alimentacion',
+          rutaRelativa: 'active.png',
+          estado: 'descargado',
+          titulo: 'Imagen vigente',
+        },
+        {
+          patientId: 'paciente-a',
+          contentId: 'technical-historical-copy',
+          rutaRelativa: 'historical.png',
+          estado: 'descargado',
+          titulo: 'Muestra técnica antigua',
+        },
+      ]);
+      await render(<EducationScreen />);
+      await screen.findByText('Imagen vigente');
+      expect(screen.queryByText('Muestra técnica antigua')).toBeNull();
+      expect(mockRepository.education.removeLocalCopy).not.toHaveBeenCalled();
+    });
+
     it('en la biblioteca offline, muestra estado vacío cuando el paciente no tiene copias', async () => {
       mockUseLocalSearchParams.mockReturnValue({ filtro: 'offline' });
       mockRepository.education.listLocalCopies.mockResolvedValueOnce([]);
@@ -1013,7 +1055,7 @@ describe('Pruebas de interfaz (UI) para módulo de Educación', () => {
             description: 'Desc',
             type: 'video',
             version: '1.0.0',
-            youtubeVideoId: 'xyz123',
+            youtubeVideoId: 'SYS6iRyqjOQ',
           },
         ]),
       );
@@ -1025,10 +1067,10 @@ describe('Pruebas de interfaz (UI) para módulo de Educación', () => {
       );
       await fireEvent.press(videoCard);
 
-      expect(mockOpenURL).toHaveBeenCalledWith('https://www.youtube.com');
+      expect(mockOpenURL).toHaveBeenCalledWith('vnd.youtube:SYS6iRyqjOQ');
       expect(mockRepository.education.recordYouTubeInteraction).toHaveBeenCalledWith({
         contentId: 'test-vid-guard',
-        youtubeVideoId: 'xyz123',
+        youtubeVideoId: 'SYS6iRyqjOQ',
         versionOrigen: '1.0.0',
       });
     });

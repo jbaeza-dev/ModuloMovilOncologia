@@ -153,16 +153,29 @@ describe('VitalsDataScreens UI tests (Bloque 3)', () => {
       const sysInput = screen.getByLabelText('Presión sistólica (mmHg)');
       await fireEvent.changeText(sysInput, '120');
 
-      // Intentar guardar con temperatura inválida y presión incompleta (falta diastólica)
+      // La sistólica aislada es válida; la temperatura inválida impide el guardado.
       await fireEvent.press(screen.getByRole('button', { name: 'Guardar registro' }));
 
       expect(screen.getByText('Temperatura: ingresa un número válido.')).toBeTruthy();
-      expect(screen.getByText('Ingresa la presión diastólica.')).toBeTruthy();
+      expect(screen.queryByText('Ingresa la presión diastólica.')).toBeNull();
 
       // Los valores introducidos se conservan en los campos
       expect(tempInput.props.value).toBe('invalido');
       expect(sysInput.props.value).toBe('120');
       expect(mockRepository.createVitals).not.toHaveBeenCalled();
+    });
+
+    it('guarda una presión aislada sin exigir una medición ausente', async () => {
+      await render(<RegisterVitalsDataScreen />);
+      await fireEvent.changeText(screen.getByLabelText('Presión sistólica (mmHg)'), '120');
+      await fireEvent.press(screen.getByRole('button', { name: 'Guardar registro' }));
+      expect(mockRepository.createVitals).toHaveBeenCalledWith(
+        expect.objectContaining({
+          presion_sistolica: 120,
+          presion_diastolica: null,
+        }),
+      );
+      expect(screen.getByText('Medición guardada en este dispositivo')).toBeTruthy();
     });
 
     it('guarda exitosamente una medición válida, limpia el formulario y muestra FeedbackBanner con Ver registro', async () => {

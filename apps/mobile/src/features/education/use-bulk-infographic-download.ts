@@ -1,3 +1,4 @@
+import { useEducationalCatalog } from './use-educational-catalog';
 import { useCallback, useEffect, useRef, useState } from 'react';
 
 import { useLocalData } from '../../providers/LocalDataProvider';
@@ -26,6 +27,7 @@ export function useBulkInfographicDownload(
   onComplete?: () => void,
 ): UseBulkInfographicDownloadResult {
   const { patientId, repository, database, trackOperation, isClosing } = useLocalData();
+  const catalogReader = useEducationalCatalog();
 
   const [isDownloading, setIsDownloading] = useState(false);
   const [isCancelling, setIsCancelling] = useState(false);
@@ -137,6 +139,7 @@ export function useBulkInfographicDownload(
       const result = await trackOperation(async () => {
         return await runBulkInfographicDownload({
           patientId,
+          catalogReader,
           repository,
           database,
           signal: controller.signal,
@@ -164,7 +167,16 @@ export function useBulkInfographicDownload(
       setProgress(null);
       abortControllerRef.current = null;
     }
-  }, [patientId, repository, database, isDownloading, isClosing, trackOperation, onComplete]);
+  }, [
+    patientId,
+    repository,
+    database,
+    isDownloading,
+    isClosing,
+    trackOperation,
+    onComplete,
+    catalogReader,
+  ]);
 
   const hasPending = Boolean(
     lastResult &&

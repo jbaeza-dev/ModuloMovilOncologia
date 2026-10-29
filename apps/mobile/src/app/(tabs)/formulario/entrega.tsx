@@ -1,1 +1,1 @@
-export { MedicalFormSubmissionDetailScreen as default } from '../../../features/medical-forms/MedicalFormsScreens';
+export { EproSubmissionRoute as default } from '../../../features/medical-forms/GlobalEproScreens';

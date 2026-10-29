@@ -35,6 +35,9 @@ export interface SaveMediaParams {
   content: string | Uint8Array;
   versionOrigen?: string;
   mimeType?: string;
+  expectedBytes?: number;
+  expectedSha256?: string;
+  assertContext?: () => void;
   titulo?: string;
   tipo?: EducationalContentType;
   descripcion?: string;
@@ -297,6 +300,8 @@ export async function saveEducationalMediaWithCompensation(
       : content;
 
   const tamanoBytes = rawBytes.byteLength;
+  if (params.expectedBytes !== undefined && tamanoBytes !== params.expectedBytes)
+    throw new Error('La longitud de la imagen no coincide con la publicación.');
   if (tamanoBytes > MAX_EDUCATIONAL_MEDIA_BYTES) {
     throw new Error('El archivo supera el tamaño máximo permitido de 5 MB.');
   }
@@ -342,6 +347,11 @@ export async function saveEducationalMediaWithCompensation(
 
     // Cálculo estricto de SHA-256 sobre los bytes reales
     const sha256 = await computeSha256(rawBytes);
+    if (params.expectedSha256 !== undefined && sha256 !== params.expectedSha256)
+      throw new Error('La huella SHA-256 de la imagen no coincide con la publicación.');
+    if (!/^[a-zA-Z0-9.-]+$/.test(token) || token.includes('..'))
+      throw new Error('El nombre temporal de la imagen no es seguro.');
+    params.assertContext?.();
 
     // Proteger temporal y destino en activeWrites
     const unregister = registerActiveWrite([tmpUri, finalUri]);
@@ -357,9 +367,18 @@ export async function saveEducationalMediaWithCompensation(
         await adapter.writeText(tmpUri, Buffer.from(rawBytes).toString('base64'));
       }
 
+      if (params.expectedSha256 !== undefined) {
+        if (!adapter.readBinary) throw new Error('No se puede verificar el archivo temporal.');
+        const written = await adapter.readBinary(tmpUri);
+        if (written.byteLength !== tamanoBytes || (await computeSha256(written)) !== sha256)
+          throw new Error('El archivo temporal no conserva los bytes verificados.');
+      }
+      params.assertContext?.();
+
       // 2. Mover temporal a destino final sin sobrescritura (rechaza colisión)
       await adapter.moveFile(tmpUri, finalUri, { overwrite: false });
       finalFileCreated = true;
+      params.assertContext?.();
 
       // 3. Confirmar persistencia en SQLite
       await params.persistCopyInTx({

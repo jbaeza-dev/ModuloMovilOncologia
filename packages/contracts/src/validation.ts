@@ -1,3 +1,4 @@
+import eproEditionV12 from '../schemas/epro-edition-v1_2.schema.json' with { type: 'json' };
 import { Ajv2020 } from 'ajv/dist/2020.js';
 import formatsPlugin from 'ajv-formats';
 import type { FormatsPlugin } from 'ajv-formats';
@@ -33,6 +34,7 @@ const ajv = new Ajv2020({
 // OpenAPI documents contain annotation keys outside JSON Schema; they stay unmodified.
 for (const [service, document] of Object.entries(documents))
   ajv.addSchema({ ...document, $id: `urn:quimiocare:${service}` });
+ajv.addSchema(eproEditionV12);
 const cache = new Map<string, ValidateFunction>();
 function compile(service: Service, schema: Schema, key: string): ValidateFunction {
   const cached = cache.get(key);
@@ -163,10 +165,16 @@ export function validateResponse(
     };
   }
   if (!media.schema) return { valid: true, errors: [] };
+  const ownEdition =
+    (id === 'C-08' || id === 'C-09') &&
+    body !== null &&
+    typeof body === 'object' &&
+    Object.hasOwn(body, 'version_reglas_compuestas');
+  const responseSchema = ownEdition ? { $ref: 'urn:quimiocare:epro-edition:1.2' } : media.schema;
   const errors = check(
     operation.service,
-    media.schema,
-    `${id}:response:${status}:${mediaType}`,
+    responseSchema,
+    `${id}:response:${status}:${mediaType}${ownEdition ? ':epro-1.2' : ''}`,
     body,
     'response',
   );

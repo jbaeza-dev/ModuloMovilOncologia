@@ -1,25 +1,25 @@
 # QuimioCare — módulo móvil de quimioterapia
 
-Aplicación Android de acompañamiento durante quimioterapia, organizada como monorepositorio pnpm. El entorno académico utiliza pacientes y contenido sintéticos y puede demostrarse sin depender del módulo clínico/web externo.
+Aplicación Android de acompañamiento durante quimioterapia, organizada como monorepositorio pnpm. El entorno académico utiliza pacientes sintéticos y material educativo autorizado de CUIDAQUIMIO y puede demostrarse sin depender del módulo clínico/web externo.
 
 ## Estado de esta entrega
 
-La base móvil conserva registros, borradores, historial y archivos locales aislados por paciente, biblioteca de imágenes/YouTube, recordatorios locales y exportación PDF/XLSX. El Plan 01 incorpora contratos verificables, un simulador persistente y el entorno PowerSync propio.
+La app conserva registros, borradores, historial y archivos clínicos cifrados y separados por cuenta y entorno. Utiliza el SDK PowerSync como único emisor clínico, sesiones renovables, aceptación de términos por edición y un gateway propio. Los flujos incluyen signos vitales, seguimiento ePRO global, perfil, vinculación y biblioteca de imágenes/YouTube.
 
-El diagnóstico nativo de P01 es una pantalla técnica habilitada solo en una build sintética explícita. Usa una base separada y no migra el historial existente. La documentación técnica, los resultados y las capturas se conservan en el contexto local del equipo. La incorporación completa de sesión, sincronización clínica, gateway, agenda compartida y triaje corresponde a los planes posteriores. No se declara aquí integración con los sistemas externos reales ni despliegue universitario completado.
+Los diagnósticos nativos se habilitan solo en builds sintéticas explícitas. La documentación técnica, los resultados y las capturas se conservan en el contexto local del equipo. Agenda compartida, asistente, árbol clínico, evaluación integral y despliegue tienen sus propias comprobaciones de aceptación. Las conexiones con el sistema externo están simuladas; las cuentas de demostración no admiten datos de pacientes reales.
 
 ## Estructura
 
-| Ruta                  | Responsabilidad                                                                                            |
-| --------------------- | ---------------------------------------------------------------------------------------------------------- |
-| `apps/mobile/`        | Expo, React Native y TypeScript; rutas finas y funcionalidades separadas                                   |
-| `apps/simulator/`     | 16 operaciones clínicas, una IA determinista y seis helpers demo, con PostgreSQL                           |
-| `packages/contracts/` | OpenAPI originales preservados, tipos y validación de fronteras; extensión educativa PDF propia versionada |
-| `infra/demo/`         | Contenedores, origen y almacenamiento persistente, migraciones/semillas y configuración privada local      |
-| `infra/powersync/`    | Servicio fijado y reglas de réplica autorizada                                                             |
-| `apps/gateway/`       | Componente previsto para los planes siguientes; aún no implementado                                        |
+| Ruta                  | Responsabilidad                                                                                                |
+| --------------------- | -------------------------------------------------------------------------------------------------------------- |
+| `apps/mobile/`        | Expo, React Native y TypeScript; rutas finas y funcionalidades separadas                                       |
+| `apps/simulator/`     | 16 operaciones clínicas, una IA determinista y seis helpers demo, con PostgreSQL                               |
+| `packages/contracts/` | OpenAPI originales preservados, tipos, validación de fronteras y ediciones propias identificadas               |
+| `infra/demo/`         | Contenedores, origen y almacenamiento persistente, migraciones/semillas y configuración privada local          |
+| `infra/powersync/`    | Servicio fijado y reglas de réplica autorizada                                                                 |
+| `apps/gateway/`       | Gateway operativo con autenticación y asociaciones de dispositivos; agenda y asistente se completan en su plan |
 
-La biblioteca educativa objetivo admite imágenes y PDF offline, y videos solo online. El contrato original de imágenes/video se conserva; la ampliación PDF propia se versiona por separado y no se atribuye al backend externo sin evidencia.
+La biblioteca permite descargar imágenes PNG/JPEG con verificación de integridad y consultar videos de YouTube solo online. No ofrece PDF educativos. Los reportes PDF/XLSX son una función diferente y se conservan. El catálogo CUIDAQUIMIO corresponde a las 42 imágenes y 44 videos publicados en su sitio el 28-10-2026, con sus fuentes y textos accesibles. La sección Podcast enlaza los cuatro audios originales de Google Drive, solo online y en orden pedagógico; no descarga ni almacena audio.
 
 ## Requisitos
 
@@ -65,4 +65,4 @@ Consultar el [paquete de contratos](packages/contracts/README.md) y el [simulado
 
 CI verifica calidad móvil, contratos y HTTP con PostgreSQL. Cada capacidad se acepta con evidencia de su entorno real; pruebas unitarias, compilación y aceptación nativa son resultados distintos.
 
-Los cambios del Plan 01 quedan sin commit hasta la revisión de Javier y hasta que proporcione el mensaje exacto. No se publica una rama ni se integra a main como consecuencia automática de pasar pruebas.
+Cada cambio se entrega para revisión de Javier y requiere su visto bueno y mensaje exacto antes del commit. La publicación e integración de una rama necesitan su autorización aplicable.

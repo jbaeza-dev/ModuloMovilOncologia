@@ -65,6 +65,38 @@ export function clinicalProfile(value: unknown): ClinicalProfile {
     !Number.isFinite(Date.parse(value.fecha_actualizacion))
   )
     throw invalid();
+  for (const key of ['peso', 'altura'])
+    if (
+      value[key] !== undefined &&
+      value[key] !== null &&
+      (typeof value[key] !== 'number' || !Number.isFinite(value[key]))
+    )
+      throw invalid();
+  if (value.medicamentos !== undefined) {
+    if (!Array.isArray(value.medicamentos)) throw invalid();
+    const ids = new Set<string>();
+    for (const medication of value.medicamentos) {
+      if (
+        !object(medication) ||
+        !isUuid(medication.id) ||
+        !isUuid(medication.medicamento_id) ||
+        ids.has(medication.id)
+      )
+        throw invalid();
+      ids.add(medication.id);
+      for (const key of ['nombre', 'dosis', 'frecuencia', 'motivo'])
+        if (medication[key] !== undefined && typeof medication[key] !== 'string') throw invalid();
+      if (medication.activo !== undefined && typeof medication.activo !== 'boolean')
+        throw invalid();
+      for (const key of ['fecha_inicio', 'fecha_termino'])
+        if (
+          medication[key] !== undefined &&
+          medication[key] !== null &&
+          typeof medication[key] !== 'string'
+        )
+          throw invalid();
+    }
+  }
   return value as ClinicalProfile;
 }
 export function treatment(value: unknown): Treatment {

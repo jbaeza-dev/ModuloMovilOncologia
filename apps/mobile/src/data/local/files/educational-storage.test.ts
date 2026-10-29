@@ -11,6 +11,7 @@ import {
   saveEducationalMediaWithCompensation,
 } from './educational-storage';
 import { NodeFileStorageAdapter } from './node-file-storage-adapter';
+import { computeSha256 } from '../../../utils/crypto';
 
 const harness = createSqliteTestHarness();
 
@@ -19,6 +20,67 @@ afterEach(() => {
 });
 
 describe('educational-storage - validaciones binarias y guardado seguro de medios', () => {
+  it('rechaza bytes con longitud o SHA distintos de la publicación antes de persistir', async () => {
+    const adapter = new NodeFileStorageAdapter();
+    const base = harness.createTempDir('published-image-');
+    const bytes = createMinimalPng(32, 32);
+    let commits = 0;
+    const params = {
+      pacienteId: patientA,
+      contenidoId: 'published-image',
+      formato: 'png' as const,
+      content: bytes,
+      textoAccesible: 'Imagen sintética',
+      adapter,
+      baseDirResolver: () => base,
+      persistCopyInTx: async () => {
+        commits++;
+      },
+    };
+    await expect(
+      saveEducationalMediaWithCompensation({ ...params, expectedBytes: bytes.length + 1 }),
+    ).rejects.toThrow('longitud');
+    await expect(
+      saveEducationalMediaWithCompensation({
+        ...params,
+        expectedBytes: bytes.length,
+        expectedSha256: '0'.repeat(64),
+      }),
+    ).rejects.toThrow('SHA-256');
+    expect(commits).toBe(0);
+  });
+
+  it('detecta corrupción del temporal y compensa sin publicar disponibilidad offline', async () => {
+    const adapter = new NodeFileStorageAdapter();
+    const base = harness.createTempDir('corrupt-image-');
+    const bytes = createMinimalPng(32, 32),
+      sha = await computeSha256(bytes);
+    const write = adapter.writeBinary.bind(adapter);
+    adapter.writeBinary = async (path, content) => {
+      const corrupt = new Uint8Array(content);
+      corrupt[corrupt.length - 1] ^= 1;
+      await write(path, corrupt);
+    };
+    let commits = 0;
+    await expect(
+      saveEducationalMediaWithCompensation({
+        pacienteId: patientA,
+        contenidoId: 'corrupt-image',
+        formato: 'png',
+        content: bytes,
+        expectedBytes: bytes.length,
+        expectedSha256: sha,
+        textoAccesible: 'Synthetic',
+        adapter,
+        baseDirResolver: () => base,
+        persistCopyInTx: async () => {
+          commits++;
+        },
+      }),
+    ).rejects.toThrow('temporal');
+    expect(commits).toBe(0);
+    expect(await adapter.listDirectory(base)).toEqual([]);
+  });
   it('rechaza formato markdown para nuevas descargas', async () => {
     const tempBase = harness.createTempDir('storage-test-');
     const adapter = new NodeFileStorageAdapter();

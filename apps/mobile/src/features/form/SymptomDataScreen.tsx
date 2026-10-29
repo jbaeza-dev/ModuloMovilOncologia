@@ -1,6 +1,7 @@
 import { clinicalStatusLabel } from '../../data/sync/visible-status';
-import { useCallback, useState } from 'react';
-import { FlatList, StyleSheet, Text, View } from 'react-native';
+import { useCallback } from 'react';
+import { router } from 'expo-router';
+import { FlatList, StyleSheet, View } from 'react-native';
 
 import { Screen } from '../../components/Screen';
 import {
@@ -10,63 +11,22 @@ import {
   SectionTitle,
   StatusPill,
   VisualButton,
-  VisualField,
 } from '../../components/Visual';
 import { formatDate, type SymptomWithSyncRecord } from '../../data/local/repository';
 import { useFocusedList } from '../../hooks/use-local-query';
-import { InputError, parseSymptomDescription } from '../../data/local/validation';
 import { useLocalData } from '../../providers/LocalDataProvider';
 import { theme } from '../../theme';
 
 export function SymptomDataScreen() {
-  const { repository, runSave, saving } = useLocalData();
-  const [description, setDescription] = useState('');
-  const [confirming, setConfirming] = useState(false);
-  const [submitting, setSubmitting] = useState(false);
-  const [saved, setSaved] = useState(false);
-  const [error, setError] = useState<string | null>(null);
+  const { repository } = useLocalData();
   const load = useCallback(
     (offset: number) => (repository ? repository.symptoms(30, offset) : Promise.resolve([])),
     [repository],
   );
   const list = useFocusedList(load);
-  const busy = submitting || saving;
-
-  function review() {
-    setError(null);
-    try {
-      parseSymptomDescription(description);
-      setConfirming(true);
-      setSaved(false);
-    } catch (failure) {
-      if (failure instanceof InputError) setError(failure.message);
-    }
-  }
-
-  async function save() {
-    if (busy || !repository) return;
-    setSubmitting(true);
-    setError(null);
-    try {
-      const value = parseSymptomDescription(description);
-      await runSave(() => repository.createSymptom(value));
-      setDescription('');
-      setConfirming(false);
-      setSaved(true);
-      list.refresh();
-    } catch (failure) {
-      setError(
-        failure instanceof InputError
-          ? failure.message
-          : 'No se pudo guardar en este dispositivo. Intenta nuevamente.',
-      );
-    } finally {
-      setSubmitting(false);
-    }
-  }
 
   return (
-    <Screen title="Registrar síntomas" scroll={false}>
+    <Screen title="Historial de síntomas libres" scroll={false}>
       <FlatList<SymptomWithSyncRecord>
         data={list.items}
         keyExtractor={(item) => item.id}
@@ -81,46 +41,14 @@ export function SymptomDataScreen() {
         keyboardShouldPersistTaps="handled"
         ListHeaderComponent={
           <View style={styles.stack}>
-            <BodyText>Escribe una descripción libre. No se realiza evaluación clínica.</BodyText>
-            {!confirming ? (
-              <>
-                <VisualField
-                  label="Describe el síntoma"
-                  value={description}
-                  multiline
-                  maxLength={2000}
-                  onChangeText={(value) => {
-                    setDescription(value);
-                    setSaved(false);
-                  }}
-                  placeholder="Describe cómo te sientes"
-                />
-                <BodyText>{description.length}/2.000 caracteres</BodyText>
-                <VisualButton
-                  label="Revisar antes de guardar"
-                  disabled={!repository || busy}
-                  onPress={review}
-                />
-              </>
-            ) : (
-              <InfoCard>
-                <SectionTitle>Revisa tu descripción</SectionTitle>
-                <BodyText>{description.trim()}</BodyText>
-                <VisualButton
-                  label={busy ? 'Guardando…' : 'Confirmar guardado local'}
-                  disabled={busy}
-                  onPress={() => void save()}
-                />
-                <VisualButton
-                  label="Editar"
-                  secondary
-                  disabled={busy}
-                  onPress={() => setConfirming(false)}
-                />
-              </InfoCard>
-            )}
-            {error ? <Text accessibilityRole="alert">{error}</Text> : null}
-            {saved ? <StatusPill>Guardado en este dispositivo</StatusPill> : null}
+            <BodyText>
+              Se conservan tus registros libres anteriores. Para registrar nuevos síntomas, utiliza
+              el cuestionario de seguimiento.
+            </BodyText>
+            <VisualButton
+              label="Abrir seguimiento ePRO"
+              onPress={() => router.push('/formulario')}
+            />
             <SectionTitle>Historial local</SectionTitle>
           </View>
         }

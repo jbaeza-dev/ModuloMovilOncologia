@@ -11,7 +11,7 @@ streams:
         configuracion, fecha_creacion, eliminado
       FROM formulario
       WHERE eliminado = false AND tratamiento = 'quimioterapia'
-        AND (id = 'a4a98ef2-2013-5277-94ea-8365bf50ba71' OR id = 'cd3d5bc3-7d2a-5adf-b5fb-f090a98cec5b' OR id = '753baa82-afe9-5592-9968-6485c9562174')
+        AND (id = '65bb1b2b-e646-5870-9328-ea328410bf83' OR id = 'a4a98ef2-2013-5277-94ea-8365bf50ba71' OR id = 'cd3d5bc3-7d2a-5adf-b5fb-f090a98cec5b' OR id = '753baa82-afe9-5592-9968-6485c9562174')
         AND auth.parameter('iss') = 'quimiocare-demo'
         AND auth.parameter('role') = 'paciente'
         AND auth.parameter('cohort') = 'quimiocare-demo'
@@ -27,7 +27,7 @@ streams:
         AND formulario_id IN (
           SELECT id FROM formulario
           WHERE eliminado = false AND tratamiento = 'quimioterapia'
-            AND (id = 'a4a98ef2-2013-5277-94ea-8365bf50ba71' OR id = 'cd3d5bc3-7d2a-5adf-b5fb-f090a98cec5b' OR id = '753baa82-afe9-5592-9968-6485c9562174')
+            AND (id = '65bb1b2b-e646-5870-9328-ea328410bf83' OR id = 'a4a98ef2-2013-5277-94ea-8365bf50ba71' OR id = 'cd3d5bc3-7d2a-5adf-b5fb-f090a98cec5b' OR id = '753baa82-afe9-5592-9968-6485c9562174')
         )
         AND auth.parameter('iss') = 'quimiocare-demo'
         AND auth.parameter('role') = 'paciente'

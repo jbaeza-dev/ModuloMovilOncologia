@@ -1,4 +1,3 @@
-import { SafeAreaView } from 'react-native-safe-area-context';
 import { useCallback, useEffect, useState, useSyncExternalStore } from 'react';
 import { router } from 'expo-router';
 import { Screen } from '../../components/Screen';
@@ -43,16 +42,14 @@ export function SessionNotice() {
   if (!snapshot.user || ['context_ready', 'closing', 'no_identity'].includes(snapshot.state))
     return null;
   return (
-    <SafeAreaView edges={['top']}>
-      <InfoCard>
-        <BodyText>{snapshot.message ?? 'Comprobando la sesión…'}</BodyText>
-        <VisualButton
-          label="Revisar sesión"
-          secondary
-          onPress={() => router.navigate(data?.patientId ? '/perfil/sesion' : '/acceso')}
-        />
-      </InfoCard>
-    </SafeAreaView>
+    <InfoCard>
+      <BodyText>{snapshot.message ?? 'Comprobando la sesión…'}</BodyText>
+      <VisualButton
+        label="Revisar sesión"
+        secondary
+        onPress={() => router.navigate(data?.patientId ? '/perfil/sesion' : '/acceso')}
+      />
+    </InfoCard>
   );
 }
 export function IdentityScreen() {
@@ -191,7 +188,7 @@ export function OnlineConsentScreen() {
       <DemoBadge />
       <BodyText>
         {session?.config.mode === 'demo'
-          ? 'Textos sintéticos para pruebas técnicas; no son términos institucionales aprobados.'
+          ? 'Demostración con cuentas compartidas: usa solo datos ficticios. Esta aceptación no acredita atención médica ni aprobación institucional.'
           : 'Revisa los términos vigentes y su estado confirmado por el servidor.'}
       </BodyText>
       {feedback ? (
@@ -226,15 +223,16 @@ export function OnlineConsentScreen() {
               ? 'El acto anterior está revocado. Se requiere una aceptación nueva.'
               : 'Los envíos siguen pausados hasta confirmar el consentimiento vigente online.'}
         </BodyText>
-        {current ? <DetailRow label="Fecha autoritativa" value={current.otorgado_el} /> : null}
+        {current ? <DetailRow label="Aceptado el" value={current.otorgado_el} /> : null}
         <BodyText>
-          Sin conexión puedes conservar capturas y consultar historia. No se registra una aceptación
-          ficticia ni una revocación remota sin soporte contractual.
+          Sin conexión puedes conservar capturas y consultar tu historia. Para confirmar una
+          aceptación necesitas conexión. Para retirar tu autorización, utiliza los contactos
+          indicados en los términos.
         </BodyText>
       </InfoCard>
       {term && snapshot.user && !snapshot.uploadAllowed ? (
         <VisualButton
-          label="Aceptar términos online"
+          label="Acepto y autorizo el tratamiento de mis datos"
           disabled={busy || snapshot.stale}
           onPress={() => void accept()}
         />

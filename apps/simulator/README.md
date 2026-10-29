@@ -32,6 +32,7 @@ Ejecutar migración y seed de forma explícita; start no reinicia datos:
 ```powershell
 pnpm --filter @quimiocare/simulator migrate
 pnpm --filter @quimiocare/simulator seed
+pnpm --filter @quimiocare/simulator education:publish
 pnpm --filter @quimiocare/simulator start
 ```
 
@@ -52,7 +53,7 @@ Un escenario por paciente, persistido con contador/generación. ACK_SIGNOS_PERDI
 
 EDUCACION_RETIRADA retira la imagen de publicación en la tabla origen real para que REST y CDC observen la misma retirada. El catálogo educativo es global: ese cambio se observa por todas las cuentas autorizadas, sin exponer datos clínicos ajenos. Volver a NORMAL no resucita el recurso; un reset sintético explícito restaura el seed.
 
-TERMINOS_NUEVOS selecciona para el paciente de prueba la definición2.0. Consultar C-14 con bearer para obtener la definición que aplica a su escenario; sin bearer devuelve la definición base pública. No se altera el estado de consentimiento del otro paciente.
+La definición base de términos es 3.0, con el contenido de uso, privacidad y consentimiento aprobado para QuimioCare. Se conservan las definiciones técnicas 1.0/2.0 y sus aceptaciones anteriores; esas aceptaciones no habilitan automáticamente la edición nueva. Reutilizar una identidad de definición con contenido diferente detiene el seed. TERMINOS_NUEVOS selecciona una edición técnica 4.0 para el paciente de prueba. Consultar C-14 con bearer para obtener la que aplica a su escenario; sin bearer devuelve la definición base pública. No se altera el consentimiento del otro paciente. Las cuentas A/B continúan admitiendo únicamente datos ficticios.
 
 EDICION_CONDICIONAL y EXCLUSIVIDAD_ACTIVA seleccionan definiciones técnicas de códigos/IDs propios distintos del instrumento41preguntas. No se convierten en reglas clínicas ni modifican ediciones publicadas. La aprobación comunicada del instrumento actual debe vincularse a su edición por separado.
 
@@ -64,7 +65,11 @@ Las tablas físicas public.formulario, public.pregunta y public.contenido_educat
 
 C-11/C-12/C-13 exponen el subconjunto RC3.2 imagen/video elegible, con descripción nula normalizada, orden fechaDESC/idASC y total previo a paginar. D-06sirve los77bytes originales; metadatos usan su hash/revisión declarados, con base pública configurable.
 
-El schema propio de PDF educativo se versiona en contratos como ampliación separada. Este simulador no anuncia que C-13RC3.2 acepte documento ni publica un endpointPDF externo ficticio. Su visor/descarga pertenece al flujo posterior de biblioteca.
+El publicador `education:publish` verifica los archivos de `assets/education/` antes de actualizar el catálogo en una transacción. La edición `cuidaquimio-1.1.0` publica las 42 imágenes del sitio CUIDAQUIMIO revisado el 28-10-2026 (una conversión WebP a PNG previamente autorizada conserva sus píxeles) y sus mismos 44 enlaces YouTube. Ocho imágenes tienen una revisión nueva; el inventario identifica las dos entradas anteriores que ya no aparecen independientemente en el sitio. Solo retira esos UUID del mismo publicador y la muestra técnica; conserva otros contenidos, los datos clínicos y las fechas existentes al repetir la operación. Las fechas iniciales son marcas técnicas para conservar el orden del PPT; no son fechas de autoría. Los cuatro podcasts del sitio son enlaces online en el módulo móvil y no se etiquetan como videos ni se agregan al contrato clínico imagen/video.
+
+Las imágenes se sirven en `/__demo/archivos/educacion/{id}/{revision}.{png|jpg}`. Esta ruta entrega solo archivos educativos autorizados; no admite archivos de pacientes ni permite listar directorios. Comprueba publicación vigente, MIME, longitud y SHA-256; una retirada produce 404 y bytes inconsistentes, 503. Los enlaces originales de Drive permanecen en el catálogo como procedencia, sin cambiar sus permisos ni descargar videos.
+
+Los PDF educativos están fuera del alcance activo. Su schema propio histórico se conserva como antecedente y no habilita publicación, descarga ni visor PDF. Los reportes clínicos PDF/XLSX pertenecen a la app y no a esta biblioteca.
 
 El stubIA recibe un solo mensaje y no guarda conversaciones. NORMAL da respuesta sintética; saludo simple da cortesia; el mensaje técnico literal DEMO_SIN_INFORMACION prueba ese estado. IA_NO_DISPONIBLE e IA_URGENCIA prueban HTTP200sin disponibilidad y urgencia independiente. No demuestra calidad del RAG ni avisa a profesionales.
 

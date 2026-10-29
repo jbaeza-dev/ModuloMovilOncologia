@@ -427,16 +427,23 @@ export function VitalDataDetailScreen() {
             <DetailRow
               label="Presión arterial"
               value={
-                record.presion_sistolica === null || record.presion_diastolica === null
-                  ? 'Sin registro'
-                  : `${record.presion_sistolica}/${record.presion_diastolica} mmHg`
+                record.presion_sistolica !== null && record.presion_diastolica !== null
+                  ? `${record.presion_sistolica}/${record.presion_diastolica} mmHg`
+                  : record.presion_sistolica !== null
+                    ? `Sistólica: ${record.presion_sistolica} mmHg`
+                    : record.presion_diastolica !== null
+                      ? `Diastólica: ${record.presion_diastolica} mmHg`
+                      : 'Sin registro'
               }
             />
             <DetailRow label="Pulso" value={formatVital(record.pulso, 'lpm')} />
             <DetailRow label="Saturación" value={formatVital(record.saturacion_o2, '%')} />
           </InfoCard>
           <StatusPill>{syncLabel}</StatusPill>
-          <BodyText>El registro no se ha enviado ni evaluado clínicamente.</BodyText>
+          <BodyText>
+            El estado de envío indica la confirmación del servidor. El registro no implica
+            evaluación clínica.
+          </BodyText>
         </>
       )}
     </Screen>

@@ -16,7 +16,7 @@ import { issueSession, principalFromHeader, refreshSession, verifyControl } from
 import { applyScenario, guardScenario } from './scenarios.js';
 import { PATIENTS, SCENARIOS } from './types.js';
 import type { DemoPatient, EproInput, ObjectValue, Scenario, SignsInput } from './types.js';
-import { FORMS, resetDatabase } from './seed-data.js';
+import { ACTIVE_FORMS, resetDatabase } from './seed-data.js';
 import { acceptConsent, consentStatus, currentTermsId, getTerms } from './consent.js';
 import {
   completeProfile,
@@ -29,6 +29,7 @@ import {
 } from './clinical.js';
 import { loadForm } from './forms.js';
 import { educationCategories, educationDetail, listEducation } from './education.js';
+import { serveEducationMaterial } from './education-materials.js';
 import { aiResponse } from './ai.js';
 
 interface Result {
@@ -141,6 +142,14 @@ export function createSimulator(config: SimulatorConfig, db: Database) {
   return createServer((req, res) => {
     void (async () => {
       const url = new URL(req.url ?? '/', 'http://simulator.invalid');
+      if (
+        config.service === 'clinical' &&
+        req.method === 'GET' &&
+        url.pathname.startsWith('/__demo/archivos/educacion/')
+      ) {
+        await serveEducationMaterial(db, url.pathname, res);
+        return;
+      }
       const route = operationFor(url.pathname, req.method ?? 'GET');
       if (url.pathname === '/health' && req.method === 'GET') {
         try {
@@ -272,7 +281,7 @@ export function createSimulator(config: SimulatorConfig, db: Database) {
               db,
               formForScenario(
                 state!,
-                FORMS.map((form) => form.id),
+                ACTIVE_FORMS.map((form) => form.id),
               ),
             ),
           };

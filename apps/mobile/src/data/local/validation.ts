@@ -39,7 +39,8 @@ export function validateVitalInput(input: VitalInput): VitalValidationResult {
     key: keyof VitalInput,
     label: string,
     integer: boolean,
-    max?: number,
+    min: number,
+    max: number,
   ): number | null {
     const value = raw.trim();
     if (!value) return null;
@@ -48,26 +49,44 @@ export function validateVitalInput(input: VitalInput): VitalValidationResult {
       return null;
     }
     const parsed = Number(value.replace(',', '.'));
-    if (!Number.isFinite(parsed) || parsed <= 0 || (max !== undefined && parsed > max)) {
+    if (!Number.isFinite(parsed) || parsed < min || parsed > max) {
       errors[key] = `${label}: ingresa un valor válido.`;
       return null;
     }
     return parsed;
   }
 
-  const temperatura = parseField(input.temperature, 'temperature', 'Temperatura', false);
-  const presion_sistolica = parseField(input.systolic, 'systolic', 'Presión sistólica', true);
-  const presion_diastolica = parseField(input.diastolic, 'diastolic', 'Presión diastólica', true);
-  const pulso = parseField(input.pulse, 'pulse', 'Pulso', true);
-  const saturacion_o2 = parseField(input.saturation, 'saturation', 'Saturación', true, 100);
+  // Input limits come from SignoVitalRegistroInput (RC3.2), not triage thresholds.
+  const rawTemperature = parseField(input.temperature, 'temperature', 'Temperatura', false, 30, 45);
+  const temperatura = rawTemperature === null ? null : Number(rawTemperature.toFixed(1));
+  const presion_sistolica = parseField(
+    input.systolic,
+    'systolic',
+    'Presión sistólica',
+    true,
+    40,
+    300,
+  );
+  const presion_diastolica = parseField(
+    input.diastolic,
+    'diastolic',
+    'Presión diastólica',
+    true,
+    30,
+    200,
+  );
+  const pulso = parseField(input.pulse, 'pulse', 'Pulso', true, 30, 250);
+  const saturacion_o2 = parseField(input.saturation, 'saturation', 'Saturación', true, 50, 100);
 
   const hasSysRaw = input.systolic.trim().length > 0;
   const hasDiaRaw = input.diastolic.trim().length > 0;
 
-  if (hasSysRaw && !hasDiaRaw) {
-    errors.diastolic = 'Ingresa la presión diastólica.';
-  } else if (!hasSysRaw && hasDiaRaw) {
-    errors.systolic = 'Ingresa la presión sistólica.';
+  if (
+    presion_sistolica !== null &&
+    presion_diastolica !== null &&
+    presion_sistolica <= presion_diastolica
+  ) {
+    errors.systolic = 'La presión sistólica debe ser mayor que la diastólica.';
   }
 
   const hasAnyInput =
@@ -103,11 +122,6 @@ export function parseVitalInput(input: VitalInput): VitalValues {
     if (result.generalError) {
       throw new InputError(result.generalError, result.errors);
     }
-    const hasSysRaw = input.systolic.trim().length > 0;
-    const hasDiaRaw = input.diastolic.trim().length > 0;
-    if ((hasSysRaw && !hasDiaRaw) || (!hasSysRaw && hasDiaRaw)) {
-      throw new InputError('Ingresa ambos valores de presión arterial.', result.errors);
-    }
     const fieldOrder: Array<keyof VitalInput> = [
       'temperature',
       'systolic',
@@ -123,6 +137,45 @@ export function parseVitalInput(input: VitalInput): VitalValues {
     throw new InputError('Datos de medición inválidos.', result.errors);
   }
   return result.values;
+}
+
+/** Apply the same contractual limits at the durable repository boundary. */
+export function normalizeVitalValues(values: VitalValues): VitalValues {
+  if (Object.values(values).some((value) => value != null && typeof value !== 'number')) {
+    throw new InputError('Las mediciones deben ser números.');
+  }
+  const text = (value: number | null) => (value == null ? '' : String(value));
+  return parseVitalInput({
+    temperature: text(values.temperatura),
+    systolic: text(values.presion_sistolica),
+    diastolic: text(values.presion_diastolica),
+    pulse: text(values.pulso),
+    saturation: text(values.saturacion_o2),
+  });
+}
+
+/** A queued capture keeps its original timestamp; retries never replace it with upload time. */
+export function validateCaptureTimestamp(value: string, referenceNow = Date.now()): void {
+  const captured = Date.parse(value);
+  const calendar = value.match(/^(\d{4})-(\d{2})-(\d{2})T/);
+  const year = Number(calendar?.[1]),
+    month = Number(calendar?.[2]),
+    day = Number(calendar?.[3]);
+  const leap = year % 4 === 0 && (year % 100 !== 0 || year % 400 === 0);
+  const monthDays = [31, leap ? 29 : 28, 31, 30, 31, 30, 31, 31, 30, 31, 30, 31];
+  if (
+    !calendar ||
+    month < 1 ||
+    month > 12 ||
+    day < 1 ||
+    day > monthDays[month - 1] ||
+    !/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(?:\.\d+)?(?:Z|[+-]\d{2}:\d{2})$/.test(value) ||
+    !Number.isFinite(captured) ||
+    !Number.isFinite(referenceNow) ||
+    captured > referenceNow + 5 * 60 * 1000
+  ) {
+    throw new InputError('La fecha de captura no es válida o supera cinco minutos en el futuro.');
+  }
 }
 
 export function parseSymptomDescription(raw: string): string {

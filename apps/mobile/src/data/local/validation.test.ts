@@ -3,6 +3,8 @@ import {
   InputError,
   parseSymptomDescription,
   parseVitalInput,
+  normalizeVitalValues,
+  validateCaptureTimestamp,
   validateVitalInput,
   type VitalInput,
 } from './validation';
@@ -56,14 +58,56 @@ describe('validateVitalInput y parseVitalInput', () => {
     expect(res.values.presion_diastolica).toBe(80);
   });
 
-  it('exige ambos valores de presión arterial e identifica el faltante', () => {
+  it('permite cada presión por separado como establece el contrato', () => {
     const missingDia = validateVitalInput({ ...blank, systolic: '120' });
-    expect(missingDia.valid).toBe(false);
-    expect(missingDia.errors.diastolic).toBe('Ingresa la presión diastólica.');
+    expect(missingDia.valid).toBe(true);
+    expect(missingDia.values.presion_diastolica).toBeNull();
 
     const missingSys = validateVitalInput({ ...blank, diastolic: '80' });
-    expect(missingSys.valid).toBe(false);
-    expect(missingSys.errors.systolic).toBe('Ingresa la presión sistólica.');
+    expect(missingSys.valid).toBe(true);
+    expect(missingSys.values.presion_sistolica).toBeNull();
+  });
+
+  it('rechaza presiones simultáneas iguales o invertidas sin interpretar gravedad', () => {
+    expect(validateVitalInput({ ...blank, systolic: '80', diastolic: '80' }).valid).toBe(false);
+    expect(validateVitalInput({ ...blank, systolic: '80', diastolic: '120' }).valid).toBe(false);
+  });
+
+  it.each([
+    ['temperature', '30', '45', '29.9', '45.1'],
+    ['systolic', '40', '300', '39', '301'],
+    ['diastolic', '30', '200', '29', '201'],
+    ['pulse', '30', '250', '29', '251'],
+    ['saturation', '50', '100', '49', '101'],
+  ] as const)('respeta ambos extremos RC3.2 para %s', (field, min, max, below, above) => {
+    expect(validateVitalInput({ ...blank, [field]: min }).valid).toBe(true);
+    expect(validateVitalInput({ ...blank, [field]: max }).valid).toBe(true);
+    expect(validateVitalInput({ ...blank, [field]: below }).valid).toBe(false);
+    expect(validateVitalInput({ ...blank, [field]: above }).valid).toBe(false);
+  });
+
+  it('normaliza temperatura antes de guardar y rechaza valores directos no contractuales', () => {
+    const input = {
+      temperatura: 36.66,
+      presion_sistolica: null,
+      presion_diastolica: null,
+      pulso: null,
+      saturacion_o2: null,
+    };
+    expect(normalizeVitalValues(input).temperatura).toBe(36.7);
+    expect(() => normalizeVitalValues({ ...input, pulso: 251 })).toThrow(InputError);
+    expect(() => normalizeVitalValues({ ...input, temperatura: Number.NaN })).toThrow(InputError);
+  });
+
+  it('admite la frontera de cinco minutos futuros y conserva capturas antiguas al reintentar', () => {
+    const now = Date.parse('2026-10-27T20:00:00Z');
+    expect(() => validateCaptureTimestamp('2026-10-27T20:05:00.000Z', now)).not.toThrow();
+    expect(() => validateCaptureTimestamp('2026-10-27T20:05:00.001Z', now)).toThrow(InputError);
+    expect(() => validateCaptureTimestamp('2026-10-20T10:00:00-03:00', now)).not.toThrow();
+    expect(() => validateCaptureTimestamp('2026-10-27T20:00:00', now)).toThrow(InputError);
+    expect(() => validateCaptureTimestamp('2026-02-30T10:00:00Z', now)).toThrow(InputError);
+    expect(() => validateCaptureTimestamp('2026-02-29T10:00:00Z', now)).toThrow(InputError);
+    expect(() => validateCaptureTimestamp('2024-02-29T10:00:00Z', now)).not.toThrow();
   });
 
   it('admite presión arterial completa sin imponer reglas clínicas inventadas', () => {

@@ -121,18 +121,46 @@ describe('P04 C10 immutable transport and owner states', () => {
       id: formId,
       version: 1,
       titulo: 'Technical fixture',
+      codigo: 'TECHNICAL',
+      tratamiento: 'quimioterapia',
+      eliminado: false,
+      activo: true,
       configuracion: { version_condiciones: 1 },
     },
-    questions: [{ id: question, codigo: 'MADRE_DEMO' }],
+    questions: [
+      {
+        id: question,
+        codigo: 'MADRE_DEMO',
+        titulo: 'Technical',
+        tipo: 'booleano',
+        orden: 0,
+        requerida: true,
+        opciones: [],
+        configuracion: {},
+        formulario_id: formId,
+        eliminado: false,
+      },
+    ],
   };
   for (const value of [false, 0])
     it('preserves typed ' + String(value) + ' through C10, including lost ACK retry', async () => {
       const db = await database();
-      await saveContractEpro(db, scope, definition, {
-        id: capture,
-        fecha_respuesta: measured,
-        respuestas: [{ pregunta_id: question, valor: value }],
-      });
+      await saveContractEpro(
+        db,
+        scope,
+        {
+          ...definition,
+          questions: definition.questions.map((q) => ({
+            ...q,
+            tipo: typeof value === 'boolean' ? 'booleano' : 'numerico',
+          })),
+        },
+        {
+          id: capture,
+          fecha_respuesta: measured,
+          respuestas: [{ pregunta_id: question, valor: value }],
+        },
+      );
       const original = await command(db),
         complete = vi.fn(async () => {});
       let calls = 0;

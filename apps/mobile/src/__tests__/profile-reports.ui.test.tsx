@@ -144,7 +144,21 @@ jest.mock('../features/reports/report-xlsx', () => ({
   }),
 }));
 
+const mockCacheMedication = jest.fn().mockResolvedValue(undefined);
+jest.mock('../data/local/clinical-context/medication-cache', () => ({
+  cacheMedicationForReminder: (...args: unknown[]) => mockCacheMedication(...args),
+}));
+const mockOwner = '964d32f1-6941-579f-9f08-b60342194da9';
+let mockSnapshot: Record<string, unknown>;
+const mockSession = {
+  subscribe: () => () => undefined,
+  getSnapshot: () => mockSnapshot,
+  getCurrentUser: () => ({ id: mockOwner }),
+  getContextSignal: () => new AbortController().signal,
+  refreshIdentity: jest.fn().mockResolvedValue(undefined),
+};
 const mockLocalDataContext = {
+  identitySession: mockSession,
   repository: mockRepository,
   patientId: 'paciente-a',
   runSave: jest.fn().mockImplementation((cb: () => Promise<unknown>) => cb()),
@@ -172,6 +186,30 @@ import { ReportsScreen } from '../features/reports/ReportsScreens';
 describe('Profile y Reports UI (Bloque 5)', () => {
   beforeEach(() => {
     jest.clearAllMocks();
+    mockSnapshot = {
+      state: 'context_ready',
+      stale: false,
+      uploadAllowed: true,
+      terms: null,
+      identity: {
+        owner: mockOwner,
+        scope: 'test',
+        fetchedAt: '2026-10-15T00:00:00Z',
+        profile: { ...mockPatientProfile, id: mockOwner },
+        clinicalStatus: 'available',
+        treatmentStatus: 'missing',
+        clinicalProfile: {
+          id: 'ficha-test',
+          fecha_actualizacion: '2026-10-15T00:00:00Z',
+          medicamentos: mockActiveMedications.map((m) => ({
+            ...m,
+            activo: true,
+            fecha_termino: m.fecha_fin,
+          })),
+        },
+        treatment: null,
+      },
+    };
   });
 
   describe('ProfileScreen', () => {
@@ -221,7 +259,7 @@ describe('Profile y Reports UI (Bloque 5)', () => {
       // Fechas civiles en formato DD/MM/AAAA
       expect(screen.getByText('01/10/2026')).toBeTruthy();
       expect(screen.getByText('20/10/2026')).toBeTruthy();
-      expect(screen.getByText(/Información recibida el/)).toBeTruthy();
+      expect(screen.getByText(/Última consulta completa/)).toBeTruthy();
 
       const configButton = screen.getByText('Configurar aviso');
       expect(configButton).toBeTruthy();

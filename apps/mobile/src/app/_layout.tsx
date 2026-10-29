@@ -1,10 +1,9 @@
-import { ClinicalSyncNotice } from '../features/sync/ClinicalSyncNotice';
+import { GlobalStatusNotice } from '../features/sync/GlobalStatusNotice';
 import Feather from '@expo/vector-icons/Feather';
 import { useFonts } from 'expo-font';
 import { router, Stack, useSegments } from 'expo-router';
 import { useEffect } from 'react';
 import { Platform, StatusBar, View } from 'react-native';
-import { SessionNotice } from '../features/access/SessionScreens';
 
 import { ThemeProvider, useAppTheme } from '../providers/ThemeProvider';
 import { LocalDataProvider, useLocalData } from '../providers/LocalDataProvider';
@@ -48,19 +47,22 @@ export function AppNavigator() {
 
   return (
     <View style={{ flex: 1 }}>
-      <SessionNotice />
-      <ClinicalSyncNotice />
+      {segments[0] !== 'visor-infografia' ? <GlobalStatusNotice /> : null}
       <StatusBar
-        barStyle={theme.colorScheme === 'dark' ? 'light-content' : 'dark-content'}
+        barStyle={
+          segments[0] === 'visor-infografia' || theme.colorScheme === 'dark'
+            ? 'light-content'
+            : 'dark-content'
+        }
         backgroundColor={Platform.OS === 'android' ? 'transparent' : undefined}
         translucent
       />
-      <Stack screenOptions={{ headerShown: false }}>
+      <Stack screenOptions={{ headerShown: false, orientation: 'portrait' }}>
         <Stack.Protected guard={Boolean(patientId && !isClosing)}>
           <Stack.Screen name="(tabs)" />
           <Stack.Screen
             name="visor-infografia"
-            options={{ presentation: 'fullScreenModal', headerShown: false }}
+            options={{ presentation: 'fullScreenModal', headerShown: false, orientation: 'all' }}
           />
         </Stack.Protected>
         <Stack.Screen name="acceso" />

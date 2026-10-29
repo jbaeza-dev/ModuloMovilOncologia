@@ -23,6 +23,15 @@ describe('vitals-formatters', () => {
   };
 
   describe('formatVitalsSummary', () => {
+    it('muestra una presión aislada sin ocultarla ni inventar la otra', () => {
+      expect(formatVitalsSummary({ ...baseRecord, presion_sistolica: 120 })).toBe(
+        'Presión sistólica: 120 mmHg',
+      );
+      expect(formatVitalsSummary({ ...baseRecord, presion_diastolica: 80 })).toBe(
+        'Presión diastólica: 80 mmHg',
+      );
+    });
+
     it('construye resumen para solo presión arterial', () => {
       const summary = formatVitalsSummary({
         ...baseRecord,

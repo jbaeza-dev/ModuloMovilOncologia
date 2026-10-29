@@ -40,13 +40,14 @@ import { useLocalData } from '../../providers/LocalDataProvider';
 import { useAppTheme } from '../../providers/ThemeProvider';
 import { theme } from '../../theme';
 import {
-  getEducationalCatalogReader,
   type EducationalCategory,
   type EducationalFormatFilter,
 } from './educational-catalog-service';
-import { getCategoryByIdOrSlug } from './educational-categories';
+import { useEducationalCatalog, CatalogStatusNotice } from './use-educational-catalog';
 import {
   downloadAndSaveInfographic,
+  verifiedLocalImageCopy,
+  verifiedLocalImageCopies,
   removeLocalInfographicCopy,
 } from './infographic-storage-service';
 import { useBulkInfographicDownload } from './use-bulk-infographic-download';
@@ -55,6 +56,7 @@ import { executeYouTubeLaunch } from './youtube-launcher';
 export { downloadAndSaveInfographic, removeLocalInfographicCopy };
 
 export function EducationScreen() {
+  const catalogReader = useEducationalCatalog();
   const { theme: appTheme } = useAppTheme();
   const { repository, patientId, runSave } = useLocalData();
   const styles = useStyles();
@@ -68,14 +70,23 @@ export function EducationScreen() {
 
   const loadCopies = useCallback(async (): Promise<EducationalLocalCopy[]> => {
     if (!repository || !patientId) return [];
-    return repository.education.listLocalCopies();
-  }, [repository, patientId]);
+    const verified = await verifiedLocalImageCopies(
+      await repository.education.listLocalCopies(),
+      patientId,
+    );
+    if (!verified.length) return [];
+    const activeIds = new Set(
+      (await catalogReader.getAllResources('infografia')).map((item) => item.id),
+    );
+    // Historical and technical files remain on disk, but are not current library publications.
+    return verified.filter((copy) => activeIds.has(copy.contentId));
+  }, [repository, patientId, catalogReader]);
 
-  const { items: copies, refresh: refreshCopies } = useFocusedList(loadCopies);
+  const { items: copies, error: copiesError, refresh: refreshCopies } = useFocusedList(loadCopies);
 
   const loadCategories = useCallback(async (): Promise<EducationalCategory[]> => {
-    return getEducationalCatalogReader().getCategories();
-  }, []);
+    return catalogReader.getCategories();
+  }, [catalogReader]);
 
   const { items: categories } = useFocusedList(loadCategories);
 
@@ -176,8 +187,12 @@ export function EducationScreen() {
         {physicallyPresentCopies.length === 0 ? (
           <EmptyState
             icon="folder"
-            title="Sin copias guardadas"
-            description="Aún no has guardado infografías en este dispositivo."
+            title={copiesError ? 'No se pudieron consultar las copias' : 'Sin copias guardadas'}
+            description={
+              copiesError
+                ? 'Reintenta consultar los archivos y el catálogo guardado.'
+                : 'Aún no has guardado infografías en este dispositivo.'
+            }
           />
         ) : (
           physicallyPresentCopies.map((copy) => {
@@ -241,6 +256,9 @@ export function EducationScreen() {
           })
         )}
 
+        {copiesError ? (
+          <VisualButton label="Reintentar consulta de copias" onPress={refreshCopies} />
+        ) : null}
         {/* Modal de información y acciones individuales para la biblioteca sin conexión */}
         {infoResource ? (
           <Modal
@@ -339,11 +357,16 @@ export function EducationScreen() {
   // Vista principal de biblioteca (/educacion)
   return (
     <Screen isRoot title="Contenido educativo">
+      <CatalogStatusNotice />
       <DemoBadge />
       <BodyText>
-        Biblioteca multimedia sobre quimioterapia: guías e infografías descargables y videos
-        educativos online.
+        Biblioteca sobre quimioterapia: imágenes descargables, videos y podcasts online.
       </BodyText>
+      <VisualButton
+        label="Podcasts de CUIDAQUIMIO · solo online"
+        secondary
+        onPress={() => router.navigate('/educacion/podcasts')}
+      />
 
       {/* Banner de progreso o estado de descarga masiva */}
       {isDownloading ? (
@@ -430,9 +453,11 @@ export function EducationScreen() {
         <View style={styles.copy}>
           <Text style={styles.heading}>Mis copias guardadas</Text>
           <BodyText>
-            {physicallyPresentCopies.length === 1
-              ? '1 material disponible sin conexión'
-              : `${physicallyPresentCopies.length} materiales disponibles sin conexión`}
+            {copiesError
+              ? 'No se pudieron consultar las copias guardadas.'
+              : physicallyPresentCopies.length === 1
+                ? '1 material disponible sin conexión'
+                : `${physicallyPresentCopies.length} materiales disponibles sin conexión`}
           </BodyText>
         </View>
         <Feather name="chevron-right" size={22} color={appTheme.colors.text} />
@@ -460,6 +485,7 @@ export function EducationScreen() {
 }
 
 export function EducationCategoryScreen() {
+  const catalogReader = useEducationalCatalog();
   const { theme: appTheme } = useAppTheme();
   const { repository, patientId, runSave, database, manager } = useLocalData();
   const styles = useStyles();
@@ -470,33 +496,28 @@ export function EducationCategoryScreen() {
   const [modalError, setModalError] = useState<string | null>(null);
 
   const { categoria } = useLocalSearchParams<{ categoria?: string }>();
-  const resolvedCategory = useMemo(() => getCategoryByIdOrSlug(categoria), [categoria]);
-  const categoryIndex = resolvedCategory.id;
 
   const loadData = useCallback(async () => {
-    const reader = getEducationalCatalogReader();
-    const [categories, resources, copies, interactions] = await Promise.all([
-      reader.getCategories(),
-      reader.getResourcesByCategory(categoryIndex, formatFilter),
-      repository && patientId ? repository.education.listLocalCopies() : Promise.resolve([]),
-      repository && patientId && typeof repository.education.listInteractions === 'function'
-        ? repository.education.listInteractions()
+    const reader = catalogReader;
+    const categories = await reader.getCategories();
+    const selectedCategory = categories.find(
+      (c) => c.slug === categoria || String(c.id) === categoria,
+    );
+    const [resources, copies, interactions] = await Promise.all([
+      selectedCategory
+        ? reader.getResourcesByCategory(selectedCategory.id, formatFilter)
         : Promise.resolve([]),
+      repository && patientId ? repository.education.listLocalCopies() : Promise.resolve([]),
+      repository && patientId ? repository.education.listInteractions() : Promise.resolve([]),
     ]);
 
     if (repository && patientId) {
       await reconcileResourceCopies(patientId, repository).catch(() => undefined);
     }
 
-    const currentCategory = categories.find((c) => c.id === categoryIndex) ?? {
-      id: resolvedCategory.id,
-      title: resolvedCategory.title,
-      icon: resolvedCategory.icon,
-      count: 0,
-      countLabel: '0 contenidos',
-    };
-    return { currentCategory, resources, copies, interactions };
-  }, [categoryIndex, formatFilter, repository, patientId, resolvedCategory]);
+    const verifiedCopies = patientId ? await verifiedLocalImageCopies(copies, patientId) : [];
+    return { currentCategory: selectedCategory, resources, copies: verifiedCopies, interactions };
+  }, [categoria, formatFilter, repository, patientId, catalogReader]);
 
   const {
     value,
@@ -640,7 +661,8 @@ export function EducationCategoryScreen() {
   }
 
   return (
-    <Screen title={value?.currentCategory?.title ?? resolvedCategory.title}>
+    <Screen title={value?.currentCategory?.title ?? 'Categoría educativa'}>
+      <CatalogStatusNotice />
       <DemoBadge />
       <BodyText>Recursos y guías diseñadas para acompañarte en tu cuidado diario.</BodyText>
 
@@ -975,6 +997,7 @@ export function EducationCategoryScreen() {
 }
 
 export function EducationResourceScreen() {
+  const catalogReader = useEducationalCatalog();
   const { theme: appTheme } = useAppTheme();
   const { patientId, repository, runSave, saving, database, manager } = useLocalData();
   const styles = useStyles();
@@ -990,8 +1013,8 @@ export function EducationResourceScreen() {
 
   const loadResourceData = useCallback(async () => {
     if (!recurso) return null;
-    return getEducationalCatalogReader().getResourceById(recurso);
-  }, [recurso]);
+    return catalogReader.getResourceById(recurso);
+  }, [recurso, catalogReader]);
 
   const { value: resource, loading: loadingResource } = useFocusedValue(loadResourceData, null);
 
@@ -1007,7 +1030,7 @@ export function EducationResourceScreen() {
       repository.education.getLocalCopy(recurso),
       repository.education.getInteraction(recurso),
     ]);
-    return { copy, interaction };
+    return { copy: copy ? await verifiedLocalImageCopy(copy, patientId) : null, interaction };
   }, [repository, patientId, recurso]);
 
   const { value: statusData, refresh: refreshStatus } = useFocusedValue(loadStatus, {
@@ -1075,6 +1098,8 @@ export function EducationResourceScreen() {
       ? resourceFileExists(patientId, effectiveResource.id, localCopy.rutaRelativa)
       : false;
   const isDownloaded = Boolean(localCopy && fileExists && localCopy.estado !== 'error');
+  const isOlderCopy =
+    isDownloaded && resource && localCopy?.metadataLocal?.versionOrigen !== resource.version;
   const isFileMissing = Boolean(localCopy && (!fileExists || localCopy.estado === 'error'));
   const busy = actionBusy || saving;
 
@@ -1240,6 +1265,12 @@ export function EducationResourceScreen() {
 
   return (
     <Screen title={effectiveResource.title}>
+      {isOlderCopy ? (
+        <BodyText>
+          La copia guardada corresponde a una revisión anterior. Actualízala con conexión para
+          obtener la publicación vigente.
+        </BodyText>
+      ) : null}
       <DemoBadge />
 
       <InfoCard>
