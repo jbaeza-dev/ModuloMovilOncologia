@@ -12,12 +12,12 @@ for attempt in {1..30}; do
  sleep 2
 done
 systemctl --user is-active --quiet qc-worker.service
-for url in http://127.0.0.1:8018/healthz http://127.0.0.1:8019/healthz http://127.0.0.1:8019/quimiocare-backend/health; do curl --fail --silent --show-error --max-time 10 "$url" >/dev/null; done
-for url in http://127.0.0.1:8018/__demo/reset http://127.0.0.1:8019/quimiocare-backend/sync/api/admin/v1/diagnostics http://127.0.0.1:8019/internal/ready; do
+for url in http://127.0.0.1:8018/healthz http://127.0.0.1:8019/healthz http://127.0.0.1:8019/health; do curl --fail --silent --show-error --max-time 10 "$url" >/dev/null; done
+for url in http://127.0.0.1:8018/__demo/reset http://127.0.0.1:8019/sync/api/admin/v1/diagnostics http://127.0.0.1:8019/internal/ready; do
  code=$(curl --silent --show-error --max-time 10 -o /dev/null -w '%{http_code}' "$url")
  [[ "$code" == 404 ]] || { echo 'An internal route is exposed' >&2; exit 1; }
 done
-code=$(curl --silent --show-error --max-time 10 -X POST -H 'Content-Type: application/json' -d '{}' -o /dev/null -w '%{http_code}' http://127.0.0.1:8019/quimiocare-backend/sync/stream)
+code=$(curl --silent --show-error --max-time 10 -X POST -H 'Content-Type: application/json' -d '{}' -o /dev/null -w '%{http_code}' http://127.0.0.1:8019/sync/stream)
 [[ "$code" == 401 ]] || { echo "Sync route expected 401, got $code" >&2; exit 1; }
 if [[ -n "$(printenv PUBLIC_ORIGIN || true)" ]]; then
  curl --fail --silent --show-error --max-time 15 "$PUBLIC_ORIGIN/quimiocare-backend/health" >/dev/null

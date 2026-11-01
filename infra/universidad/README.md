@@ -20,7 +20,7 @@ Total configurado: 2.688 MiB; esto no constituye una medición de carga. Cada se
 
 ## Rutas públicas
 
-El proxy institucional termina TLS y conserva los prefijos al entregar a los proxies locales:
+La prueba HTTP en Parra del 01-11-2026 confirmó que el proxy institucional termina TLS y **retira** `/quimiocare` y `/quimiocare-backend` al entregar a los puertos 8018 y 8019, respectivamente. Los proxies locales admiten estas rutas sin prefijo; las URLs públicas conservan los siguientes prefijos:
 
 | Ruta                                     | Destino                               |
 | ---------------------------------------- | ------------------------------------- |
@@ -33,7 +33,7 @@ El proxy institucional termina TLS y conserva los prefijos al entregar a los pro
 | `/quimiocare-backend/sync/stream`        | stream PowerSync                      |
 | `/quimiocare-backend/health`             | salud gateway                         |
 
-El SDK recibe como base `https://DOMINIO/quimiocare-backend/sync`. Nginx retira únicamente el prefijo institucional y entrega `/sync/stream` al servicio. No se publica el API administrativo de PowerSync, `/internal/ready` ni los controles destructivos `__demo`. La compatibilidad local de `/sync/stream` queda únicamente en `gateway.eval.conf`.
+El SDK recibe como base `https://DOMINIO/quimiocare-backend/sync`. Parra entrega `/sync/stream` a Nginx y este conserva esa ruta hacia PowerSync, sin buffering. Las rutas con prefijo también se conservan para diagnóstico directo. Nginx restaura `/quimiocare` internamente para las páginas Swagger y su callback, de modo que sus assets, retornos y redirecciones sigan utilizando URLs públicas. No se publica el API administrativo de PowerSync, `/internal/ready` ni los controles destructivos `__demo`. Solo los proxies publican puertos del host: `127.0.0.1:8018` y `127.0.0.1:8019`.
 
 ## Archivos y persistencia
 
