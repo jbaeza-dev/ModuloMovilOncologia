@@ -19,7 +19,7 @@ class EnvironmentTests(unittest.TestCase):
     def test_uri_encoding_and_public_prefix(self):
         raw=valid(); result=environment.configuration(raw)
         self.assertEqual(unquote(urlparse(result['DATABASE_URL']).password),raw['QC_ADMIN_PASSWORD'])
-        self.assertEqual(result['POWERSYNC_PUBLIC_BASE_URL'],'https://example.org/quimiocare-backend/sync')
+        self.assertEqual(result['POWERSYNC_PUBLIC_BASE_URL'],'https://example.org/quimiocare-backend')
 
     def test_separate_credentials_and_modes(self):
         with tempfile.TemporaryDirectory(prefix='qc-env-test-') as temp:

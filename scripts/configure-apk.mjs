@@ -39,7 +39,8 @@ if (university) {
   Object.assign(values, {
     EXPO_PUBLIC_CLINICAL_URL: base.origin + '/quimiocare',
     EXPO_PUBLIC_GATEWAY_URL: base.origin + '/quimiocare-backend',
-    EXPO_PUBLIC_POWERSYNC_URL: base.origin + '/quimiocare-backend/sync',
+    // The SDK appends /sync/stream to this service base URL.
+    EXPO_PUBLIC_POWERSYNC_URL: base.origin + '/quimiocare-backend',
     EXPO_PUBLIC_AUTH_URL: issuer,
     EXPO_PUBLIC_AUTH_ISSUER: issuer,
     EXPO_PUBLIC_AUTH_PUBLIC_KEY: key,

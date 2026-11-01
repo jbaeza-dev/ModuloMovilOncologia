@@ -25,9 +25,12 @@ test('APK university configuration requires real public inputs and produces inst
       });
     run();
     const saved = await readFile(path, 'utf8');
-    assert.match(
-      saved,
-      /EXPO_PUBLIC_POWERSYNC_URL=https:\/\/example.org\/quimiocare-backend\/sync\n/,
+    assert.match(saved, /EXPO_PUBLIC_POWERSYNC_URL=https:\/\/example.org\/quimiocare-backend\n/);
+    const syncEndpoint = saved.match(/^EXPO_PUBLIC_POWERSYNC_URL=(.+)$/m)[1];
+    // PowerSync concatenates its stream path onto the configured endpoint.
+    assert.equal(
+      syncEndpoint + '/sync/stream',
+      'https://example.org/quimiocare-backend/sync/stream',
     );
     assert.match(saved, /EXPO_PUBLIC_DEMO_MODE=false/);
     for (const overrides of [

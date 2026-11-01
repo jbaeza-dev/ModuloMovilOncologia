@@ -33,7 +33,7 @@ La prueba HTTP en Parra del 01-11-2026 confirmó que el proxy institucional term
 | `/quimiocare-backend/sync/stream`        | stream PowerSync                      |
 | `/quimiocare-backend/health`             | salud gateway                         |
 
-El SDK recibe como base `https://DOMINIO/quimiocare-backend/sync`. Parra entrega `/sync/stream` a Nginx y este conserva esa ruta hacia PowerSync, sin buffering. Las rutas con prefijo también se conservan para diagnóstico directo. Nginx restaura `/quimiocare` internamente para las páginas Swagger y su callback, de modo que sus assets, retornos y redirecciones sigan utilizando URLs públicas. No se publica el API administrativo de PowerSync, `/internal/ready` ni los controles destructivos `__demo`. Solo los proxies publican puertos del host: `127.0.0.1:8018` y `127.0.0.1:8019`.
+El SDK recibe como base `https://DOMINIO/quimiocare-backend` y añade `/sync/stream`. Parra entrega `/sync/stream` a Nginx y este conserva esa ruta hacia PowerSync, sin buffering. Las rutas con prefijo también se conservan para diagnóstico directo. Nginx restaura `/quimiocare` internamente para las páginas Swagger y su callback, de modo que sus assets, retornos y redirecciones sigan utilizando URLs públicas. No se publica el API administrativo de PowerSync, `/internal/ready` ni los controles destructivos `__demo`. Solo los proxies publican puertos del host: `127.0.0.1:8018` y `127.0.0.1:8019`.
 
 ## Archivos y persistencia
 

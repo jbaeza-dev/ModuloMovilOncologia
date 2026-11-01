@@ -77,7 +77,7 @@ def configuration(values):
         "PS_SOURCE_URI":uri("qc_replica","QC_REPLICA_PASSWORD","qc_demo")+"?sslmode=disable",
         "PS_STORAGE_URI":uri("qc_storage","QC_STORAGE_PASSWORD","qc_powersync")+"?sslmode=disable",
         "SIMULATOR_PUBLIC_BASE_URL":public+"/quimiocare","GATEWAY_PUBLIC_BASE_URL":public+"/quimiocare-backend",
-        "POWERSYNC_PUBLIC_BASE_URL":public+"/quimiocare-backend/sync",
+        "POWERSYNC_PUBLIC_BASE_URL":public+"/quimiocare-backend",
         "CLINICAL_API_URL":"http://qc-clinical:3002","AI_API_URL":"http://qc-ai:3003","AI_SERVICE_URL":"http://qc-ai:3003",
         "EDUCATION_MEDIA_ROOT":"/var/lib/quimiocare/educacion","EDUCATION_TEMP_DIR":"/var/lib/quimiocare/temp","PUSH_PROVIDER":"expo",
         "API_DOCS_ENABLED":values.get("API_DOCS_ENABLED","false"),"PREPARATION_ENABLED":values.get("PREPARATION_ENABLED","false"),
