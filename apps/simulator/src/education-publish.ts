@@ -50,8 +50,11 @@ async function parseMultipartBody(req: IncomingMessage, tempDir: string): Promis
     throw new ApiError(400, 'ERROR_MULTIPART', 'Use multipart/form-data.');
   }
   const fail = (error: Error) => {
-    failure ??= error;
-    bb.destroy(error);
+    if (failure) return;
+    failure = error;
+    // Busboy emits limits while updating its current file stream. Destroying it
+    // synchronously clears that stream before the parser finishes the write.
+    queueMicrotask(() => bb.destroy(error));
   };
   const abort = () => fail(new ApiError(400, 'CLIENTE_DESCONECTADO', 'Carga interrumpida.'));
   const timer = setTimeout(

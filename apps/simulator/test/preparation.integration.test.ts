@@ -6,6 +6,7 @@ import { mkdtemp, readdir, readFile, rm, appendFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import type { Server } from 'node:http';
+import { request as httpRequest } from 'node:http';
 import { PNG } from 'pngjs';
 import { fixtures, validateResponse } from '@quimiocare/contracts';
 import { openDatabase, migrate, type Database } from '../src/db.js';
@@ -14,7 +15,7 @@ import { seedDatabase } from '../src/seed-data.js';
 import { issueSession } from '../src/auth.js';
 import { createSimulator } from '../src/app.js';
 import { PATIENTS } from '../src/types.js';
-import { enterMutation } from '../src/mutation-gate.js';
+import { enterMutation, getActivePublishes } from '../src/mutation-gate.js';
 
 async function powershell(script: string, args: string[]) {
   // The recovery scripts use .NET APIs from PowerShell 7; Windows PowerShell 5 is not sufficient.
@@ -381,6 +382,61 @@ describe('Preparation HTTP with real PostgreSQL', () => {
     png.writeUInt32BE(10000, 20);
     expect((await upload(imageForm(randomUUID(), png))).status).toBe(422);
     expect(await readdir(config.educationTempDir)).toEqual([]);
+  });
+  it('rejects oversized chunked multipart uploads without crashing, leaking files or retaining upload slots', async () => {
+    await prep('categorias', { nombre: 'Categoría de evaluación' });
+    const before = Number(
+      (await db.query('SELECT count(*) AS n FROM contenido_educativo')).rows[0].n,
+    );
+    for (const chunkSize of [64 * 1024, 512 * 1024]) {
+      const boundary = 'qc-regression-' + randomUUID();
+      // File first and fields afterwards exercise parser events in the same write after reaching the limit.
+      const payload = Buffer.concat([
+        Buffer.from(
+          `--${boundary}\r\nContent-Disposition: form-data; name="archivo"; filename="oversized.png"\r\nContent-Type: image/png\r\n\r\n`,
+        ),
+        Buffer.alloc(5 * 1024 * 1024 + 64 * 1024),
+        Buffer.from(
+          `\r\n--${boundary}\r\nContent-Disposition: form-data; name="titulo"\r\n\r\nCarga sintética\r\n--${boundary}--\r\n`,
+        ),
+      ]);
+      const response = await new Promise<{ status: number; body: string }>((resolve, reject) => {
+        const req = httpRequest(
+          base + '/admin/api/v1/preparacion/contenido-educativo/imagenes',
+          {
+            method: 'POST',
+            headers: {
+              authorization: 'Bearer ' + token,
+              'content-type': 'multipart/form-data; boundary=' + boundary,
+            },
+          },
+          (res) => {
+            let body = '';
+            res.setEncoding('utf8');
+            res.on('data', (chunk) => {
+              body += chunk;
+            });
+            res.on('error', reject);
+            res.on('end', () => resolve({ status: res.statusCode!, body }));
+          },
+        );
+        req.on('error', reject);
+        for (let offset = 0; offset < payload.length; offset += chunkSize)
+          req.write(payload.subarray(offset, offset + chunkSize));
+        req.end();
+      });
+      expect(response.status).toBe(413);
+      expect(JSON.parse(response.body).error.codigo).toBe('CARGA_DEMASIADO_GRANDE');
+      expect(await readdir(config.educationTempDir)).toEqual([]);
+      expect(getActivePublishes()).toBe(0);
+      expect(
+        Number((await db.query('SELECT count(*) AS n FROM contenido_educativo')).rows[0].n),
+      ).toBe(before);
+      expect((await fetch(base + '/health')).status).toBe(200);
+    }
+    // A valid publication still works on this server after both rejected requests.
+    expect((await upload(imageForm())).status).toBe(201);
+    expect(getActivePublishes()).toBe(0);
   });
   it('registers videos and applies per-patient scenarios', async () => {
     const video = await prep('contenido-educativo/videos', {
