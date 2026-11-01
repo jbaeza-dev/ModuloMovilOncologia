@@ -94,7 +94,7 @@ export function LoginScreen() {
           />
         </InfoCard>
       ) : null}
-      {session?.config.mode === 'production' ? (
+      {session?.config.mode === 'production' || session?.config.mode === 'universidad-demo' ? (
         <VisualButton
           label="Continuar con Google"
           disabled={busy || !data}

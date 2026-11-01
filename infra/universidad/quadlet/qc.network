@@ -1,0 +1,7 @@
+[Unit]
+Description=Red interna aislada de QuimioCare
+
+[Network]
+NetworkName=qc-net
+Subnet=10.89.0.0/24
+Internal=false

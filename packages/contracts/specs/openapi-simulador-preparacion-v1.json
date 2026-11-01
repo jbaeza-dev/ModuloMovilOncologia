@@ -1,0 +1,5678 @@
+{
+  "openapi": "3.1.0",
+  "info": {
+    "title": "QuimioCare — Preparar datos sintéticos",
+    "version": "1.0.0",
+    "description": "Servidor sintético de evaluación: entre con Google como operador autorizado y prepare toda la demostración aquí. Vincule mediante código o prepare contexto directamente; son recorridos distintos. Los contratos externos no se modifican."
+  },
+  "paths": {
+    "/admin/api/v1/vinculaciones/consumir": {
+      "post": {
+        "operationId": "consumirCodigoVinculacion",
+        "summary": "Consumir código de vinculación y asignar contexto sintético",
+        "description": "Introduzca el código solicitado al servidor desde la app. El paciente debe completar sus datos y aceptar términos. Crea la relación paciente–operador y asigna la plantilla sintética en una transacción. Después actualice identidad/permisos en la app.",
+        "security": [
+          {
+            "OperadorBearer": []
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "required": [
+                  "codigo",
+                  "plantilla_id"
+                ],
+                "properties": {
+                  "codigo": {
+                    "type": "string",
+                    "pattern": "^[A-Z0-9]{8}$",
+                    "description": "Código generado por el servidor a solicitud del paciente desde la app."
+                  },
+                  "plantilla_id": {
+                    "type": "string",
+                    "description": "Identificador de la plantilla clínica sintética aprobada.",
+                    "enum": [
+                      "DEMO-FOLFOX-v1",
+                      "DEMO-AC-T-v1"
+                    ]
+                  },
+                  "request_token": {
+                    "type": "string",
+                    "format": "uuid",
+                    "description": "Token opcional para garantizar idempotencia en reintentos ante pérdida de ACK."
+                  }
+                },
+                "additionalProperties": false
+              },
+              "example": {
+                "codigo": "ABCD1234",
+                "plantilla_id": "DEMO-FOLFOX-v1",
+                "request_token": "11111111-1111-4111-8111-111111111111"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Vinculación confirmada exitosamente o recuperada por reintento idempotente.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/RespuestaVinculacion"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "No autenticado o token ausente.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEvaluacion"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Operador no autorizado.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEvaluacion"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Código inexistente, vencido o no encontrado.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEvaluacion"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "Código ya consumido o conflicto de request_token con diferente contenido.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEvaluacion"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Error de validación en parámetros de entrada.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEvaluacion"
+                }
+              }
+            }
+          },
+          "410": {
+            "description": "Código vencido: solicitar uno nuevo desde la app."
+          }
+        },
+        "tags": [
+          "0. Vinculación del paciente"
+        ]
+      }
+    },
+    "/admin/api/v1/preparacion/categorias": {
+      "post": {
+        "tags": [
+          "1. Categorías"
+        ],
+        "summary": "Crear categoría (visible en la app cuando tenga contenido)",
+        "description": "Herramienta de simulación; no forma parte del contrato externo. Reutilice operacion_id solo para repetir exactamente esta operación. Consulte el resultado desde la app.",
+        "security": [
+          {
+            "OperadorBearer": []
+          }
+        ],
+        "parameters": [],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "required": [
+                  "operacion_id",
+                  "nombre"
+                ],
+                "properties": {
+                  "operacion_id": {
+                    "type": "string",
+                    "format": "uuid"
+                  },
+                  "nombre": {
+                    "type": "string"
+                  }
+                },
+                "additionalProperties": false
+              },
+              "example": {
+                "operacion_id": "11111111-1111-4111-8111-111111111111",
+                "nombre": "Educación de evaluación"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Resultado o replay confirmado",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object"
+                }
+              }
+            }
+          },
+          "201": {
+            "description": "Recurso creado",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Sesión inválida",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Operador no autorizado",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Recurso no encontrado",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "Identificador o versión en conflicto",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object"
+                }
+              }
+            }
+          },
+          "413": {
+            "description": "Archivo mayor a 5 MiB",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Datos inválidos",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "Servicio temporalmente no disponible",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/admin/api/v1/preparacion/contenido-educativo/imagenes": {
+      "post": {
+        "tags": [
+          "2. Contenido educativo"
+        ],
+        "summary": "Publicar PNG/JPEG y sincronizar su catálogo",
+        "description": "Herramienta de simulación; no forma parte del contrato externo. Reutilice operacion_id solo para repetir exactamente esta operación. Consulte el resultado desde la app.",
+        "security": [
+          {
+            "OperadorBearer": []
+          }
+        ],
+        "parameters": [],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "multipart/form-data": {
+              "schema": {
+                "type": "object",
+                "required": [
+                  "archivo",
+                  "titulo",
+                  "descripcion",
+                  "categoria",
+                  "operacion_id"
+                ],
+                "properties": {
+                  "operacion_id": {
+                    "type": "string",
+                    "format": "uuid",
+                    "example": "11111111-1111-4111-8111-111111111111"
+                  },
+                  "titulo": {
+                    "type": "string",
+                    "example": "Infografía de evaluación"
+                  },
+                  "descripcion": {
+                    "type": "string",
+                    "example": "Material sintético autorizado de prueba"
+                  },
+                  "categoria": {
+                    "type": "string",
+                    "example": "Educación de evaluación"
+                  },
+                  "archivo": {
+                    "type": "string",
+                    "format": "binary"
+                  }
+                }
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Resultado o replay confirmado",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object"
+                }
+              }
+            }
+          },
+          "201": {
+            "description": "Recurso creado",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Sesión inválida",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Operador no autorizado",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Recurso no encontrado",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "Identificador o versión en conflicto",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object"
+                }
+              }
+            }
+          },
+          "413": {
+            "description": "Archivo mayor a 5 MiB",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Datos inválidos",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "Servicio temporalmente no disponible",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/admin/api/v1/preparacion/contenido-educativo/videos": {
+      "post": {
+        "tags": [
+          "2. Contenido educativo"
+        ],
+        "summary": "Registrar video online compatible",
+        "description": "Herramienta de simulación; no forma parte del contrato externo. Reutilice operacion_id solo para repetir exactamente esta operación. Consulte el resultado desde la app.",
+        "security": [
+          {
+            "OperadorBearer": []
+          }
+        ],
+        "parameters": [],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "required": [
+                  "operacion_id",
+                  "titulo",
+                  "descripcion",
+                  "categoria",
+                  "url"
+                ],
+                "properties": {
+                  "operacion_id": {
+                    "type": "string",
+                    "format": "uuid"
+                  },
+                  "titulo": {
+                    "type": "string"
+                  },
+                  "descripcion": {
+                    "type": "string"
+                  },
+                  "categoria": {
+                    "type": "string"
+                  },
+                  "url": {
+                    "type": "string"
+                  }
+                },
+                "additionalProperties": false
+              },
+              "example": {
+                "operacion_id": "11111111-1111-4111-8111-111111111111",
+                "titulo": "Video de evaluación",
+                "descripcion": "Reemplace la URL por un video autorizado",
+                "categoria": "Educación de evaluación",
+                "url": "https://www.youtube.com/watch?v=psfP_n8eP40"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Resultado o replay confirmado",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object"
+                }
+              }
+            }
+          },
+          "201": {
+            "description": "Recurso creado",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Sesión inválida",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Operador no autorizado",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Recurso no encontrado",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "Identificador o versión en conflicto",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object"
+                }
+              }
+            }
+          },
+          "413": {
+            "description": "Archivo mayor a 5 MiB",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Datos inválidos",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "Servicio temporalmente no disponible",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/admin/api/v1/preparacion/contenido-educativo/{id}/estado": {
+      "post": {
+        "tags": [
+          "2. Contenido educativo"
+        ],
+        "summary": "Activar o retirar del catálogo sin borrar archivos",
+        "description": "Herramienta de simulación; no forma parte del contrato externo. Reutilice operacion_id solo para repetir exactamente esta operación. Consulte el resultado desde la app.",
+        "security": [
+          {
+            "OperadorBearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "in": "path",
+            "name": "id",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            },
+            "example": "22222222-2222-4222-8222-222222222222"
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "required": [
+                  "operacion_id",
+                  "activo"
+                ],
+                "properties": {
+                  "operacion_id": {
+                    "type": "string",
+                    "format": "uuid"
+                  },
+                  "activo": {
+                    "type": "boolean"
+                  }
+                },
+                "additionalProperties": false
+              },
+              "example": {
+                "operacion_id": "11111111-1111-4111-8111-111111111111",
+                "activo": false
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Resultado o replay confirmado",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object"
+                }
+              }
+            }
+          },
+          "201": {
+            "description": "Recurso creado",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Sesión inválida",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Operador no autorizado",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Recurso no encontrado",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "Identificador o versión en conflicto",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object"
+                }
+              }
+            }
+          },
+          "413": {
+            "description": "Archivo mayor a 5 MiB",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Datos inválidos",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "Servicio temporalmente no disponible",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/admin/api/v1/preparacion/terminos": {
+      "post": {
+        "tags": [
+          "3. Términos vigentes"
+        ],
+        "summary": "Crear versión inmutable de términos",
+        "description": "Herramienta de simulación; no forma parte del contrato externo. Reutilice operacion_id solo para repetir exactamente esta operación. Consulte el resultado desde la app.",
+        "security": [
+          {
+            "OperadorBearer": []
+          }
+        ],
+        "parameters": [],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "required": [
+                  "operacion_id",
+                  "definicion"
+                ],
+                "properties": {
+                  "operacion_id": {
+                    "type": "string",
+                    "format": "uuid"
+                  },
+                  "definicion": {
+                    "$ref": "#/components/schemas/DefinicionTerminosResponse"
+                  }
+                },
+                "additionalProperties": false
+              },
+              "example": {
+                "operacion_id": "11111111-1111-4111-8111-111111111111",
+                "definicion": {
+                  "id": "22222222-2222-4222-8222-222222222222",
+                  "codigo": "TERMINOS_PLATAFORMA",
+                  "titulo": "Términos sintéticos de evaluación",
+                  "version": "evaluacion-1",
+                  "texto_completo": "Documento técnico de prueba; no representa términos institucionales.",
+                  "contenido": "Texto sintético para mocks; no sustituye términos aprobados.",
+                  "descripcion": null,
+                  "vigente_desde": "2026-10-28",
+                  "vigente_hasta": null,
+                  "vigente": true,
+                  "obligatorio": true,
+                  "creado_el": "2026-10-17T15:00:00Z"
+                }
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Resultado o replay confirmado",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object"
+                }
+              }
+            }
+          },
+          "201": {
+            "description": "Recurso creado",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Sesión inválida",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Operador no autorizado",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Recurso no encontrado",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "Identificador o versión en conflicto",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object"
+                }
+              }
+            }
+          },
+          "413": {
+            "description": "Archivo mayor a 5 MiB",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Datos inválidos",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "Servicio temporalmente no disponible",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/admin/api/v1/preparacion/terminos/{id}/publicar": {
+      "post": {
+        "tags": [
+          "3. Términos vigentes"
+        ],
+        "summary": "Publicar como vigente (AFECTA A TODOS LOS PACIENTES)",
+        "description": "Herramienta de simulación; no forma parte del contrato externo. Reutilice operacion_id solo para repetir exactamente esta operación. Consulte el resultado desde la app.",
+        "security": [
+          {
+            "OperadorBearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "in": "path",
+            "name": "id",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            },
+            "example": "22222222-2222-4222-8222-222222222222"
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "required": [
+                  "operacion_id"
+                ],
+                "properties": {
+                  "operacion_id": {
+                    "type": "string",
+                    "format": "uuid"
+                  }
+                },
+                "additionalProperties": false
+              },
+              "example": {
+                "operacion_id": "11111111-1111-4111-8111-111111111111"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Resultado o replay confirmado",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object"
+                }
+              }
+            }
+          },
+          "201": {
+            "description": "Recurso creado",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Sesión inválida",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Operador no autorizado",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Recurso no encontrado",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "Identificador o versión en conflicto",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object"
+                }
+              }
+            }
+          },
+          "413": {
+            "description": "Archivo mayor a 5 MiB",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Datos inválidos",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "Servicio temporalmente no disponible",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/admin/api/v1/preparacion/pacientes/{paciente_id}/consentimiento-demo": {
+      "post": {
+        "tags": [
+          "4. Consentimiento sintético"
+        ],
+        "summary": "Preparar aceptación, revocación o pendiente; queda auditado como simulación",
+        "description": "Herramienta de simulación; no forma parte del contrato externo. Reutilice operacion_id solo para repetir exactamente esta operación. Consulte el resultado desde la app.",
+        "security": [
+          {
+            "OperadorBearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "in": "path",
+            "name": "paciente_id",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            },
+            "example": "476a23e2-f493-4607-8780-4c0cbb960eaf"
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "required": [
+                  "operacion_id",
+                  "estado"
+                ],
+                "properties": {
+                  "operacion_id": {
+                    "type": "string",
+                    "format": "uuid"
+                  },
+                  "estado": {
+                    "type": "string",
+                    "enum": [
+                      "pendiente",
+                      "aceptado",
+                      "revocado"
+                    ]
+                  },
+                  "definicion_terminos_id": {
+                    "type": "string",
+                    "format": "uuid"
+                  },
+                  "consentimiento_id": {
+                    "type": "string",
+                    "format": "uuid",
+                    "description": "Obligatorio para revocar un acto existente"
+                  }
+                },
+                "additionalProperties": false
+              },
+              "example": {
+                "operacion_id": "11111111-1111-4111-8111-111111111111",
+                "estado": "aceptado"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Resultado o replay confirmado",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object"
+                }
+              }
+            }
+          },
+          "201": {
+            "description": "Recurso creado",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Sesión inválida",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Operador no autorizado",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Recurso no encontrado",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "Identificador o versión en conflicto",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object"
+                }
+              }
+            }
+          },
+          "413": {
+            "description": "Archivo mayor a 5 MiB",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Datos inválidos",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "Servicio temporalmente no disponible",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/admin/api/v1/preparacion/pacientes/{paciente_id}/contexto-clinico": {
+      "post": {
+        "tags": [
+          "5. Contexto clínico"
+        ],
+        "summary": "Preparar datos sintéticos; omitir conserva, null elimina",
+        "description": "Herramienta de simulación; no forma parte del contrato externo. Reutilice operacion_id solo para repetir exactamente esta operación. Consulte el resultado desde la app.",
+        "security": [
+          {
+            "OperadorBearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "in": "path",
+            "name": "paciente_id",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            },
+            "example": "476a23e2-f493-4607-8780-4c0cbb960eaf"
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "required": [
+                  "operacion_id"
+                ],
+                "properties": {
+                  "operacion_id": {
+                    "type": "string",
+                    "format": "uuid"
+                  },
+                  "perfil_clinico": {
+                    "anyOf": [
+                      {
+                        "type": "object"
+                      },
+                      {
+                        "type": "null"
+                      }
+                    ]
+                  },
+                  "tratamiento": {
+                    "anyOf": [
+                      {
+                        "type": "object"
+                      },
+                      {
+                        "type": "null"
+                      }
+                    ]
+                  }
+                },
+                "additionalProperties": false
+              },
+              "example": {
+                "operacion_id": "11111111-1111-4111-8111-111111111111",
+                "perfil_clinico": {
+                  "actividad_fisica": "moderado",
+                  "alergias": [],
+                  "altura": 175.0,
+                  "antecedentes_familiares": [],
+                  "condiciones": [],
+                  "consumo_alcohol": false,
+                  "fecha_actualizacion": "2026-10-17T15:00:00Z",
+                  "grupo_sanguineo": "O+",
+                  "medicamentos": [
+                    {
+                      "medicamento_id": "730452b2-475a-5379-945f-c16aec5110df",
+                      "nombre": "Medicamento sintético",
+                      "dosis": "Texto de prueba",
+                      "frecuencia": "Texto de prueba",
+                      "motivo": "Fixture de integración",
+                      "activo": true,
+                      "fecha_inicio": "2026-10-01",
+                      "fecha_termino": null
+                    }
+                  ],
+                  "peso": 72.5,
+                  "tabaquismo": false
+                },
+                "tratamiento": {
+                  "activo": true,
+                  "codigo_icd10": "C50.9",
+                  "estado": "activo",
+                  "fase": "Adyuvancia",
+                  "fecha_inicio_tratamiento": "2026-09-01",
+                  "fecha_termino_tratamiento": "2026-12-15",
+                  "intencion": "curativa",
+                  "parametros": {
+                    "esquema": "Esquema sintético",
+                    "numero_ciclos": 6,
+                    "ciclo_actual": 2,
+                    "via_administracion": "intravenosa",
+                    "fecha_proximo_ciclo": "2026-10-25",
+                    "farmacos": [],
+                    "observaciones": "Datos sintéticos; no constituyen pauta clínica."
+                  },
+                  "tipo_tratamiento_codigo": "quimioterapia",
+                  "tipo_tratamiento_id": "59875675-0c47-5026-9e35-bd9389f38626",
+                  "tipo_tratamiento_nombre": "Quimioterapia Sistémica"
+                }
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Resultado o replay confirmado",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object"
+                }
+              }
+            }
+          },
+          "201": {
+            "description": "Recurso creado",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Sesión inválida",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Operador no autorizado",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Recurso no encontrado",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "Identificador o versión en conflicto",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object"
+                }
+              }
+            }
+          },
+          "413": {
+            "description": "Archivo mayor a 5 MiB",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Datos inválidos",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "Servicio temporalmente no disponible",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/admin/api/v1/preparacion/formularios": {
+      "post": {
+        "tags": [
+          "6. Formularios"
+        ],
+        "summary": "Crear una definición nueva a partir del fixture contractual",
+        "description": "Herramienta de simulación; no forma parte del contrato externo. Reutilice operacion_id solo para repetir exactamente esta operación. Consulte el resultado desde la app.",
+        "security": [
+          {
+            "OperadorBearer": []
+          }
+        ],
+        "parameters": [],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "required": [
+                  "operacion_id",
+                  "formulario"
+                ],
+                "properties": {
+                  "operacion_id": {
+                    "type": "string",
+                    "format": "uuid"
+                  },
+                  "formulario": {
+                    "$ref": "#/components/schemas/FormularioResponseSchema"
+                  }
+                },
+                "additionalProperties": false
+              },
+              "example": {
+                "operacion_id": "11111111-1111-4111-8111-111111111111",
+                "formulario": {
+                  "id": "33333333-3333-4333-8333-333333333333",
+                  "codigo": "EVALUACION_COPIA",
+                  "titulo": "Seguimiento domiciliario diario",
+                  "descripcion": "Cuestionario diario de seguimiento de síntomas para pacientes en quimioterapia.",
+                  "tratamiento": "quimioterapia",
+                  "version": 2,
+                  "activo": true,
+                  "version_condiciones": 1,
+                  "version_reglas_compuestas": 1,
+                  "configuracion": {
+                    "version_condiciones": 1,
+                    "version_reglas_compuestas": 1,
+                    "instrumento_version": "1.1.0",
+                    "instrumento_codigo": "SEGUIMIENTO_DOMICILIARIO_EPRO",
+                    "preguntas_esperadas": 41,
+                    "secciones": [
+                      {
+                        "id": "sec-modulo-0",
+                        "titulo": "Contexto y dispositivos",
+                        "orden": 0
+                      },
+                      {
+                        "id": "sec-modulo-1",
+                        "titulo": "Fiebre e infección",
+                        "orden": 1
+                      },
+                      {
+                        "id": "sec-modulo-2",
+                        "titulo": "Náuseas y vómitos",
+                        "orden": 2
+                      },
+                      {
+                        "id": "sec-modulo-3",
+                        "titulo": "Tránsito intestinal",
+                        "orden": 3
+                      },
+                      {
+                        "id": "sec-modulo-4",
+                        "titulo": "Boca y garganta",
+                        "orden": 4
+                      },
+                      {
+                        "id": "sec-modulo-5",
+                        "titulo": "Sistema nervioso en manos y pies",
+                        "orden": 5
+                      },
+                      {
+                        "id": "sec-modulo-6",
+                        "titulo": "Piel y extremidades",
+                        "orden": 6
+                      },
+                      {
+                        "id": "sec-modulo-7",
+                        "titulo": "Sangrados y moretones",
+                        "orden": 7
+                      },
+                      {
+                        "id": "sec-modulo-8",
+                        "titulo": "Respiración y sistema cardiovascular",
+                        "orden": 8
+                      },
+                      {
+                        "id": "sec-modulo-9",
+                        "titulo": "Energía, ánimo y dolor general",
+                        "orden": 9
+                      },
+                      {
+                        "id": "sec-modulo-10",
+                        "titulo": "Comentario abierto",
+                        "orden": 10
+                      }
+                    ],
+                    "provisional": false
+                  },
+                  "preguntas": [
+                    {
+                      "codigo": "P0.1",
+                      "titulo": "¿Tienes instalado un catéter para tu quimioterapia (como un \"Port-a-cath\" debajo de la piel en el pecho o un catéter PICC en el brazo)?",
+                      "texto": null,
+                      "tipo": "opcion_unica",
+                      "requerida": true,
+                      "orden": 0,
+                      "opciones": [
+                        {
+                          "codigo": "si",
+                          "etiqueta": "Sí",
+                          "orden": 0
+                        },
+                        {
+                          "codigo": "no",
+                          "etiqueta": "No",
+                          "orden": 1
+                        }
+                      ],
+                      "configuracion": {
+                        "modulo": "sec-modulo-0",
+                        "metadata": {
+                          "source_code": "P0.1",
+                          "source_type": "single_choice"
+                        }
+                      }
+                    },
+                    {
+                      "codigo": "P0.1.1",
+                      "titulo": "¿Cómo se ve y se siente la zona de tu piel donde está el catéter?",
+                      "texto": null,
+                      "tipo": "opcion_multiple",
+                      "requerida": true,
+                      "orden": 1,
+                      "opciones": [
+                        {
+                          "codigo": "normal_sin_cambios",
+                          "etiqueta": "Se ve normal, sin dolor ni cambios.",
+                          "orden": 0
+                        },
+                        {
+                          "codigo": "sensible_picazon",
+                          "etiqueta": "Está un poco sensible o con leve picazón, pero sin cambios en la piel.",
+                          "orden": 1
+                        },
+                        {
+                          "codigo": "roja_caliente_hinchada",
+                          "etiqueta": "Está roja, caliente al tocarla o hinchada.",
+                          "orden": 2
+                        },
+                        {
+                          "codigo": "liquido_pus_sangre",
+                          "etiqueta": "Sale líquido, pus o sangre por el sitio del catéter.",
+                          "orden": 3
+                        },
+                        {
+                          "codigo": "dolor_cuello_hombro_brazo",
+                          "etiqueta": "Siento dolor o hinchazón en el cuello, hombro o en todo el brazo del lado del catéter.",
+                          "orden": 4
+                        }
+                      ],
+                      "configuracion": {
+                        "modulo": "sec-modulo-0",
+                        "metadata": {
+                          "source_code": "P0.1.1",
+                          "source_type": "multiple_choice"
+                        },
+                        "opciones_exclusivas": [
+                          "normal_sin_cambios"
+                        ],
+                        "requerida_si_activa": true,
+                        "depende_de": "P0.1",
+                        "valor_activador": "si"
+                      }
+                    },
+                    {
+                      "codigo": "P1",
+                      "titulo": "¿Has sentido fiebre, cuerpo cortado, sudoración fría o escalofríos (tiritones) en las últimas 24 horas?",
+                      "texto": null,
+                      "tipo": "opcion_unica",
+                      "requerida": true,
+                      "orden": 2,
+                      "opciones": [
+                        {
+                          "codigo": "si",
+                          "etiqueta": "Sí",
+                          "orden": 0
+                        },
+                        {
+                          "codigo": "no",
+                          "etiqueta": "No",
+                          "orden": 1
+                        }
+                      ],
+                      "configuracion": {
+                        "modulo": "sec-modulo-1",
+                        "metadata": {
+                          "source_code": "P1",
+                          "source_type": "single_choice"
+                        }
+                      }
+                    },
+                    {
+                      "codigo": "P1.1",
+                      "titulo": "¿Qué síntomas has tenido exactamente?",
+                      "texto": null,
+                      "tipo": "opcion_unica",
+                      "requerida": true,
+                      "orden": 3,
+                      "opciones": [
+                        {
+                          "codigo": "calor_decaimiento",
+                          "etiqueta": "Solo sensación de calor o decaimiento, sin tiritones.",
+                          "orden": 0
+                        },
+                        {
+                          "codigo": "tiritones_suaves",
+                          "etiqueta": "Escalofríos o tiritones suaves que pasaron rápido.",
+                          "orden": 1
+                        },
+                        {
+                          "codigo": "tiritones_fuertes",
+                          "etiqueta": "Escalofríos o tiritones fuertes e incontrolables (aunque el termómetro marque temperatura normal).",
+                          "orden": 2
+                        }
+                      ],
+                      "configuracion": {
+                        "modulo": "sec-modulo-1",
+                        "metadata": {
+                          "source_code": "P1.1",
+                          "source_type": "single_choice"
+                        },
+                        "requerida_si_activa": true,
+                        "depende_de": "P1",
+                        "valor_activador": "si"
+                      }
+                    },
+                    {
+                      "codigo": "P1.2",
+                      "titulo": "¿Te tomaste la temperatura con un termómetro (en la axila o en la boca)?",
+                      "texto": null,
+                      "tipo": "opcion_unica",
+                      "requerida": true,
+                      "orden": 4,
+                      "opciones": [
+                        {
+                          "codigo": "menos_37_5",
+                          "etiqueta": "Menos de 37.5 (Normal).",
+                          "orden": 0
+                        },
+                        {
+                          "codigo": "37_5_a_37_9",
+                          "etiqueta": "Entre 37.5 a 37.9 (Febrícula).",
+                          "orden": 1
+                        },
+                        {
+                          "codigo": "38_a_38_2_mantenida",
+                          "etiqueta": "Entre 38 a 38.2 y se ha mantenido así por más de 1 hora.",
+                          "orden": 2
+                        },
+                        {
+                          "codigo": "38_3_mas",
+                          "etiqueta": "38.3 o más en una sola toma.",
+                          "orden": 3
+                        },
+                        {
+                          "codigo": "no_tomada",
+                          "etiqueta": "No me he tomado la temperatura con termómetro.",
+                          "orden": 4
+                        }
+                      ],
+                      "configuracion": {
+                        "modulo": "sec-modulo-1",
+                        "metadata": {
+                          "source_code": "P1.2",
+                          "source_type": "single_choice"
+                        },
+                        "requerida_si_activa": true,
+                        "depende_de": "P1",
+                        "valor_activador": "si"
+                      }
+                    },
+                    {
+                      "codigo": "P1.3",
+                      "titulo": "¿Tomaste algún medicamento que baja la fiebre o para el dolor (como Paracetamol, Dipirona/Metamizol o Ibuprofeno) en las últimas 6 horas?",
+                      "texto": null,
+                      "tipo": "opcion_unica",
+                      "requerida": true,
+                      "orden": 5,
+                      "opciones": [
+                        {
+                          "codigo": "no",
+                          "etiqueta": "No he tomado nada.",
+                          "orden": 0
+                        },
+                        {
+                          "codigo": "si",
+                          "etiqueta": "Sí, tomé un medicamento.",
+                          "orden": 1
+                        }
+                      ],
+                      "configuracion": {
+                        "modulo": "sec-modulo-1",
+                        "metadata": {
+                          "source_code": "P1.3",
+                          "source_type": "single_choice"
+                        },
+                        "requerida_si_activa": true,
+                        "depende_de": "P1",
+                        "valor_activador": "si"
+                      }
+                    },
+                    {
+                      "codigo": "P1.4",
+                      "titulo": "¿Tienes alguna otra molestia que pueda indicar resfrío o infección?",
+                      "texto": null,
+                      "tipo": "opcion_multiple",
+                      "requerida": true,
+                      "orden": 6,
+                      "opciones": [
+                        {
+                          "codigo": "garganta_tos",
+                          "etiqueta": "Dolor de garganta o tos nueva.",
+                          "orden": 0
+                        },
+                        {
+                          "codigo": "ardor_orinar",
+                          "etiqueta": "Ardor o dolor al orinar.",
+                          "orden": 1
+                        },
+                        {
+                          "codigo": "ninguna",
+                          "etiqueta": "Ninguna de las anteriores.",
+                          "orden": 2
+                        }
+                      ],
+                      "configuracion": {
+                        "modulo": "sec-modulo-1",
+                        "metadata": {
+                          "source_code": "P1.4",
+                          "source_type": "multiple_choice"
+                        },
+                        "opciones_exclusivas": [
+                          "ninguna"
+                        ],
+                        "requerida_si_activa": true,
+                        "depende_de": "P1",
+                        "valor_activador": "si"
+                      }
+                    },
+                    {
+                      "codigo": "P2",
+                      "titulo": "¿Has tenido náuseas (asco o ganas de vomitar) o vómitos en las últimas 24 horas?",
+                      "texto": null,
+                      "tipo": "opcion_unica",
+                      "requerida": true,
+                      "orden": 7,
+                      "opciones": [
+                        {
+                          "codigo": "si",
+                          "etiqueta": "Sí",
+                          "orden": 0
+                        },
+                        {
+                          "codigo": "no",
+                          "etiqueta": "No",
+                          "orden": 1
+                        }
+                      ],
+                      "configuracion": {
+                        "modulo": "sec-modulo-2",
+                        "metadata": {
+                          "source_code": "P2",
+                          "source_type": "single_choice"
+                        }
+                      }
+                    },
+                    {
+                      "codigo": "P2.1",
+                      "titulo": "¿Qué tan fuertes han sido las náuseas (ganas de vomitar)?",
+                      "texto": null,
+                      "tipo": "opcion_unica",
+                      "requerida": true,
+                      "orden": 8,
+                      "opciones": [
+                        {
+                          "codigo": "leves",
+                          "etiqueta": "Leves: Siento asco, pero puedo comer y tomar líquidos casi normal.",
+                          "orden": 0
+                        },
+                        {
+                          "codigo": "moderadas",
+                          "etiqueta": "Moderadas: Me cuesta comer, he comido bastante menos de lo habitual, pero logro tomar líquidos.",
+                          "orden": 1
+                        },
+                        {
+                          "codigo": "severas",
+                          "etiqueta": "Severas: El asco es constante y no me permite comer ni tomar casi nada de líquido.",
+                          "orden": 2
+                        }
+                      ],
+                      "configuracion": {
+                        "modulo": "sec-modulo-2",
+                        "metadata": {
+                          "source_code": "P2.1",
+                          "source_type": "single_choice"
+                        },
+                        "requerida_si_activa": true,
+                        "depende_de": "P2",
+                        "valor_activador": "si"
+                      }
+                    },
+                    {
+                      "codigo": "P2.2",
+                      "titulo": "¿Has llegado a vomitar en las últimas 24 horas?",
+                      "texto": null,
+                      "tipo": "opcion_unica",
+                      "requerida": true,
+                      "orden": 9,
+                      "opciones": [
+                        {
+                          "codigo": "no_vomito",
+                          "etiqueta": "No he vomitado, solo tengo náuseas.",
+                          "orden": 0
+                        },
+                        {
+                          "codigo": "vomito_1_2",
+                          "etiqueta": "Sí, vomité 1 o 2 veces en el día.",
+                          "orden": 1
+                        },
+                        {
+                          "codigo": "vomito_3_5",
+                          "etiqueta": "Sí, he vomitado entre 3 y 5 veces en el día.",
+                          "orden": 2
+                        },
+                        {
+                          "codigo": "vomito_6_mas",
+                          "etiqueta": "Sí, he vomitado 6 veces o más, o vomito todo lo que intento tragar (incluso el agua).",
+                          "orden": 3
+                        }
+                      ],
+                      "configuracion": {
+                        "modulo": "sec-modulo-2",
+                        "metadata": {
+                          "source_code": "P2.2",
+                          "source_type": "single_choice"
+                        },
+                        "requerida_si_activa": true,
+                        "depende_de": "P2",
+                        "valor_activador": "si"
+                      }
+                    },
+                    {
+                      "codigo": "P2.3",
+                      "titulo": "¿Cómo están funcionando los medicamentos contra las náuseas que te recetó tu médico?",
+                      "texto": null,
+                      "tipo": "opcion_unica",
+                      "requerida": true,
+                      "orden": 10,
+                      "opciones": [
+                        {
+                          "codigo": "alivian_bien",
+                          "etiqueta": "Me alivian bastante bien.",
+                          "orden": 0
+                        },
+                        {
+                          "codigo": "alivian_poco",
+                          "etiqueta": "Me alivian muy poco, sigo con muchas molestias.",
+                          "orden": 1
+                        },
+                        {
+                          "codigo": "vomita_medicamentos",
+                          "etiqueta": "No los puedo tomar porque los vomito apenas los trago.",
+                          "orden": 2
+                        },
+                        {
+                          "codigo": "no_tomados",
+                          "etiqueta": "Aún no los he tomado.",
+                          "orden": 3
+                        }
+                      ],
+                      "configuracion": {
+                        "modulo": "sec-modulo-2",
+                        "metadata": {
+                          "source_code": "P2.3",
+                          "source_type": "single_choice"
+                        },
+                        "requerida_si_activa": true,
+                        "depende_de": "P2",
+                        "valor_activador": "si"
+                      }
+                    },
+                    {
+                      "codigo": "P2.4",
+                      "titulo": "Si vomitaste, ¿notaste algo extraño en el vómito?",
+                      "texto": null,
+                      "tipo": "opcion_unica",
+                      "requerida": true,
+                      "orden": 11,
+                      "opciones": [
+                        {
+                          "codigo": "normal_comida_liquido",
+                          "etiqueta": "No, era solo comida o líquido normal/amarillento.",
+                          "orden": 0
+                        },
+                        {
+                          "codigo": "sangre_granos_cafe",
+                          "etiqueta": "Sí, tenía sangre roja o parecía tener \"granos de café\" oscuros.",
+                          "orden": 1
+                        }
+                      ],
+                      "configuracion": {
+                        "modulo": "sec-modulo-2",
+                        "metadata": {
+                          "source_code": "P2.4",
+                          "source_type": "single_choice"
+                        },
+                        "requerida_si_activa": true,
+                        "activacion_compuesta": {
+                          "op": "todas",
+                          "condiciones": [
+                            {
+                              "op": "igual",
+                              "codigo": "P2",
+                              "valor": "si"
+                            },
+                            {
+                              "op": "en",
+                              "codigo": "P2.2",
+                              "valores": [
+                                "vomito_1_2",
+                                "vomito_3_5",
+                                "vomito_6_mas"
+                              ]
+                            }
+                          ]
+                        }
+                      }
+                    },
+                    {
+                      "codigo": "P3.A",
+                      "titulo": "¿Has tenido diarrea (deposiciones líquidas o sueltas) en las últimas 24 horas?",
+                      "texto": null,
+                      "tipo": "opcion_unica",
+                      "requerida": true,
+                      "orden": 12,
+                      "opciones": [
+                        {
+                          "codigo": "si",
+                          "etiqueta": "Sí",
+                          "orden": 0
+                        },
+                        {
+                          "codigo": "no",
+                          "etiqueta": "No",
+                          "orden": 1
+                        }
+                      ],
+                      "configuracion": {
+                        "modulo": "sec-modulo-3",
+                        "metadata": {
+                          "source_code": "P3.A",
+                          "source_type": "single_choice"
+                        }
+                      }
+                    },
+                    {
+                      "codigo": "P3.A.1",
+                      "titulo": "¿Cuántas veces has tenido diarrea hoy (en comparación con tu ritmo normal)?",
+                      "texto": null,
+                      "tipo": "opcion_unica",
+                      "requerida": true,
+                      "orden": 13,
+                      "opciones": [
+                        {
+                          "codigo": "1_a_3",
+                          "etiqueta": "De 1 a 3 veces en el día (Leve).",
+                          "orden": 0
+                        },
+                        {
+                          "codigo": "4_a_6",
+                          "etiqueta": "De 4 a 6 veces en el día (Moderada).",
+                          "orden": 1
+                        },
+                        {
+                          "codigo": "7_mas",
+                          "etiqueta": "7 veces o más en el día, o me despierta por la noche / no alcanzo a llegar al baño (Severa).",
+                          "orden": 2
+                        }
+                      ],
+                      "configuracion": {
+                        "modulo": "sec-modulo-3",
+                        "metadata": {
+                          "source_code": "P3.A.1",
+                          "source_type": "single_choice"
+                        },
+                        "requerida_si_activa": true,
+                        "depende_de": "P3.A",
+                        "valor_activador": "si"
+                      }
+                    },
+                    {
+                      "codigo": "P3.A.2",
+                      "titulo": "¿Cómo se ven las deposiciones y qué otros síntomas sientes en el abdomen?",
+                      "texto": null,
+                      "tipo": "opcion_multiple",
+                      "requerida": true,
+                      "orden": 14,
+                      "opciones": [
+                        {
+                          "codigo": "liquidas_leves",
+                          "etiqueta": "Son solo líquidas, con molestias leves o sin dolor.",
+                          "orden": 0
+                        },
+                        {
+                          "codigo": "mucosidad_sangre",
+                          "etiqueta": "Tienen mucosidad o hilos de sangre roja.",
+                          "orden": 1
+                        },
+                        {
+                          "codigo": "negras_alquitran",
+                          "etiqueta": "Son de color negro brillante (como alquitrán) y de olor muy fuerte.",
+                          "orden": 2
+                        },
+                        {
+                          "codigo": "retorcijones_dolor_fuerte",
+                          "etiqueta": "Siento retorcijones o dolor abdominal muy fuerte que no se pasa.",
+                          "orden": 3
+                        }
+                      ],
+                      "configuracion": {
+                        "modulo": "sec-modulo-3",
+                        "metadata": {
+                          "source_code": "P3.A.2",
+                          "source_type": "multiple_choice"
+                        },
+                        "opciones_exclusivas": [
+                          "liquidas_leves"
+                        ],
+                        "requerida_si_activa": true,
+                        "depende_de": "P3.A",
+                        "valor_activador": "si"
+                      }
+                    },
+                    {
+                      "codigo": "P3.A.3",
+                      "titulo": "¿Has notado signos de deshidratación por la diarrea?",
+                      "texto": null,
+                      "tipo": "opcion_multiple",
+                      "requerida": true,
+                      "orden": 15,
+                      "opciones": [
+                        {
+                          "codigo": "bien_hidratado",
+                          "etiqueta": "No, me siento bien hidratado/a.",
+                          "orden": 0
+                        },
+                        {
+                          "codigo": "mucha_sed_boca_seca",
+                          "etiqueta": "Tengo mucha sed y la boca muy seca o pastosa.",
+                          "orden": 1
+                        },
+                        {
+                          "codigo": "orina_poca_oscura",
+                          "etiqueta": "Orino muy poco y la orina es muy oscura (color té cargado).",
+                          "orden": 2
+                        },
+                        {
+                          "codigo": "mareo_de_pie",
+                          "etiqueta": "Me mareo mucho cuando intento ponerme de pie.",
+                          "orden": 3
+                        }
+                      ],
+                      "configuracion": {
+                        "modulo": "sec-modulo-3",
+                        "metadata": {
+                          "source_code": "P3.A.3",
+                          "source_type": "multiple_choice"
+                        },
+                        "opciones_exclusivas": [
+                          "bien_hidratado"
+                        ],
+                        "requerida_si_activa": true,
+                        "depende_de": "P3.A",
+                        "valor_activador": "si"
+                      }
+                    },
+                    {
+                      "codigo": "P3.B",
+                      "titulo": "¿Has tenido estreñimiento (dificultad para ir al baño o deposiciones muy duras)?",
+                      "texto": null,
+                      "tipo": "opcion_unica",
+                      "requerida": true,
+                      "orden": 16,
+                      "opciones": [
+                        {
+                          "codigo": "si",
+                          "etiqueta": "Sí",
+                          "orden": 0
+                        },
+                        {
+                          "codigo": "no",
+                          "etiqueta": "No",
+                          "orden": 1
+                        }
+                      ],
+                      "configuracion": {
+                        "modulo": "sec-modulo-3",
+                        "metadata": {
+                          "source_code": "P3.B",
+                          "source_type": "single_choice"
+                        }
+                      }
+                    },
+                    {
+                      "codigo": "P3.B.1",
+                      "titulo": "¿Cuántos días llevas sin poder hacer deposiciones?",
+                      "texto": null,
+                      "tipo": "opcion_unica",
+                      "requerida": true,
+                      "orden": 17,
+                      "opciones": [
+                        {
+                          "codigo": "1_a_2",
+                          "etiqueta": "1 a 2 días.",
+                          "orden": 0
+                        },
+                        {
+                          "codigo": "3_a_4",
+                          "etiqueta": "3 a 4 días.",
+                          "orden": 1
+                        },
+                        {
+                          "codigo": "5_mas",
+                          "etiqueta": "5 días o más.",
+                          "orden": 2
+                        }
+                      ],
+                      "configuracion": {
+                        "modulo": "sec-modulo-3",
+                        "metadata": {
+                          "source_code": "P3.B.1",
+                          "source_type": "single_choice"
+                        },
+                        "requerida_si_activa": true,
+                        "depende_de": "P3.B",
+                        "valor_activador": "si"
+                      }
+                    },
+                    {
+                      "codigo": "P3.B.2",
+                      "titulo": "¿Tienes el abdomen muy hinchado, duro, con dolor fuerte o no puedes eliminar gases?",
+                      "texto": null,
+                      "tipo": "opcion_unica",
+                      "requerida": true,
+                      "orden": 18,
+                      "opciones": [
+                        {
+                          "codigo": "no",
+                          "etiqueta": "No, solo la molestia de no ir al baño.",
+                          "orden": 0
+                        },
+                        {
+                          "codigo": "si",
+                          "etiqueta": "Sí, tengo dolor fuerte, abdomen duro o vómitos junto con el estreñimiento.",
+                          "orden": 1
+                        }
+                      ],
+                      "configuracion": {
+                        "modulo": "sec-modulo-3",
+                        "metadata": {
+                          "source_code": "P3.B.2",
+                          "source_type": "single_choice"
+                        },
+                        "requerida_si_activa": true,
+                        "depende_de": "P3.B",
+                        "valor_activador": "si"
+                      }
+                    },
+                    {
+                      "codigo": "P4",
+                      "titulo": "¿Sientes dolor, ardor, enrojecimiento o tienes llagas (heridas) dentro de la boca, lengua, encías o al tragar?",
+                      "texto": null,
+                      "tipo": "opcion_unica",
+                      "requerida": true,
+                      "orden": 19,
+                      "opciones": [
+                        {
+                          "codigo": "si",
+                          "etiqueta": "Sí",
+                          "orden": 0
+                        },
+                        {
+                          "codigo": "no",
+                          "etiqueta": "No",
+                          "orden": 1
+                        }
+                      ],
+                      "configuracion": {
+                        "modulo": "sec-modulo-4",
+                        "metadata": {
+                          "source_code": "P4",
+                          "source_type": "single_choice"
+                        }
+                      }
+                    },
+                    {
+                      "codigo": "P4.1",
+                      "titulo": "¿Qué observas dentro de tu boca?",
+                      "texto": null,
+                      "tipo": "opcion_multiple",
+                      "requerida": true,
+                      "orden": 20,
+                      "opciones": [
+                        {
+                          "codigo": "roja_seca_sensible",
+                          "etiqueta": "Solo está roja, seca o sensible, sin heridas visibles.",
+                          "orden": 0
+                        },
+                        {
+                          "codigo": "llagas_ulceras_pequenas",
+                          "etiqueta": "Tengo llagas o úlceras pequeñas.",
+                          "orden": 1
+                        },
+                        {
+                          "codigo": "placas_blancas",
+                          "etiqueta": "Tengo placas blancas (como leche cortada) en la lengua o mejillas.",
+                          "orden": 2
+                        },
+                        {
+                          "codigo": "heridas_sangran",
+                          "etiqueta": "Las heridas sangran solas o al comer.",
+                          "orden": 3
+                        }
+                      ],
+                      "configuracion": {
+                        "modulo": "sec-modulo-4",
+                        "metadata": {
+                          "source_code": "P4.1",
+                          "source_type": "multiple_choice"
+                        },
+                        "requerida_si_activa": true,
+                        "depende_de": "P4",
+                        "valor_activador": "si"
+                      }
+                    },
+                    {
+                      "codigo": "P4.2",
+                      "titulo": "¿Cómo afecta esto a tu alimentación hoy?",
+                      "texto": null,
+                      "tipo": "opcion_unica",
+                      "requerida": true,
+                      "orden": 21,
+                      "opciones": [
+                        {
+                          "codigo": "normales_blandos",
+                          "etiqueta": "Me molesta un poco, pero puedo comer alimentos normales o blandos sin problema.",
+                          "orden": 0
+                        },
+                        {
+                          "codigo": "papillas_sopas_liquidos",
+                          "etiqueta": "Me duele bastante; solo puedo comer papillas, sopas o líquidos, pero logro alimentarme.",
+                          "orden": 1
+                        },
+                        {
+                          "codigo": "poco_agua_dificultad",
+                          "etiqueta": "El dolor es tan intenso que solo puedo pasar un poco de agua o líquidos con mucha dificultad.",
+                          "orden": 2
+                        },
+                        {
+                          "codigo": "no_tragar_nada",
+                          "etiqueta": "No puedo tragar absolutamente nada, ni agua ni mis medicamentos en pastillas.",
+                          "orden": 3
+                        }
+                      ],
+                      "configuracion": {
+                        "modulo": "sec-modulo-4",
+                        "metadata": {
+                          "source_code": "P4.2",
+                          "source_type": "single_choice"
+                        },
+                        "requerida_si_activa": true,
+                        "depende_de": "P4",
+                        "valor_activador": "si"
+                      }
+                    },
+                    {
+                      "codigo": "P5",
+                      "titulo": "¿Sientes hormigueo, adormecimiento, \"corrientazos\" o dolor en los dedos de las manos o de los pies?",
+                      "texto": null,
+                      "tipo": "opcion_unica",
+                      "requerida": true,
+                      "orden": 22,
+                      "opciones": [
+                        {
+                          "codigo": "si",
+                          "etiqueta": "Sí",
+                          "orden": 0
+                        },
+                        {
+                          "codigo": "no",
+                          "etiqueta": "No",
+                          "orden": 1
+                        }
+                      ],
+                      "configuracion": {
+                        "modulo": "sec-modulo-5",
+                        "metadata": {
+                          "source_code": "P5",
+                          "source_type": "single_choice"
+                        }
+                      }
+                    },
+                    {
+                      "codigo": "P5.1",
+                      "titulo": "¿Cómo afecta esta sensación a tus actividades diarias?",
+                      "texto": null,
+                      "tipo": "opcion_unica",
+                      "requerida": true,
+                      "orden": 23,
+                      "opciones": [
+                        {
+                          "codigo": "leve_hormigueo",
+                          "etiqueta": "Es solo un hormigueo leve que no me molesta para hacer mis cosas.",
+                          "orden": 0
+                        },
+                        {
+                          "codigo": "cosas_finas_manos",
+                          "etiqueta": "Me cuesta hacer cosas finas con las manos (como abrocharme botones, escribir, abrir frascos o sostener una taza sin que se caiga).",
+                          "orden": 1
+                        },
+                        {
+                          "codigo": "caminar_equilibrio_pies",
+                          "etiqueta": "Me cuesta caminar bien, siento que no piso firme, tropiezo o pierdo el equilibrio por tener los pies dormidos.",
+                          "orden": 2
+                        }
+                      ],
+                      "configuracion": {
+                        "modulo": "sec-modulo-5",
+                        "metadata": {
+                          "source_code": "P5.1",
+                          "source_type": "single_choice"
+                        },
+                        "requerida_si_activa": true,
+                        "depende_de": "P5",
+                        "valor_activador": "si"
+                      }
+                    },
+                    {
+                      "codigo": "P5.2",
+                      "titulo": "¿Sientes calambres o dolor en la garganta o en las manos cuando tocas cosas frías o tomas líquidos fríos?",
+                      "texto": null,
+                      "tipo": "opcion_unica",
+                      "requerida": true,
+                      "orden": 24,
+                      "opciones": [
+                        {
+                          "codigo": "no",
+                          "etiqueta": "No.",
+                          "orden": 0
+                        },
+                        {
+                          "codigo": "molestia_frio_pasa_rapido",
+                          "etiqueta": "Sí, me da molestia o dolor con el frío, pero pasa rápido al calentarme.",
+                          "orden": 1
+                        },
+                        {
+                          "codigo": "cierra_garganta_cuesta_respirar",
+                          "etiqueta": "Sí, siento que se me cierra la garganta o me cuesta respirar al tomar o respirar algo frío.",
+                          "orden": 2
+                        }
+                      ],
+                      "configuracion": {
+                        "modulo": "sec-modulo-5",
+                        "metadata": {
+                          "source_code": "P5.2",
+                          "source_type": "single_choice"
+                        },
+                        "requerida_si_activa": true,
+                        "depende_de": "P5",
+                        "valor_activador": "si"
+                      }
+                    },
+                    {
+                      "codigo": "P5.3",
+                      "titulo": "En comparación con tu ciclo anterior de quimioterapia, ¿esta sensación ha cambiado?",
+                      "texto": null,
+                      "tipo": "opcion_unica",
+                      "requerida": true,
+                      "orden": 25,
+                      "opciones": [
+                        {
+                          "codigo": "igual_o_suave",
+                          "etiqueta": "Está igual o es más suave.",
+                          "orden": 0
+                        },
+                        {
+                          "codigo": "nueva_empeorado_no_quita",
+                          "etiqueta": "Es nueva o ha empeorado y ya no se quita entre un ciclo y otro.",
+                          "orden": 1
+                        }
+                      ],
+                      "configuracion": {
+                        "modulo": "sec-modulo-5",
+                        "metadata": {
+                          "source_code": "P5.3",
+                          "source_type": "single_choice"
+                        },
+                        "requerida_si_activa": true,
+                        "depende_de": "P5",
+                        "valor_activador": "si"
+                      }
+                    },
+                    {
+                      "codigo": "P6",
+                      "titulo": "¿Has notado enrojecimiento, hinchazón, dolor o descamación en las palmas de las manos, plantas de los pies o en el brazo donde te pusieron el suero?",
+                      "texto": null,
+                      "tipo": "opcion_unica",
+                      "requerida": true,
+                      "orden": 26,
+                      "opciones": [
+                        {
+                          "codigo": "si",
+                          "etiqueta": "Sí",
+                          "orden": 0
+                        },
+                        {
+                          "codigo": "no",
+                          "etiqueta": "No",
+                          "orden": 1
+                        }
+                      ],
+                      "configuracion": {
+                        "modulo": "sec-modulo-6",
+                        "metadata": {
+                          "source_code": "P6",
+                          "source_type": "single_choice"
+                        }
+                      }
+                    },
+                    {
+                      "codigo": "P6.1",
+                      "titulo": "En las palmas de tus manos o plantas de tus pies, ¿qué síntomas tienes?",
+                      "texto": null,
+                      "tipo": "opcion_unica",
+                      "requerida": true,
+                      "orden": 27,
+                      "opciones": [
+                        {
+                          "codigo": "nada",
+                          "etiqueta": "No tengo nada en las palmas ni plantas.",
+                          "orden": 0
+                        },
+                        {
+                          "codigo": "rojas_secas_sin_dolor",
+                          "etiqueta": "Están un poco rojas o secas, pero no me duelen al caminar ni al usar las manos.",
+                          "orden": 1
+                        },
+                        {
+                          "codigo": "rojas_hinchadas_pelando_dolor",
+                          "etiqueta": "Están rojas, hinchadas, se están pelando y me duelen al caminar o al sostener objetos.",
+                          "orden": 2
+                        },
+                        {
+                          "codigo": "ampollas_heridas_dolor_severo",
+                          "etiqueta": "Tienen ampollas, heridas abiertas o costras, y el dolor no me deja caminar ni usar mis manos.",
+                          "orden": 3
+                        }
+                      ],
+                      "configuracion": {
+                        "modulo": "sec-modulo-6",
+                        "metadata": {
+                          "source_code": "P6.1",
+                          "source_type": "single_choice"
+                        },
+                        "requerida_si_activa": true,
+                        "depende_de": "P6",
+                        "valor_activador": "si"
+                      }
+                    },
+                    {
+                      "codigo": "P6.2",
+                      "titulo": "En la vena del brazo donde te pasaron la quimioterapia (si no usas catéter central), ¿notaste algo?",
+                      "texto": null,
+                      "tipo": "opcion_unica",
+                      "requerida": true,
+                      "orden": 28,
+                      "opciones": [
+                        {
+                          "codigo": "todo_normal",
+                          "etiqueta": "Todo normal.",
+                          "orden": 0
+                        },
+                        {
+                          "codigo": "morado_pinchazo_sin_dolor",
+                          "etiqueta": "Está un poco morado por el pinchazo, pero sin dolor importante.",
+                          "orden": 1
+                        },
+                        {
+                          "codigo": "hinchado_rojo_duro_caliente_arde",
+                          "etiqueta": "Está muy hinchado, rojo, duro, caliente o me arde/duele mucho esa zona del brazo.",
+                          "orden": 2
+                        }
+                      ],
+                      "configuracion": {
+                        "modulo": "sec-modulo-6",
+                        "metadata": {
+                          "source_code": "P6.2",
+                          "source_type": "single_choice"
+                        },
+                        "requerida_si_activa": true,
+                        "activacion_compuesta": {
+                          "op": "todas",
+                          "condiciones": [
+                            {
+                              "op": "igual",
+                              "codigo": "P6",
+                              "valor": "si"
+                            },
+                            {
+                              "op": "igual",
+                              "codigo": "P0.1",
+                              "valor": "no"
+                            }
+                          ]
+                        }
+                      }
+                    },
+                    {
+                      "codigo": "P7",
+                      "titulo": "¿Has tenido algún tipo de sangrado o te han salido moretones o puntitos rojos en la piel sin haberte golpeado?",
+                      "texto": null,
+                      "tipo": "opcion_unica",
+                      "requerida": true,
+                      "orden": 29,
+                      "opciones": [
+                        {
+                          "codigo": "si",
+                          "etiqueta": "Sí",
+                          "orden": 0
+                        },
+                        {
+                          "codigo": "no",
+                          "etiqueta": "No",
+                          "orden": 1
+                        }
+                      ],
+                      "configuracion": {
+                        "modulo": "sec-modulo-7",
+                        "metadata": {
+                          "source_code": "P7",
+                          "source_type": "single_choice"
+                        }
+                      }
+                    },
+                    {
+                      "codigo": "P7.1",
+                      "titulo": "¿Qué tipo de sangrado o marcas has notado?",
+                      "texto": null,
+                      "tipo": "opcion_multiple",
+                      "requerida": true,
+                      "orden": 30,
+                      "opciones": [
+                        {
+                          "codigo": "pequeno_sangrado_menos_5min",
+                          "etiqueta": "Pequeño sangrado de encías al cepillarme los dientes o gotitas de sangre al sonarme la nariz, que se detiene en menos de 5 minutos.",
+                          "orden": 0
+                        },
+                        {
+                          "codigo": "moretones_petequias",
+                          "etiqueta": "Me salieron varios moretones nuevos sin golpearme o muchos puntitos rojos pequeños en las piernas o brazos (petequias).",
+                          "orden": 1
+                        },
+                        {
+                          "codigo": "sangrado_nariz_encias_10_15min",
+                          "etiqueta": "Sangrado de nariz o encías abundante que no se detiene después de apretar durante 10 a 15 minutos.",
+                          "orden": 2
+                        },
+                        {
+                          "codigo": "orina_sangre_ardor",
+                          "etiqueta": "Orina de color rojo o rosado (con sangre) o ardor fuerte al orinar.",
+                          "orden": 3
+                        },
+                        {
+                          "codigo": "sangrado_vaginal_tos_sangre",
+                          "etiqueta": "Sangrado vaginal abundante fuera de mi regla normal, o tos con sangre.",
+                          "orden": 4
+                        }
+                      ],
+                      "configuracion": {
+                        "modulo": "sec-modulo-7",
+                        "metadata": {
+                          "source_code": "P7.1",
+                          "source_type": "multiple_choice"
+                        },
+                        "requerida_si_activa": true,
+                        "depende_de": "P7",
+                        "valor_activador": "si"
+                      }
+                    },
+                    {
+                      "codigo": "P8",
+                      "titulo": "¿Sientes falta de aire al respirar, dolor en el pecho, palpitaciones o se te ha hinchado alguna pierna?",
+                      "texto": null,
+                      "tipo": "opcion_unica",
+                      "requerida": true,
+                      "orden": 31,
+                      "opciones": [
+                        {
+                          "codigo": "si",
+                          "etiqueta": "Sí",
+                          "orden": 0
+                        },
+                        {
+                          "codigo": "no",
+                          "etiqueta": "No",
+                          "orden": 1
+                        }
+                      ],
+                      "configuracion": {
+                        "modulo": "sec-modulo-8",
+                        "metadata": {
+                          "source_code": "P8",
+                          "source_type": "single_choice"
+                        }
+                      }
+                    },
+                    {
+                      "codigo": "P8.1",
+                      "titulo": "¿Cómo es la falta de aire o dificultad para respirar?",
+                      "texto": null,
+                      "tipo": "opcion_unica",
+                      "requerida": true,
+                      "orden": 32,
+                      "opciones": [
+                        {
+                          "codigo": "no_falta_aire",
+                          "etiqueta": "No tengo falta de aire.",
+                          "orden": 0
+                        },
+                        {
+                          "codigo": "canso_escaleras_rapido",
+                          "etiqueta": "Me canso un poco más de lo normal al subir escaleras o caminar rápido, pero se me pasa al descansar.",
+                          "orden": 1
+                        },
+                        {
+                          "codigo": "falta_aire_minimas_almohadas",
+                          "etiqueta": "Me falta el aire haciendo cosas mínimas (como vestirme o ir al baño) o necesito dormir con más almohadas para no ahogarme.",
+                          "orden": 2
+                        },
+                        {
+                          "codigo": "falta_aire_reposo",
+                          "etiqueta": "Me falta el aire estando totalmente quieto/a y en reposo.",
+                          "orden": 3
+                        }
+                      ],
+                      "configuracion": {
+                        "modulo": "sec-modulo-8",
+                        "metadata": {
+                          "source_code": "P8.1",
+                          "source_type": "single_choice"
+                        },
+                        "requerida_si_activa": true,
+                        "depende_de": "P8",
+                        "valor_activador": "si"
+                      }
+                    },
+                    {
+                      "codigo": "P8.2",
+                      "titulo": "¿Tienes alguno de estos síntomas en el pecho?",
+                      "texto": null,
+                      "tipo": "opcion_multiple",
+                      "requerida": true,
+                      "orden": 33,
+                      "opciones": [
+                        {
+                          "codigo": "ninguno",
+                          "etiqueta": "Ninguno.",
+                          "orden": 0
+                        },
+                        {
+                          "codigo": "dolor_presion_pesadez",
+                          "etiqueta": "Dolor, presión o pesadez en el centro del pecho.",
+                          "orden": 1
+                        },
+                        {
+                          "codigo": "palpitaciones_reposo",
+                          "etiqueta": "Siento que el corazón me late muy rápido o desordenado (palpitaciones) estando en reposo.",
+                          "orden": 2
+                        }
+                      ],
+                      "configuracion": {
+                        "modulo": "sec-modulo-8",
+                        "metadata": {
+                          "source_code": "P8.2",
+                          "source_type": "multiple_choice"
+                        },
+                        "opciones_exclusivas": [
+                          "ninguno"
+                        ],
+                        "requerida_si_activa": true,
+                        "depende_de": "P8",
+                        "valor_activador": "si"
+                      }
+                    },
+                    {
+                      "codigo": "P8.3",
+                      "titulo": "¿Se te han hinchado las piernas o los tobillos?",
+                      "texto": null,
+                      "tipo": "opcion_unica",
+                      "requerida": true,
+                      "orden": 34,
+                      "opciones": [
+                        {
+                          "codigo": "no",
+                          "etiqueta": "No.",
+                          "orden": 0
+                        },
+                        {
+                          "codigo": "tobillos_hinchados_final_dia",
+                          "etiqueta": "Sí, ambos tobillos están un poco hinchados al final del día.",
+                          "orden": 1
+                        },
+                        {
+                          "codigo": "una_pierna_repente_duele_caliente",
+                          "etiqueta": "Sí, una sola pierna (o pantorrilla) se hinchó de repente, me duele, está roja o caliente.",
+                          "orden": 2
+                        }
+                      ],
+                      "configuracion": {
+                        "modulo": "sec-modulo-8",
+                        "metadata": {
+                          "source_code": "P8.3",
+                          "source_type": "single_choice"
+                        },
+                        "requerida_si_activa": true,
+                        "depende_de": "P8",
+                        "valor_activador": "si"
+                      }
+                    },
+                    {
+                      "codigo": "P9.A",
+                      "titulo": "¿Has sentido un cansancio extremo o fatiga que no se alivia aunque duermas o descanses?",
+                      "texto": null,
+                      "tipo": "opcion_unica",
+                      "requerida": true,
+                      "orden": 35,
+                      "opciones": [
+                        {
+                          "codigo": "si",
+                          "etiqueta": "Sí",
+                          "orden": 0
+                        },
+                        {
+                          "codigo": "no",
+                          "etiqueta": "No",
+                          "orden": 1
+                        }
+                      ],
+                      "configuracion": {
+                        "modulo": "sec-modulo-9",
+                        "metadata": {
+                          "source_code": "P9.A",
+                          "source_type": "single_choice"
+                        }
+                      }
+                    },
+                    {
+                      "codigo": "P9.A.1",
+                      "titulo": "¿Qué tanto te limita este cansancio hoy?",
+                      "texto": null,
+                      "tipo": "opcion_unica",
+                      "requerida": true,
+                      "orden": 36,
+                      "opciones": [
+                        {
+                          "codigo": "ecog_1",
+                          "etiqueta": "Me siento cansado/a, pero puedo levantarme y hacer casi todas mis actividades del día.",
+                          "orden": 0
+                        },
+                        {
+                          "codigo": "ecog_2",
+                          "etiqueta": "Paso menos de la mitad del día en cama o en el sillón; puedo bañarme y vestirme solo/a, pero no puedo trabajar ni hacer tareas de la casa.",
+                          "orden": 1
+                        },
+                        {
+                          "codigo": "ecog_3_4",
+                          "etiqueta": "Paso más de la mitad del día en cama; me cuesta mucho levantarme incluso para bañarme, vestirme o comer.",
+                          "orden": 2
+                        },
+                        {
+                          "codigo": "emergencia",
+                          "etiqueta": "Además del cansancio, me siento confundido/a, me cuesta mucho despertar o me he desmayado.",
+                          "orden": 3
+                        }
+                      ],
+                      "configuracion": {
+                        "modulo": "sec-modulo-9",
+                        "metadata": {
+                          "source_code": "P9.A.1",
+                          "source_type": "single_choice"
+                        },
+                        "requerida_si_activa": true,
+                        "depende_de": "P9.A",
+                        "valor_activador": "si"
+                      }
+                    },
+                    {
+                      "codigo": "P9.B",
+                      "titulo": "¿Tienes algún dolor en el cuerpo (huesos, músculos, cabeza o zona de tu enfermedad)?",
+                      "texto": null,
+                      "tipo": "opcion_unica",
+                      "requerida": true,
+                      "orden": 37,
+                      "opciones": [
+                        {
+                          "codigo": "si",
+                          "etiqueta": "Sí",
+                          "orden": 0
+                        },
+                        {
+                          "codigo": "no",
+                          "etiqueta": "No",
+                          "orden": 1
+                        }
+                      ],
+                      "configuracion": {
+                        "modulo": "sec-modulo-9",
+                        "metadata": {
+                          "source_code": "P9.B",
+                          "source_type": "single_choice"
+                        }
+                      }
+                    },
+                    {
+                      "codigo": "P9.B.1",
+                      "titulo": "¿Qué tan intenso es el dolor en este momento?",
+                      "texto": null,
+                      "tipo": "opcion_unica",
+                      "requerida": true,
+                      "orden": 38,
+                      "opciones": [
+                        {
+                          "codigo": "leve",
+                          "etiqueta": "Dolor Leve (1 a 3): Molesta un poco, pero me deja dormir y hacer mis cosas.",
+                          "orden": 0
+                        },
+                        {
+                          "codigo": "moderado",
+                          "etiqueta": "Dolor Moderado (4 a 6): Me interrumpe mis actividades o el sueño.",
+                          "orden": 1
+                        },
+                        {
+                          "codigo": "intenso",
+                          "etiqueta": "Dolor Intenso o Insoportable (7 a 10): No me deja estar tranquilo/a ni dormir.",
+                          "orden": 2
+                        }
+                      ],
+                      "configuracion": {
+                        "modulo": "sec-modulo-9",
+                        "metadata": {
+                          "source_code": "P9.B.1",
+                          "source_type": "single_choice"
+                        },
+                        "requerida_si_activa": true,
+                        "depende_de": "P9.B",
+                        "valor_activador": "si"
+                      }
+                    },
+                    {
+                      "codigo": "P9.B.2",
+                      "titulo": "¿Cómo responde el dolor a los analgésicos que te dejó tu médico?",
+                      "texto": null,
+                      "tipo": "opcion_unica",
+                      "requerida": true,
+                      "orden": 39,
+                      "opciones": [
+                        {
+                          "codigo": "alivia_bien",
+                          "etiqueta": "El dolor se pasa bien cuando tomo mis medicamentos.",
+                          "orden": 0
+                        },
+                        {
+                          "codigo": "alivia_parcial",
+                          "etiqueta": "El dolor baja un poco, pero vuelve antes de que me toque la siguiente dosis.",
+                          "orden": 1
+                        },
+                        {
+                          "codigo": "no_se_pasa_o_subito",
+                          "etiqueta": "El dolor no se pasa con nada o apareció de forma súbita y muy violenta.",
+                          "orden": 2
+                        }
+                      ],
+                      "configuracion": {
+                        "modulo": "sec-modulo-9",
+                        "metadata": {
+                          "source_code": "P9.B.2",
+                          "source_type": "single_choice"
+                        },
+                        "requerida_si_activa": true,
+                        "depende_de": "P9.B",
+                        "valor_activador": "si"
+                      }
+                    },
+                    {
+                      "codigo": "P10",
+                      "titulo": "¿Hay algún otro síntoma, duda o comentario que quieras contarle a tu equipo médico o de enfermería y que no hayamos preguntado arriba?",
+                      "texto": null,
+                      "tipo": "texto_libre",
+                      "requerida": false,
+                      "orden": 40,
+                      "opciones": [],
+                      "configuracion": {
+                        "modulo": "sec-modulo-10",
+                        "metadata": {
+                          "source_code": "P10",
+                          "source_type": "text"
+                        },
+                        "max_length": 500
+                      }
+                    }
+                  ],
+                  "fecha_creacion": "2026-10-28T00:00:00Z"
+                }
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Resultado o replay confirmado",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object"
+                }
+              }
+            }
+          },
+          "201": {
+            "description": "Recurso creado",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Sesión inválida",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Operador no autorizado",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Recurso no encontrado",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "Identificador o versión en conflicto",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object"
+                }
+              }
+            }
+          },
+          "413": {
+            "description": "Archivo mayor a 5 MiB",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Datos inválidos",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "Servicio temporalmente no disponible",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/admin/api/v1/preparacion/formularios/{id}/publicar": {
+      "post": {
+        "tags": [
+          "6. Formularios"
+        ],
+        "summary": "Seleccionar formulario vigente (AFECTA AL TRATAMIENTO)",
+        "description": "Herramienta de simulación; no forma parte del contrato externo. Reutilice operacion_id solo para repetir exactamente esta operación. Consulte el resultado desde la app.",
+        "security": [
+          {
+            "OperadorBearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "in": "path",
+            "name": "id",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            },
+            "example": "22222222-2222-4222-8222-222222222222"
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "required": [
+                  "operacion_id"
+                ],
+                "properties": {
+                  "operacion_id": {
+                    "type": "string",
+                    "format": "uuid"
+                  }
+                },
+                "additionalProperties": false
+              },
+              "example": {
+                "operacion_id": "11111111-1111-4111-8111-111111111111"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Resultado o replay confirmado",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object"
+                }
+              }
+            }
+          },
+          "201": {
+            "description": "Recurso creado",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Sesión inválida",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Operador no autorizado",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Recurso no encontrado",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "Identificador o versión en conflicto",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object"
+                }
+              }
+            }
+          },
+          "413": {
+            "description": "Archivo mayor a 5 MiB",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Datos inválidos",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "Servicio temporalmente no disponible",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/admin/api/v1/preparacion/pacientes/{paciente_id}/escenario": {
+      "post": {
+        "tags": [
+          "7. Escenarios"
+        ],
+        "summary": "Preparar respuesta controlada del servicio",
+        "description": "Herramienta de simulación; no forma parte del contrato externo. Reutilice operacion_id solo para repetir exactamente esta operación. Consulte el resultado desde la app.",
+        "security": [
+          {
+            "OperadorBearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "in": "path",
+            "name": "paciente_id",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            },
+            "example": "476a23e2-f493-4607-8780-4c0cbb960eaf"
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "required": [
+                  "operacion_id",
+                  "escenario"
+                ],
+                "properties": {
+                  "operacion_id": {
+                    "type": "string",
+                    "format": "uuid"
+                  },
+                  "escenario": {
+                    "type": "string",
+                    "enum": [
+                      "NORMAL",
+                      "AUTORIZACION_DENEGADA",
+                      "SERVICIO_NO_DISPONIBLE",
+                      "ACK_SIGNOS_PERDIDO",
+                      "ACK_EPRO_PERDIDO",
+                      "IA_NO_DISPONIBLE",
+                      "IA_URGENCIA"
+                    ]
+                  }
+                },
+                "additionalProperties": false
+              },
+              "example": {
+                "operacion_id": "11111111-1111-4111-8111-111111111111",
+                "escenario": "NORMAL"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Resultado o replay confirmado",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object"
+                }
+              }
+            }
+          },
+          "201": {
+            "description": "Recurso creado",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Sesión inválida",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Operador no autorizado",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Recurso no encontrado",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "Identificador o versión en conflicto",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object"
+                }
+              }
+            }
+          },
+          "413": {
+            "description": "Archivo mayor a 5 MiB",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Datos inválidos",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "Servicio temporalmente no disponible",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object"
+                }
+              }
+            }
+          }
+        }
+      }
+    }
+  },
+  "components": {
+    "schemas": {
+      "AlergiaResponse": {
+        "description": "Representación de una alergia en la respuesta del perfil.",
+        "properties": {
+          "id": {
+            "format": "uuid",
+            "title": "Id",
+            "type": "string"
+          },
+          "alergeno_id": {
+            "format": "uuid",
+            "title": "Alergeno Id",
+            "type": "string"
+          },
+          "nombre": {
+            "default": "",
+            "title": "Nombre",
+            "type": "string"
+          },
+          "severidad": {
+            "default": "",
+            "title": "Severidad",
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "alergeno_id"
+        ],
+        "title": "AlergiaResponse",
+        "type": "object"
+      },
+      "AntecedenteFamiliarResponse": {
+        "description": "Representación de un antecedente familiar en la respuesta del perfil.",
+        "properties": {
+          "id": {
+            "format": "uuid",
+            "title": "Id",
+            "type": "string"
+          },
+          "condicion_id": {
+            "format": "uuid",
+            "title": "Condicion Id",
+            "type": "string"
+          },
+          "nombre": {
+            "default": "",
+            "title": "Nombre",
+            "type": "string"
+          },
+          "codigo_cie10": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": "",
+            "title": "Codigo Cie10"
+          },
+          "grado_familiar": {
+            "default": "",
+            "title": "Grado Familiar",
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "condicion_id"
+        ],
+        "title": "AntecedenteFamiliarResponse",
+        "type": "object"
+      },
+      "CategoriaListResponse": {
+        "description": "Respuesta al listar las categorías educativas activas.",
+        "properties": {
+          "categorias": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Categorias",
+            "type": "array"
+          }
+        },
+        "required": [
+          "categorias"
+        ],
+        "title": "CategoriaListResponse",
+        "type": "object"
+      },
+      "CodigoVinculacionResponse": {
+        "description": "Respuesta al generar un código de vinculación.",
+        "example": {
+          "codigo": "A3K9X7BN",
+          "fecha_expiracion": "2026-09-27T10:00:00Z",
+          "mensaje": "Código de vinculación generado exitosamente."
+        },
+        "properties": {
+          "codigo": {
+            "description": "Código alfanumérico único de 8 caracteres para vincular con un profesional",
+            "examples": [
+              "A3K9X7BN"
+            ],
+            "title": "Codigo",
+            "type": "string"
+          },
+          "fecha_expiracion": {
+            "description": "Fecha y hora de expiración del código (UTC)",
+            "format": "date-time",
+            "title": "Fecha Expiracion",
+            "type": "string"
+          },
+          "mensaje": {
+            "default": "Código de vinculación generado exitosamente.",
+            "description": "Mensaje informativo para el paciente",
+            "title": "Mensaje",
+            "type": "string"
+          }
+        },
+        "required": [
+          "codigo",
+          "fecha_expiracion"
+        ],
+        "title": "CodigoVinculacionResponse",
+        "type": "object"
+      },
+      "CompletarPerfilPacienteRequest": {
+        "description": "Esquema de solicitud para registrar los datos obligatorios del paciente tras login social.",
+        "properties": {
+          "rut": {
+            "description": "RUT chileno con dígito verificador (ej. 12.345.678-5)",
+            "examples": [
+              "12.345.678-5"
+            ],
+            "title": "Rut",
+            "type": "string"
+          },
+          "telefono": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "description": "Teléfono de contacto",
+            "examples": [
+              "+56912345678"
+            ],
+            "title": "Telefono"
+          },
+          "fecha_nacimiento": {
+            "anyOf": [
+              {
+                "format": "date",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "description": "Fecha de nacimiento en formato ISO YYYY-MM-DD",
+            "title": "Fecha Nacimiento"
+          },
+          "sexo": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "description": "Sexo o género",
+            "title": "Sexo"
+          }
+        },
+        "required": [
+          "rut"
+        ],
+        "title": "CompletarPerfilPacienteRequest",
+        "type": "object"
+      },
+      "CondicionResponse": {
+        "description": "Representación de una condición médica en la respuesta del perfil.",
+        "properties": {
+          "id": {
+            "format": "uuid",
+            "title": "Id",
+            "type": "string"
+          },
+          "condicion_id": {
+            "format": "uuid",
+            "title": "Condicion Id",
+            "type": "string"
+          },
+          "nombre": {
+            "default": "",
+            "title": "Nombre",
+            "type": "string"
+          },
+          "codigo_cie10": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": "",
+            "title": "Codigo Cie10"
+          },
+          "fecha_diagnostico": {
+            "anyOf": [
+              {
+                "format": "date",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Fecha Diagnostico"
+          },
+          "categoria": {
+            "default": "",
+            "title": "Categoria",
+            "type": "string"
+          },
+          "en_tratamiento": {
+            "default": false,
+            "title": "En Tratamiento",
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "id",
+          "condicion_id"
+        ],
+        "title": "CondicionResponse",
+        "type": "object"
+      },
+      "ContenidoEducativoResponse": {
+        "description": "Respuesta al crear o consultar un contenido educativo.",
+        "properties": {
+          "id": {
+            "format": "uuid",
+            "title": "Id",
+            "type": "string"
+          },
+          "profesional_id": {
+            "format": "uuid",
+            "title": "Profesional Id",
+            "type": "string"
+          },
+          "titulo": {
+            "title": "Titulo",
+            "type": "string"
+          },
+          "descripcion": {
+            "title": "Descripcion",
+            "type": "string",
+            "description": "String; NULL de origen se normaliza a cadena vacía en servidor/proyección. Objetivo pendiente."
+          },
+          "tipo": {
+            "type": "string",
+            "enum": [
+              "imagen",
+              "video"
+            ],
+            "description": "Subconjunto paciente/móvil. La gestión web conserva registros históricos fuera de este perfil."
+          },
+          "url": {
+            "title": "Url",
+            "type": "string",
+            "minLength": 1,
+            "pattern": "\\S",
+            "description": "Recurso publicado: string no vacío/no solo espacios. Filas NULL o incompletas fuera del catálogo paciente/móvil, sin inventar valores."
+          },
+          "categoria": {
+            "title": "Categoria",
+            "type": "string",
+            "minLength": 1,
+            "pattern": "\\S",
+            "description": "Recurso publicado: string no vacío/no solo espacios. Filas NULL o incompletas fuera del catálogo paciente/móvil, sin inventar valores."
+          },
+          "activo": {
+            "title": "Activo",
+            "type": "boolean"
+          },
+          "fecha_creacion": {
+            "format": "date-time",
+            "title": "Fecha Creacion",
+            "type": "string"
+          },
+          "carpeta_id": {
+            "anyOf": [
+              {
+                "format": "uuid",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Carpeta Id"
+          },
+          "archivo_mime": {
+            "anyOf": [
+              {
+                "type": "string",
+                "enum": [
+                  "image/png",
+                  "image/jpeg"
+                ]
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "archivo_tamano_bytes": {
+            "anyOf": [
+              {
+                "type": "integer",
+                "minimum": 1
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "archivo_revision": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "uuid"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "archivo_sha256": {
+            "anyOf": [
+              {
+                "type": "string",
+                "pattern": "^[0-9a-f]{64}$"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          }
+        },
+        "required": [
+          "id",
+          "profesional_id",
+          "titulo",
+          "descripcion",
+          "tipo",
+          "url",
+          "categoria",
+          "activo",
+          "fecha_creacion",
+          "archivo_mime",
+          "archivo_tamano_bytes",
+          "archivo_revision",
+          "archivo_sha256"
+        ],
+        "title": "ContenidoEducativoResponseObjetivoMovil",
+        "type": "object",
+        "x-status": "normativo_objetivo_con_ampliaciones_pendientes",
+        "x-rules": "Solo perfil móvil publicado: activo y datos elegibles; imagen exige archivo_* válidos, YouTube los devuelve null. Columnas SQL previstas anulables no habilitan publicar una imagen incompleta.",
+        "x-version": "1.0-RC3.2-objetivo-2026-10-23",
+        "allOf": [
+          {
+            "if": {
+              "properties": {
+                "tipo": {
+                  "const": "imagen"
+                }
+              },
+              "required": [
+                "tipo"
+              ]
+            },
+            "then": {
+              "properties": {
+                "archivo_mime": {
+                  "type": "string",
+                  "enum": [
+                    "image/png",
+                    "image/jpeg"
+                  ]
+                },
+                "archivo_tamano_bytes": {
+                  "type": "integer",
+                  "minimum": 1
+                },
+                "archivo_revision": {
+                  "type": "string",
+                  "format": "uuid"
+                },
+                "archivo_sha256": {
+                  "type": "string",
+                  "pattern": "^[0-9a-f]{64}$"
+                }
+              },
+              "required": [
+                "archivo_mime",
+                "archivo_tamano_bytes",
+                "archivo_revision",
+                "archivo_sha256"
+              ]
+            }
+          },
+          {
+            "if": {
+              "properties": {
+                "tipo": {
+                  "const": "video"
+                }
+              },
+              "required": [
+                "tipo"
+              ]
+            },
+            "then": {
+              "properties": {
+                "archivo_mime": {
+                  "type": "null"
+                },
+                "archivo_tamano_bytes": {
+                  "type": "null"
+                },
+                "archivo_revision": {
+                  "type": "null"
+                },
+                "archivo_sha256": {
+                  "type": "null"
+                }
+              },
+              "required": [
+                "archivo_mime",
+                "archivo_tamano_bytes",
+                "archivo_revision",
+                "archivo_sha256"
+              ]
+            }
+          }
+        ]
+      },
+      "DefinicionTerminosResponse": {
+        "description": "Esquema de respuesta de una versión de términos.",
+        "properties": {
+          "id": {
+            "format": "uuid",
+            "title": "Id",
+            "type": "string"
+          },
+          "codigo": {
+            "title": "Codigo",
+            "type": "string"
+          },
+          "titulo": {
+            "title": "Titulo",
+            "type": "string"
+          },
+          "version": {
+            "title": "Version",
+            "type": "string"
+          },
+          "texto_completo": {
+            "title": "Texto Completo",
+            "type": "string"
+          },
+          "contenido": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Contenido"
+          },
+          "descripcion": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Descripcion"
+          },
+          "vigente_desde": {
+            "format": "date",
+            "title": "Vigente Desde",
+            "type": "string"
+          },
+          "vigente_hasta": {
+            "anyOf": [
+              {
+                "format": "date",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Vigente Hasta"
+          },
+          "vigente": {
+            "default": true,
+            "title": "Vigente",
+            "type": "boolean"
+          },
+          "obligatorio": {
+            "default": true,
+            "title": "Obligatorio",
+            "type": "boolean"
+          },
+          "creado_el": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Creado El"
+          }
+        },
+        "required": [
+          "codigo",
+          "titulo",
+          "version",
+          "texto_completo",
+          "vigente_desde"
+        ],
+        "title": "DefinicionTerminosResponse",
+        "type": "object"
+      },
+      "ErrorReal": {
+        "properties": {
+          "error": {
+            "$ref": "#/components/schemas/ErrorRealDetalle"
+          }
+        },
+        "required": [
+          "error"
+        ],
+        "title": "ErrorReal",
+        "type": "object"
+      },
+      "ErrorRealDetalle": {
+        "properties": {
+          "codigo": {
+            "title": "Codigo",
+            "type": "string"
+          },
+          "mensaje": {
+            "title": "Mensaje",
+            "type": "string"
+          },
+          "detalles": {
+            "default": null,
+            "title": "Detalles"
+          },
+          "status_code": {
+            "title": "Status Code",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "codigo",
+          "mensaje",
+          "status_code"
+        ],
+        "title": "ErrorRealDetalle",
+        "type": "object"
+      },
+      "FormularioResponseSchema": {
+        "description": "Esquema de respuesta completa de un formulario publicado.",
+        "properties": {
+          "id": {
+            "description": "UUID del formulario",
+            "example": "3fa85f64-5717-4562-b3fc-2c963f66afa6",
+            "format": "uuid",
+            "title": "Id",
+            "type": "string"
+          },
+          "codigo": {
+            "description": "Código único identificador del formulario",
+            "example": "FORM_QUIMIO_MVP",
+            "title": "Codigo",
+            "type": "string"
+          },
+          "titulo": {
+            "description": "Título principal del instrumento",
+            "example": "Cuestionario de Seguimiento - Quimioterapia",
+            "title": "Titulo",
+            "type": "string"
+          },
+          "descripcion": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "description": "Descripción explicativa",
+            "example": "Formulario diario de monitoreo de síntomas para quimioterapia",
+            "title": "Descripcion"
+          },
+          "tratamiento": {
+            "description": "Tipo de tratamiento médico asociado",
+            "example": "quimioterapia",
+            "title": "Tratamiento",
+            "type": "string"
+          },
+          "version": {
+            "description": "Número de versión publicada inmutable",
+            "example": 1,
+            "title": "Version",
+            "type": "integer"
+          },
+          "activo": {
+            "description": "Indica si es la versión activa del tratamiento",
+            "example": true,
+            "title": "Activo",
+            "type": "boolean"
+          },
+          "version_condiciones": {
+            "default": 1,
+            "description": "0 legado descriptivo; 1 igualdad tipada y extensión de exclusividad objetivo. No es versión clínica. Derivación exacta en documento de publicación; ninguna config inválida se convierte a 0.",
+            "maximum": 1,
+            "minimum": 0,
+            "title": "Version Condiciones",
+            "type": "integer"
+          },
+          "preguntas": {
+            "description": "Lista ordenada de preguntas",
+            "items": {
+              "$ref": "#/components/schemas/PreguntaSchema"
+            },
+            "title": "Preguntas",
+            "type": "array"
+          },
+          "fecha_creacion": {
+            "description": "Fecha de creación del formulario en formato ISO 8601 UTC",
+            "format": "date-time",
+            "title": "Fecha Creacion",
+            "type": "string"
+          }
+        },
+        "required": [
+          "codigo",
+          "titulo",
+          "tratamiento",
+          "version",
+          "activo",
+          "preguntas",
+          "fecha_creacion",
+          "version_condiciones"
+        ],
+        "title": "FormularioResponseSchema",
+        "type": "object",
+        "allOf": [
+          {
+            "if": {
+              "properties": {
+                "version_condiciones": {
+                  "const": 1
+                }
+              },
+              "required": [
+                "version_condiciones"
+              ]
+            },
+            "then": {
+              "properties": {
+                "preguntas": {
+                  "items": {
+                    "properties": {
+                      "configuracion": {
+                        "$ref": "#/components/schemas/ConfiguracionEproRC32"
+                      }
+                    }
+                  }
+                }
+              }
+            },
+            "else": {
+              "properties": {
+                "preguntas": {
+                  "items": {
+                    "properties": {
+                      "configuracion": {
+                        "$ref": "#/components/schemas/ConfiguracionEproRC32/$defs/legado"
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          }
+        ],
+        "x-cross-field-rules": "El schema por sí solo no valida pertenencia de códigos exclusivos, grafo o marcador físico explícito; cumplir documento de publicación y reglas de dominio. No asignar exclusividades clínicas por ejemplos técnicos."
+      },
+      "ItemRespuestaDetalleSchema": {
+        "description": "Esquema de salida detallado para un ítem de respuesta.",
+        "properties": {
+          "pregunta_id": {
+            "format": "uuid",
+            "title": "Pregunta Id",
+            "type": "string"
+          },
+          "codigo_pregunta": {
+            "title": "Codigo Pregunta",
+            "type": "string"
+          },
+          "texto_pregunta": {
+            "title": "Texto Pregunta",
+            "type": "string"
+          },
+          "tipo_pregunta": {
+            "title": "Tipo Pregunta",
+            "type": "string"
+          },
+          "valor": {
+            "title": "Valor"
+          },
+          "valor_texto": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Valor Texto",
+            "description": "Auxiliar y opcional. No es significado clínico ni igualdad literal requerida para ACK. Interpretar valor contra la definición original; mejora canónica no bloquea el contrato."
+          }
+        },
+        "required": [
+          "pregunta_id",
+          "codigo_pregunta",
+          "texto_pregunta",
+          "tipo_pregunta",
+          "valor"
+        ],
+        "title": "ItemRespuestaDetalleSchema",
+        "type": "object"
+      },
+      "ItemRespuestaInputSchema": {
+        "description": "Esquema de entrada para la respuesta a una pregunta individual.",
+        "properties": {
+          "pregunta_id": {
+            "description": "Identificador UUID de la pregunta respondida",
+            "example": "b0000000-0000-0000-0000-000000000001",
+            "format": "uuid",
+            "title": "Pregunta Id",
+            "type": "string"
+          },
+          "valor": {
+            "description": "Valor respondido por el paciente (booleano, número, texto o identificador de opción)",
+            "example": 1,
+            "title": "Valor"
+          },
+          "valor_texto": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "description": "Auxiliar y opcional. No es significado clínico ni igualdad literal requerida para ACK. Interpretar valor contra la definición original; mejora canónica no bloquea el contrato.",
+            "example": "1 - Leve",
+            "title": "Valor Texto"
+          }
+        },
+        "required": [
+          "pregunta_id",
+          "valor"
+        ],
+        "title": "ItemRespuestaInputSchema",
+        "type": "object"
+      },
+      "ListaContenidoResponse": {
+        "description": "Respuesta al listar contenidos por categoría.",
+        "properties": {
+          "total": {
+            "title": "Total",
+            "type": "integer",
+            "minimum": 0,
+            "description": "Total del mismo conjunto elegible/filtrado que PowerSync, antes de skip/limit. Objetivo pendiente."
+          },
+          "contenidos": {
+            "items": {
+              "$ref": "#/components/schemas/ContenidoEducativoResponse"
+            },
+            "title": "Contenidos",
+            "type": "array"
+          }
+        },
+        "required": [
+          "total",
+          "contenidos"
+        ],
+        "title": "ListaContenidoResponse",
+        "type": "object"
+      },
+      "MedicamentoResponse": {
+        "description": "Representación de un medicamento en la respuesta del perfil.",
+        "properties": {
+          "id": {
+            "format": "uuid",
+            "title": "Id",
+            "type": "string"
+          },
+          "medicamento_id": {
+            "format": "uuid",
+            "title": "Medicamento Id",
+            "type": "string"
+          },
+          "nombre": {
+            "default": "",
+            "title": "Nombre",
+            "type": "string"
+          },
+          "dosis": {
+            "default": "",
+            "title": "Dosis",
+            "type": "string"
+          },
+          "frecuencia": {
+            "default": "",
+            "title": "Frecuencia",
+            "type": "string"
+          },
+          "motivo": {
+            "default": "",
+            "title": "Motivo",
+            "type": "string"
+          },
+          "activo": {
+            "default": true,
+            "title": "Activo",
+            "type": "boolean"
+          },
+          "fecha_inicio": {
+            "anyOf": [
+              {
+                "format": "date",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Fecha Inicio"
+          },
+          "fecha_termino": {
+            "anyOf": [
+              {
+                "format": "date",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Fecha Termino"
+          }
+        },
+        "required": [
+          "id",
+          "medicamento_id"
+        ],
+        "title": "MedicamentoResponse",
+        "type": "object"
+      },
+      "OpcionPreguntaSchema": {
+        "description": "Esquema de opción para preguntas de selección múltiple o única.",
+        "properties": {
+          "codigo": {
+            "description": "Código estable de la opción",
+            "example": "NINGUNA",
+            "title": "Codigo",
+            "type": "string"
+          },
+          "etiqueta": {
+            "description": "Texto o etiqueta visible en pantalla",
+            "example": "No, ninguna",
+            "title": "Etiqueta",
+            "type": "string"
+          },
+          "orden": {
+            "default": 1,
+            "description": "Orden de aparición en la interfaz visual",
+            "example": 1,
+            "title": "Orden",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "codigo",
+          "etiqueta"
+        ],
+        "title": "OpcionPreguntaSchema",
+        "type": "object"
+      },
+      "PerfilClinicoResponse": {
+        "description": "Respuesta completa del perfil clínico del paciente,\nincluyendo todas sus colecciones hijas.",
+        "example": {
+          "actividad_fisica": "moderado",
+          "alergias": [],
+          "altura": 175.0,
+          "antecedentes_familiares": [],
+          "condiciones": [],
+          "consumo_alcohol": false,
+          "fecha_actualizacion": "2026-09-26T22:00:00Z",
+          "grupo_sanguineo": "O+",
+          "id": "d1f72205-ba8c-4426-963a-adda70fbdecb",
+          "medicamentos": [],
+          "peso": 72.5,
+          "tabaquismo": false
+        },
+        "properties": {
+          "id": {
+            "description": "UUID del perfil clínico.",
+            "format": "uuid",
+            "title": "Id",
+            "type": "string"
+          },
+          "grupo_sanguineo": {
+            "default": "",
+            "description": "Grupo sanguíneo del paciente.",
+            "title": "Grupo Sanguineo",
+            "type": "string"
+          },
+          "peso": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "description": "Peso en kilogramos.",
+            "title": "Peso"
+          },
+          "altura": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "description": "Altura en centímetros.",
+            "title": "Altura"
+          },
+          "tabaquismo": {
+            "anyOf": [
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "description": "¿Fumador activo?",
+            "title": "Tabaquismo"
+          },
+          "consumo_alcohol": {
+            "anyOf": [
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "description": "¿Consumo regular de alcohol?",
+            "title": "Consumo Alcohol"
+          },
+          "actividad_fisica": {
+            "default": "",
+            "description": "Nivel de actividad física.",
+            "title": "Actividad Fisica",
+            "type": "string"
+          },
+          "fecha_actualizacion": {
+            "description": "Fecha y hora de la última actualización (UTC).",
+            "format": "date-time",
+            "title": "Fecha Actualizacion",
+            "type": "string"
+          },
+          "medicamentos": {
+            "description": "Medicamentos asociados al perfil.",
+            "items": {
+              "$ref": "#/components/schemas/MedicamentoResponse"
+            },
+            "title": "Medicamentos",
+            "type": "array"
+          },
+          "alergias": {
+            "description": "Alergias registradas.",
+            "items": {
+              "$ref": "#/components/schemas/AlergiaResponse"
+            },
+            "title": "Alergias",
+            "type": "array"
+          },
+          "condiciones": {
+            "description": "Condiciones médicas diagnosticadas.",
+            "items": {
+              "$ref": "#/components/schemas/CondicionResponse"
+            },
+            "title": "Condiciones",
+            "type": "array"
+          },
+          "antecedentes_familiares": {
+            "description": "Antecedentes familiares relevantes.",
+            "items": {
+              "$ref": "#/components/schemas/AntecedenteFamiliarResponse"
+            },
+            "title": "Antecedentes Familiares",
+            "type": "array"
+          }
+        },
+        "required": [
+          "id",
+          "fecha_actualizacion"
+        ],
+        "title": "PerfilClinicoResponse",
+        "type": "object"
+      },
+      "PreguntaSchema": {
+        "description": "Esquema de pregunta en un formulario de seguimiento.",
+        "properties": {
+          "id": {
+            "description": "UUID de la pregunta",
+            "example": "7c9e6679-7425-40de-944b-e07fc1f90ae7",
+            "format": "uuid",
+            "title": "Id",
+            "type": "string"
+          },
+          "codigo": {
+            "description": "Código estable de la pregunta",
+            "example": "PREG_NAUSEAS",
+            "title": "Codigo",
+            "type": "string"
+          },
+          "titulo": {
+            "description": "Título o texto de la pregunta",
+            "example": "¿Ha presentado náuseas en las últimas 24 horas?",
+            "title": "Titulo",
+            "type": "string"
+          },
+          "texto": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "description": "Texto largo o de ayuda",
+            "example": "¿Ha presentado náuseas en las últimas 24 horas?",
+            "title": "Texto"
+          },
+          "tipo": {
+            "description": "Valores públicos canónicos del tipo de pregunta, no los aliases históricos en mayúsculas.",
+            "example": "opcion_unica",
+            "title": "Tipo",
+            "type": "string",
+            "enum": [
+              "texto_libre",
+              "numerico",
+              "opcion_unica",
+              "opcion_multiple",
+              "escala_likert",
+              "booleano"
+            ]
+          },
+          "requerida": {
+            "default": true,
+            "description": "Obligatoriedad general. En contrato condicional 1, una dependiente usa requerida_si_activa solo cuando aplica.",
+            "example": true,
+            "title": "Requerida",
+            "type": "boolean"
+          },
+          "orden": {
+            "description": "Posición o secuencia en el cuestionario",
+            "example": 1,
+            "title": "Orden",
+            "type": "integer"
+          },
+          "opciones": {
+            "description": "Lista de opciones configuradas",
+            "items": {
+              "$ref": "#/components/schemas/OpcionPreguntaSchema"
+            },
+            "title": "Opciones",
+            "type": "array"
+          },
+          "configuracion": {
+            "additionalProperties": true,
+            "description": "Configuración según version_condiciones de la edición; schema externo objetivo. Exclusividades solo con marcador explícito 1 y opcion_multiple. Su soporte aún no está implementado.",
+            "example": {
+              "depende_de": "P_VOMITOS",
+              "requerida_si_activa": true,
+              "valor_activador": true
+            },
+            "title": "Configuracion",
+            "type": "object"
+          }
+        },
+        "required": [
+          "codigo",
+          "titulo",
+          "tipo",
+          "orden"
+        ],
+        "title": "PreguntaSchema",
+        "type": "object",
+        "allOf": [
+          {
+            "if": {
+              "properties": {
+                "configuracion": {
+                  "required": [
+                    "opciones_exclusivas"
+                  ]
+                }
+              },
+              "required": [
+                "configuracion"
+              ]
+            },
+            "then": {
+              "properties": {
+                "tipo": {
+                  "const": "opcion_multiple"
+                }
+              }
+            }
+          }
+        ]
+      },
+      "ResponderFormularioRequestSchema": {
+        "description": "Esquema del payload para el envío de respuestas de formulario desde React Native.",
+        "properties": {
+          "id": {
+            "description": "UUID idempotente generado por la app móvil para control offline",
+            "example": "c0000000-0000-0000-0000-000000000001",
+            "format": "uuid",
+            "title": "Id",
+            "type": "string"
+          },
+          "fecha_respuesta": {
+            "description": "Fecha y hora de captura de la respuesta en la app móvil",
+            "example": "2026-10-09T14:30:00Z",
+            "format": "date-time",
+            "title": "Fecha Respuesta",
+            "type": "string"
+          },
+          "respuestas": {
+            "description": "Colección de respuestas a las preguntas del instrumento",
+            "items": {
+              "$ref": "#/components/schemas/ItemRespuestaInputSchema"
+            },
+            "title": "Respuestas",
+            "type": "array"
+          },
+          "comentario": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "description": "Observaciones o comentarios adicionales del paciente",
+            "example": "Sentí mareos leves por la mañana.",
+            "title": "Comentario"
+          }
+        },
+        "required": [
+          "id",
+          "fecha_respuesta",
+          "respuestas"
+        ],
+        "title": "ResponderFormularioRequestSchema",
+        "type": "object"
+      },
+      "ResponderFormularioResponseSchema": {
+        "description": "Esquema de confirmación de registro de respuestas de formulario.",
+        "properties": {
+          "id": {
+            "description": "UUID de la respuesta registrada",
+            "format": "uuid",
+            "title": "Id",
+            "type": "string"
+          },
+          "formulario_id": {
+            "description": "UUID de la versión de formulario respondida",
+            "format": "uuid",
+            "title": "Formulario Id",
+            "type": "string"
+          },
+          "formulario_version": {
+            "description": "Número de versión del formulario",
+            "title": "Formulario Version",
+            "type": "integer"
+          },
+          "paciente_id": {
+            "description": "UUID del paciente que contestó",
+            "format": "uuid",
+            "title": "Paciente Id",
+            "type": "string"
+          },
+          "fecha_respuesta_cliente": {
+            "description": "Fecha de respuesta capturada por el cliente",
+            "format": "date-time",
+            "title": "Fecha Respuesta Cliente",
+            "type": "string"
+          },
+          "fecha_recepcion_servidor": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "description": "Fecha y hora de recepción registrada por el servidor",
+            "title": "Fecha Recepcion Servidor"
+          },
+          "respuestas": {
+            "description": "Lista de respuestas procesadas",
+            "items": {
+              "$ref": "#/components/schemas/ItemRespuestaDetalleSchema"
+            },
+            "title": "Respuestas",
+            "type": "array"
+          },
+          "comentario": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "description": "Comentario del paciente",
+            "title": "Comentario"
+          },
+          "mensaje": {
+            "default": "Respuesta registrada exitosamente.",
+            "description": "Mensaje de confirmación para que la app retire el ítem de su cola",
+            "example": "Respuesta registrada exitosamente.",
+            "title": "Mensaje",
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "formulario_id",
+          "formulario_version",
+          "paciente_id",
+          "fecha_respuesta_cliente",
+          "respuestas"
+        ],
+        "title": "ResponderFormularioResponseSchema",
+        "type": "object"
+      },
+      "SignoVitalRegistroInput": {
+        "description": "Datos de entrada para una medición de signos vitales capturada por el paciente en la app móvil.\nIncluye validaciones según los rangos clínicos acordados (docClinicos/Parámetros normales.md).",
+        "example": {
+          "fecha_registro": "2026-10-10T14:30:00Z",
+          "id": "550e8400-e29b-41d4-a716-446655440000",
+          "presion_arterial_diastolica": 80,
+          "presion_arterial_sistolica": 120,
+          "pulso": 72,
+          "saturacion_oxigeno": 98,
+          "temperatura": 36.6
+        },
+        "properties": {
+          "id": {
+            "description": "Identificador UUID único del registro generado por el cliente móvil.",
+            "examples": [
+              "550e8400-e29b-41d4-a716-446655440000"
+            ],
+            "format": "uuid",
+            "title": "Id",
+            "type": "string"
+          },
+          "fecha_registro": {
+            "description": "Fecha y hora de la medición clínica en formato ISO 8601 (con zona horaria).",
+            "examples": [
+              "2026-10-10T14:30:00Z"
+            ],
+            "format": "date-time",
+            "title": "Fecha Registro",
+            "type": "string"
+          },
+          "presion_arterial_sistolica": {
+            "anyOf": [
+              {
+                "maximum": 300,
+                "minimum": 40,
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "description": "Presión arterial sistólica en mmHg (Rango clínico permitido: 40 a 300 mmHg).",
+            "examples": [
+              120
+            ],
+            "title": "Presion Arterial Sistolica"
+          },
+          "presion_arterial_diastolica": {
+            "anyOf": [
+              {
+                "maximum": 200,
+                "minimum": 30,
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "description": "Presión arterial diastólica en mmHg (Rango clínico permitido: 30 a 200 mmHg).",
+            "examples": [
+              80
+            ],
+            "title": "Presion Arterial Diastolica"
+          },
+          "pulso": {
+            "anyOf": [
+              {
+                "maximum": 250,
+                "minimum": 30,
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "description": "Frecuencia cardíaca / pulso en latidos por minuto (Rango clínico permitido: 30 a 250 lpm).",
+            "examples": [
+              72
+            ],
+            "title": "Pulso"
+          },
+          "temperatura": {
+            "anyOf": [
+              {
+                "maximum": 45.0,
+                "minimum": 30.0,
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "description": "Temperatura corporal en grados Celsius (Rango clínico permitido: 30.0 a 45.0 °C).",
+            "examples": [
+              36.6
+            ],
+            "title": "Temperatura"
+          },
+          "saturacion_oxigeno": {
+            "anyOf": [
+              {
+                "maximum": 100,
+                "minimum": 50,
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "description": "Saturación de oxígeno en sangre en % SpO2 (Rango clínico permitido: 50 a 100%).",
+            "examples": [
+              98
+            ],
+            "title": "Saturacion Oxigeno"
+          }
+        },
+        "required": [
+          "id",
+          "fecha_registro"
+        ],
+        "title": "SignoVitalRegistroInput",
+        "type": "object"
+      },
+      "SignoVitalResponse": {
+        "description": "Representación persistida de una medición de signos vitales.",
+        "example": {
+          "fecha_registro": "2026-10-10T14:30:00Z",
+          "fecha_subida": "2026-10-10T14:35:10Z",
+          "id": "550e8400-e29b-41d4-a716-446655440000",
+          "presion_arterial_diastolica": 80,
+          "presion_arterial_sistolica": 120,
+          "pulso": 72,
+          "saturacion_oxigeno": 98,
+          "sincronizado": true,
+          "temperatura": 36.6
+        },
+        "properties": {
+          "id": {
+            "description": "Identificador UUID único del registro.",
+            "format": "uuid",
+            "title": "Id",
+            "type": "string"
+          },
+          "fecha_registro": {
+            "description": "Fecha y hora de la medición clínica.",
+            "format": "date-time",
+            "title": "Fecha Registro",
+            "type": "string"
+          },
+          "presion_arterial_sistolica": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "description": "Presión arterial sistólica (mmHg).",
+            "title": "Presion Arterial Sistolica"
+          },
+          "presion_arterial_diastolica": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "description": "Presión arterial diastólica (mmHg).",
+            "title": "Presion Arterial Diastolica"
+          },
+          "pulso": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "description": "Frecuencia cardíaca (lpm).",
+            "title": "Pulso"
+          },
+          "temperatura": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "description": "Temperatura corporal (°C).",
+            "title": "Temperatura"
+          },
+          "saturacion_oxigeno": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "description": "Saturación de oxígeno (% SpO2).",
+            "title": "Saturacion Oxigeno"
+          },
+          "fecha_subida": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "description": "Fecha y hora en que el servidor recibió la medición.",
+            "title": "Fecha Subida"
+          },
+          "sincronizado": {
+            "default": true,
+            "description": "Indica si la medición está persistida y sincronizada.",
+            "title": "Sincronizado",
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "id",
+          "fecha_registro"
+        ],
+        "title": "SignoVitalResponse",
+        "type": "object"
+      },
+      "SincronizarSignosLoteRequest": {
+        "description": "Petición en lote para sincronización de mediciones capturadas offline.",
+        "properties": {
+          "registros": {
+            "description": "Lista de registros de signos vitales a sincronizar.",
+            "items": {
+              "$ref": "#/components/schemas/SignoVitalRegistroInput"
+            },
+            "title": "Registros",
+            "type": "array"
+          }
+        },
+        "required": [
+          "registros"
+        ],
+        "title": "SincronizarSignosLoteRequest",
+        "type": "object"
+      },
+      "SincronizarSignosResponse": {
+        "description": "Respuesta de sincronización en lote para reconciliación en la app móvil.",
+        "example": {
+          "insertados": [
+            {
+              "fecha_registro": "2026-10-10T14:30:00Z",
+              "fecha_subida": "2026-10-10T14:35:10Z",
+              "id": "550e8400-e29b-41d4-a716-446655440000",
+              "presion_arterial_diastolica": 80,
+              "presion_arterial_sistolica": 120,
+              "pulso": 72,
+              "saturacion_oxigeno": 98,
+              "sincronizado": true,
+              "temperatura": 36.6
+            }
+          ],
+          "total_insertados": 1,
+          "total_procesados": 1,
+          "total_ya_existentes": 0,
+          "ya_existentes": []
+        },
+        "properties": {
+          "insertados": {
+            "description": "Registros insertados por primera vez en el servidor.",
+            "items": {
+              "$ref": "#/components/schemas/SignoVitalResponse"
+            },
+            "title": "Insertados",
+            "type": "array"
+          },
+          "ya_existentes": {
+            "description": "Registros que ya existían previamente con contenido idéntico (reintentos idempotentes reconciliados).",
+            "items": {
+              "$ref": "#/components/schemas/SignoVitalResponse"
+            },
+            "title": "Ya Existentes",
+            "type": "array"
+          },
+          "total_insertados": {
+            "description": "Cantidad de registros nuevos insertados.",
+            "title": "Total Insertados",
+            "type": "integer"
+          },
+          "total_ya_existentes": {
+            "description": "Cantidad de registros existentes reconciliados.",
+            "title": "Total Ya Existentes",
+            "type": "integer"
+          },
+          "total_procesados": {
+            "description": "Total de registros únicos procesados en el lote.",
+            "title": "Total Procesados",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "total_insertados",
+          "total_ya_existentes",
+          "total_procesados"
+        ],
+        "title": "SincronizarSignosResponse",
+        "type": "object"
+      },
+      "TratamientoActivoResponse": {
+        "description": "Representación del tratamiento activo y vigente del paciente para la app móvil (RAD-89, N2).",
+        "example": {
+          "activo": true,
+          "codigo_icd10": "C50.9",
+          "estado": "activo",
+          "fase": "Adyuvancia",
+          "fecha_inicio_tratamiento": "2026-09-01",
+          "fecha_termino_tratamiento": "2026-12-15",
+          "id": "b3c10781-df5c-44cf-abc5-cf4541f55725",
+          "intencion": "curativa",
+          "parametros": {
+            "ciclo_actual": 2,
+            "esquema": "AC-T (Doxorrubicina + Ciclofosfamida seguido de Paclitaxel)",
+            "numero_ciclos": 6,
+            "via_administracion": "intravenosa"
+          },
+          "tipo_tratamiento_codigo": "quimioterapia",
+          "tipo_tratamiento_id": "99c10781-df5c-44cf-abc5-cf4541f55799",
+          "tipo_tratamiento_nombre": "Quimioterapia Sistémica"
+        },
+        "properties": {
+          "id": {
+            "description": "Identificador único inmutable del tratamiento",
+            "examples": [
+              "b3c10781-df5c-44cf-abc5-cf4541f55725"
+            ],
+            "format": "uuid",
+            "title": "Id",
+            "type": "string"
+          },
+          "tipo_tratamiento_id": {
+            "description": "Identificador de la modalidad terapéutica en el catálogo",
+            "format": "uuid",
+            "title": "Tipo Tratamiento Id",
+            "type": "string"
+          },
+          "tipo_tratamiento_codigo": {
+            "description": "Código normalizado del tipo de tratamiento (ej: quimioterapia, radioterapia)",
+            "examples": [
+              "quimioterapia"
+            ],
+            "title": "Tipo Tratamiento Codigo",
+            "type": "string"
+          },
+          "tipo_tratamiento_nombre": {
+            "description": "Nombre legible de la modalidad terapéutica",
+            "examples": [
+              "Quimioterapia Sistémica"
+            ],
+            "title": "Tipo Tratamiento Nombre",
+            "type": "string"
+          },
+          "codigo_icd10": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "description": "Código CIE-10 del diagnóstico oncológico asociado al tratamiento",
+            "examples": [
+              "C50.9"
+            ],
+            "title": "Codigo Icd10"
+          },
+          "fase": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "description": "Fase clínica del protocolo (ej: Inducción, Adyuvancia, Mantenimiento)",
+            "examples": [
+              "Adyuvancia"
+            ],
+            "title": "Fase"
+          },
+          "estado": {
+            "default": "activo",
+            "description": "Estado administrativo del tratamiento (activo, suspendido, finalizado)",
+            "examples": [
+              "activo"
+            ],
+            "title": "Estado",
+            "type": "string"
+          },
+          "intencion": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "description": "Intención médica del tratamiento (curativa, paliativa, citorreductora)",
+            "examples": [
+              "curativa"
+            ],
+            "title": "Intencion"
+          },
+          "parametros": {
+            "additionalProperties": true,
+            "description": "Parámetros clínicos dinámicos según el esquema de la modalidad (ciclos, dosis, técnica)",
+            "examples": [
+              {
+                "ciclo_actual": 2,
+                "esquema": "AC-T (Doxorrubicina + Ciclofosfamida seguido de Paclitaxel)",
+                "numero_ciclos": 6,
+                "via_administracion": "intravenosa"
+              }
+            ],
+            "title": "Parametros",
+            "type": "object"
+          },
+          "fecha_inicio_tratamiento": {
+            "anyOf": [
+              {
+                "format": "date",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "description": "Fecha en la que el paciente inició el tratamiento (YYYY-MM-DD)",
+            "examples": [
+              "2026-09-01"
+            ],
+            "title": "Fecha Inicio Tratamiento"
+          },
+          "fecha_termino_tratamiento": {
+            "anyOf": [
+              {
+                "format": "date",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "description": "Fecha estimada o efectiva de término del tratamiento (nula mientras siga vigente)",
+            "examples": [
+              "2026-12-15"
+            ],
+            "title": "Fecha Termino Tratamiento"
+          },
+          "activo": {
+            "default": true,
+            "description": "Indicador booleano de vigencia activa del tratamiento",
+            "examples": [
+              true
+            ],
+            "title": "Activo",
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "id",
+          "tipo_tratamiento_id",
+          "tipo_tratamiento_codigo",
+          "tipo_tratamiento_nombre"
+        ],
+        "title": "TratamientoActivoResponse",
+        "type": "object"
+      },
+      "UsuarioPerfilResponse": {
+        "description": "Esquema de respuesta para el perfil del usuario autenticado.",
+        "properties": {
+          "id": {
+            "description": "Identificador único del usuario (UUID de Supabase Auth)",
+            "format": "uuid",
+            "title": "Id",
+            "type": "string"
+          },
+          "email": {
+            "description": "Correo electrónico del usuario",
+            "format": "email",
+            "title": "Email",
+            "type": "string"
+          },
+          "nombre": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "description": "Nombre completo",
+            "title": "Nombre"
+          },
+          "rut": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "description": "RUT chileno del usuario",
+            "title": "Rut"
+          },
+          "rol": {
+            "description": "Rol resuelto autoritativamente en PostgreSQL",
+            "title": "Rol",
+            "type": "string"
+          },
+          "activo": {
+            "description": "Estado de habilitación de la cuenta",
+            "title": "Activo",
+            "type": "boolean"
+          },
+          "estado_incorporacion": {
+            "default": "COMPLETO",
+            "description": "Estado de incorporación (PENDIENTE, COMPLETO)",
+            "title": "Estado Incorporacion",
+            "type": "string"
+          },
+          "foto_url": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "description": "URL de foto o avatar",
+            "title": "Foto Url"
+          },
+          "telefono": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "description": "Número de teléfono de contacto",
+            "title": "Telefono"
+          },
+          "fecha_nacimiento": {
+            "anyOf": [
+              {
+                "format": "date",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "description": "Fecha de nacimiento del paciente",
+            "title": "Fecha Nacimiento"
+          },
+          "sexo": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "description": "Sexo o género del paciente",
+            "title": "Sexo"
+          },
+          "especialidad": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "description": "Especialidad médica si es rol clínico",
+            "title": "Especialidad"
+          }
+        },
+        "required": [
+          "id",
+          "email",
+          "rol",
+          "activo"
+        ],
+        "title": "UsuarioPerfilResponse",
+        "type": "object"
+      },
+      "RegistrarConsentimientoRequest": {
+        "description": "Payload para registrar la aceptación de términos por parte del paciente (RAD-94).",
+        "properties": {
+          "definicion_terminos_id": {
+            "description": "UUID exacto de la versión de términos presentada al paciente y aprobada (Obligatorio para evitar ambigüedades entre versiones).",
+            "examples": [
+              "4a1b2c3d-e5f6-4a1b-8c2d-3e4f5a6b7c8d"
+            ],
+            "format": "uuid",
+            "title": "Definicion Terminos Id",
+            "type": "string"
+          },
+          "operacion_id": {
+            "description": "UUID obligatorio de la decisión de aceptación. Se reutiliza en todos los reintentos; una decisión nueva requiere otro UUID.",
+            "examples": [
+              "b3c10781-df5c-44cf-abc5-cf4541f55725"
+            ],
+            "format": "uuid",
+            "title": "Operacion Id",
+            "type": "string"
+          },
+          "codigo": {
+            "default": "TERMINOS_PLATAFORMA",
+            "description": "Código de la familia de términos/consentimiento",
+            "examples": [
+              "TERMINOS_PLATAFORMA"
+            ],
+            "maxLength": 50,
+            "minLength": 1,
+            "title": "Codigo",
+            "type": "string"
+          }
+        },
+        "required": [
+          "definicion_terminos_id",
+          "operacion_id"
+        ],
+        "title": "RegistrarConsentimientoRequest",
+        "type": "object"
+      },
+      "ConsentimientoResponse": {
+        "description": "Representación del consentimiento otorgado o revocado por el paciente.",
+        "properties": {
+          "id": {
+            "examples": [
+              "b3c10781-df5c-44cf-abc5-cf4541f55725"
+            ],
+            "format": "uuid",
+            "title": "Id",
+            "type": "string"
+          },
+          "paciente_id": {
+            "examples": [
+              "12345678-1234-1234-1234-123456789abc"
+            ],
+            "format": "uuid",
+            "title": "Paciente Id",
+            "type": "string"
+          },
+          "definicion_terminos_id": {
+            "examples": [
+              "4a1b2c3d-e5f6-4a1b-8c2d-3e4f5a6b7c8d"
+            ],
+            "format": "uuid",
+            "title": "Definicion Terminos Id",
+            "type": "string"
+          },
+          "version_codigo": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "examples": [
+              "TERMINOS_PLATAFORMA"
+            ],
+            "title": "Version Codigo"
+          },
+          "version_numero": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "examples": [
+              "1.0"
+            ],
+            "title": "Version Numero"
+          },
+          "otorgado_el": {
+            "examples": [
+              "2026-10-18T14:30:00Z"
+            ],
+            "format": "date-time",
+            "title": "Otorgado El",
+            "type": "string"
+          },
+          "revocado": {
+            "examples": [
+              false
+            ],
+            "title": "Revocado",
+            "type": "boolean"
+          },
+          "revocado_el": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "examples": [
+              null
+            ],
+            "title": "Revocado El"
+          },
+          "ip_address": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "examples": [
+              "190.161.45.22"
+            ],
+            "title": "Ip Address"
+          },
+          "user_agent": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "examples": [
+              "Mozilla/5.0 (iPhone; CPU iPhone OS 17_0)"
+            ],
+            "title": "User Agent"
+          }
+        },
+        "required": [
+          "id",
+          "paciente_id",
+          "definicion_terminos_id",
+          "otorgado_el",
+          "revocado"
+        ],
+        "title": "ConsentimientoResponse",
+        "type": "object"
+      },
+      "DefinicionTerminosVigenteResponse": {
+        "description": "Resumen de la versión vigente de términos aplicable al paciente.",
+        "properties": {
+          "id": {
+            "format": "uuid",
+            "title": "Id",
+            "type": "string"
+          },
+          "codigo": {
+            "title": "Codigo",
+            "type": "string"
+          },
+          "titulo": {
+            "title": "Titulo",
+            "type": "string"
+          },
+          "descripcion": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Descripcion"
+          },
+          "version": {
+            "title": "Version",
+            "type": "string"
+          },
+          "texto_completo": {
+            "title": "Texto Completo",
+            "type": "string"
+          },
+          "obligatorio": {
+            "title": "Obligatorio",
+            "type": "boolean"
+          },
+          "vigente_desde": {
+            "format": "date",
+            "title": "Vigente Desde",
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "codigo",
+          "titulo",
+          "version",
+          "texto_completo",
+          "obligatorio",
+          "vigente_desde"
+        ],
+        "title": "DefinicionTerminosVigenteResponse",
+        "type": "object"
+      },
+      "EstadoConsentimientoResponse": {
+        "description": "Diagnóstico del estado de consentimiento del paciente para sincronización con app móvil.",
+        "properties": {
+          "requiere_aceptacion": {
+            "description": "True si el paciente no tiene consentimiento activo vigente o si salió una nueva versión",
+            "title": "Requiere Aceptacion",
+            "type": "boolean"
+          },
+          "terminos_vigentes": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/DefinicionTerminosVigenteResponse"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null
+          },
+          "consentimiento_actual": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/ConsentimientoResponse"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null
+          },
+          "historial_previo": {
+            "items": {
+              "$ref": "#/components/schemas/ConsentimientoResponse"
+            },
+            "title": "Historial Previo",
+            "type": "array"
+          }
+        },
+        "required": [
+          "requiere_aceptacion"
+        ],
+        "title": "EstadoConsentimientoResponse",
+        "type": "object"
+      },
+      "ConfiguracionEproRC32": {
+        "title": "Configuración objetivo contrato 1 — exclusividades RC3.2",
+        "type": "object",
+        "properties": {
+          "depende_de": {
+            "type": "string",
+            "minLength": 1,
+            "pattern": "^\\S(?:.*\\S)?$"
+          },
+          "valor_activador": {
+            "type": [
+              "boolean",
+              "number",
+              "string"
+            ]
+          },
+          "requerida_si_activa": {
+            "type": "boolean"
+          },
+          "min_value": {
+            "type": "number"
+          },
+          "max_value": {
+            "type": "number"
+          },
+          "max_length": {
+            "type": "integer",
+            "minimum": 0
+          },
+          "modulo": {},
+          "es_madre": {},
+          "id_web_original": {},
+          "metadata": {},
+          "opciones_exclusivas": {
+            "type": "array",
+            "items": {
+              "type": "string",
+              "minLength": 1
+            },
+            "uniqueItems": true,
+            "default": [],
+            "description": "Códigos exactos de opciones que solo pueden seleccionarse de manera individual. Solo opcion_multiple, con marcador explícito de contrato 1. Soporte de código pendiente.",
+            "x-implementation-status": "pendiente"
+          }
+        },
+        "additionalProperties": false,
+        "dependentRequired": {
+          "depende_de": [
+            "requerida_si_activa",
+            "valor_activador"
+          ],
+          "requerida_si_activa": [
+            "depende_de",
+            "valor_activador"
+          ],
+          "valor_activador": [
+            "depende_de",
+            "requerida_si_activa"
+          ]
+        },
+        "x-status": "normativo_objetivo_confirmado_clinico_pendiente_confirmacion_movil_y_soporte_codigo",
+        "x-domain-rules": [
+          "Conservar igualdad tipada, dependencias completas y validación del grafo de RC3.1.",
+          "opciones_exclusivas omitido o vacío no agrega restricciones de selección.",
+          "Todo código de opciones_exclusivas pertenece a pregunta.opciones[].codigo; no inferir por texto o gravedad.",
+          "Si valor incluye un código exclusivo, el array contiene únicamente una ocurrencia de ese código. No combinar ni deduplicar automáticamente.",
+          "Una hija no aplicable sigue omitiéndose incluso si tiene exclusividades; no exigir una selección para activarla.",
+          "Una configuración inválida no se publica; una respuesta incompatible produce 422 REGLA_DE_NEGOCIO_INVALIDA con motivo OPCIONES_EXCLUSIVAS_INCOMPATIBLES.",
+          "Esta extensión aún no está soportada por el validador observado; no modificar retrospectivamente ediciones legadas ni la definición clínica de 41 preguntas.",
+          "JSON Schema de configuracion no sustituye comprobaciones cruzadas con edición, tipo de pregunta, opciones o grafo."
+        ],
+        "x-version": "1.0-RC3.2-objetivo-2026-10-23",
+        "x-pregunta-contexto": "opciones_exclusivas solo para opcion_multiple; códigos exactos de opciones de la misma pregunta; marcador explícito configuracion.version_condiciones=1 en la edición.",
+        "$defs": {
+          "legado": {
+            "type": "object",
+            "not": {
+              "anyOf": [
+                {
+                  "required": [
+                    "opciones_exclusivas"
+                  ]
+                },
+                {
+                  "required": [
+                    "valor_activador"
+                  ]
+                },
+                {
+                  "required": [
+                    "requerida_si_activa"
+                  ]
+                }
+              ]
+            },
+            "description": "Contrato 0: preservar metadatos históricos; no ejecutar saltos ni introducir la extensión opciones_exclusivas."
+          }
+        }
+      },
+      "RespuestaVinculacion": {
+        "type": "object",
+        "required": [
+          "paciente_id",
+          "plantilla_id",
+          "relacion_id",
+          "vinculado_en"
+        ],
+        "properties": {
+          "paciente_id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "plantilla_id": {
+            "type": "string"
+          },
+          "relacion_id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "vinculado_en": {
+            "type": "string",
+            "format": "date-time"
+          }
+        }
+      },
+      "ErrorEvaluacion": {
+        "type": "object",
+        "required": [
+          "codigo",
+          "mensaje"
+        ],
+        "properties": {
+          "codigo": {
+            "type": "string"
+          },
+          "mensaje": {
+            "type": "string"
+          },
+          "detalles": {
+            "type": "object",
+            "nullable": true
+          }
+        }
+      }
+    },
+    "securitySchemes": {
+      "OperadorBearer": {
+        "type": "http",
+        "scheme": "bearer",
+        "bearerFormat": "JWT"
+      }
+    }
+  }
+}

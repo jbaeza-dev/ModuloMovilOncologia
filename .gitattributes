@@ -1,4 +1,4 @@
-# Scripts de contenedores con LF también al clonar en Windows.
+# Scripts de contenedores con LF tambiÃ©n al clonar en Windows.
 *.sh text eol=lf
 
 # Contratos y fixtures de referencia conservados byte a byte.
@@ -7,8 +7,16 @@ packages/contracts/fixtures/** -text whitespace=cr-at-eol
 packages/contracts/schemas/schema-configuracion-epro-v1-objetivo.json -text whitespace=cr-at-eol
 packages/contracts/schemas/schema-contenido-educativo-objetivo.json -text whitespace=cr-at-eol
 
-# La generación determinista produce LF en cualquier plataforma.
+# La generaciÃ³n determinista produce LF en cualquier plataforma.
 packages/contracts/src/generated-*.ts text eol=lf
 
 # Checksums de migraciones gateway estables entre Windows y Linux.
 apps/gateway/src/persistence/migrations/*.sql text eol=lf
+
+# Host Linux: configuration must keep LF on Windows checkouts.
+*.container text eol=lf
+*.network text eol=lf
+*.volume text eol=lf
+
+# Simulator migration checksums preserve their exact applied bytes across platforms.
+apps/simulator/src/persistence/migrations/*.sql -text

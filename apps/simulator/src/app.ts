@@ -1,3 +1,4 @@
+import { prepare, requireOperator } from './preparation.js';
 import { createServer } from 'node:http';
 import type { IncomingMessage, ServerResponse } from 'node:http';
 import { readFile } from 'node:fs/promises';
@@ -12,7 +13,13 @@ import type { Database } from './db.js';
 import { transaction } from './db.js';
 import type { SimulatorConfig } from './config.js';
 import { ApiError, record } from './errors.js';
-import { issueSession, principalFromHeader, refreshSession, verifyControl } from './auth.js';
+import {
+  issueSession,
+  operatorFromHeader,
+  principalFromHeader,
+  refreshSession,
+  verifyControl,
+} from './auth.js';
 import { applyScenario, guardScenario } from './scenarios.js';
 import { PATIENTS, SCENARIOS } from './types.js';
 import type { DemoPatient, EproInput, ObjectValue, Scenario, SignsInput } from './types.js';
@@ -20,6 +27,7 @@ import { ACTIVE_FORMS, resetDatabase } from './seed-data.js';
 import { acceptConsent, consentStatus, currentTermsId, getTerms } from './consent.js';
 import {
   completeProfile,
+  consumeLinkCode,
   createLinkCode,
   formForScenario,
   patientData,
@@ -30,6 +38,12 @@ import {
 import { loadForm } from './forms.js';
 import { educationCategories, educationDetail, listEducation } from './education.js';
 import { serveEducationMaterial } from './education-materials.js';
+import { handleSwaggerRoute } from './docs/swagger.js';
+import {
+  drainPublishes,
+  handlePublishEducation,
+  setMaintenanceActive,
+} from './education-publish.js';
 import { aiResponse } from './ai.js';
 
 interface Result {
@@ -65,6 +79,10 @@ function send(res: ServerResponse, status: number, body: unknown): void {
     'content-type': 'application/json; charset=utf-8',
     'cache-control': 'no-store',
     'x-content-type-options': 'nosniff',
+    'access-control-allow-origin': '*',
+    'access-control-allow-methods': 'GET, POST, PUT, DELETE, OPTIONS, HEAD',
+    'access-control-allow-headers':
+      'authorization, content-type, x-operation-id, accept, origin, x-requested-with',
   });
   res.end(encoded);
 }
@@ -141,13 +159,168 @@ function operationFor(
 export function createSimulator(config: SimulatorConfig, db: Database) {
   return createServer((req, res) => {
     void (async () => {
+      if (req.method === 'OPTIONS') {
+        res.writeHead(204, {
+          'access-control-allow-origin': '*',
+          'access-control-allow-methods': 'GET, POST, PUT, DELETE, OPTIONS, HEAD',
+          'access-control-allow-headers':
+            'authorization, content-type, x-operation-id, accept, origin, x-requested-with',
+          'access-control-max-age': '86400',
+        });
+        res.end();
+        return;
+      }
       const url = new URL(req.url ?? '/', 'http://simulator.invalid');
+      if (req.method === 'GET' && url.pathname === '/health') {
+        try {
+          await db.query('SELECT 1');
+        } catch {
+          throw new ApiError(503, 'SERVICIO_NO_DISPONIBLE', 'Base de datos no disponible.');
+        }
+        send(res, 200, { status: 'ok', service: config.service });
+        return;
+      }
+      if (await handleSwaggerRoute(config, db, req, res, url.pathname)) {
+        return;
+      }
       if (
         config.service === 'clinical' &&
         req.method === 'GET' &&
-        url.pathname.startsWith('/__demo/archivos/educacion/')
+        (url.pathname.includes('/archivos/educacion/') ||
+          url.pathname.startsWith('/__demo/archivos/educacion/'))
       ) {
-        await serveEducationMaterial(db, url.pathname, res);
+        await serveEducationMaterial(config, db, url.pathname, res);
+        return;
+      }
+      if (url.pathname.includes('/admin/api/') && !config.preparationEnabled)
+        throw new ApiError(404, 'RECURSO_NO_ENCONTRADO', 'Preparacion deshabilitada.');
+      const preparationPath = url.pathname.replace(/^\/quimiocare(?=\/)/, '');
+      if (preparationPath === '/admin/api/v1/preparacion/acceso' && req.method === 'GET') {
+        if (!config.preparationEnabled || config.service !== 'clinical')
+          throw new ApiError(404, 'RECURSO_NO_ENCONTRADO', 'Preparacion deshabilitada.');
+        const principal = await operatorFromHeader(config, req.headers.authorization);
+        const id = await requireOperator(db, config, principal);
+        send(res, 200, { autorizado: true, operador_id: id });
+        return;
+      }
+      if (preparationPath.startsWith('/admin/api/v1/preparacion/')) {
+        if (!config.preparationEnabled || config.service !== 'clinical' || req.method !== 'POST')
+          throw new ApiError(404, 'RECURSO_NO_ENCONTRADO', 'Preparacion deshabilitada.');
+        const principal = await operatorFromHeader(config, req.headers.authorization);
+        const action = preparationPath.slice('/admin/api/v1/preparacion/'.length);
+        const result =
+          action === 'contenido-educativo/imagenes'
+            ? await handlePublishEducation(config, db, principal, req)
+            : await prepare(db, config, principal, action, record(await jsonBody(req, 262144)));
+        send(res, result.status, result.body);
+        return;
+      }
+      if (
+        config.service === 'clinical' &&
+        req.method === 'POST' &&
+        (url.pathname === '/admin/api/v1/contenido-educativo' ||
+          url.pathname === '/quimiocare/admin/api/v1/contenido-educativo')
+      ) {
+        const principal = await operatorFromHeader(config, req.headers.authorization);
+        const result = await handlePublishEducation(config, db, principal, req);
+        send(res, result.status, result.body);
+        return;
+      }
+      if (
+        config.service === 'clinical' &&
+        req.method === 'POST' &&
+        (url.pathname === '/admin/api/v1/mantenimiento/pausar-publicacion' ||
+          url.pathname === '/quimiocare/admin/api/v1/mantenimiento/pausar-publicacion')
+      ) {
+        const principal = await operatorFromHeader(config, req.headers.authorization);
+        const opRow = (
+          await db.query<{ id: string }>(
+            'SELECT id FROM qc_demo_operador WHERE auth_issuer=$1 AND auth_subject=$2 AND activo=true',
+            [principal.issuer ?? config.issuer, principal.id],
+          )
+        ).rows[0];
+        if (!opRow)
+          throw new ApiError(
+            403,
+            'OPERADOR_NO_AUTORIZADO',
+            'No tienes permisos de operador clínico.',
+          );
+        setMaintenanceActive(true);
+        const drained = await drainPublishes(15000);
+        if (!drained) {
+          setMaintenanceActive(false);
+          throw new ApiError(
+            504,
+            'TIMEOUT_DRENAJE',
+            'El drenaje de peticiones activas superó los 15 segundos.',
+          );
+        }
+        send(res, 200, { ok: true, mantenimiento: true, active_publishes: 0 });
+        return;
+      }
+      if (
+        config.service === 'clinical' &&
+        req.method === 'POST' &&
+        (url.pathname === '/admin/api/v1/mantenimiento/reanudar-publicacion' ||
+          url.pathname === '/quimiocare/admin/api/v1/mantenimiento/reanudar-publicacion')
+      ) {
+        const principal = await operatorFromHeader(config, req.headers.authorization);
+        const opRow = (
+          await db.query<{ id: string }>(
+            'SELECT id FROM qc_demo_operador WHERE auth_issuer=$1 AND auth_subject=$2 AND activo=true',
+            [principal.issuer ?? config.issuer, principal.id],
+          )
+        ).rows[0];
+        if (!opRow)
+          throw new ApiError(
+            403,
+            'OPERADOR_NO_AUTORIZADO',
+            'No tienes permisos de operador clínico.',
+          );
+        setMaintenanceActive(false);
+        send(res, 200, { ok: true, mantenimiento: false });
+        return;
+      }
+      if (
+        config.service === 'clinical' &&
+        req.method === 'GET' &&
+        (url.pathname === '/admin' ||
+          url.pathname === '/admin/' ||
+          url.pathname === '/admin/index.html' ||
+          url.pathname === '/quimiocare/admin' ||
+          url.pathname === '/quimiocare/admin/')
+      ) {
+        if (!config.apiDocsEnabled || !config.preparationEnabled)
+          throw new ApiError(404, 'RECURSO_NO_ENCONTRADO', 'Preparacion deshabilitada.');
+        res.writeHead(308, {
+          location:
+            (url.pathname.startsWith('/quimiocare/') ? '/quimiocare' : '') + '/docs/preparacion/',
+          'cache-control': 'no-store',
+        });
+        res.end();
+        return;
+      }
+      if (
+        config.service === 'clinical' &&
+        req.method === 'POST' &&
+        (url.pathname === '/admin/api/v1/vinculaciones/consumir' ||
+          url.pathname === '/quimiocare/admin/api/v1/vinculaciones/consumir')
+      ) {
+        const principal = await operatorFromHeader(config, req.headers.authorization);
+        const raw = await jsonBody(req, 16384);
+        const body = record(raw);
+        if (typeof body.codigo !== 'string' || typeof body.plantilla_id !== 'string') {
+          throw new ApiError(422, 'ERROR_VALIDACION', 'codigo y plantilla_id requeridos.');
+        }
+        const result = await consumeLinkCode(
+          db,
+          principal.id,
+          body.codigo as string,
+          body.plantilla_id as string,
+          typeof body.request_token === 'string' ? (body.request_token as string) : undefined,
+          principal.issuer ?? config.issuer,
+        );
+        send(res, result.status, result.body);
         return;
       }
       const route = operationFor(url.pathname, req.method ?? 'GET');
@@ -164,6 +337,8 @@ export function createSimulator(config: SimulatorConfig, db: Database) {
         throw new ApiError(404, 'RECURSO_NO_ENCONTRADO', 'Ruta no encontrada.');
       }
       const { id, params } = route;
+      if (config.appEnv === 'universidad-demo' && id.startsWith('D-') && id !== 'D-06')
+        throw new ApiError(404, 'RECURSO_NO_ENCONTRADO', 'Ruta no encontrada.');
       const isControl = ['D-03', 'D-04', 'D-05'].includes(id);
       if (isControl)
         verifyControl(
@@ -175,10 +350,14 @@ export function createSimulator(config: SimulatorConfig, db: Database) {
       const isPublic = id.startsWith('D-') || id === 'C-14';
       const principal =
         !isPublic || (id === 'C-14' && req.headers.authorization)
-          ? principalFromHeader(config, req.headers.authorization)
+          ? await principalFromHeader(config, req.headers.authorization)
           : undefined;
       const state = principal
-        ? await guardScenario(db, principal, ['C-01', 'C-02'].includes(id))
+        ? await guardScenario(
+            db,
+            principal,
+            ['C-01', 'C-02', 'C-03', 'C-04', 'C-05', 'C-14', 'C-15', 'C-16'].includes(id),
+          )
         : undefined;
       const body = await jsonBody(req, id.startsWith('D-') ? 16384 : 262144);
       const query = parseQuery(id, url.searchParams) as ObjectValue;
@@ -239,6 +418,10 @@ export function createSimulator(config: SimulatorConfig, db: Database) {
             'content-length': bytes.length,
             'cache-control': 'no-store',
             'x-content-type-options': 'nosniff',
+            'access-control-allow-origin': '*',
+            'access-control-allow-methods': 'GET, POST, PUT, DELETE, OPTIONS, HEAD',
+            'access-control-allow-headers':
+              'authorization, content-type, x-operation-id, accept, origin, x-requested-with',
           });
           res.end(bytes);
           return;
@@ -275,14 +458,21 @@ export function createSimulator(config: SimulatorConfig, db: Database) {
               'FORMULARIO_NO_ENCONTRADO',
               'No hay formulario para ese tratamiento.',
             );
+          const selected = await db.query<{ formulario_id: string }>(
+            'SELECT formulario_id FROM qc_preparacion_formulario_vigente WHERE tratamiento=$1',
+            [query.tipo_tratamiento ?? 'quimioterapia'],
+          );
           result = {
             status: 200,
             body: await loadForm(
               db,
-              formForScenario(
-                state!,
-                ACTIVE_FORMS.map((form) => form.id),
-              ),
+              (!['EDICION_CONDICIONAL', 'EXCLUSIVIDAD_ACTIVA'].includes(state!.escenario)
+                ? selected.rows[0]?.formulario_id
+                : undefined) ??
+                formForScenario(
+                  state!,
+                  ACTIVE_FORMS.map((form) => form.id),
+                ),
             ),
           };
           break;
@@ -310,7 +500,11 @@ export function createSimulator(config: SimulatorConfig, db: Database) {
         case 'C-14':
           result = {
             status: 200,
-            body: await getTerms(db, currentTermsId(state), query.codigo as string | undefined),
+            body: await getTerms(
+              db,
+              await currentTermsId(state, db, query.codigo as string | undefined),
+              query.codigo as string | undefined,
+            ),
           };
           break;
         case 'C-15':

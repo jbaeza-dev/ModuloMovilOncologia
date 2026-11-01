@@ -1,0 +1,23 @@
+[Unit]
+Description=QuimioCare worker de notificaciones
+After=qc-gateway.service
+Requires=qc-gateway.service
+
+[Container]
+Image=@@GATEWAY_IMAGE@@
+ContainerName=qc-worker
+Network=qc.network
+Pull=never
+NoNewPrivileges=true
+EnvironmentFile=%h/quimiocare/shared/env/gateway.env
+Exec=node apps/gateway/dist/worker.js
+
+[Service]
+Restart=on-failure
+RestartSec=5
+TimeoutStopSec=45
+CPUQuota=100%
+MemoryMax=256M
+
+[Install]
+WantedBy=default.target

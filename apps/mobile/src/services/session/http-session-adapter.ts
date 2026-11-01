@@ -272,7 +272,9 @@ export class HttpSessionAdapter implements SessionAdapter {
   }
   async login(_credentials: SessionCredentials): Promise<SessionResult> {
     void _credentials;
-    if (this.config.mode !== 'production' || !this.options.googleLogin)
+    const isGoogleAuth =
+      this.config.mode === 'production' || this.config.mode === 'universidad-demo';
+    if (!isGoogleAuth || !this.options.googleLogin)
       return {
         success: false,
         state: 'unconfigured',
@@ -642,7 +644,9 @@ export class HttpSessionAdapter implements SessionAdapter {
     this.assert(epoch, owner);
     await this.vault.remove(key);
     this.assert(epoch, owner);
-    if (!this.snapshot.uploadAllowed) throw new SessionFailure('denied');
+    // Consent success is independent of clinical linkage. Keep uploads paused until context exists.
+    if (!check.canUpload(this.snapshot.consent, this.snapshot.terms))
+      throw new SessionFailure('denied');
   }
   async credentialsForSync(): Promise<{
     token: string;

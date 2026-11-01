@@ -50,6 +50,67 @@ async function seedInto(client: SqlClient, publicBaseUrl: string): Promise<void>
       [PATIENTS[patient], randomUUID(), randomUUID()],
     );
   }
+
+  // Sembrar plantillas clínicas sintéticas aprobadas
+  const clinicalA = structuredClone(operations['API-03']!.response);
+  const treatmentA = structuredClone(operations['API-04']!.response);
+  const clinicalB = structuredClone(operations['API-03']!.response);
+  clinicalB.id = 'dba7e9f7-46ed-5b29-8e51-fb5a81212342';
+  clinicalB.diagnostico = 'Carcinoma ductal infiltrante de mama estadio II';
+  const treatmentB = structuredClone(operations['API-04']!.response);
+  treatmentB.id = '89e72d25-8063-5f9d-91c8-515d14c1e663';
+  treatmentB.esquema = 'AC-T (Doxorrubicina + Ciclofosfamida)';
+
+  await client.query(
+    `INSERT INTO qc_demo_plantilla_sintetica(id, nombre, descripcion, version, perfil_clinico_template, tratamiento_template, activo)
+     VALUES($1, $2, $3, $4, $5, $6, true)
+     ON CONFLICT(id) DO UPDATE SET perfil_clinico_template=excluded.perfil_clinico_template, tratamiento_template=excluded.tratamiento_template`,
+    [
+      'DEMO-FOLFOX-v1',
+      'Esquema FOLFOX Sintético (Cáncer Colorrectal)',
+      'Plantilla demostrativa basada en el protocolo estándar mFOLFOX6 para evaluación académica.',
+      1,
+      clinicalA,
+      treatmentA,
+    ],
+  );
+
+  await client.query(
+    `INSERT INTO qc_demo_plantilla_sintetica(id, nombre, descripcion, version, perfil_clinico_template, tratamiento_template, activo)
+     VALUES($1, $2, $3, $4, $5, $6, true)
+     ON CONFLICT(id) DO UPDATE SET perfil_clinico_template=excluded.perfil_clinico_template, tratamiento_template=excluded.tratamiento_template`,
+    [
+      'DEMO-AC-T-v1',
+      'Esquema AC-T Sintético (Cáncer de Mama)',
+      'Plantilla demostrativa basada en el protocolo AC-T para evaluación académica.',
+      1,
+      clinicalB,
+      treatmentB,
+    ],
+  );
+
+  // Sembrar operador inicial para pruebas
+  await client.query(
+    `INSERT INTO qc_demo_operador(id, auth_issuer, auth_subject, email, nombre, activo)
+     VALUES($1, $2, $3, $4, $5, true) ON CONFLICT(id) DO NOTHING`,
+    [
+      '11111111-1111-1111-1111-111111111111',
+      'https://quimiocare-auth.supabase.co/auth/v1',
+      '11111111-1111-1111-1111-111111111111',
+      'operador.demo@ubiobio.cl',
+      'Dra. Evaluadora UBB',
+    ],
+  );
+
+  // Sembrar invitaciones iniciales
+  await client.query(
+    `INSERT INTO qc_demo_invitacion_paciente(email, nombre, activo)
+     VALUES('paciente.evaluador@gmail.com', 'Paciente Evaluador', true),
+           ('paciente.a@example.com', 'Paciente Sintético A', true),
+           ('paciente.b@example.com', 'Paciente Sintético B', true)
+     ON CONFLICT(email) DO NOTHING`,
+  );
+
   const terms = structuredClone(operations['API-14']!.response);
   for (const [id, version] of [
     [ORIGINAL_TERMS_ID, '1.0'],
@@ -66,7 +127,6 @@ async function seedInto(client: SqlClient, publicBaseUrl: string): Promise<void>
       [id, 'TERMINOS_PLATAFORMA', version, definition],
     );
   }
-  // New identities preserve all previously accepted definitions byte-for-content.
   const approved = structuredClone(fixtures.approvedTerms);
   for (const definition of [
     approved,
@@ -145,7 +205,6 @@ async function seedInto(client: SqlClient, publicBaseUrl: string): Promise<void>
     }
   }
   const metadata = fixtures.imageMetadata as unknown as { contenido_educativo: ObjectValue };
-  // Byte metadata is fixed by the original 77-byte fixture, never by response-body serialization.
   const image = {
     ...operations['API-13']!.response,
     descripcion: 'Imagen sintética de prueba; no es material clínico aprobado.',
@@ -156,8 +215,7 @@ async function seedInto(client: SqlClient, publicBaseUrl: string): Promise<void>
     archivo_sha256: '3928618d567aa706302b2f1a7278e3758fee6d69637a075813c3ee5a565d747a',
     ...metadata.contenido_educativo,
   };
-  // Keep the fixture URL server-controlled even if the editorial metadata contains a placeholder.
-  image.url = `${publicBaseUrl}/__demo/archivos/imagen-prueba.png`;
+  image.url = `${publicBaseUrl}/archivos/educacion/${EDUCATION_ID}/${image.archivo_revision}.png`;
   await client.query(
     `INSERT INTO contenido_educativo(id,profesional_id,titulo,descripcion,tipo,url,categoria,activo,fecha_creacion,
     carpeta_id,archivo_mime,archivo_tamano_bytes,archivo_revision,archivo_sha256)
@@ -185,10 +243,29 @@ export async function seedDatabase(db: Database, publicBaseUrl: string): Promise
   await transaction(db, async (client) => {
     await client.query("SELECT pg_advisory_xact_lock(hashtext('quimiocare-demo-seed'))");
     await seedInto(client, publicBaseUrl);
+    await client.query(
+      'INSERT INTO qc_preparacion_formulario_vigente(tratamiento,formulario_id) SELECT tratamiento,(array_agg(id))[1] FROM formulario WHERE activo AND NOT eliminado GROUP BY tratamiento HAVING count(*)=1 ON CONFLICT DO NOTHING',
+    );
+    await client.query(
+      "INSERT INTO qc_preparacion_terminos_vigentes(codigo,definicion_id) VALUES('TERMINOS_PLATAFORMA',$1) ON CONFLICT DO NOTHING",
+      [APPROVED_TERMS_ID],
+    );
+    await client.query(
+      "INSERT INTO qc_preparacion_categoria(clave,nombre) SELECT lower(btrim(categoria)),min(btrim(categoria)) FROM contenido_educativo WHERE btrim(coalesce(categoria,'')) <> '' GROUP BY lower(btrim(categoria)) ON CONFLICT DO NOTHING",
+    );
   });
 }
 
 export async function resetDatabase(db: Database, publicBaseUrl: string): Promise<void> {
+  if (
+    !db.options.database?.endsWith('_test') &&
+    !new URL(String(db.options.connectionString)).pathname.endsWith('_test')
+  )
+    throw new ApiError(
+      403,
+      'RESET_NO_PERMITIDO',
+      'Reset solo disponible en bases desechables *_test.',
+    );
   await transaction(db, async (client) => {
     const marker = await one<{ valor: string }>(
       client,
@@ -197,13 +274,20 @@ export async function resetDatabase(db: Database, publicBaseUrl: string): Promis
     if (marker?.valor !== 'quimiocare-rc32-v1')
       throw new ApiError(403, 'RESET_NO_PERMITIDO', 'Base no identificada como dataset sintético.');
     await client.query("SELECT pg_advisory_xact_lock(hashtext('quimiocare-demo-seed'))");
-    // Explicit list of synthetic relations: no CASCADE and no dynamic table identifiers.
     for (const table of [
+      'qc_preparacion_auditoria',
+      'qc_preparacion_operacion',
+      'qc_demo_operacion_educativa',
+      'qc_preparacion_formulario_vigente',
+      'qc_preparacion_terminos_vigentes',
+      'qc_preparacion_categoria',
+      'qc_demo_auditoria_vinculacion',
+      'qc_demo_relacion_clinica',
+      'qc_demo_vinculacion',
       'qc_demo_refresh',
       'qc_demo_signo',
       'qc_demo_epro',
       'qc_demo_consentimiento',
-      'qc_demo_vinculacion',
       'qc_demo_escenario',
       'qc_demo_paciente',
       'pregunta',
@@ -214,5 +298,15 @@ export async function resetDatabase(db: Database, publicBaseUrl: string): Promis
       await client.query(`DELETE FROM ${table}`);
     }
     await seedInto(client, publicBaseUrl);
+    await client.query(
+      'INSERT INTO qc_preparacion_formulario_vigente(tratamiento,formulario_id) SELECT tratamiento,(array_agg(id))[1] FROM formulario WHERE activo AND NOT eliminado GROUP BY tratamiento HAVING count(*)=1 ON CONFLICT DO NOTHING',
+    );
+    await client.query(
+      "INSERT INTO qc_preparacion_terminos_vigentes(codigo,definicion_id) VALUES('TERMINOS_PLATAFORMA',$1) ON CONFLICT DO NOTHING",
+      [APPROVED_TERMS_ID],
+    );
+    await client.query(
+      "INSERT INTO qc_preparacion_categoria(clave,nombre) SELECT lower(btrim(categoria)),min(btrim(categoria)) FROM contenido_educativo WHERE btrim(coalesce(categoria,'')) <> '' GROUP BY lower(btrim(categoria)) ON CONFLICT DO NOTHING",
+    );
   });
 }

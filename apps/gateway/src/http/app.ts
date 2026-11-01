@@ -1,5 +1,6 @@
 import express from 'express';
 import { securityHeaders, corsPolicy } from './security.js';
+import { gatewayDocsMiddleware } from './swagger.js';
 import type { Express, ErrorRequestHandler, Request, Response } from 'express';
 import { randomUUID } from 'node:crypto';
 import {
@@ -80,6 +81,7 @@ export function createApp(
   });
   app.use(securityHeaders(config));
   app.use(corsPolicy(config.corsOrigins));
+  app.use(gatewayDocsMiddleware());
   app.get('/health', (_req, res) => {
     states.get(_req)!.operation = 'G-01';
     const body = { estado: 'ok', servicio: 'quimiocare-gateway', version: VERSION };

@@ -32,9 +32,13 @@ export interface ScenarioState {
   ack_epro_usado: boolean;
 }
 export interface Principal {
+  issuer?: string;
+  displayName?: string;
   id: string;
-  demo: DemoPatient;
-  generation: string;
+  tipo?: 'demo' | 'external' | undefined;
+  demo?: DemoPatient | undefined;
+  generation?: string | undefined;
+  email?: string | undefined;
 }
 export interface Question {
   id: string;

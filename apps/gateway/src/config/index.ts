@@ -1,5 +1,5 @@
 export interface GatewayConfig {
-  appEnv: 'demo' | 'production';
+  appEnv: 'demo' | 'production' | 'universidad-demo';
   port: number;
   corsOrigins: readonly string[];
   databaseUrl: string;
@@ -38,7 +38,8 @@ export function readConfig(env: NodeJS.ProcessEnv = process.env): GatewayConfig 
     return parsed;
   };
   const appEnv = required('APP_ENV');
-  if (appEnv !== 'demo' && appEnv !== 'production') throw new ConfigurationError('APP_ENV');
+  if (appEnv !== 'demo' && appEnv !== 'production' && appEnv !== 'universidad-demo')
+    throw new ConfigurationError('APP_ENV');
   if (env.NODE_TLS_REJECT_UNAUTHORIZED === '0')
     throw new ConfigurationError('NODE_TLS_REJECT_UNAUTHORIZED');
   const url = (key: string, protocols: string[]) => {
@@ -63,7 +64,10 @@ export function readConfig(env: NodeJS.ProcessEnv = process.env): GatewayConfig 
     !/^\/qc_gateway_[a-z0-9_]+$/.test(database.pathname)
   )
     throw new ConfigurationError('GATEWAY_DATABASE_URL');
-  if (appEnv === 'demo' && !database.pathname.startsWith('/qc_gateway_demo'))
+  if (
+    (appEnv === 'demo' || appEnv === 'universidad-demo') &&
+    !database.pathname.startsWith('/qc_gateway_demo')
+  )
     throw new ConfigurationError('GATEWAY_DATABASE_URL');
   if (
     appEnv === 'production' &&

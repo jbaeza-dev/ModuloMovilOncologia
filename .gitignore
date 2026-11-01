@@ -30,6 +30,7 @@ yarn-error.log*
 # Variables y credenciales locales; los ejemplos sí se versionan
 .env
 .env.*
+*.env
 !.env.example
 !*.env.example
 *.keystore
@@ -63,3 +64,23 @@ Thumbs.db
 **/google-services.json
 **/*service-account*.json
 **/*service_account*.json
+
+# Archivos, respaldos y credenciales del simulador local
+.local_storage/
+
+# Artefactos de entrega, respaldos y herramientas locales (no son código fuente)
+/artifacts/
+/releases/
+*.apk
+*.aab
+*.ipa
+*.dump
+*.backup
+*.tar
+*.tar.gz
+*.spdx.json
+*.sarif
+.psql_history
+.python-version
+__pycache__/
+*.py[cod]

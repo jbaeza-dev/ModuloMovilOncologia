@@ -30,7 +30,7 @@ const config = sessionConfig({
   AUTH_ISSUER: 'quimiocare-demo',
   AUTH_AUDIENCE: 'authenticated',
 })!;
-async function setup(revoked = false) {
+async function setup(revoked = false, missingContext = false) {
   const values = new Map<string, string>(),
     vault: CredentialVault = {
       read: async (k) => values.get(k) ?? null,
@@ -104,7 +104,10 @@ async function setup(revoked = false) {
         historial_previo: [],
       };
     return {
-      status: 200,
+      status:
+        missingContext && (path.endsWith('perfil-clinico') || path.endsWith('tratamiento-activo'))
+          ? 404
+          : 200,
       headers: { get: () => 'application/json' },
       text: async () => JSON.stringify(value),
     } as unknown as Response;
@@ -118,6 +121,25 @@ afterEach(() => {
   mockData.identitySession = null;
 });
 describe('Online consent in the actual screen and session adapter', () => {
+  it('confirms acceptance while showing that a new patient still needs linkage', async () => {
+    const { session } = await setup(false, true);
+    await render(<OnlineConsentScreen />);
+    await waitFor(() =>
+      expect(
+        screen.getByRole('button', { name: 'Acepto y autorizo el tratamiento de mis datos' }).props
+          .accessibilityState.disabled,
+      ).toBe(false),
+    );
+    await fireEvent.press(
+      screen.getByRole('button', { name: 'Acepto y autorizo el tratamiento de mis datos' }),
+    );
+    expect(
+      await screen.findByText(
+        'Aceptación confirmada por el servidor. Falta la vinculación clínica: solicita tu código desde Perfil.',
+      ),
+    ).toBeTruthy();
+    expect(session.getSnapshot().uploadAllowed).toBe(false);
+  });
   it('presents a synthetic definition and enables uploads only after C-16 plus fresh C-15', async () => {
     const { session, bodies } = await setup();
     await render(<OnlineConsentScreen />);

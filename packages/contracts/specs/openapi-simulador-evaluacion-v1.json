@@ -1,0 +1,319 @@
+{
+  "openapi": "3.1.0",
+  "info": {
+    "title": "QuimioCare — Operaciones Auxiliares de Evaluación del Simulador",
+    "version": "1.0.0",
+    "description": "Endpoints administrativos propios del simulador clínico para la evaluación local de QuimioCare. Incluye la vinculación sintética por operador y la publicación multipart de infografías educativas con almacenamiento persistente. No forman parte del contrato clínico externo de la contraparte."
+  },
+  "servers": [
+    {
+      "url": "http://127.0.0.1:18018/quimiocare",
+      "description": "Proxy de evaluación universitaria (puerto 18018)"
+    },
+    {
+      "url": "http://localhost:3002",
+      "description": "Servicio directo del simulador clínico local"
+    }
+  ],
+  "paths": {
+    "/admin/api/v1/vinculaciones/consumir": {
+      "post": {
+        "operationId": "consumirCodigoVinculacion",
+        "summary": "Consumir código de vinculación y asignar contexto sintético",
+        "description": "Operación administrativa de evaluación para que un operador clínico autorizado asocie a un paciente incorporado con una plantilla clínica preaprobada (ej. DEMO-FOLFOX-v1), registrando la auditoría con hash SHA-256.",
+        "security": [
+          {
+            "BearerAuth": []
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "required": ["codigo", "plantilla_id"],
+                "properties": {
+                  "codigo": {
+                    "type": "string",
+                    "pattern": "^[A-Z0-9]{8}$",
+                    "description": "Código de 8 caracteres alfanuméricos generado por el paciente."
+                  },
+                  "plantilla_id": {
+                    "type": "string",
+                    "description": "Identificador de la plantilla clínica sintética aprobada."
+                  },
+                  "request_token": {
+                    "type": "string",
+                    "format": "uuid",
+                    "description": "Token opcional para garantizar idempotencia en reintentos ante pérdida de ACK."
+                  }
+                },
+                "additionalProperties": false
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Vinculación confirmada exitosamente o recuperada por reintento idempotente.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/RespuestaVinculacion"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "No autenticado o token ausente.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEvaluacion"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Operador no autorizado.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEvaluacion"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Código inexistente, vencido o no encontrado.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEvaluacion"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "Código ya consumido o conflicto de request_token con diferente contenido.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEvaluacion"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Error de validación en parámetros de entrada.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEvaluacion"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/admin/api/v1/contenido-educativo": {
+      "post": {
+        "operationId": "publicarContenidoEducativo",
+        "summary": "Publicar infografía educativa sintética (multipart/form-data)",
+        "description": "Carga un archivo de imagen PNG o JPEG junto con sus metadatos de catálogo. Valida decodificación binaria, dimensiones máximas (8 MP), límite de 5 MiB y calcula el SHA-256 antes de persistir atómicamente el registro.",
+        "security": [
+          {
+            "BearerAuth": []
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "multipart/form-data": {
+              "schema": {
+                "type": "object",
+                "required": ["archivo", "titulo", "descripcion", "categoria", "operacion_id"],
+                "properties": {
+                  "archivo": {
+                    "type": "string",
+                    "format": "binary",
+                    "description": "Archivo binario de imagen (PNG o JPEG, máximo 5 MiB, resolución máxima 8 Megapíxeles)."
+                  },
+                  "titulo": {
+                    "type": "string",
+                    "minLength": 1,
+                    "maxLength": 200,
+                    "description": "Título descriptivo del recurso educativo."
+                  },
+                  "descripcion": {
+                    "type": "string",
+                    "minLength": 1,
+                    "maxLength": 1000,
+                    "description": "Descripción pedagógica del material."
+                  },
+                  "categoria": {
+                    "type": "string",
+                    "minLength": 1,
+                    "maxLength": 100,
+                    "description": "Categoría compatible con el catálogo móvil (ej. Nutrición, Cuidados)."
+                  },
+                  "operacion_id": {
+                    "type": "string",
+                    "format": "uuid",
+                    "description": "UUID obligatorio para serializar y garantizar idempotencia estricta ante reintentos."
+                  }
+                }
+              }
+            }
+          }
+        },
+        "responses": {
+          "201": {
+            "description": "Material publicado exitosamente en almacenamiento y base de datos.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ContenidoEducativoPublicado"
+                }
+              }
+            }
+          },
+          "200": {
+            "description": "Reintento idempotente exitoso devolviendo el registro previamente confirmado.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ContenidoEducativoPublicado"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "No autenticado.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEvaluacion"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Operador no autorizado o conflicto de operador en operacion_id.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEvaluacion"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "Conflicto: operacion_id ya fue utilizado con archivo o metadatos diferentes.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEvaluacion"
+                }
+              }
+            }
+          },
+          "413": {
+            "description": "El archivo excede el tamaño máximo permitido de 5 MiB.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEvaluacion"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Archivo corrupto, resolución superior a 8 MP o metadatos inválidos.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEvaluacion"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "Servicio temporalmente no disponible (mantenimiento o respaldo coordinado en curso).",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEvaluacion"
+                }
+              }
+            }
+          }
+        }
+      }
+    }
+  },
+  "components": {
+    "securitySchemes": {
+      "BearerAuth": {
+        "type": "http",
+        "scheme": "bearer",
+        "bearerFormat": "JWT",
+        "description": "Access token emitido para un operador clínico de evaluación autorizado."
+      }
+    },
+    "schemas": {
+      "RespuestaVinculacion": {
+        "type": "object",
+        "required": ["paciente_id", "plantilla_id", "relacion_id", "vinculado_en"],
+        "properties": {
+          "paciente_id": { "type": "string", "format": "uuid" },
+          "plantilla_id": { "type": "string" },
+          "relacion_id": { "type": "string", "format": "uuid" },
+          "vinculado_en": { "type": "string", "format": "date-time" }
+        }
+      },
+      "ContenidoEducativoPublicado": {
+        "type": "object",
+        "required": [
+          "id",
+          "titulo",
+          "descripcion",
+          "tipo",
+          "categoria",
+          "url",
+          "archivo_mime",
+          "archivo_tamano_bytes",
+          "archivo_revision",
+          "archivo_sha256",
+          "activo",
+          "fecha_creacion"
+        ],
+        "properties": {
+          "id": { "type": "string", "format": "uuid" },
+          "titulo": { "type": "string" },
+          "descripcion": { "type": "string" },
+          "tipo": { "type": "string", "enum": ["imagen"] },
+          "categoria": { "type": "string" },
+          "url": { "type": "string", "format": "uri" },
+          "archivo_mime": { "type": "string", "enum": ["image/png", "image/jpeg"] },
+          "archivo_tamano_bytes": { "type": "integer" },
+          "archivo_revision": { "type": "string", "format": "uuid" },
+          "archivo_sha256": { "type": "string", "pattern": "^[0-9a-f]{64}$" },
+          "activo": { "type": "boolean" },
+          "fecha_creacion": { "type": "string", "format": "date-time" }
+        }
+      },
+      "ErrorEvaluacion": {
+        "type": "object",
+        "required": ["codigo", "mensaje"],
+        "properties": {
+          "codigo": { "type": "string" },
+          "mensaje": { "type": "string" },
+          "detalles": { "type": "object", "nullable": true }
+        }
+      }
+    }
+  }
+}

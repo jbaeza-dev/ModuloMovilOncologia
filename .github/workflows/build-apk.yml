@@ -1,4 +1,4 @@
-name: Compilar APK Android (Demo)
+name: Compilar APK Android (Demo / Universidad)
 
 on:
   pull_request:
@@ -8,6 +8,7 @@ on:
       - 'packages/**'
       - '.github/workflows/build-apk.yml'
       - 'pnpm-lock.yaml'
+      - 'scripts/configure-apk.mjs'
   push:
     branches:
       - main
@@ -16,20 +17,24 @@ on:
       - 'packages/**'
       - '.github/workflows/build-apk.yml'
       - 'pnpm-lock.yaml'
+      - 'scripts/configure-apk.mjs'
   workflow_dispatch:
     inputs:
-      demo_mode:
-        description: 'Activar modo demo (datos sintéticos A/B)'
+      build_profile:
+        description: 'Perfil de compilación: demo (local sintético A/B) o universidad-demo (Google OAuth y HTTPS institucional)'
         required: true
-        type: boolean
-        default: true
+        type: choice
+        default: 'demo'
+        options:
+          - 'demo'
+          - 'universidad-demo'
       p01_probe_enabled:
         description: 'Incluir acceso a diagnóstico técnico P01 (no prueba aceptación)'
         required: true
         type: boolean
         default: false
       android_abi:
-        description: 'ARM64 para el Redmi; universal incluye ARM32 y emuladores'
+        description: 'ARM64 para el Redmi/Samsung; universal incluye ARM32 y emuladores'
         required: true
         type: choice
         default: arm64-v8a
@@ -46,45 +51,74 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: ${{ github.event_name == 'workflow_dispatch' && inputs.android_abi == 'universal' && 90 || 60 }}
     env:
-      EXPO_PUBLIC_DEMO_MODE: ${{ github.event_name == 'workflow_dispatch' && inputs.demo_mode || github.event_name != 'workflow_dispatch' }}
+      EXPO_PUBLIC_APP_ENV: ${{ github.event_name == 'workflow_dispatch' && inputs.build_profile || (github.event_name == 'push' && 'universidad-demo' || 'demo') }}
       EXPO_PUBLIC_P01_PROBE_ENABLED: ${{ github.event_name == 'workflow_dispatch' && inputs.p01_probe_enabled || false }}
+      QC_PUBLIC_ORIGIN: ${{ vars.QC_PUBLIC_ORIGIN }}
+      QC_AUTH_ISSUER: ${{ vars.QC_AUTH_ISSUER }}
+      QC_AUTH_PUBLIC_KEY: ${{ vars.QC_AUTH_PUBLIC_KEY }}
+      EXPO_PUBLIC_AUTH_AUDIENCE: authenticated
+      EXPO_PUBLIC_EXPO_PROJECT_ID: ${{ vars.QC_EXPO_PROJECT_ID }}
+      EXPO_PUBLIC_AUTH_REDIRECT_URI: quimiocare://acceso/oauth
       ANDROID_ABI_PROFILE: ${{ github.event_name == 'workflow_dispatch' && inputs.android_abi || 'arm64-v8a' }}
       REACT_NATIVE_ARCHITECTURES: ${{ github.event_name == 'workflow_dispatch' && inputs.android_abi == 'universal' && 'armeabi-v7a,arm64-v8a,x86,x86_64' || 'arm64-v8a' }}
 
     steps:
       - name: Checkout del repositorio
-        uses: actions/checkout@v7
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
 
       - name: Configurar Node.js, pnpm e instalar lockfile
-        uses: pnpm/setup@v3
+        uses: pnpm/setup@fa36a5ef7dcdefc3a7cb25655c122e00cf6e636e # v3.1.2
         with:
           node-version-file: .nvmrc
           cache: true
           require-lockfile: true
 
       - name: Configurar JDK 17
-        uses: actions/setup-java@v4
+        uses: actions/setup-java@b843ebf9b913146b38da2eaa7aeddf76074ae1ad # v6.1.0
         with:
           distribution: 'temurin'
           java-version: '17'
           cache: 'gradle'
+
+      - name: Preparar configuración Firebase privada si está disponible
+        env:
+          QC_GOOGLE_SERVICES_JSON: ${{ secrets.QC_GOOGLE_SERVICES_JSON }}
+        run: |
+          node --input-type=module <<'NODE'
+          import fs from 'node:fs';
+          const raw = process.env.QC_GOOGLE_SERVICES_JSON;
+          if (!raw) {
+            console.log('Sin configuración Firebase: APK de evaluación sin recepción push FCM configurada.');
+          } else {
+            if (!/^[a-f0-9]{8}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{12}$/i.test(process.env.EXPO_PUBLIC_EXPO_PROJECT_ID ?? ''))
+              throw new Error('Configura la Variable QC_EXPO_PROJECT_ID para compilar con push Expo/FCM.');
+            const value = JSON.parse(raw);
+            const expected = JSON.parse(fs.readFileSync('apps/mobile/app.json', 'utf8')).expo.android.package;
+            if (!value.client?.some(client => client.client_info?.android_client_info?.package_name === expected))
+              throw new Error('La configuración Firebase no corresponde al paquete Android.');
+            fs.writeFileSync('apps/mobile/google-services.json', raw, {mode: 0o600});
+          }
+          NODE
 
       - name: Verificar tipos y dependencias nativas
         run: |
           pnpm run typecheck
           pnpm --filter @modulo-movil-oncologia/mobile run doctor
 
+      - name: Validate public configuration and select university prefixes
+        run: node scripts/configure-apk.mjs
+
       - name: Generar proyecto nativo Android
         run: pnpm --filter @modulo-movil-oncologia/mobile exec expo prebuild --platform android --no-install
 
-      - name: Compilar APK Release Demo
+      - name: Compilar APK Release
         env:
           GRADLE_OPTS: "-Dorg.gradle.jvmargs='-Xmx4096m -XX:MaxMetaspaceSize=1024m -XX:+UseG1GC' -Dorg.gradle.parallel=true"
         working-directory: apps/mobile/android
         run: |
-          echo "Perfil Android: ${ANDROID_ABI_PROFILE}; arquitecturas: ${REACT_NATIVE_ARCHITECTURES}"
+          echo "Perfil Android: ${ANDROID_ABI_PROFILE}; arquitecturas: ${REACT_NATIVE_ARCHITECTURES}; APP_ENV: ${EXPO_PUBLIC_APP_ENV}"
           chmod +x gradlew
           ./gradlew assembleRelease \
             --no-daemon \
@@ -96,10 +130,10 @@ jobs:
             -x lintVitalAnalyzeRelease \
             -x test
 
-      - name: Subir APK compilado (no acredita interacción ni push)
-        uses: actions/upload-artifact@v4
+      - name: Subir APK compilado
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
-          name: QuimioCare-Demo-APK-${{ env.ANDROID_ABI_PROFILE }}
+          name: QuimioCare-${{ env.EXPO_PUBLIC_APP_ENV }}-APK-${{ env.ANDROID_ABI_PROFILE }}
           path: apps/mobile/android/app/build/outputs/apk/release/*.apk
           if-no-files-found: error
           retention-days: 30

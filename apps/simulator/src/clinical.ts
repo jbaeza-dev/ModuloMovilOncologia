@@ -1,8 +1,9 @@
-import { randomBytes } from 'node:crypto';
+import { assignClinicalContext } from './preparation.js';
+import { createHash, randomInt, randomUUID } from 'node:crypto';
 import { isDeepStrictEqual } from 'node:util';
 import type { Database, SqlClient } from './db.js';
 import { one, transaction } from './db.js';
-import { ApiError, invalid } from './errors.js';
+import { ApiError, invalid, record } from './errors.js';
 import { requireConsent } from './consent.js';
 import { loadForm, validateAnswers } from './forms.js';
 import { consumeLostAck, scenarioFor } from './scenarios.js';
@@ -21,6 +22,7 @@ const SIGN_VALUES = [
   'temperatura',
   'saturacion_oxigeno',
 ] as const;
+
 export function normalizedSigns(input: SignsInput): SignsInput {
   checkCaptureDate(input.fecha_registro);
   if (
@@ -53,6 +55,7 @@ interface Persisted<T> {
   request: T;
   respuesta: ObjectValue;
 }
+
 async function requireClinicalProfile(client: SqlClient, patientId: string): Promise<void> {
   const row = await one<{ perfil_clinico: ObjectValue | null }>(
     client,
@@ -63,6 +66,7 @@ async function requireClinicalProfile(client: SqlClient, patientId: string): Pro
     throw new ApiError(404, 'RECURSO_NO_ENCONTRADO', 'Falta la ficha clínica del paciente.');
   }
 }
+
 async function saveSign(client: SqlClient, patientId: string, input: SignsInput) {
   const value = normalizedSigns(input);
   await client.query('SELECT pg_advisory_xact_lock(hashtext($1))', [`sign:${input.id}`]);
@@ -108,7 +112,6 @@ export async function recordSignBatch(db: Database, patientId: string, inputs: S
     await requireConsent(client, patientId, state);
     const inserted: ObjectValue[] = [],
       existing: ObjectValue[] = [];
-    // Stable lock ordering avoids deadlock when parallel batches contain overlapping UUIDs.
     for (const value of [...inputs].sort((a, b) => a.id.localeCompare(b.id))) {
       const result = await saveSign(client, patientId, value);
       (result.status === 201 ? inserted : existing).push(result.body);
@@ -265,24 +268,193 @@ export async function completeProfile(db: Database, patientId: string, input: Ob
 export async function createLinkCode(db: Database, patientId: string) {
   return transaction(db, async (client) => {
     await client.query('SELECT id FROM qc_demo_paciente WHERE id=$1 FOR UPDATE', [patientId]);
-    const row = await one<{ vence_en: Date }>(
+    const linked = await one(
       client,
-      'SELECT vence_en FROM qc_demo_vinculacion WHERE paciente_id=$1',
+      "SELECT id FROM qc_demo_relacion_clinica WHERE paciente_id=$1 AND estado='activa'",
       [patientId],
     );
-    if (row && row.vence_en.getTime() > Date.now())
-      throw new ApiError(409, 'CONFLICTO_ESTADO', 'Ya existe un código vigente.');
-    const code = randomBytes(6).toString('base64url').toUpperCase();
+    if (linked) throw new ApiError(409, 'CONFLICTO_ESTADO', 'El paciente ya esta vinculado.');
+    const row = await one<{ codigo: string; vence_en: Date; consumido: boolean }>(
+      client,
+      'SELECT codigo, vence_en, consumido FROM qc_demo_vinculacion WHERE paciente_id=$1',
+      [patientId],
+    );
+    if (row && !row.consumido && row.vence_en.getTime() > Date.now())
+      throw new ApiError(409, 'CONFLICTO_ESTADO', 'Ya existe un codigo vigente.');
+
+    // Código alfanumérico limpio de 8 caracteres
+    const alphabet = 'ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789';
+    const code = Array.from({ length: 8 }, () => alphabet[randomInt(alphabet.length)]).join('');
     const expires = new Date(Date.now() + 86400000);
     await client.query(
-      `INSERT INTO qc_demo_vinculacion(paciente_id,codigo,vence_en) VALUES($1,$2,$3)
-      ON CONFLICT(paciente_id) DO UPDATE SET codigo=excluded.codigo,vence_en=excluded.vence_en`,
+      `INSERT INTO qc_demo_vinculacion(paciente_id,codigo,vence_en,consumido,consumido_en,consumido_por,request_token)
+       VALUES($1,$2,$3,false,null,null,null)
+       ON CONFLICT(paciente_id) DO UPDATE SET codigo=excluded.codigo,vence_en=excluded.vence_en,consumido=false,consumido_en=null,consumido_por=null,request_token=null`,
       [patientId, code, expires],
     );
     return {
       codigo: code,
       fecha_expiracion: expires.toISOString(),
       mensaje: 'Código sintético para demostración.',
+    };
+  });
+}
+
+export async function consumeLinkCode(
+  db: Database,
+  operatorId: string,
+  code: string,
+  templateId: string,
+  requestToken?: string,
+  expectedIssuer?: string,
+) {
+  const normalizedCode = code.trim().toUpperCase();
+  if (
+    !/^[A-Z0-9]{8}$/.test(normalizedCode) ||
+    (requestToken !== undefined &&
+      !/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(requestToken))
+  )
+    throw new ApiError(422, 'ERROR_VALIDACION', 'Codigo o identificador de operacion invalido.');
+  const codeHash = createHash('sha256').update(normalizedCode).digest('hex');
+
+  return transaction(db, async (client) => {
+    // 1. Verificar operador autorizado
+    const operator = await one<{ id: string; nombre: string }>(
+      client,
+      'SELECT id, nombre FROM qc_demo_operador WHERE id=$1 AND activo=true AND auth_subject=id::text AND ($2::text IS NULL OR auth_issuer=$2)',
+      [operatorId, expectedIssuer ?? null],
+    );
+    if (!operator)
+      throw new ApiError(403, 'ACCESO_DENEGADO', 'Operador no autorizado en el sistema.');
+
+    // 2. Buscar código con bloqueo de fila
+    const row = await one<{
+      paciente_id: string;
+      consumido: boolean;
+      consumido_por: string | null;
+      vence_en: Date;
+      request_token: string | null;
+    }>(
+      client,
+      'SELECT paciente_id, consumido, consumido_por, vence_en, request_token FROM qc_demo_vinculacion WHERE codigo=$1 FOR UPDATE',
+      [normalizedCode],
+    );
+    if (!row)
+      throw new ApiError(404, 'RECURSO_NO_ENCONTRADO', 'Código de vinculación inexistente.');
+
+    // 3. Manejo de reintento idempotente (caso de ACK perdido)
+    if (row.consumido) {
+      if (row.consumido_por === operatorId && requestToken && row.request_token === requestToken) {
+        const existingRel = await one<{ id: string }>(
+          client,
+          'SELECT id FROM qc_demo_relacion_clinica WHERE paciente_id=$1 AND operador_id=$2 AND plantilla_id=$3',
+          [row.paciente_id, operatorId, templateId],
+        );
+        if (!existingRel)
+          throw new ApiError(409, 'CONFLICTO_ESTADO', 'La operacion tiene otra plantilla.');
+        return {
+          status: 200,
+          body: {
+            ok: true,
+            relacion_id: existingRel?.id,
+            paciente_id: row.paciente_id,
+            reintento_idempotente: true,
+            mensaje: 'Vinculación confirmada previamente.',
+          },
+        };
+      }
+      throw new ApiError(409, 'CONFLICTO_ESTADO', 'El código de vinculación ya ha sido consumido.');
+    }
+
+    if (row.vence_en.getTime() <= Date.now()) {
+      throw new ApiError(410, 'RECURSO_NO_DISPONIBLE', 'El código de vinculación ha expirado.');
+    }
+
+    // 4. Buscar plantilla clínica sintética aprobada
+    const template = await one<{
+      perfil_clinico_template: ObjectValue;
+      tratamiento_template: ObjectValue;
+    }>(
+      client,
+      'SELECT perfil_clinico_template, tratamiento_template FROM qc_demo_plantilla_sintetica WHERE id=$1 AND activo=true',
+      [templateId],
+    );
+    if (!template) {
+      throw new ApiError(
+        404,
+        'RECURSO_NO_ENCONTRADO',
+        'Plantilla clínica sintética no encontrada.',
+      );
+    }
+
+    const actor = await one<{ perfil: ObjectValue }>(
+      client,
+      'SELECT perfil FROM qc_demo_paciente WHERE id=$1 FOR UPDATE',
+      [row.paciente_id],
+    );
+    if (actor?.perfil.estado_incorporacion !== 'COMPLETO')
+      throw new ApiError(409, 'INCORPORACION_PENDIENTE', 'Complete el perfil antes de vincular.');
+    await requireConsent(client, row.paciente_id, await scenarioFor(client, row.paciente_id));
+    if (
+      await one(
+        client,
+        "SELECT id FROM qc_demo_relacion_clinica WHERE paciente_id=$1 AND estado='activa'",
+        [row.paciente_id],
+      )
+    )
+      throw new ApiError(409, 'CONFLICTO_ESTADO', 'El paciente ya está vinculado.');
+    const now = new Date();
+    const profile: ObjectValue = {
+      ...template.perfil_clinico_template,
+      id: randomUUID(),
+      paciente_id: row.paciente_id,
+    };
+    if (Array.isArray(profile.medicamentos))
+      profile.medicamentos = profile.medicamentos.map((raw) => ({
+        ...record(raw),
+        id: randomUUID(),
+      }));
+    await assignClinicalContext(client, row.paciente_id, {
+      perfil_clinico: profile,
+      tratamiento: {
+        ...template.tratamiento_template,
+        id: randomUUID(),
+        paciente_id: row.paciente_id,
+        fecha_inicio: now.toISOString(),
+      },
+    });
+
+    // 6. Registrar relación clínica activa
+    const rel = await one<{ id: string }>(
+      client,
+      `INSERT INTO qc_demo_relacion_clinica (paciente_id, operador_id, plantilla_id, estado, vinculado_en)
+       VALUES ($1, $2, $3, 'activa', $4)
+       ON CONFLICT (paciente_id) DO UPDATE SET operador_id=excluded.operador_id, plantilla_id=excluded.plantilla_id, estado='activa'
+       RETURNING id`,
+      [row.paciente_id, operatorId, templateId, now],
+    );
+
+    // 7. Marcar código consumido
+    await client.query(
+      'UPDATE qc_demo_vinculacion SET consumido=true, consumido_en=$2, consumido_por=$3, request_token=$4 WHERE paciente_id=$1',
+      [row.paciente_id, now, operatorId, requestToken ?? null],
+    );
+
+    // 8. Auditoría con hash criptográfico del código
+    await client.query(
+      `INSERT INTO qc_demo_auditoria_vinculacion (operador_id, paciente_id, relacion_id, codigo_sha256, plantilla_id, fecha)
+       VALUES ($1, $2, $3, $4, $5, $6)`,
+      [operatorId, row.paciente_id, rel!.id, codeHash, templateId, now],
+    );
+
+    return {
+      status: 200,
+      body: {
+        ok: true,
+        relacion_id: rel!.id,
+        paciente_id: row.paciente_id,
+        mensaje: 'Paciente vinculado y tratamiento sintético asignado exitosamente.',
+      },
     };
   });
 }

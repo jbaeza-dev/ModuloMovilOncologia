@@ -1,0 +1,27 @@
+# HOST ONLY: $HOME/quimiocare/shared/universidad.env (chmod 600).
+# Plain KEY=value, without quotes, export, interpolation or inline comments.
+# Generate EACH secret independently: openssl rand -hex 32
+POSTGRES_PASSWORD=REEMPLAZAR_SECRETO_POSTGRES
+QC_ADMIN_PASSWORD=REEMPLAZAR_SECRETO_CLINICA
+QC_REPLICA_PASSWORD=REEMPLAZAR_SECRETO_REPLICA
+QC_GATEWAY_PASSWORD=REEMPLAZAR_SECRETO_GATEWAY
+QC_STORAGE_PASSWORD=REEMPLAZAR_SECRETO_STORAGE
+DEMO_CONTROL_KEY=REEMPLAZAR_SECRETO_CONTROL
+GATEWAY_CURSOR_KEY=REEMPLAZAR_SECRETO_CURSOR
+PS_ADMIN_TOKEN=REEMPLAZAR_SECRETO_POWERSYNC
+
+# Real institutional HTTPS origin (no path) and lowercase GitHub owner.
+PUBLIC_ORIGIN=https://DOMINIO_INSTITUCIONAL
+IMAGE_NAMESPACE=ghcr.io/REEMPLAZAR_OWNER
+AUTH_EXPECTED_ISSUER=https://PROJECT_ID.supabase.co/auth/v1
+AUTH_PUBLIC_KEY=sb_publishable_REEMPLAZAR_CLAVE_PUBLICA
+AUTH_ALLOWED_ALGORITHM=ES256
+
+# Enable only for authorized synthetic evaluation. Disabled by default.
+API_DOCS_ENABLED=false
+PREPARATION_ENABLED=false
+# First EMPTY database only: set true intentionally, then false after installation.
+INITIALIZE_SYNTHETIC_DATABASE=false
+# Invitations only; these emails do NOT become operators.
+EVALUATION_PATIENT_EMAILS=plataformaoncologica@gmail.com
+EXPO_ACCESS_TOKEN=

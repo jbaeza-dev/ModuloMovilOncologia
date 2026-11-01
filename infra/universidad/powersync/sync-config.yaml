@@ -1,0 +1,45 @@
+# Reglas de sincronización PowerSync para el despliegue universitario
+# Edición 3 (Sync Streams).
+# La autorización se valida contra los datos persistidos en qc_demo_paciente
+# comparando auth.user_id() (el sub del JWT de Supabase Auth) con el auth_subject del paciente activo.
+config:
+  edition: 3
+
+streams:
+  quimiocare_formularios_universidad:
+    auto_subscribe: true
+    query: |
+      SELECT id, codigo, titulo, descripcion, tratamiento, version, activo,
+        configuracion, fecha_creacion, eliminado
+      FROM formulario
+      WHERE eliminado = false AND tratamiento = 'quimioterapia'
+        AND auth.user_id() IN (
+          SELECT auth_subject FROM qc_demo_paciente WHERE estado_cuenta = 'activo'
+        )
+
+  quimiocare_preguntas_universidad:
+    auto_subscribe: true
+    query: |
+      SELECT id, formulario_id, codigo, titulo, texto, tipo, requerida, orden,
+        opciones, configuracion, eliminado
+      FROM pregunta
+      WHERE eliminado = false
+        AND formulario_id IN (
+          SELECT id FROM formulario
+          WHERE eliminado = false AND tratamiento = 'quimioterapia'
+        )
+        AND auth.user_id() IN (
+          SELECT auth_subject FROM qc_demo_paciente WHERE estado_cuenta = 'activo'
+        )
+
+  quimiocare_educacion_universidad:
+    auto_subscribe: true
+    query: |
+      SELECT id, titulo, ifnull(descripcion, '') AS descripcion,
+        tipo, url, categoria, carpeta_id, activo, fecha_creacion,
+        archivo_mime, archivo_tamano_bytes, archivo_revision, archivo_sha256
+      FROM contenido_educativo
+      WHERE qc_mobile_eligible = true AND (tipo = 'imagen' OR tipo = 'video')
+        AND auth.user_id() IN (
+          SELECT auth_subject FROM qc_demo_paciente WHERE estado_cuenta = 'activo'
+        )

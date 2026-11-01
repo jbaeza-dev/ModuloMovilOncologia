@@ -1,4 +1,5 @@
 import { readFile } from 'node:fs/promises';
+import { fixtureImageUrl } from '@quimiocare/contracts';
 import { createHash } from 'node:crypto';
 import { fileURLToPath } from 'node:url';
 import { basename, resolve, sep } from 'node:path';
@@ -7,6 +8,7 @@ import type { Database } from './db.js';
 import { transaction } from './db.js';
 import { ApiError } from './errors.js';
 import { EDUCATION_ID } from './seed-data.js';
+import type { SimulatorConfig } from './config.js';
 
 export const educationAssetsRoot = fileURLToPath(new URL('../assets/education/', import.meta.url));
 const uuid = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/;
@@ -117,7 +119,7 @@ export async function publishEducationMaterials(db: Database, publicBaseUrl: str
     for (const item of catalog.items) {
       const url =
         item.type === 'imagen'
-          ? `${publicBaseUrl.replace(/\/$/, '')}/__demo/archivos/educacion/${item.id}/${item.revision}.${item.mime === 'image/png' ? 'png' : 'jpg'}`
+          ? `${publicBaseUrl.replace(/\/$/, '')}/archivos/educacion/${item.id}/${item.revision}.${item.mime === 'image/png' ? 'png' : 'jpg'}`
           : item.url!;
       await client.query(
         `INSERT INTO contenido_educativo
@@ -160,38 +162,69 @@ export async function publishEducationMaterials(db: Database, publicBaseUrl: str
   };
 }
 
-/** Only licensed educational bytes are served here; this endpoint never accepts patient files. */
-export async function serveEducationMaterial(db: Database, pathname: string, res: ServerResponse) {
-  const match = /^\/__demo\/archivos\/educacion\/([0-9a-f-]+)\/([0-9a-f-]+)\.(png|jpg)$/.exec(
-    pathname,
-  );
+/** Only licensed or published educational bytes are served here; this endpoint never accepts patient files. */
+export async function serveEducationMaterial(
+  config: SimulatorConfig,
+  db: Database,
+  pathname: string,
+  res: ServerResponse,
+) {
+  let cleanPath = pathname;
+  if (cleanPath.startsWith('/quimiocare/')) {
+    cleanPath = cleanPath.slice('/quimiocare'.length);
+  }
+
+  const match =
+    /^(?:\/__demo)?\/archivos\/educacion\/([0-9a-f-]+)\/([0-9a-f-]+)(?:\.(png|jpg|jpeg))?$/.exec(
+      cleanPath,
+    );
   if (!match || !uuid.test(match[1]!) || !uuid.test(match[2]!))
     throw new ApiError(404, 'RECURSO_NO_ENCONTRADO', 'Imagen no publicada.');
+
+  const id = match[1]!;
+  const revision = match[2]!;
+
   const row = (
     await db.query<{ archivo_mime: string; archivo_tamano_bytes: string; archivo_sha256: string }>(
-      `SELECT archivo_mime,archivo_tamano_bytes,archivo_sha256 FROM contenido_educativo
-     WHERE id=$1 AND archivo_revision=$2 AND activo=true AND tipo='imagen'`,
-      [match[1], match[2]],
+      `SELECT archivo_mime, archivo_tamano_bytes, archivo_sha256 FROM contenido_educativo
+       WHERE id=$1 AND archivo_revision=$2 AND activo=true AND qc_mobile_eligible AND tipo='imagen'`,
+      [id, revision],
     )
   ).rows[0];
-  if (!row || row.archivo_mime !== (match[3] === 'png' ? 'image/png' : 'image/jpeg'))
-    throw new ApiError(404, 'RECURSO_NO_ENCONTRADO', 'Imagen no publicada.');
-  let bytes: Buffer;
+
+  if (!row) throw new ApiError(404, 'RECURSO_NO_ENCONTRADO', 'Imagen no publicada.');
+
+  const ext = row.archivo_mime === 'image/png' ? 'png' : 'jpg';
+
+  let bytes: Buffer | undefined;
+  // 1. Try reading from educationMediaRoot first
+  const mediaRootPath = resolve(config.educationMediaRoot, id, `${revision}.${ext}`);
   try {
-    bytes = await readFile(filePath(`${match[1]}.${match[2]}.${match[3]}`));
+    bytes = await readFile(mediaRootPath);
   } catch {
-    throw new ApiError(503, 'HTTP_503', 'La imagen publicada no está disponible.');
+    // 2. Fall back to seed assets if not in mediaRoot
+    try {
+      bytes =
+        row.archivo_sha256 === '3928618d567aa706302b2f1a7278e3758fee6d69637a075813c3ee5a565d747a'
+          ? await readFile(fixtureImageUrl)
+          : await readFile(filePath(`${id}.${revision}.${ext}`));
+    } catch {
+      throw new ApiError(503, 'HTTP_503', 'La imagen publicada no está disponible.');
+    }
   }
+
   if (
     bytes.length > 5 * 1024 * 1024 ||
     bytes.length !== Number(row.archivo_tamano_bytes) ||
     hash(bytes) !== row.archivo_sha256
-  )
+  ) {
     throw new ApiError(
       503,
       'HTTP_503',
       'La imagen publicada no supera la verificación de integridad.',
     );
+  }
+
   res.writeHead(200, {
     'content-type': row.archivo_mime,
     'content-length': bytes.length,
