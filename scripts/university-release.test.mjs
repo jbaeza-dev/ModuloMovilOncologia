@@ -57,6 +57,11 @@ test('immutable release passes Python verification; tampering and wrong publishe
       digests: { simulator: 'sha256:' + 'b'.repeat(64), gateway: 'sha256:' + 'c'.repeat(64) },
     });
     assert.equal(manifest.schema, 2);
+    assert.ok(manifest.files['infra/universidad/postgres/02-setup-replication.sql']);
+    assert.equal(
+      await readFile(join(output, 'infra/universidad/postgres/02-setup-replication.sql'), 'utf8'),
+      await readFile('infra/universidad/postgres/02-setup-replication.sql', 'utf8'),
+    );
     assert.ok(!Object.keys(manifest.files).some((x) => /(\.env$|\.dump$|local_storage)/.test(x)));
     const python = process.platform === 'win32' ? 'python' : 'python3';
     const verify = (namespace = 'ghcr.io/test') =>

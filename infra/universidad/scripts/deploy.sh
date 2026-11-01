@@ -58,7 +58,8 @@ cp "$ROOT/shared/quadlet-next/"* "$HOME/.config/containers/systemd/"
 systemctl --user daemon-reload
 systemctl --user start qc-postgres.service
 for attempt in {1..30}; do
- if podman exec qc-postgres pg_isready -U postgres; then break; fi
+ # The first initialization starts a socket-only temporary server. Wait for TCP.
+ if podman exec qc-postgres pg_isready -h qc-postgres -U postgres; then break; fi
  [[ "$attempt" != 30 ]] || exit 1
  sleep 2
 done

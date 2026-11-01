@@ -45,7 +45,7 @@ export async function packageRelease({
           await copy(path);
         continue;
       }
-      if (!/\.(sh|py|mjs|container|volume|network|conf|yaml|json|md|example)$/.test(entry.name))
+      if (!/\.(sh|sql|py|mjs|container|volume|network|conf|yaml|json|md|example)$/.test(entry.name))
         continue;
       const rel = relative(process.cwd(), path).replaceAll('\\', '/');
       if (entry.name.startsWith('.') || rel.includes('__pycache__')) continue;

@@ -12,7 +12,7 @@ Volume=qc-postgres-data.volume:/var/lib/postgresql/data:Z
 Volume=%h/quimiocare/current/infra/universidad/postgres/postgresql.conf:/etc/postgresql/postgresql.conf:ro,Z
 Volume=%h/quimiocare/current/infra/universidad/postgres/01-consolidated-bootstrap.sh:/docker-entrypoint-initdb.d/01-consolidated-bootstrap.sh:ro,Z
 Exec=postgres -c config_file=/etc/postgresql/postgresql.conf
-HealthCmd=pg_isready -U postgres
+HealthCmd=pg_isready -h qc-postgres -U postgres
 HealthInterval=10s
 HealthTimeout=5s
 HealthRetries=5
