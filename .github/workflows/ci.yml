@@ -17,14 +17,15 @@ concurrency:
 jobs:
   quality:
     name: Quality
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
     steps:
       - name: Checkout
-        uses: actions/checkout@v7
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
       - name: Set up Node.js and pnpm
-        uses: pnpm/setup@v3
+        uses: pnpm/setup@fa36a5ef7dcdefc3a7cb25655c122e00cf6e636e # v3.1.2
         with:
           node-version-file: .nvmrc
           cache: true
@@ -44,28 +45,29 @@ jobs:
 
   simulator:
     name: Simulator HTTP and PostgreSQL
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
     services:
       postgres:
-        image: postgres:17.7-bookworm@sha256:86e0b703649d7a792bd9243ee28afc9d8f7c6b2b5638077c9d6882d4d472bbfd
+        image: postgres:17.11-bookworm@sha256:839fbb5a4942a7758dd93e18b42ea5649807491a0545b5eeeb8f0b8bb11857a5
         env:
           POSTGRES_USER: postgres
           POSTGRES_PASSWORD: quimiocare_ci_only
-          POSTGRES_DB: quimiocare_test
+          POSTGRES_DB: qc_simulator_ci_test
         ports:
           - 5432:5432
         options: >-
-          --health-cmd "pg_isready -U postgres -d quimiocare_test"
+          --health-cmd "pg_isready -U postgres -d qc_simulator_ci_test"
           --health-interval 5s
           --health-timeout 5s
           --health-retries 12
     steps:
       - name: Checkout
-        uses: actions/checkout@v7
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
       - name: Set up Node.js and pnpm
-        uses: pnpm/setup@v3
+        uses: pnpm/setup@fa36a5ef7dcdefc3a7cb25655c122e00cf6e636e # v3.1.2
         with:
           node-version-file: .nvmrc
           cache: true
@@ -81,7 +83,9 @@ jobs:
       - name: Exercise real HTTP and durable database
         env:
           APP_ENV: demo
-          TEST_DATABASE_URL: postgresql://postgres:quimiocare_ci_only@127.0.0.1:5432/quimiocare_test
+          POWERSHELL_BIN: pwsh
+          TEST_DATABASE_CONTAINER: ${{ job.services.postgres.id }}
+          TEST_DATABASE_URL: postgresql://postgres:quimiocare_ci_only@127.0.0.1:5432/qc_simulator_ci_test
         run: pnpm --filter @quimiocare/simulator run test:integration
       - name: Validate Compose structure without printing credentials
         run: |
@@ -98,10 +102,11 @@ jobs:
 
   gateway:
     name: Gateway HTTP and PostgreSQL
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
     services:
       postgres:
-        image: postgres:17.7-bookworm@sha256:86e0b703649d7a792bd9243ee28afc9d8f7c6b2b5638077c9d6882d4d472bbfd
+        image: postgres:17.11-bookworm@sha256:839fbb5a4942a7758dd93e18b42ea5649807491a0545b5eeeb8f0b8bb11857a5
         env:
           POSTGRES_USER: postgres
           POSTGRES_PASSWORD: gateway_ci_only
@@ -124,11 +129,11 @@ jobs:
       PUSH_PROVIDER: expo
     steps:
       - name: Checkout
-        uses: actions/checkout@v7
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
       - name: Set up Node.js and pnpm
-        uses: pnpm/setup@v3
+        uses: pnpm/setup@fa36a5ef7dcdefc3a7cb25655c122e00cf6e636e # v3.1.2
         with:
           node-version-file: .nvmrc
           cache: true
@@ -143,3 +148,53 @@ jobs:
         run: |
           pnpm --filter @quimiocare/gateway run migrate
           node apps/gateway/scripts/ci-smoke.mjs
+
+  universidad_infra:
+    name: Universidad Infrastructure and Quadlet Validation
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    steps:
+      - name: Checkout
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: pnpm/setup@fa36a5ef7dcdefc3a7cb25655c122e00cf6e636e # v3.1.2
+        with:
+          node-version-file: .nvmrc
+          cache: true
+          require-lockfile: true
+      - name: Validate Linux scripts and deployment boundaries
+        run: |
+          python3 -m unittest discover -s infra/universidad/tests -v
+          node scripts/audit-delivery.mjs
+          node --test scripts/university-release.test.mjs
+          find infra/universidad scripts -name "*.sh" -exec bash -n {} \;
+          docker run --rm -v "$PWD:/workspace:ro" -w /workspace koalaman/shellcheck:v0.11.0@sha256:61862eba1fcf09a484ebcc6feea46f1782532571a34ed51fedf90dd25f925a8d scripts/ci-deploy-university.sh infra/universidad/scripts/*.sh infra/universidad/postgres/*.sh
+          docker run --rm -v "$PWD:/repo:ro" rhysd/actionlint:1.7.12@sha256:b1934ee5f1c509618f2508e6eb47ee0d3520686341fec936f3b79331f9315667 -shellcheck= /repo/.github/workflows/ci.yml /repo/.github/workflows/deploy-universidad.yml /repo/.github/workflows/build-apk.yml
+      - name: Exercise production proxy prefixes over real HTTP
+        run: node scripts/test-proxy-routes.mjs
+      - name: Validate Nginx Proxy Configurations
+        run: |
+          docker run --rm --add-host qc-clinical:127.0.0.1 --add-host qc-ai:127.0.0.1 --add-host qc-gateway:127.0.0.1 --add-host qc-powersync:127.0.0.1 -v ${{ github.workspace }}/infra/universidad/proxy/gateway.conf:/etc/nginx/conf.d/default.conf:ro docker.io/library/nginx:1.30.6-trixie@sha256:66b50d24288dba67f3d000b31223daefc4868c58d29aaacb6a4ff9771597b5eb nginx -t
+          docker run --rm --add-host qc-clinical:127.0.0.1 --add-host qc-ai:127.0.0.1 --add-host qc-gateway:127.0.0.1 --add-host qc-powersync:127.0.0.1 -v ${{ github.workspace }}/infra/universidad/proxy/simulator.conf:/etc/nginx/conf.d/default.conf:ro docker.io/library/nginx:1.30.6-trixie@sha256:66b50d24288dba67f3d000b31223daefc4868c58d29aaacb6a4ff9771597b5eb nginx -t
+      - name: Validate University PowerSync rules with the pinned service compiler
+        run: >-
+          docker run --rm --entrypoint node
+          --mount "type=bind,source=${{ github.workspace }}/infra/universidad/powersync,target=/config,readonly"
+          docker.io/journeyapps/powersync-service:1.27.1@sha256:4b5b7d70f63c5cb5afdc680f5cdbacdcbc33cbf5f8fb55b001da263d7da75866
+          /config/validate-config.mjs
+      - name: Validate units with the real Quadlet generator
+        run: |
+          docker run --rm --entrypoint bash -v "$PWD:/workspace:ro" -w /workspace quay.io/podman/stable:v5.7.1@sha256:577f17b483cc572d0998fd743e8c7690524c34d877d5a54d6fcc1a453cf9de45 infra/universidad/scripts/validate-quadlet.sh
+      - name: Fresh Linux source/storage roles, migrations and actual replication
+        run: node scripts/test-university-stack.mjs
+
+  deploy_universidad:
+    name: Deploy verified main to universidad
+    needs: [quality, simulator, gateway, universidad_infra]
+    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+    permissions:
+      contents: read
+      packages: write
+    uses: ./.github/workflows/deploy-universidad.yml
+    secrets: inherit

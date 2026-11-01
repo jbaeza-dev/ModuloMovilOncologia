@@ -46,6 +46,7 @@ export function configuredSyncEndpoint(demo: boolean) {
   const raw = process.env.EXPO_PUBLIC_POWERSYNC_URL;
   if (!raw) return null;
   const url = new URL(raw);
+  const isLoopback = ['127.0.0.1', 'localhost'].includes(url.hostname);
   if (
     url.username ||
     url.password ||
@@ -53,6 +54,7 @@ export function configuredSyncEndpoint(demo: boolean) {
     url.hash ||
     !(
       url.protocol === 'https:' ||
+      (isLoopback && url.protocol === 'http:') ||
       (demo && process.env.EXPO_PUBLIC_P04_PROBE_ENABLED === 'true' && url.protocol === 'http:')
     )
   )

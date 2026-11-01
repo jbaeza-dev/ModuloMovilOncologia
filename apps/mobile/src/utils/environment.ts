@@ -8,3 +8,7 @@ export function isDemoMode(): boolean {
   if (process.env.EXPO_PUBLIC_APP_ENV) return process.env.EXPO_PUBLIC_APP_ENV === 'demo';
   return __DEV__ || process.env.EXPO_PUBLIC_DEMO_MODE === 'true';
 }
+
+export function isUniversityDemo(): boolean {
+  return process.env.EXPO_PUBLIC_APP_ENV === 'universidad-demo';
+}

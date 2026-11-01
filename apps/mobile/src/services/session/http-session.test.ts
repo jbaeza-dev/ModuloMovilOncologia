@@ -473,6 +473,22 @@ describe('HTTP identity, credentials and account isolation', () => {
   });
 });
 describe('Online authoritative consent', () => {
+  it('confirms consent before linkage without enabling sync, then enables it after context arrives', async () => {
+    const h = harness();
+    h.setConsent(true);
+    h.setClinical(404);
+    h.setTreatment(404);
+    await login(h);
+    await expect(h.session.acceptTerms()).resolves.toBeUndefined();
+    expect(h.session.getState()).toBe('clinical_incomplete');
+    expect(h.session.getSnapshot().uploadAllowed).toBe(false);
+    await expect(h.session.credentialsForSync()).rejects.toMatchObject({ kind: 'denied' });
+    h.setClinical(200);
+    h.setTreatment(200);
+    await h.session.refreshIdentity();
+    expect(h.session.getSnapshot().uploadAllowed).toBe(true);
+    await expect(h.session.credentialsForSync()).resolves.toMatchObject({ owner });
+  });
   it('cannot authorize from an HTTP 200 describing a revoked acceptance', async () => {
     const h = harness();
     h.setConsent(true, true);

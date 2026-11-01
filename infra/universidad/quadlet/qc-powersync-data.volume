@@ -1,0 +1,5 @@
+[Unit]
+Description=Volumen de datos persistente para checkpoints y metadatos de PowerSync
+
+[Volume]
+VolumeName=qc-powersync-data

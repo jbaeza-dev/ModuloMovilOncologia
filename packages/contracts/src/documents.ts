@@ -25,7 +25,8 @@ export interface OperationSpec {
 }
 export interface ContractDocument {
   openapi: string;
-  info: { version: string };
+  info: { version: string; title?: string; description?: string };
+  servers?: Array<{ url: string; description?: string }>;
   components: JsonObject;
   paths: Record<string, Record<string, OperationSpec | Array<Parameter | { $ref: string }>>>;
 }

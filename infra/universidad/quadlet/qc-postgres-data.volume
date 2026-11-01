@@ -1,0 +1,5 @@
+[Unit]
+Description=Volumen de datos persistente para PostgreSQL consolidado
+
+[Volume]
+VolumeName=qc-postgres-data

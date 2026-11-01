@@ -65,4 +65,6 @@ Consultar el [paquete de contratos](packages/contracts/README.md) y el [simulado
 
 CI verifica calidad móvil, contratos y HTTP con PostgreSQL. Cada capacidad se acepta con evidencia de su entorno real; pruebas unitarias, compilación y aceptación nativa son resultados distintos.
 
+Las guías operativas y los informes del equipo se conservan localmente en `.agents/docs/`, fuera del repositorio. Allí se describe la configuración de CI/CD, el `.env` privado del host y la evidencia de validación; las pruebas locales no acreditan por sí solas el servidor universitario.
+
 Cada cambio se entrega para revisión de Javier y requiere su visto bueno y mensaje exacto antes del commit. La publicación e integración de una rama necesitan su autorización aplicable.

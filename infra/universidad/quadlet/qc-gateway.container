@@ -1,0 +1,30 @@
+[Unit]
+Description=QuimioCare Gateway Móvil y Agregador de Servicios
+After=qc-postgres.service qc-clinical.service
+Requires=qc-postgres.service qc-clinical.service
+
+[Container]
+# La imagen se inyecta por digest fijado tras la compilación CI/CD
+Image=@@GATEWAY_IMAGE@@
+ContainerName=qc-gateway
+Network=qc.network
+Pull=never
+NoNewPrivileges=true
+EnvironmentFile=%h/quimiocare/shared/env/gateway.env
+Environment=APP_ENV=universidad-demo
+Environment=GATEWAY_PORT=3001
+HealthCmd=node -e "fetch('http://localhost:3001/internal/ready').then(r => process.exit(r.ok ? 0 : 1)).catch(() => process.exit(1))"
+HealthInterval=20s
+HealthTimeout=10s
+HealthRetries=3
+
+[Service]
+Restart=on-failure
+RestartSec=5
+TimeoutStopSec=45
+TimeoutStartSec=60
+CPUQuota=100%
+MemoryMax=384M
+
+[Install]
+WantedBy=default.target

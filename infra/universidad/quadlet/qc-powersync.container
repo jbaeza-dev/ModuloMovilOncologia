@@ -1,0 +1,29 @@
+[Unit]
+Description=PowerSync Service 1.27.1 (CDC y Sincronización Móvil)
+After=qc-postgres.service
+Requires=qc-postgres.service qc-powersync-data-volume.service
+
+[Container]
+Image=docker.io/journeyapps/powersync-service:1.27.1@sha256:4b5b7d70f63c5cb5afdc680f5cdbacdcbc33cbf5f8fb55b001da263d7da75866
+ContainerName=qc-powersync
+Network=qc.network
+EnvironmentFile=%h/quimiocare/shared/env/powersync.env
+Volume=qc-powersync-data.volume:/var/lib/powersync:Z
+Volume=%h/quimiocare/current/infra/universidad/powersync/service.yaml:/config/service.yaml:ro,Z
+Volume=%h/quimiocare/current/infra/universidad/powersync/sync-config.yaml:/config/sync-config.yaml:ro,Z
+Exec=start -r unified -c /config/service.yaml
+HealthCmd=node -e "fetch('http://localhost:8080/probes/liveness').then(r => process.exit(r.ok ? 0 : 1)).catch(() => process.exit(1))"
+HealthInterval=15s
+HealthTimeout=10s
+HealthRetries=5
+
+[Service]
+Restart=on-failure
+RestartSec=5
+TimeoutStopSec=45
+TimeoutStartSec=120
+CPUQuota=100%
+MemoryMax=512M
+
+[Install]
+WantedBy=default.target

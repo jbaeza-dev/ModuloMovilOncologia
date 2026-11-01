@@ -1,0 +1,29 @@
+[Unit]
+Description=PostgreSQL 17 Consolidado (qc_demo, qc_gateway_demo, qc_powersync)
+After=network-online.target
+Requires=qc-network.service qc-postgres-data-volume.service
+
+[Container]
+Image=docker.io/library/postgres:17.11-bookworm@sha256:839fbb5a4942a7758dd93e18b42ea5649807491a0545b5eeeb8f0b8bb11857a5
+ContainerName=qc-postgres
+Network=qc.network
+EnvironmentFile=%h/quimiocare/shared/env/postgres.env
+Volume=qc-postgres-data.volume:/var/lib/postgresql/data:Z
+Volume=%h/quimiocare/current/infra/universidad/postgres/postgresql.conf:/etc/postgresql/postgresql.conf:ro,Z
+Volume=%h/quimiocare/current/infra/universidad/postgres/01-consolidated-bootstrap.sh:/docker-entrypoint-initdb.d/01-consolidated-bootstrap.sh:ro,Z
+Exec=postgres -c config_file=/etc/postgresql/postgresql.conf
+HealthCmd=pg_isready -U postgres
+HealthInterval=10s
+HealthTimeout=5s
+HealthRetries=5
+
+[Service]
+Restart=on-failure
+RestartSec=5
+TimeoutStopSec=45
+TimeoutStartSec=120
+CPUQuota=100%
+MemoryMax=768M
+
+[Install]
+WantedBy=default.target

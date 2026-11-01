@@ -1,0 +1,32 @@
+[Unit]
+Description=QuimioCare Simulador Clinico de Evaluacion
+After=qc-postgres.service
+Requires=qc-postgres.service
+
+[Container]
+# La imagen se inyecta por digest fijado tras la compilación CI/CD
+Image=@@SIMULATOR_IMAGE@@
+ContainerName=qc-clinical
+Network=qc.network
+Pull=never
+NoNewPrivileges=true
+EnvironmentFile=%h/quimiocare/shared/env/clinical.env
+Environment=APP_ENV=universidad-demo
+Environment=SIMULATOR_PORT=3002
+Environment=SIMULATOR_SERVICE=clinical
+Volume=%h/quimiocare/media:/var/lib/quimiocare:Z
+HealthCmd=node -e "fetch('http://localhost:3002/health').then(r => process.exit(r.ok ? 0 : 1))"
+HealthInterval=15s
+HealthTimeout=5s
+HealthRetries=3
+
+[Service]
+Restart=on-failure
+RestartSec=5
+TimeoutStopSec=45
+TimeoutStartSec=60
+CPUQuota=100%
+MemoryMax=384M
+
+[Install]
+WantedBy=default.target

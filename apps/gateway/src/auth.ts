@@ -44,7 +44,8 @@ export function authenticator(config: GatewayConfig, log: Logger) {
         payload.exp! <= payload.iat! ||
         (config.appEnv === 'demo' && payload.cohort !== 'quimiocare-demo') ||
         (config.appEnv === 'production' &&
-          (payload.cohort === 'quimiocare-demo' || payload.demo_patient !== undefined))
+          (payload.cohort === 'quimiocare-demo' || payload.demo_patient !== undefined)) ||
+        (config.appEnv === 'universidad-demo' && payload.demo_patient !== undefined)
       )
         throw new GatewayError(401, 'NO_AUTORIZADO');
       return { id: payload.sub.toLowerCase(), token };

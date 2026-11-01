@@ -13,6 +13,7 @@
     },
     "android": {
       "package": "cl.ubiobio.quimiocare",
+      "googleServicesFile": "./google-services.json",
       "adaptiveIcon": {
         "backgroundColor": "#FFFFFF"
       }

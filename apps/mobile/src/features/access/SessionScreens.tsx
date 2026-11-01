@@ -174,7 +174,12 @@ export function OnlineConsentScreen() {
     setBusy(true);
     try {
       await session.acceptTerms();
-      setFeedback('Aceptación confirmada por el servidor.');
+      const identity = session.getSnapshot().identity;
+      setFeedback(
+        identity?.clinicalStatus === 'missing' || identity?.treatmentStatus === 'missing'
+          ? 'Aceptación confirmada por el servidor. Falta la vinculación clínica: solicita tu código desde Perfil.'
+          : 'Aceptación confirmada por el servidor.',
+      );
     } catch (e) {
       setFeedback(e instanceof Error ? e.message : 'No se pudo confirmar la aceptación.');
     } finally {

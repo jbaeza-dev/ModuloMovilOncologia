@@ -4,8 +4,21 @@ import { ApiError } from './errors.js';
 import { APPROVED_TERMS_ID, FUTURE_TERMS_ID } from './seed-data.js';
 import type { ObjectValue, ScenarioState } from './types.js';
 
-export function currentTermsId(state?: ScenarioState): string {
-  return state?.escenario === 'TERMINOS_NUEVOS' ? FUTURE_TERMS_ID : APPROVED_TERMS_ID;
+export async function currentTermsId(
+  state?: ScenarioState,
+  client?: SqlClient,
+  code = 'TERMINOS_PLATAFORMA',
+): Promise<string> {
+  if (state?.escenario === 'TERMINOS_NUEVOS') return FUTURE_TERMS_ID;
+  if (client) {
+    const row = await one<{ definicion_id: string }>(
+      client,
+      'SELECT definicion_id FROM qc_preparacion_terminos_vigentes WHERE codigo=$1',
+      [code],
+    );
+    if (row) return row.definicion_id;
+  }
+  return APPROVED_TERMS_ID;
 }
 
 export async function getTerms(client: SqlClient, id: string, code = 'TERMINOS_PLATAFORMA') {
@@ -17,7 +30,8 @@ export async function getTerms(client: SqlClient, id: string, code = 'TERMINOS_P
   if (!row) throw new ApiError(404, 'RECURSO_NO_ENCONTRADO', 'Términos no encontrados.');
   if (row.codigo !== code)
     throw new ApiError(400, 'HTTP_400', 'La definición no pertenece a la familia solicitada.');
-  return row.definicion;
+  const activeId = await currentTermsId(undefined, client, code);
+  return { ...row.definicion, vigente: id === activeId };
 }
 
 interface ConsentRow {
@@ -51,7 +65,7 @@ export async function consentStatus(
   state: ScenarioState,
   code = 'TERMINOS_PLATAFORMA',
 ) {
-  const currentId = currentTermsId(state);
+  const currentId = await currentTermsId(state, client, code);
   const current = await getTerms(client, currentId, code);
   const rows = (
     await client.query<ConsentRow>(
@@ -128,7 +142,7 @@ export async function acceptConsent(
     };
   }
   const terms = await getTerms(client, input.definicion_terminos_id, code);
-  if (input.definicion_terminos_id !== currentTermsId(state)) {
+  if (input.definicion_terminos_id !== (await currentTermsId(state, client, code))) {
     throw new ApiError(409, 'TERMINOS_DESACTUALIZADOS', 'Consulte y presente la edición vigente.');
   }
   const row = (

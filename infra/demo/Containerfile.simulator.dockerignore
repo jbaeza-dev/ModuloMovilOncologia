@@ -7,3 +7,7 @@
 .agents
 .audit
 apps/mobile
+
+.local_storage
+**/*.apk
+**/build

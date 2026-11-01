@@ -2,11 +2,13 @@ import * as Crypto from 'expo-crypto';
 import * as SecureStore from 'expo-secure-store';
 import * as AuthSession from 'expo-auth-session';
 import * as WebBrowser from 'expo-web-browser';
+import { supabaseGoogleLogin } from './supabase-google-login';
+
+WebBrowser.maybeCompleteAuthSession();
 import * as Notifications from 'expo-notifications';
 import { Platform } from 'react-native';
 import type { CredentialVault } from './credential-vault';
 import { sessionConfig } from './session-config';
-import type { SessionConfig } from './session-config';
 import { HttpSessionAdapter } from './http-session-adapter';
 import { UnconfiguredSessionAdapter } from './unconfigured-session-adapter';
 import { SessionFailure } from './http-session-types';
@@ -30,65 +32,6 @@ export function nativeVault(scope: string): CredentialVault {
     remove: async (k) => SecureStore.deleteItemAsync(key(k), await options()),
   };
 }
-async function googleLogin(config: SessionConfig, signal: AbortSignal): Promise<unknown> {
-  const redirect = config.redirectUri!;
-  const request = new AuthSession.AuthRequest({
-    clientId: 'quimiocare',
-    redirectUri: redirect,
-    responseType: AuthSession.ResponseType.Code,
-    usePKCE: true,
-  });
-  await request.makeAuthUrlAsync({ authorizationEndpoint: config.authUrl + '/authorize' });
-  if (signal.aborted || !request.codeVerifier || !request.codeChallenge)
-    throw new SessionFailure('changed');
-  const returnTo = new URL(redirect);
-  returnTo.searchParams.set('qc_state', request.state);
-  const url = new URL(config.authUrl + '/authorize');
-  url.searchParams.set('provider', 'google');
-  url.searchParams.set('redirect_to', returnTo.href);
-  url.searchParams.set('code_challenge', request.codeChallenge);
-  url.searchParams.set('code_challenge_method', 's256');
-  const dismiss = () => WebBrowser.dismissAuthSession();
-  signal.addEventListener('abort', dismiss, { once: true });
-  try {
-    const result = await WebBrowser.openAuthSessionAsync(url.href, redirect);
-    if (signal.aborted) throw new SessionFailure('changed');
-    if (result.type !== 'success') throw new SessionFailure('expired');
-    const callback = new URL(result.url),
-      expected = new URL(redirect);
-    if (
-      callback.protocol !== expected.protocol ||
-      callback.host !== expected.host ||
-      callback.pathname !== expected.pathname ||
-      callback.searchParams.get('qc_state') !== request.state ||
-      !callback.searchParams.get('code')
-    )
-      throw new SessionFailure('invalid');
-    const timeout = new AbortController(),
-      abort = () => timeout.abort();
-    signal.addEventListener('abort', abort, { once: true });
-    const timer = setTimeout(abort, 12000);
-    try {
-      const r = await fetch(config.authUrl + '/token?grant_type=pkce', {
-        method: 'POST',
-        redirect: 'error',
-        signal: timeout.signal,
-        headers: { apikey: config.publicKey!, 'content-type': 'application/json' },
-        body: JSON.stringify({
-          auth_code: callback.searchParams.get('code'),
-          code_verifier: request.codeVerifier,
-        }),
-      });
-      if (r.status !== 200) throw new SessionFailure(r.status >= 500 ? 'unavailable' : 'expired');
-      return (await r.json()) as unknown;
-    } finally {
-      clearTimeout(timer);
-      signal.removeEventListener('abort', abort);
-    }
-  } finally {
-    signal.removeEventListener('abort', dismiss);
-  }
-}
 export function createMobileSession() {
   const explicit = process.env.EXPO_PUBLIC_APP_ENV;
   const config = sessionConfig({
@@ -107,8 +50,30 @@ export function createMobileSession() {
     config,
     vault: nativeVault(config.scope),
     newId: Crypto.randomUUID,
-    ...(config.mode === 'production'
-      ? { googleLogin: (signal: AbortSignal) => googleLogin(config, signal) }
+    ...(config.mode === 'production' || config.mode === 'universidad-demo'
+      ? {
+          googleLogin: (signal: AbortSignal) =>
+            supabaseGoogleLogin(config, signal, {
+              createRequest: async () => {
+                const request = new AuthSession.AuthRequest({
+                  clientId: 'quimiocare',
+                  redirectUri: config.redirectUri!,
+                  responseType: AuthSession.ResponseType.Code,
+                  usePKCE: true,
+                });
+                await request.makeAuthUrlAsync({
+                  authorizationEndpoint: config.authUrl + '/authorize',
+                });
+                return {
+                  state: request.state,
+                  verifier: request.codeVerifier!,
+                  challenge: request.codeChallenge!,
+                };
+              },
+              open: (url, redirect) => WebBrowser.openAuthSessionAsync(url, redirect),
+              dismiss: () => WebBrowser.dismissAuthSession(),
+            }),
+        }
       : {}),
   });
   return session;

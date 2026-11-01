@@ -8,3 +8,7 @@
 .audit
 apps/mobile
 apps/simulator
+
+.local_storage
+**/*.apk
+**/build

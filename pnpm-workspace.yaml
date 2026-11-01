@@ -3,6 +3,7 @@ packages:
   - 'packages/*'
 
 allowBuilds:
+  '@scarf/scarf': false
   esbuild: true
 
 minimumReleaseAgeExclude:
@@ -38,5 +39,6 @@ minimumReleaseAgeExclude:
   - jest-expo@57.0.6
   - '@expo/metro-runtime@57.0.17'
   - expo-notifications@57.0.23
+  - swagger-ui-dist@5.34.1
 
 nodeLinker: hoisted

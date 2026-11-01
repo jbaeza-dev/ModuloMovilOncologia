@@ -1,0 +1,27 @@
+[Unit]
+Description=QuimioCare IA sintetica (sin inferencia clinica)
+After=qc-postgres.service
+Requires=qc-postgres.service
+
+[Container]
+Image=@@SIMULATOR_IMAGE@@
+ContainerName=qc-ai
+Network=qc.network
+Pull=never
+NoNewPrivileges=true
+EnvironmentFile=%h/quimiocare/shared/env/clinical.env
+Environment=SIMULATOR_SERVICE=ai
+Environment=SIMULATOR_PORT=3003
+Environment=API_DOCS_ENABLED=false
+Environment=PREPARATION_ENABLED=false
+HealthCmd=node -e "fetch('http://localhost:3003/health').then(r => process.exit(r.ok ? 0 : 1)).catch(() => process.exit(1))"
+
+[Service]
+Restart=on-failure
+RestartSec=5
+TimeoutStopSec=45
+CPUQuota=100%
+MemoryMax=256M
+
+[Install]
+WantedBy=default.target

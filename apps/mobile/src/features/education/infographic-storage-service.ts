@@ -1,7 +1,7 @@
 import { verifyStoredImage } from '../../data/local/files/image-integrity';
 import { isPathInPatientMediaDirectory } from '../../data/local/files/educational-storage';
 import { resourceContextLease } from '../../data/sync/file-protection';
-import { isDemoMode } from '../../utils/environment';
+import { isDemoMode, isUniversityDemo } from '../../utils/environment';
 import { fetchPublishedImage, publishedImage } from './remote-image';
 import { Asset } from 'expo-asset';
 import { File } from 'expo-file-system';
@@ -68,7 +68,9 @@ export async function downloadAndSaveInfographic({
   if (publication) {
     contentToSave = await fetchPublishedImage(resource, {
       signal,
-      allowDemoHttp: isDemoMode() && process.env.EXPO_PUBLIC_P04_PROBE_ENABLED === 'true',
+      allowDemoHttp:
+        (isDemoMode() && process.env.EXPO_PUBLIC_P04_PROBE_ENABLED === 'true') ||
+        isUniversityDemo(),
     });
   } else {
     const assetKey = resource.asset?.type === 'bundled' ? resource.asset.assetKey : '';

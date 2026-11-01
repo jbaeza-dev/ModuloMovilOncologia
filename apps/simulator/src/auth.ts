@@ -1,4 +1,5 @@
 import { createHash, createHmac, randomBytes, timingSafeEqual } from 'node:crypto';
+import { createRemoteJWKSet, jwtVerify, errors } from 'jose';
 import type { SimulatorConfig } from './config.js';
 import type { Database } from './db.js';
 import { one, transaction } from './db.js';
@@ -7,10 +8,26 @@ import { scenarioFor } from './scenarios.js';
 import { PATIENTS } from './types.js';
 import type { DemoPatient, Principal } from './types.js';
 
-const unauthorized = () =>
-  new ApiError(401, 'HTTP_401', 'Credencial sintética inválida o vencida.');
+const unauthorized = (msg = 'Credencial sintética inválida o vencida.') =>
+  new ApiError(401, 'HTTP_401', msg);
 const encode = (value: unknown) => Buffer.from(JSON.stringify(value)).toString('base64url');
 const hashToken = (token: string) => createHash('sha256').update(token).digest('hex');
+
+const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+
+const remoteJwks = new Map<string, ReturnType<typeof createRemoteJWKSet>>();
+function getJwks(url: string) {
+  let jwks = remoteJwks.get(url);
+  if (!jwks) {
+    jwks = createRemoteJWKSet(new URL(url), {
+      timeoutDuration: 5000,
+      cooldownDuration: 5000,
+      cacheMaxAge: 300000,
+    });
+    remoteJwks.set(url, jwks);
+  }
+  return jwks;
+}
 
 export function signAccess(
   config: SimulatorConfig,
@@ -35,7 +52,11 @@ export function signAccess(
   return `${signed}.${createHmac('sha256', config.signingKey).update(signed).digest('base64url')}`;
 }
 
-export function verifyAccess(config: SimulatorConfig, token: string, now = Date.now()): Principal {
+export function verifySyntheticAccess(
+  config: SimulatorConfig,
+  token: string,
+  now = Date.now(),
+): Principal {
   try {
     if (token.length > 8192) throw unauthorized();
     const parts = token.split('.');
@@ -79,12 +100,90 @@ export function verifyAccess(config: SimulatorConfig, token: string, now = Date.
   }
 }
 
-export function principalFromHeader(
+export async function verifyExternalAccess(
+  config: SimulatorConfig,
+  token: string,
+  now = Date.now(),
+): Promise<Principal> {
+  if (token.length > 8192) throw unauthorized();
+  try {
+    const jwksUrl = config.authJwksUrl || `${config.issuer}/.well-known/jwks.json`;
+    const jwks = getJwks(jwksUrl);
+    const { payload } = await jwtVerify(token, jwks, {
+      algorithms: [config.authAlgorithm ?? 'ES256'],
+      issuer: config.issuer,
+      audience: config.audience,
+      requiredClaims: ['sub', 'iss', 'aud', 'exp', 'iat'],
+      currentDate: new Date(now),
+    });
+    if (
+      !payload.sub ||
+      !UUID.test(payload.sub) ||
+      !Number.isInteger(payload.iat) ||
+      !Number.isInteger(payload.exp) ||
+      payload.iat! > now / 1000 + 30 ||
+      payload.exp! <= payload.iat! ||
+      payload.role !== 'authenticated' ||
+      payload.is_anonymous === true ||
+      typeof payload.app_metadata !== 'object' ||
+      !payload.app_metadata ||
+      (payload.app_metadata as Record<string, unknown>).provider !== 'google'
+    ) {
+      throw unauthorized('Subject inválido.');
+    }
+    return {
+      id: payload.sub.toLowerCase(),
+      tipo: 'external',
+      issuer: config.issuer,
+      ...(typeof payload.user_metadata === 'object' && payload.user_metadata
+        ? {
+            displayName: String(
+              (payload.user_metadata as Record<string, unknown>).full_name ??
+                (payload.user_metadata as Record<string, unknown>).name ??
+                '',
+            )
+              .split('')
+              .filter((c) => c.charCodeAt(0) >= 32 && c.charCodeAt(0) !== 127)
+              .join('')
+              .trim()
+              .slice(0, 120),
+          }
+        : {}),
+      ...(typeof payload.email === 'string' ? { email: payload.email } : {}),
+    };
+  } catch (error) {
+    if (error instanceof ApiError) throw error;
+    if (error instanceof errors.JOSEError && !(error instanceof errors.JWKSTimeout)) {
+      throw unauthorized('Token de Supabase inválido o expirado.');
+    }
+    throw new ApiError(503, 'HTTP_503', 'Autoridad de claves no disponible.');
+  }
+}
+
+export function verifyAccess(
+  config: SimulatorConfig,
+  token: string,
+  now = Date.now(),
+): Principal | Promise<Principal> {
+  if (config.authProvider === 'supabase') {
+    return verifyExternalAccess(config, token, now);
+  }
+  return verifySyntheticAccess(config, token, now);
+}
+
+export async function operatorFromHeader(
   config: SimulatorConfig,
   authorization: string | undefined,
-): Principal {
+): Promise<Principal> {
+  return await principalFromHeader(config, authorization);
+}
+
+export async function principalFromHeader(
+  config: SimulatorConfig,
+  authorization: string | undefined,
+): Promise<Principal> {
   if (!authorization?.startsWith('Bearer ')) throw unauthorized();
-  return verifyAccess(config, authorization.slice(7));
+  return await verifyAccess(config, authorization.slice(7));
 }
 
 export function verifyControl(config: SimulatorConfig, supplied: string | undefined): void {
@@ -124,7 +223,6 @@ export async function refreshSession(db: Database, config: SimulatorConfig, toke
     await client.query('UPDATE qc_demo_refresh SET consumido=true WHERE token_hash=$1', [
       hashToken(token),
     ]);
-    // Refresh rotation does not extend the original absolute 24-hour lifetime.
     await client.query(
       'INSERT INTO qc_demo_refresh(token_hash,paciente_id,vence_en) VALUES($1,$2,$3)',
       [hashToken(next), stored.paciente_id, stored.vence_en],
