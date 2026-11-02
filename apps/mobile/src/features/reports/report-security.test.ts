@@ -17,6 +17,7 @@ import {
   persistReportFile,
   persistReportPdf,
   persistReportXlsx,
+  readPatientReportA11ySnapshot,
   registerPendingReportCleanup,
   withPatientReportLock,
   type BinaryReportStorageAdapter,
@@ -710,6 +711,125 @@ describe('gestión de reportes guardados, verificación y tolerancia a fallos', 
     await expect(listPatientReports(patientA, errorAdapter)).rejects.toThrow(
       'EACCES: permiso denegado al leer directorio',
     );
+  });
+});
+
+describe('staging en dos fases de PDF y archivo compañero de accesibilidad (.pdf.a11y.json)', () => {
+  it('guarda atómicamente el PDF y su instantánea accesible cifrada', async () => {
+    const { File, Paths } = await import('expo-file-system');
+    const dummyPdf = new File(Paths.cache, 'source_test_doc.pdf');
+    await dummyPdf.write(new Uint8Array([1, 2, 3, 4, 5, 6]));
+
+    const snapshot = {
+      pacienteId: patientA,
+      periodDays: 30,
+      summary: { vitalsCount: 10, symptomsCount: 2 },
+    };
+
+    const { persistentUri, filename } = await persistReportPdf(
+      patientA,
+      dummyPdf.uri,
+      30,
+      undefined,
+      snapshot,
+    );
+
+    expect(filename).toMatch(/^reporte_30d_\d+\.pdf$/);
+    const pdfFile = new File(persistentUri);
+    expect(pdfFile.exists).toBe(true);
+
+    const companionFile = new File(`${persistentUri}.a11y.json`);
+    expect(companionFile.exists).toBe(true);
+
+    // La lista de reportes de usuario NO expone el .a11y.json como reporte duplicado
+    const list = await getPatientReportList(patientA);
+    expect(list.some((r) => r.filename === filename)).toBe(true);
+    expect(list.some((r) => r.filename.includes('.a11y.json'))).toBe(false);
+
+    // Lectura accesible desencripta y recupera el snapshot idéntico
+    const recovered = await readPatientReportA11ySnapshot<typeof snapshot>(patientA, filename);
+    expect(recovered).not.toBeNull();
+    expect(recovered?.summary.vitalsCount).toBe(10);
+    expect(recovered?.summary.symptomsCount).toBe(2);
+
+    // Eliminar el reporte elimina tanto el PDF como su compañero .a11y.json
+    const deleted = await deletePatientReport(patientA, filename);
+    expect(deleted).toBe(true);
+    expect(pdfFile.exists).toBe(false);
+    expect(companionFile.exists).toBe(false);
+  });
+
+  it('reporte legado sin instantánea devuelve null sin error ni consulta viva', async () => {
+    const { File, Paths } = await import('expo-file-system');
+    const dummyPdf = new File(Paths.cache, 'legacy_test_doc.pdf');
+    await dummyPdf.write(new Uint8Array([9, 8, 7]));
+
+    const { filename } = await persistReportPdf(patientA, dummyPdf.uri, 7);
+    const a11y = await readPatientReportA11ySnapshot(patientA, filename);
+    expect(a11y).toBeNull();
+
+    await deletePatientReport(patientA, filename);
+  });
+
+  it('recuperación ante interrupción: si falla la escritura del archivo compañero, elimina ambos temporales', async () => {
+    const { Directory, File, Paths } = await import('expo-file-system');
+    const dummyPdf = new File(Paths.cache, 'failing_test_doc.pdf');
+    await dummyPdf.write(new Uint8Array([1, 1, 1]));
+
+    let writeCount = 0;
+    const failingAdapter: BinaryReportStorageAdapter = {
+      async writeBytes(uri, b) {
+        writeCount++;
+        if (uri.includes('.a11y.json.tmp')) {
+          throw new Error('Fallo simulado al escribir instantánea accesible');
+        }
+        await new File(uri).write(b);
+      },
+      async copyFile(s, t) {
+        await new File(s).copy(new File(t));
+      },
+      async moveFile(s, t) {
+        await new File(s).move(new File(t));
+      },
+      async deleteFile(uri) {
+        const f = new File(uri);
+        if (f.exists) await f.delete();
+      },
+      async fileExists(uri) {
+        return new File(uri).exists;
+      },
+      async directoryExists(dir) {
+        return new Directory(dir).exists;
+      },
+      async getFileSize(uri) {
+        const f = new File(uri);
+        return f.exists ? f.size : null;
+      },
+      async ensureDirectory(dir) {
+        new Directory(dir).create({ intermediates: true, idempotent: true });
+      },
+      async listDirectory(dir) {
+        const d = new Directory(dir);
+        if (!d.exists) return [];
+        return d.list().map((e) => ({
+          uri: e.uri,
+          name: e.name ?? Paths.basename(e.uri),
+          isFile: e instanceof File,
+          size: e instanceof File ? e.size : null,
+        }));
+      },
+    };
+
+    await expect(
+      persistReportPdf(patientA, dummyPdf.uri, 90, failingAdapter, { test: 123 }),
+    ).rejects.toThrow('Fallo simulado al escribir instantánea accesible');
+
+    // Comprobar que no quedaron archivos temporales huérfanos
+    const dir = getPatientReportDirectory(patientA);
+    const files = new Directory(dir).list();
+    const tempOrphans = files.filter((f) => f.name && f.name.includes('.tmp'));
+    expect(tempOrphans.length).toBe(0);
+    expect(writeCount).toBeGreaterThan(0);
   });
 });
 

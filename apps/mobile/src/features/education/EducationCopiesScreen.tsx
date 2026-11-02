@@ -1,4 +1,4 @@
-import Feather from '@expo/vector-icons/Feather';
+import { AppIcon as Feather } from '../../components/AppIcon';
 import { router } from 'expo-router';
 import { useCallback, useState } from 'react';
 import { Alert, Pressable, StyleSheet, Text, View } from 'react-native';
@@ -67,23 +67,21 @@ export function EducationCopiesScreen() {
             copy.rutaRelativa,
           );
           if (!physicallyDeleted) {
-            throw new Error(
-              'No se pudo confirmar la eliminación física del archivo del almacenamiento local.',
-            );
+            throw new Error('No pudimos confirmar que el archivo se haya eliminado.');
           }
         }
         await repository.education.removeLocalCopy(copy.contentId);
       });
       refresh();
     } catch {
-      Alert.alert('Error', 'No se pudo eliminar la copia local del dispositivo.');
+      Alert.alert('Error', 'No se pudo eliminar el archivo del teléfono.');
     } finally {
       setActionBusy(false);
     }
   }
 
   return (
-    <Screen title="Mis copias guardadas">
+    <Screen mascotPose="lectura" title="Mis copias guardadas">
       <DemoBadge />
       <BodyText>Archivos descargados en almacenamiento privado para lectura sin conexión.</BodyText>
 
@@ -122,10 +120,10 @@ export function EducationCopiesScreen() {
       </View>
 
       {loading ? (
-        <BodyText>Consultando copias locales…</BodyText>
+        <BodyText>Buscando archivos guardados…</BodyText>
       ) : error ? (
         <InfoCard>
-          <Text style={styles.errorText}>No se pudieron consultar las copias locales.</Text>
+          <Text style={styles.errorText}>No se pudieron consultar los archivos guardados.</Text>
           <VisualButton label="Reintentar" secondary onPress={refresh} />
         </InfoCard>
       ) : filteredCopies.length === 0 ? (

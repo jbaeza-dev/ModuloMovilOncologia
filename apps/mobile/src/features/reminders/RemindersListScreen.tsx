@@ -1,4 +1,4 @@
-import Feather from '@expo/vector-icons/Feather';
+import { AppIcon as Feather } from '../../components/AppIcon';
 import { SharedAgendaScreen } from './SharedAgendaScreen';
 import { router, useFocusEffect } from 'expo-router';
 import { useCallback, useMemo, useState } from 'react';
@@ -355,7 +355,7 @@ function LegacyRemindersListScreen() {
   };
 
   return (
-    <Screen title="Recordatorios">
+    <Screen mascotPose="recordatorio" title="Recordatorios">
       <DemoBadge />
 
       {/* Switch Maestro */}
@@ -373,7 +373,7 @@ function LegacyRemindersListScreen() {
             <Text style={styles.heading}>Activar recordatorios</Text>
             <BodyText>
               {prefs.enabled
-                ? 'Los avisos se programan de forma local en este dispositivo.'
+                ? 'Los avisos suenan en este teléfono.'
                 : 'Avisos desactivados. Tus horarios guardados se mantienen listos para cuando los reactives.'}
             </BodyText>
           </View>
@@ -616,10 +616,7 @@ function LegacyRemindersListScreen() {
               (se renuevan al abrir la aplicación).
             </BodyText>
           ) : (
-            <BodyText>
-              Los avisos se programan de forma local en este dispositivo y se renuevan al abrir la
-              aplicación.
-            </BodyText>
+            <BodyText>Los avisos suenan en este teléfono y se renuevan al abrir la app.</BodyText>
           )}
 
           {coordinatorResult && coordinatorResult.truncadas > 0 ? (

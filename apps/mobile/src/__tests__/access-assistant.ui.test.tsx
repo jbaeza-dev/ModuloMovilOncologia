@@ -551,26 +551,32 @@ describe('Incremento 6: UI de Acceso, Navegación Raíz, Sesión y Asistente', (
     });
   });
 
-  describe('Acceso Público y Campos de Credenciales Deshabilitados', () => {
-    it('LoginScreen renderiza campos de correo y contraseña deshabilitados sin servicio central', async () => {
+  describe('Acceso Público y Bienvenida (Vista 01)', () => {
+    it('LoginScreen presenta la bienvenida con MascotHero (pose saludo), sin campos falsos de correo/contraseña y acceso a términos', async () => {
       await render(<LoginScreen />);
 
       expect(await screen.findByText('VISTA DE DEMOSTRACIÓN · DATOS FICTICIOS')).toBeTruthy();
-      expect(await screen.findByText('Servicios de acceso')).toBeTruthy();
+      expect(await screen.findByText('QUIMIOCARE · CONTIGO EN CASA')).toBeTruthy();
+      expect(await screen.findByText('Te damos la bienvenida.')).toBeTruthy();
+      expect(
+        screen.getByTestId('mascot-avatar-saludo', { includeHiddenElements: true }),
+      ).toBeTruthy();
 
-      const emailInput = screen.getByLabelText(
-        'Correo electrónico (deshabilitado · sin servicio central)',
-      );
-      expect(emailInput.props.editable).toBe(false);
-
-      const passwordInput = screen.getByLabelText(
-        'Contraseña (deshabilitado · sin servicio central)',
-      );
-      expect(passwordInput.props.editable).toBe(false);
+      // No expone campos falsos de correo o contraseña en la bienvenida rediseñada
+      expect(
+        screen.queryByLabelText('Correo electrónico (deshabilitado · sin servicio central)'),
+      ).toBeNull();
+      expect(
+        screen.queryByLabelText('Contraseña (deshabilitado · sin servicio central)'),
+      ).toBeNull();
 
       const selectBtn = screen.getByText('Seleccionar paciente de prueba');
       await fireEvent.press(selectBtn);
-      expect(mockRouter.navigate).toHaveBeenCalledWith('/acceso/seleccionar-paciente');
+      expect(mockRouter.push).toHaveBeenCalledWith('/acceso/seleccionar-paciente');
+
+      const termsCard = screen.getByLabelText('Términos y consentimiento informado');
+      await fireEvent.press(termsCard);
+      expect(mockRouter.push).toHaveBeenCalledWith('/acceso/consentimientos');
     });
 
     it('RegisterScreen renderiza campos de registro deshabilitados', async () => {
@@ -593,7 +599,7 @@ describe('Incremento 6: UI de Acceso, Navegación Raíz, Sesión y Asistente', (
 
       const consentBtn = screen.getByText('Ver consentimientos');
       await fireEvent.press(consentBtn);
-      expect(mockRouter.navigate).toHaveBeenCalledWith('/acceso/consentimientos');
+      expect(mockRouter.push).toHaveBeenCalledWith('/acceso/consentimientos');
     });
 
     it('ContextGuard permite seleccionar paciente cuando isClosing es false y se deshabilita cuando isClosing es true', async () => {
@@ -621,9 +627,7 @@ describe('Incremento 6: UI de Acceso, Navegación Raíz, Sesión y Asistente', (
       );
 
       expect(
-        await screen.findByText(
-          'Este asistente ofrece orientación de autocuidado. Sus respuestas no constituyen un diagnóstico ni una prescripción y no sustituyen la consulta médica.',
-        ),
+        await screen.findByText('Orientación educativa. No reemplaza a tu equipo de salud.'),
       ).toBeTruthy();
       expect(await screen.findByText('0 / 2000')).toBeTruthy();
     });
@@ -668,12 +672,10 @@ describe('Incremento 6: UI de Acceso, Navegación Raíz, Sesión y Asistente', (
       expect(screen.getByText('Fuentes: Guía sintética (guía 1)')).toBeOnTheScreen();
       expect(screen.getByText(/Confianza informada: baja/)).toBeOnTheScreen();
       expect(screen.getByRole('alert')).toHaveTextContent(
-        /QuimioCare no avisó automáticamente a profesionales\./,
+        /QuimioCare no ha avisado a profesionales\./,
       );
       expect(
-        screen.getByText(
-          'Este asistente ofrece orientación de autocuidado. Sus respuestas no constituyen un diagnóstico ni una prescripción y no sustituyen la consulta médica.',
-        ),
+        screen.getByText('Orientación educativa. No reemplaza a tu equipo de salud.'),
       ).toBeOnTheScreen();
     });
     it('conserva el aviso permanente al mostrar detail de un error contractual', async () => {
@@ -705,9 +707,7 @@ describe('Incremento 6: UI de Acceso, Navegación Raíz, Sesión y Asistente', (
       await fireEvent.press(screen.getByText('Enviar consulta'));
       expect(await screen.findByText('Servicio sintético indisponible.')).toBeOnTheScreen();
       expect(
-        screen.getByText(
-          'Este asistente ofrece orientación de autocuidado. Sus respuestas no constituyen un diagnóstico ni una prescripción y no sustituyen la consulta médica.',
-        ),
+        screen.getByText('Orientación educativa. No reemplaza a tu equipo de salud.'),
       ).toBeOnTheScreen();
     });
     it('al cancelar la consulta en curso, restaura el texto previo en el campo de entrada', async () => {

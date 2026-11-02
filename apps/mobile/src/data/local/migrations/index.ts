@@ -1,9 +1,23 @@
+import { migration17 } from './017_restaurar_horario_documentado';
 import { POWERSYNC_SQL, POWERSYNC_VERSION } from './011_powersync';
 import { AGENDA_COMPARTIDA_SQL, AGENDA_COMPARTIDA_VERSION } from './013_agenda_compartida';
 import {
   PRESION_INDEPENDIENTE_SQL,
   PRESION_INDEPENDIENTE_VERSION,
 } from './012_presion_independiente';
+import {
+  BITACORA_MEDICAMENTOS_SQL,
+  BITACORA_MEDICAMENTOS_VERSION,
+} from './014_bitacora_medicamentos';
+import {
+  BITACORA_PROGRAMACION_SQL,
+  BITACORA_PROGRAMACION_VERSION,
+} from './015_bitacora_programacion_y_eventos';
+import {
+  BITACORA_ZONA_HORARIA_SQL,
+  BITACORA_ZONA_HORARIA_VERSION,
+  runMigration16,
+} from './016_bitacora_es_programado_y_zona_horaria';
 import type { SqlConnection } from '../core/sql';
 import { REGISTROS_SQL, REGISTROS_VERSION } from './001_registros';
 import { CONTEXTO_SQL, CONTEXTO_VERSION } from './002_contexto';
@@ -22,7 +36,11 @@ import {
   RETIRO_MARKDOWN_EDUCATIVO_VERSION,
 } from './010_retiro_markdown_educativo';
 
-export type Migration = { version: number; sql: string };
+export type Migration = {
+  version: number;
+  sql?: string;
+  run?: (connection: SqlConnection) => Promise<void>;
+};
 export const migrations: readonly Migration[] = [
   { version: REGISTROS_VERSION, sql: REGISTROS_SQL },
   { version: CONTEXTO_VERSION, sql: CONTEXTO_SQL },
@@ -37,6 +55,14 @@ export const migrations: readonly Migration[] = [
   { version: POWERSYNC_VERSION, sql: POWERSYNC_SQL },
   { version: PRESION_INDEPENDIENTE_VERSION, sql: PRESION_INDEPENDIENTE_SQL },
   { version: AGENDA_COMPARTIDA_VERSION, sql: AGENDA_COMPARTIDA_SQL },
+  { version: BITACORA_MEDICAMENTOS_VERSION, sql: BITACORA_MEDICAMENTOS_SQL },
+  { version: BITACORA_PROGRAMACION_VERSION, sql: BITACORA_PROGRAMACION_SQL },
+  {
+    version: BITACORA_ZONA_HORARIA_VERSION,
+    sql: BITACORA_ZONA_HORARIA_SQL,
+    run: runMigration16,
+  },
+  { version: 17, run: migration17 },
 ];
 
 export async function migrateDatabase(
@@ -53,7 +79,12 @@ export async function migrateDatabase(
   for (const migration of available) {
     if (migration.version <= current) continue;
     await connection.transaction(async (transaction) => {
-      await transaction.exec(migration.sql);
+      if (migration.sql) {
+        await transaction.exec(migration.sql);
+      }
+      if (migration.run) {
+        await migration.run(transaction);
+      }
       await transaction.exec(`PRAGMA user_version = ${migration.version}`);
     });
   }

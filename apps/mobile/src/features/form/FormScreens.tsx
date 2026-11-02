@@ -56,7 +56,7 @@ export function FormScreen() {
       </InfoCard>
       <VisualButton
         label={section === 0 ? 'Siguiente sección' : 'Ver resumen de ejemplo'}
-        onPress={() => (section === 0 ? setSection(1) : router.navigate('/formulario/resumen'))}
+        onPress={() => (section === 0 ? setSection(1) : router.push('/formulario/resumen'))}
       />
       {section > 0 ? (
         <VisualButton label="Sección anterior" secondary onPress={() => setSection(0)} />

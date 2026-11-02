@@ -1,5 +1,4 @@
 import { Redirect } from 'expo-router';
-
-export default function RegistrarSintomasLegacyRedirect() {
-  return <Redirect href="/formulario" />;
+export default function LegacyRoute() {
+  return <Redirect href="/formulario/sintomas-libres" />;
 }

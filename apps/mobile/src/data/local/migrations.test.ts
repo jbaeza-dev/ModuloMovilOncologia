@@ -1,7 +1,7 @@
 import { join } from 'node:path';
 import { afterEach, describe, expect, it } from 'vitest';
 
-import { migrateDatabase } from './migrations';
+import { migrateDatabase, migrations } from './migrations';
 import { REGISTROS_SQL } from './migrations/001_registros';
 import { CONTEXTO_SQL } from './migrations/002_contexto';
 import { DESCARGAS_SQL } from './migrations/003_descargas';
@@ -39,7 +39,7 @@ describe('migraciones SQLite', () => {
     await migrateDatabase(second);
     expect(
       (await second.first<{ user_version: number }>('PRAGMA user_version'))?.user_version,
-    ).toBe(13);
+    ).toBe(17);
     expect(
       (await createPatientRepository(second, patientA, ids()).vitals('2026-01-01', 30, 0)).map(
         (row) => row.id,
@@ -146,11 +146,11 @@ describe('migraciones SQLite', () => {
 
   it('rechaza una versión de base posterior sin modificarla', async () => {
     const database = open();
-    await database.exec('PRAGMA user_version = 14');
+    await database.exec('PRAGMA user_version = 18');
     await expect(migrateDatabase(database)).rejects.toThrow('versión más reciente');
     expect(
       (await database.first<{ user_version: number }>('PRAGMA user_version'))?.user_version,
-    ).toBe(14);
+    ).toBe(18);
   });
 
   it('migra de versión 3 a 4 preservando registros previos de cola_envio y ampliando CHECK para nuevos tipos', async () => {
@@ -281,7 +281,7 @@ describe('migraciones SQLite', () => {
     // 2. Aplicar todas las migraciones (hasta v10)
     await migrateDatabase(database);
     const v7 = await database.first<{ user_version: number }>('PRAGMA user_version');
-    expect(v7?.user_version).toBe(13);
+    expect(v7?.user_version).toBe(17);
 
     // Verificar que los datos previos se conservaron intactos
     const vital = await database.first<{ id: string }>(
@@ -321,7 +321,7 @@ describe('migraciones SQLite', () => {
     // 2. Aplicar todas las migraciones (hasta v10)
     await migrateDatabase(database);
     const v = await database.first<{ user_version: number }>('PRAGMA user_version');
-    expect(v?.user_version).toBe(13);
+    expect(v?.user_version).toBe(17);
 
     // 3. Comprobar que la descarga previa conserva sus valores y tiene los nuevos defaults
     const prev = await database.first<{
@@ -533,7 +533,7 @@ describe('migraciones SQLite', () => {
     await migrateDatabase(database);
 
     const versionRow = await database.first<{ user_version: number }>('PRAGMA user_version');
-    expect(versionRow?.user_version).toBe(13);
+    expect(versionRow?.user_version).toBe(17);
 
     // 4. Verificar integridad referencial completa
     const fkErrors = await database.all('PRAGMA foreign_key_check');
@@ -640,7 +640,7 @@ describe('migraciones SQLite', () => {
     await migrateDatabase(database);
 
     const versionRow = await database.first<{ user_version: number }>('PRAGMA user_version');
-    expect(versionRow?.user_version).toBe(13);
+    expect(versionRow?.user_version).toBe(17);
 
     // 4. Verificar integridad referencial
     const fkErrors = await database.all('PRAGMA foreign_key_check');
@@ -703,4 +703,302 @@ describe('migraciones SQLite', () => {
     expect(jpegRow?.formato).toBe('jpeg');
     expect(jpegRow?.retirado_en).toBeNull();
   });
+
+  it('migración 14 y 15: bitácora de medicamentos impide duplicados por horario programado, rectifica y conserva historial de eventos inmutable', async () => {
+    const database = open();
+    await migrateDatabase(database);
+
+    const {
+      logMedicationIntake,
+      getMedicationIntakesForDate,
+      getIntakeEventsForToma,
+      generateIntakeLogId,
+    } = await import('./medication-intake-log');
+
+    const fechaCivil = '2026-11-01';
+    const horario = '08:00';
+    const medId = 'med-ondansetron';
+    const id = generateIntakeLogId(patientA, medId, fechaCivil, horario);
+
+    // 1. Registrar toma inicial
+    await logMedicationIntake(database, {
+      id,
+      paciente_id: patientA,
+      medicamento_id: medId,
+      medicamento_nombre: 'Ondansetrón 8 mg',
+      dosis: '8 mg',
+      fecha_civil: fechaCivil,
+      horario_programado: horario,
+      fecha_hora: '2026-11-01T08:00:00.000Z',
+      estado: 'taken',
+      notas: 'Tomada con agua',
+      registrado_en: '2026-11-01T08:00:00.000Z',
+    });
+
+    let records = await getMedicationIntakesForDate(database, patientA, fechaCivil);
+    expect(records).toHaveLength(1);
+    expect(records[0].estado).toBe('taken');
+    expect(records[0].rectificado_en).toBeNull();
+    expect(records[0].estado_anterior).toBeNull();
+
+    let events = await getIntakeEventsForToma(database, id);
+    expect(events).toHaveLength(1);
+    expect(events[0].tipo_evento).toBe('registro_inicial');
+    expect(events[0].estado_nuevo).toBe('taken');
+    expect(events[0].estado_anterior).toBeNull();
+
+    // 2. Rectificar la misma ocurrencia programada a "omitted"
+    await logMedicationIntake(database, {
+      id,
+      paciente_id: patientA,
+      medicamento_id: medId,
+      medicamento_nombre: 'Ondansetrón 8 mg',
+      dosis: '8 mg',
+      fecha_civil: fechaCivil,
+      horario_programado: horario,
+      fecha_hora: '2026-11-01T08:15:00.000Z',
+      estado: 'omitted',
+      notas: 'Náuseas matutinas',
+      registrado_en: '2026-11-01T08:15:00.000Z',
+    });
+
+    records = await getMedicationIntakesForDate(database, patientA, fechaCivil);
+    expect(records).toHaveLength(1); // NO duplicado
+    expect(records[0].estado).toBe('omitted');
+    expect(records[0].rectificado_en).toBe('2026-11-01T08:15:00.000Z');
+    expect(records[0].estado_anterior).toBe('taken');
+    expect(records[0].notas_anteriores).toBe('Tomada con agua');
+
+    events = await getIntakeEventsForToma(database, id);
+    expect(events).toHaveLength(2); // Historial auditado completo
+    expect(events[1].tipo_evento).toBe('rectificacion');
+    expect(events[1].estado_nuevo).toBe('omitted');
+    expect(events[1].estado_anterior).toBe('taken');
+  });
+
+  it('actualización de v14 a v15: migra datos preexistentes de versión anterior sin borrar almacenamiento', async () => {
+    const database = open();
+
+    // 1. Migrar únicamente hasta la versión 14 (esquema inicial del primer APK)
+    const { BITACORA_MEDICAMENTOS_VERSION } =
+      await import('./migrations/014_bitacora_medicamentos');
+    const v14Migrations = migrations.filter((m) => m.version <= BITACORA_MEDICAMENTOS_VERSION);
+    await migrateDatabase(database, v14Migrations);
+
+    const v14Version = (await database.first<{ user_version: number }>('PRAGMA user_version'))
+      ?.user_version;
+    expect(v14Version).toBe(14);
+
+    // 2. Insertar registros preexistentes en v14 dentro del mismo minuto (para asegurar que ninguno se pierda)
+    await database.run(
+      `INSERT INTO qc_medication_intake_log
+       (id, paciente_id, medicamento_id, medicamento_nombre, dosis, fecha_hora, estado, notas, registrado_en)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?), (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+      [
+        'legacy-intake-001',
+        patientA,
+        'med-ondansetron',
+        'Ondansetrón 8 mg',
+        '8 mg',
+        '2026-10-31T08:30:10.000Z',
+        'taken',
+        'Primera toma en clínica',
+        '2026-10-31T08:30:10.000Z',
+        'legacy-intake-002',
+        patientA,
+        'med-ondansetron',
+        'Ondansetrón 8 mg',
+        '8 mg',
+        '2026-10-31T08:30:40.000Z',
+        'omitted',
+        'Dosis repetida por error descartada',
+        '2026-10-31T08:30:40.000Z',
+      ],
+    );
+
+    // 3. Ejecutar migración completa (deberá ascender a v16)
+    await migrateDatabase(database);
+
+    const v16Version = (await database.first<{ user_version: number }>('PRAGMA user_version'))
+      ?.user_version;
+    expect(v16Version).toBe(17);
+
+    // 4. Comprobar que los registros preexistentes fueron migrados y enriquecidos sin perder ninguno
+    const { getMedicationIntakesForDate, getIntakeEventsForToma, logMedicationIntake } =
+      await import('./medication-intake-log');
+
+    // Verificar en fecha civil local
+    const rows = await database.all<{ id: string; fecha_civil: string }>(
+      'SELECT id, fecha_civil FROM qc_medication_intake_log WHERE paciente_id = ?',
+      [patientA],
+    );
+    expect(rows).toHaveLength(2);
+    const targetDate = rows[0].fecha_civil;
+
+    const migrated = await getMedicationIntakesForDate(database, patientA, targetDate);
+    expect(migrated).toHaveLength(2); // CERO pérdida de registros históricos
+    expect(migrated[0].id).toBe('legacy-intake-001');
+    expect(migrated[0].es_programado).toBe(0);
+    expect(migrated[0].horario_programado).toBe('sin_horario#legacy-intake-001');
+    expect(migrated[0].estado).toBe('taken');
+
+    expect(migrated[1].id).toBe('legacy-intake-002');
+    expect(migrated[1].es_programado).toBe(0);
+    expect(migrated[1].horario_programado).toBe('sin_horario#legacy-intake-002');
+    expect(migrated[1].estado).toBe('omitted');
+
+    // Comprobar que se generó evento de auditoría inicial para ambos
+    const initialEvents = await getIntakeEventsForToma(database, 'legacy-intake-001');
+    expect(initialEvents).toHaveLength(1);
+    expect(initialEvents[0].tipo_evento).toBe('registro_inicial');
+    expect(initialEvents[0].estado_nuevo).toBe('taken');
+
+    // 5. Comprobar que se puede rectificar el registro migrado sin errores
+    await logMedicationIntake(database, {
+      id: 'legacy-intake-001',
+      paciente_id: patientA,
+      medicamento_id: 'med-ondansetron',
+      medicamento_nombre: 'Ondansetrón 8 mg',
+      dosis: '8 mg',
+      fecha_civil: targetDate,
+      horario_programado: 'sin_horario#legacy-intake-001',
+      es_programado: 0,
+      fecha_hora: '2026-10-31T08:45:00.000Z',
+      estado: 'omitted',
+      notas: 'Rectificación de enfermería',
+      registrado_en: '2026-10-31T08:45:00.000Z',
+    });
+
+    const updated = await getMedicationIntakesForDate(database, patientA, targetDate);
+    expect(updated).toHaveLength(2);
+    const updated001 = updated.find((u) => u.id === 'legacy-intake-001');
+    expect(updated001?.estado).toBe('omitted');
+    expect(updated001?.estado_anterior).toBe('taken');
+    expect(updated001?.rectificado_en).toBe('2026-10-31T08:45:00.000Z');
+  });
+
+  it('actualización de v15 a v16: parte del esquema v15 previo, incorpora es_programado, calibra fecha_civil en America/Santiago cerca de medianoche y preserva tomas', async () => {
+    const database = open();
+
+    // 1. Migrar hasta la versión 15 exactamente como fue desplegada en el APK anterior
+    const v15Migrations = migrations.filter((m) => m.version <= 15);
+    await migrateDatabase(database, v15Migrations);
+
+    const v15Version = (await database.first<{ user_version: number }>('PRAGMA user_version'))
+      ?.user_version;
+    expect(v15Version).toBe(15);
+
+    // Verificar que en el esquema v15 anterior NO existía la columna es_programado
+    const v15Columns = await database.all<{ name: string }>(
+      'PRAGMA table_info(qc_medication_intake_log)',
+    );
+    expect(v15Columns.map((c) => c.name)).not.toContain('es_programado');
+
+    // 2. Insertar registros en la base v15 existente:
+    // Caso 1: Cerca de medianoche en horario de verano chileno (UTC-3):
+    // 2026-10-18T01:30:00.000Z corresponde a las 22:30:00 del día civil 2026-10-17 en America/Santiago.
+    // En v15 fue guardado erróneamente con substr UTC como '2026-10-18' y con horario '09:00' por fallback.
+    // Caso 2: Registro después de medianoche en America/Santiago:
+    // 2026-10-18T03:30:00.000Z corresponde a las 00:30:00 del día civil 2026-10-18 en America/Santiago, con horario '10:00'.
+    // Caso 3: Cerca de medianoche en horario de invierno chileno (UTC-4):
+    // 2026-06-15T02:00:00.000Z corresponde a las 22:00:00 del día civil 2026-06-14 en America/Santiago.
+    await database.run(
+      `INSERT INTO qc_medication_intake_log
+       (id, paciente_id, medicamento_id, medicamento_nombre, dosis, fecha_civil, horario_programado, fecha_hora, estado, notas, registrado_en)
+       VALUES
+       ('intake-midnight-summer', ?, 'med-ondansetron', 'Ondansetrón 8 mg', '8 mg', '2026-10-18', '09:00', '2026-10-18T01:30:00.000Z', 'taken', 'Toma nocturna antes de medianoche', '2026-10-18T01:30:00.000Z'),
+       ('intake-after-midnight', ?, 'med-ondansetron', 'Ondansetrón 8 mg', '8 mg', '2026-10-18', '10:00', '2026-10-18T03:30:00.000Z', 'taken', 'Toma en la madrugada programada', '2026-10-18T03:30:00.000Z'),
+       ('intake-midnight-winter', ?, 'med-paracetamol', 'Paracetamol 500 mg', '500 mg', '2026-06-15', 'sin_horario', '2026-06-15T02:00:00.000Z', 'taken', 'Toma en invierno antes de medianoche', '2026-06-15T02:00:00.000Z')`,
+      [patientA, patientA, patientA],
+    );
+
+    // 3. Ejecutar actualización de migraciones (debe aplicar migración 16 sobre la base v15 existente)
+    await migrateDatabase(database);
+
+    const v16Version = (await database.first<{ user_version: number }>('PRAGMA user_version'))
+      ?.user_version;
+    expect(v16Version).toBe(17);
+
+    // 4. Verificar que ahora la columna es_programado existe en la tabla
+    const v16Columns = await database.all<{ name: string }>(
+      'PRAGMA table_info(qc_medication_intake_log)',
+    );
+    expect(v16Columns.map((c) => c.name)).toContain('es_programado');
+
+    // 5. Verificar calibración exacta de la fecha civil en America/Santiago y preservación sin pérdida
+    const rowSummer = await database.first<{
+      id: string;
+      fecha_civil: string;
+      horario_programado: string;
+      es_programado: number;
+    }>(
+      'SELECT id, fecha_civil, horario_programado, es_programado FROM qc_medication_intake_log WHERE id = ?',
+      ['intake-midnight-summer'],
+    );
+    expect(rowSummer).not.toBeNull();
+    // En America/Santiago (UTC-3), 2026-10-18T01:30:00.000Z es 22:30 del 17 de octubre:
+    expect(rowSummer?.fecha_civil).toBe('2026-10-17');
+    // Se eliminó el '09:00' inventado y se normalizó como toma sin horario:
+    expect(rowSummer?.es_programado).toBe(0);
+    expect(rowSummer?.horario_programado).toBe('sin_horario#intake-midnight-summer');
+
+    const rowAfter = await database.first<{
+      id: string;
+      fecha_civil: string;
+      horario_programado: string;
+      es_programado: number;
+    }>(
+      'SELECT id, fecha_civil, horario_programado, es_programado FROM qc_medication_intake_log WHERE id = ?',
+      ['intake-after-midnight'],
+    );
+    expect(rowAfter).not.toBeNull();
+    expect(rowAfter?.fecha_civil).toBe('2026-10-18');
+    expect(rowAfter?.es_programado).toBe(1);
+    expect(rowAfter?.horario_programado).toBe('10:00');
+
+    const rowWinter = await database.first<{
+      id: string;
+      fecha_civil: string;
+      es_programado: number;
+    }>('SELECT id, fecha_civil, es_programado FROM qc_medication_intake_log WHERE id = ?', [
+      'intake-midnight-winter',
+    ]);
+    expect(rowWinter).not.toBeNull();
+    // En America/Santiago (UTC-4), 2026-06-15T02:00:00.000Z es 22:00 del 14 de junio:
+    expect(rowWinter?.fecha_civil).toBe('2026-06-14');
+    expect(rowWinter?.es_programado).toBe(0);
+
+    // 6. Verificar integridad referencial de SQLite
+    const fkErrors = await database.all('PRAGMA foreign_key_check');
+    expect(fkErrors).toEqual([]);
+  });
+});
+
+it('restaura 09:00 solo con identidad determinista y conserva registros ambiguos', async () => {
+  const db = open();
+  await migrateDatabase(
+    db,
+    migrations.filter((migration) => migration.version <= 16),
+  );
+  const scheduled = 'p#m#2026-11-02#09:00';
+  const unknown = 'legacy-unknown';
+  for (const id of [scheduled, unknown])
+    await db.run(
+      `INSERT INTO qc_medication_intake_log (id,paciente_id,medicamento_id,medicamento_nombre,fecha_civil,horario_programado,fecha_hora,estado,registrado_en,es_programado)
+     VALUES (?, 'p', 'm', 'Medicamento sintético', '2026-11-02', ?, '2026-11-02T12:00:00Z', 'taken', '2026-11-02T12:00:00Z', 0)`,
+      [id, 'sin_horario#' + id],
+    );
+  await migrateDatabase(db);
+  const restored = await db.first<{ horario_programado: string; es_programado: number }>(
+    'SELECT horario_programado,es_programado FROM qc_medication_intake_log WHERE id=?',
+    [scheduled],
+  );
+  expect(restored).toEqual({ horario_programado: '09:00', es_programado: 1 });
+  const unchanged = await db.first<{ horario_programado: string; es_programado: number }>(
+    'SELECT horario_programado,es_programado FROM qc_medication_intake_log WHERE id=?',
+    [unknown],
+  );
+  expect(unchanged).toEqual({ horario_programado: 'sin_horario#' + unknown, es_programado: 0 });
+  await migrateDatabase(db);
+  expect((await db.all('SELECT id FROM qc_medication_intake_log')).length).toBe(2);
 });

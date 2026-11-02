@@ -53,6 +53,38 @@ export function getPatientReportDirectory(pacienteId: string): Directory {
     : new Directory(Paths.document, 'reportes_locales', pacienteId);
 }
 
+/**
+ * Resuelve de forma segura un archivo de reporte dentro del directorio exclusivo
+ * del paciente activo. Valida el nombre de archivo y rechaza cualquier URI que
+ * apunte a otro paciente o fuera de la carpeta canónica.
+ */
+export function resolvePatientReportFile(
+  pacienteId: string,
+  params: { filename?: string; uri?: string },
+): { file: File; filename: string; canonicalUri: string } {
+  assertSafeId(pacienteId, 'pacienteId');
+  if (params.uri) {
+    const uriOwner = extractPatientIdFromReportUri(params.uri);
+    if (uriOwner && uriOwner !== pacienteId) {
+      throw new Error('El reporte solicitado pertenece a otro paciente.');
+    }
+    if (params.uri.includes('..')) {
+      throw new Error('Ruta de archivo de reporte inválida.');
+    }
+  }
+  const candidateFilename =
+    params.filename || (params.uri ? (Paths.basename(params.uri) ?? '') : '');
+  assertSafeReportFileName(candidateFilename);
+  const dir = getPatientReportDirectory(pacienteId);
+  const canonicalUri = `${dir.uri}/${candidateFilename}`;
+  const file = new File(canonicalUri);
+  return {
+    file,
+    filename: candidateFilename,
+    canonicalUri: file.uri ?? canonicalUri,
+  };
+}
+
 export interface PatientReportItem {
   uri: string;
   filename: string;
@@ -67,7 +99,7 @@ export interface PatientReportItem {
  * de archivos de la lógica de negocio y permitir pruebas de integración y simulación de fallos.
  */
 export interface BinaryReportStorageAdapter {
-  writeBytes(fileUri: string, bytes: Uint8Array): Promise<void>;
+  writeBytes(fileUri: string, bytes: Uint8Array): Promise<number | void>;
   copyFile(sourceUri: string, targetUri: string): Promise<void>;
   moveFile(sourceUri: string, targetUri: string): Promise<void>;
   deleteFile(fileUri: string): Promise<void>;
@@ -81,9 +113,11 @@ export interface BinaryReportStorageAdapter {
 }
 
 export class ExpoBinaryReportStorageAdapter implements BinaryReportStorageAdapter {
-  async writeBytes(fileUri: string, bytes: Uint8Array): Promise<void> {
+  async writeBytes(fileUri: string, bytes: Uint8Array): Promise<number> {
     const file = new File(fileUri);
-    await file.write(await protectClinicalFile(fileUri, bytes));
+    const protectedBytes = await protectClinicalFile(fileUri, bytes);
+    await file.write(protectedBytes);
+    return protectedBytes.byteLength;
   }
 
   async copyFile(sourceUri: string, targetUri: string): Promise<void> {
@@ -346,6 +380,7 @@ export async function persistReportFile(
   periodDays: number,
   format: ReportFileFormat,
   adapter: BinaryReportStorageAdapter = defaultAdapter,
+  a11ySnapshot?: unknown,
 ): Promise<{ persistentUri: string; filename: string }> {
   assertSafeId(pacienteId, 'pacienteId');
   if (periodDays !== 7 && periodDays !== 30 && periodDays !== 90) {
@@ -377,15 +412,26 @@ export async function persistReportFile(
     const randSuffix = Math.random().toString(36).slice(2, 8);
     const tempFilename = `.tmp_reporte_${periodDays}d_${Date.now()}_${randSuffix}.${format}`;
     const tempFileUri = `${dir.uri}/${tempFilename}`;
+    const tempA11yFilename = a11ySnapshot ? `${tempFilename}.a11y.json.tmp` : null;
+    const tempA11yFileUri = tempA11yFilename ? `${dir.uri}/${tempA11yFilename}` : null;
 
     let tempMovedToTarget = false;
     let publishedTargetUri: string | null = null;
+    let expectedByteLength = source.type === 'bytes' ? source.bytes.length : 0;
 
     try {
       if (source.type === 'bytes') {
-        await adapter.writeBytes(tempFileUri, source.bytes);
+        const writtenLength = await adapter.writeBytes(tempFileUri, source.bytes);
+        if (typeof writtenLength === 'number' && writtenLength > 0) {
+          expectedByteLength = writtenLength;
+        }
       } else {
         await adapter.copyFile(source.tempUri, tempFileUri);
+      }
+
+      if (a11ySnapshot && tempA11yFileUri) {
+        const a11yBytes = new TextEncoder().encode(JSON.stringify(a11ySnapshot));
+        await adapter.writeBytes(tempA11yFileUri, a11yBytes);
       }
 
       // Verificación del archivo temporal
@@ -397,15 +443,25 @@ export async function persistReportFile(
       }
       const tempSize = await adapter.getFileSize(tempFileUri);
       if (source.type === 'bytes') {
-        if (tempSize !== source.bytes.length) {
+        if (tempSize !== expectedByteLength) {
           throw new Error(
-            `Fallo de verificación: tamaño de archivo temporal (${tempSize}) no coincide con los bytes generados (${source.bytes.length}).`,
+            `Fallo de verificación: tamaño de archivo temporal (${tempSize}) no coincide con los bytes generados (${expectedByteLength}).`,
           );
         }
       } else {
         if (!tempSize || tempSize <= 0) {
           throw new Error(
             `Fallo de verificación: tamaño de archivo temporal inválido (${tempSize}).`,
+          );
+        }
+      }
+
+      if (tempA11yFileUri) {
+        const a11yExists = await adapter.fileExists(tempA11yFileUri);
+        const a11ySize = await adapter.getFileSize(tempA11yFileUri);
+        if (!a11yExists || a11ySize === null || a11ySize <= 0) {
+          throw new Error(
+            'Fallo de almacenamiento: el archivo temporal de accesibilidad no pudo confirmarse.',
           );
         }
       }
@@ -433,6 +489,10 @@ export async function persistReportFile(
       await adapter.moveFile(tempFileUri, targetFileUri);
       tempMovedToTarget = true;
       publishedTargetUri = targetFileUri;
+      if (tempA11yFileUri) {
+        const targetA11yUri = `${targetFileUri}.a11y.json`;
+        await adapter.moveFile(tempA11yFileUri, targetA11yUri);
+      }
 
       // Verificación post-publicación
       let finalVerified = false;
@@ -440,11 +500,18 @@ export async function persistReportFile(
         const targetExists = await adapter.fileExists(targetFileUri);
         const targetSize = await adapter.getFileSize(targetFileUri);
         if (targetExists && targetSize !== null && targetSize > 0) {
-          if (source.type === 'bytes' && targetSize !== source.bytes.length) {
+          if (source.type === 'bytes' && targetSize !== expectedByteLength) {
             finalVerified = false;
           } else {
             finalVerified = true;
           }
+        }
+        if (finalVerified && tempA11yFileUri) {
+          const targetA11yUri = `${targetFileUri}.a11y.json`;
+          const a11yOk =
+            (await adapter.fileExists(targetA11yUri)) &&
+            ((await adapter.getFileSize(targetA11yUri)) ?? 0) > 0;
+          if (!a11yOk) finalVerified = false;
         }
       } catch {
         finalVerified = false;
@@ -471,6 +538,10 @@ export async function persistReportFile(
         try {
           if (await adapter.fileExists(prevUri)) {
             await adapter.deleteFile(prevUri);
+          }
+          const prevA11y = `${prevUri}.a11y.json`;
+          if (await adapter.fileExists(prevA11y)) {
+            await adapter.deleteFile(prevA11y);
           }
         } catch {
           registerPendingReportCleanup(prevUri, pacienteId);
@@ -500,6 +571,25 @@ export async function persistReportFile(
           // Ignorar fallo al limpiar temporal
         }
       }
+      if (tempA11yFileUri) {
+        try {
+          if (await adapter.fileExists(tempA11yFileUri)) {
+            await adapter.deleteFile(tempA11yFileUri);
+          }
+        } catch {
+          /* safe non-blocking cleanup */
+        }
+      }
+      if (publishedTargetUri) {
+        try {
+          const pubA11y = `${publishedTargetUri}.a11y.json`;
+          if (await adapter.fileExists(pubA11y)) {
+            await adapter.deleteFile(pubA11y);
+          }
+        } catch {
+          /* safe non-blocking cleanup */
+        }
+      }
       // Limpiar destino publicado si quedó a medio verificar
       if (publishedTargetUri) {
         try {
@@ -520,8 +610,16 @@ export async function persistReportPdf(
   tempUri: string,
   periodDays: number,
   adapter: BinaryReportStorageAdapter = defaultAdapter,
+  a11ySnapshot?: unknown,
 ): Promise<{ persistentUri: string; filename: string }> {
-  return persistReportFile(pacienteId, { type: 'temp_uri', tempUri }, periodDays, 'pdf', adapter);
+  return persistReportFile(
+    pacienteId,
+    { type: 'temp_uri', tempUri },
+    periodDays,
+    'pdf',
+    adapter,
+    a11ySnapshot,
+  );
 }
 
 export async function persistReportXlsx(
@@ -679,9 +777,40 @@ export async function deletePatientReport(
     if (!(await adapter.fileExists(targetUri))) return false;
     try {
       await adapter.deleteFile(targetUri);
+      const companionA11y = `${targetUri}.a11y.json`;
+      if (await adapter.fileExists(companionA11y)) {
+        try {
+          await adapter.deleteFile(companionA11y);
+        } catch {
+          /* safe non-blocking cleanup */
+        }
+      }
       return true;
     } catch {
       return false;
+    }
+  });
+}
+
+export async function readPatientReportA11ySnapshot<T = unknown>(
+  pacienteId: string,
+  fileName: string,
+  adapter: BinaryReportStorageAdapter = defaultAdapter,
+): Promise<T | null> {
+  assertSafeId(pacienteId, 'pacienteId');
+  assertSafeReportFileName(fileName);
+  return withPatientReportLock(pacienteId, async () => {
+    const dir = getPatientReportDirectory(pacienteId);
+    const a11yUri = `${dir.uri}/${fileName}.a11y.json`;
+    if (!(await adapter.fileExists(a11yUri))) return null;
+    try {
+      const file = new File(a11yUri);
+      const rawBytes = await file.bytes();
+      const decrypted = await readClinicalFile(a11yUri, rawBytes);
+      const jsonStr = new TextDecoder().decode(decrypted);
+      return JSON.parse(jsonStr) as T;
+    } catch {
+      return null;
     }
   });
 }

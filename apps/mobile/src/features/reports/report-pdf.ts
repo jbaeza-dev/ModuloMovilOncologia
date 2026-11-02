@@ -22,6 +22,12 @@ export async function generateAndPersistReportPdf(
   const printResult = await Print.printToFileAsync({
     html,
   });
-  const result = await persistReportPdf(data.pacienteId, printResult.uri, data.periodDays, adapter);
+  const result = await persistReportPdf(
+    data.pacienteId,
+    printResult.uri,
+    data.periodDays,
+    adapter,
+    data,
+  );
   return result;
 }

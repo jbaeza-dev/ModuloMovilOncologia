@@ -10,8 +10,27 @@ export default function OAuthReturn() {
   const checking = ['authenticating', 'reauthenticating', 'renewing'].includes(snapshot.state);
 
   useEffect(() => {
-    if (data?.patientId) router.replace('/(tabs)');
-  }, [data?.patientId]);
+    // Si la sesión requiere completar datos personales o términos:
+    const identity = (
+      snapshot as { identity?: { profile?: { rut?: string }; clinicalStatus?: string } }
+    ).identity;
+    const consent = (snapshot as { consent?: { requiere_aceptacion?: boolean } }).consent;
+
+    // Solo redirigir a completar si faltan datos personales esenciales del paciente (RUT)
+    if (identity && (!identity.profile?.rut || identity.profile.rut.trim().length === 0)) {
+      router.replace('/acceso/completar');
+      return;
+    }
+
+    if (consent?.requiere_aceptacion) {
+      router.replace('/acceso/consentimientos');
+      return;
+    }
+
+    if (data?.patientId) {
+      router.replace('/(tabs)');
+    }
+  }, [data?.patientId, snapshot]);
 
   useEffect(() => {
     if (!checking) return;
@@ -24,7 +43,7 @@ export default function OAuthReturn() {
     <Screen title={waiting ? 'Comprobando acceso' : 'Estado del acceso'}>
       <BodyText>
         {waiting
-          ? 'Finalizando el acceso con el proveedor central…'
+          ? 'Estamos comprobando tu cuenta y preparando tu acceso…'
           : timedOut
             ? 'La comprobación está tardando demasiado. Revisa la conexión y vuelve a intentar.'
             : (snapshot.message ?? 'No se pudo completar el acceso. Vuelve a iniciar sesión.')}

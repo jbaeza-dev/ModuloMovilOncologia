@@ -6,6 +6,7 @@ import * as ReactNative from 'react-native';
 import { Text, type TextInput } from 'react-native';
 
 import { Screen } from '../components/Screen';
+import { DetailsDisclosure } from '../components/DetailsDisclosure';
 import { DetailRow, FeedbackBanner, StatusPill, VisualField } from '../components/Visual';
 
 jest.mock('expo-router', () => ({
@@ -63,6 +64,25 @@ jest.mock('../providers/ThemeProvider', () => ({
 }));
 
 describe('Componentes Accesibles Visual.tsx y Screen.tsx (B1 - UX-03 a UX-07)', () => {
+  it('permite consultar y volver a ocultar información secundaria sin ocultar la acción principal', async () => {
+    await render(
+      <>
+        <Text>Registrar medición</Text>
+        <DetailsDisclosure title="Estado de mi información">
+          <Text>Consultado hoy a las 12:00</Text>
+        </DetailsDisclosure>
+      </>,
+    );
+    const toggle = screen.getByRole('button', { name: 'Estado de mi información' });
+    expect(toggle.props.accessibilityState.expanded).toBe(false);
+    expect(screen.queryByText('Consultado hoy a las 12:00')).toBeNull();
+    await fireEvent.press(toggle);
+    expect(screen.getByText('Consultado hoy a las 12:00')).toBeTruthy();
+    expect(screen.getByText('Registrar medición')).toBeTruthy();
+    await fireEvent.press(toggle);
+    expect(screen.queryByText('Consultado hoy a las 12:00')).toBeNull();
+    expect(screen.getByText('Registrar medición')).toBeTruthy();
+  });
   describe('VisualField', () => {
     it('muestra etiqueta visible, texto de ayuda y soporte de accesibilidad', async () => {
       await render(

@@ -130,7 +130,7 @@ describe('validateVitalInput y parseVitalInput', () => {
     expect(res.errors.temperature).toBe('Temperatura: ingresa un número válido.');
     expect(res.errors.systolic).toBe('Presión sistólica: ingresa un número válido.');
     expect(res.errors.pulse).toBe('Pulso: ingresa un número válido.');
-    expect(res.errors.saturation).toBe('Saturación: ingresa un valor válido.');
+    expect(res.errors.saturation).toBe('Saturación: ingresa un valor entre 50 y 100.');
   });
 
   it('parseSymptomDescription valida longitud máxima de 2.000 caracteres', () => {

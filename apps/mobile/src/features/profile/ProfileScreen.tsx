@@ -1,4 +1,4 @@
-import Feather from '@expo/vector-icons/Feather';
+import { AppIcon as Feather } from '../../components/AppIcon';
 import { useCallback } from 'react';
 import { Pressable, StyleSheet, Text, View } from 'react-native';
 
@@ -60,7 +60,7 @@ export function PreferencesScreen() {
   };
 
   return (
-    <Screen title="Preferencias">
+    <Screen mascotPose="lectura" title="Preferencias">
       <DemoBadge />
       <InfoCard>
         <SectionTitle>Accesibilidad y apariencia</SectionTitle>
@@ -114,7 +114,7 @@ export function PreferencesScreen() {
         </Pressable>
         <BodyText>
           {prefs.enabled
-            ? 'Los avisos locales están autorizados en este dispositivo para el paciente activo.'
+            ? 'Tus avisos están activados en este teléfono.'
             : 'Todos tus avisos están pausados. Tus horarios guardados se conservan.'}
         </BodyText>
       </InfoCard>
@@ -126,9 +126,15 @@ export function PreferencesScreen() {
       />
       <NavigationCard
         title="Bandeja de avisos"
-        description="Consulta la agenda de avisos locales y su historial de recepción."
+        description="Consulta tus avisos y los recordatorios recibidos."
         icon="bell"
         href="/avisos"
+      />
+      <NavigationCard
+        title="Términos y consentimiento"
+        icon="shield"
+        href="/perfil/consentimientos"
+        compact
       />
       <InfoCard>
         <SectionTitle>Cuenta y seguridad</SectionTitle>

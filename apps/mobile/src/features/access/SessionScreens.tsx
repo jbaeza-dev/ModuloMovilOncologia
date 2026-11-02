@@ -1,6 +1,8 @@
 import { useCallback, useEffect, useState, useSyncExternalStore } from 'react';
 import { router } from 'expo-router';
 import { Screen } from '../../components/Screen';
+import { DateTimePickerField } from '../../components/DateTimePickerField';
+import { MascotHero } from '../../components/MascotAvatar';
 import {
   BodyText,
   DemoBadge,
@@ -47,7 +49,7 @@ export function SessionNotice() {
       <VisualButton
         label="Revisar sesión"
         secondary
-        onPress={() => router.navigate(data?.patientId ? '/perfil/sesion' : '/acceso')}
+        onPress={() => router.push(data?.patientId ? '/perfil/sesion' : '/acceso')}
       />
     </InfoCard>
   );
@@ -69,7 +71,7 @@ export function IdentityScreen() {
     }
   }
   return (
-    <Screen title="Sesión y permisos">
+    <Screen mascotPose="explicacion" title="Sesión y permisos">
       <DemoBadge />
       <InfoCard>
         <SectionTitle>{snapshot.user?.name ?? 'Sin sesión configurada'}</SectionTitle>
@@ -98,14 +100,16 @@ export function IdentityScreen() {
         />
         <DetailRow
           label="Datos de perfil"
-          value={snapshot.stale ? 'Copia anterior · pendiente de verificar' : 'Verificados online'}
+          value={
+            snapshot.stale ? 'Copia anterior · pendiente de verificar' : 'Información actualizada'
+          }
         />
         <DetailRow
           label="Envíos clínicos"
           value={
             snapshot.uploadAllowed
               ? 'Consentimiento confirmado'
-              : 'Pausados · capturas locales conservadas'
+              : 'Pausados · registros guardados en este teléfono'
           }
         />
         {snapshot.identity ? (
@@ -122,7 +126,7 @@ export function IdentityScreen() {
         <VisualButton
           label="Volver a autenticarme"
           onPress={() => {
-            if (session?.config.mode === 'demo') router.navigate('/acceso/seleccionar-paciente');
+            if (session?.config.mode === 'demo') router.push('/acceso/seleccionar-paciente');
             else
               void data?.manager
                 .authenticate()
@@ -133,18 +137,18 @@ export function IdentityScreen() {
       {snapshot.state === 'profile_incomplete' ? (
         <VisualButton
           label="Completar mis datos"
-          onPress={() => router.navigate('/perfil/completar')}
+          onPress={() => router.push('/perfil/completar')}
         />
       ) : null}
       <VisualButton
         label="Revisar consentimiento"
         secondary
-        onPress={() => router.navigate('/perfil/consentimientos')}
+        onPress={() => router.push('/perfil/consentimientos')}
       />
       <VisualButton
         label="Mis dispositivos"
         secondary
-        onPress={() => router.navigate('/perfil/dispositivos')}
+        onPress={() => router.push('/perfil/dispositivos')}
       />
     </Screen>
   );
@@ -177,8 +181,8 @@ export function OnlineConsentScreen() {
       const identity = session.getSnapshot().identity;
       setFeedback(
         identity?.clinicalStatus === 'missing' || identity?.treatmentStatus === 'missing'
-          ? 'Aceptación confirmada por el servidor. Falta la vinculación clínica: solicita tu código desde Perfil.'
-          : 'Aceptación confirmada por el servidor.',
+          ? 'Tu aceptación quedó confirmada. Falta la vinculación clínica: solicita tu código desde Perfil.'
+          : 'Tu aceptación quedó confirmada.',
       );
     } catch (e) {
       setFeedback(e instanceof Error ? e.message : 'No se pudo confirmar la aceptación.');
@@ -189,12 +193,12 @@ export function OnlineConsentScreen() {
   const term = snapshot.terms,
     current = snapshot.consent?.consentimiento_actual;
   return (
-    <Screen title="Consentimientos">
+    <Screen mascotPose="lectura" title="Consentimientos">
       <DemoBadge />
       <BodyText>
         {session?.config.mode === 'demo'
           ? 'Demostración con cuentas compartidas: usa solo datos ficticios. Esta aceptación no acredita atención médica ni aprobación institucional.'
-          : 'Revisa los términos vigentes y su estado confirmado por el servidor.'}
+          : 'Revisa los términos vigentes y si tu aceptación está confirmada.'}
       </BodyText>
       {feedback ? (
         <InfoCard>
@@ -204,7 +208,8 @@ export function OnlineConsentScreen() {
       {!session ? (
         <InfoCard>
           <BodyText>
-            El servicio de términos no está configurado. Una aceptación local no habilita envíos.
+            No podemos consultar los términos ahora. Necesitas revisarlos y confirmar tu aceptación
+            antes de enviar registros.
           </BodyText>
         </InfoCard>
       ) : null}
@@ -226,13 +231,11 @@ export function OnlineConsentScreen() {
             ? 'Consentimiento vigente confirmado.'
             : current?.revocado
               ? 'El acto anterior está revocado. Se requiere una aceptación nueva.'
-              : 'Los envíos siguen pausados hasta confirmar el consentimiento vigente online.'}
+              : 'Los envíos siguen pausados hasta confirmar tu aceptación de los términos vigentes. Necesitas conexión para hacerlo.'}
         </BodyText>
         {current ? <DetailRow label="Aceptado el" value={current.otorgado_el} /> : null}
         <BodyText>
-          Sin conexión puedes conservar capturas y consultar tu historia. Para confirmar una
-          aceptación necesitas conexión. Para retirar tu autorización, utiliza los contactos
-          indicados en los términos.
+          Necesitas internet para aceptar. Tus registros guardados siguen disponibles sin conexión.
         </BodyText>
       </InfoCard>
       {term && snapshot.user && !snapshot.uploadAllowed ? (
@@ -252,7 +255,7 @@ export function OnlineConsentScreen() {
   );
 }
 export function CompleteProfileScreen() {
-  const { session } = useIdentity(),
+  const { session, snapshot } = useIdentity(),
     [rut, setRut] = useState(''),
     [phone, setPhone] = useState(''),
     [birth, setBirth] = useState(''),
@@ -269,7 +272,13 @@ export function CompleteProfileScreen() {
         fecha_nacimiento: birth || null,
         sexo: sex || null,
       });
-      setMessage('Datos confirmados por el servidor.');
+      setMessage('Tus datos quedaron confirmados.');
+      const consentRequired = Boolean(session.getSnapshot().consent?.requiere_aceptacion);
+      if (consentRequired) {
+        router.replace('/acceso/consentimientos');
+      } else {
+        router.replace('/(tabs)');
+      }
     } catch (e) {
       setMessage(e instanceof Error ? e.message : 'No se pudieron guardar los datos.');
     } finally {
@@ -277,8 +286,27 @@ export function CompleteProfileScreen() {
     }
   }
   return (
-    <Screen title="Completar mis datos">
-      <BodyText>La identidad de tu cuenta proviene del inicio de sesión.</BodyText>
+    <Screen>
+      <MascotHero
+        pose="apoyo"
+        eyebrow="TU PRIMER INGRESO"
+        title="Completar mis datos"
+        description="Completa tus datos para continuar. Puedes revisar los términos antes de aceptarlos."
+        compact
+      />
+      {snapshot.identity?.profile ? (
+        <InfoCard>
+          <DetailRow
+            label="Nombre"
+            value={
+              snapshot.identity.profile.nombre ?? snapshot.user?.name ?? 'Sin nombre informado'
+            }
+          />
+          <DetailRow label="Correo" value={snapshot.identity.profile.email} />
+        </InfoCard>
+      ) : snapshot.user?.name ? (
+        <BodyText>{snapshot.user.name}</BodyText>
+      ) : null}
       <VisualField label="RUT" value={rut} onChangeText={setRut} />
       <VisualField
         label="Teléfono"
@@ -286,11 +314,18 @@ export function CompleteProfileScreen() {
         onChangeText={setPhone}
         keyboardType="phone-pad"
       />
-      <VisualField label="Fecha de nacimiento (AAAA-MM-DD)" value={birth} onChangeText={setBirth} />
+      <DateTimePickerField
+        mode="date"
+        label="Fecha de nacimiento"
+        value={birth || null}
+        maximumDate={new Date().toLocaleDateString('en-CA')}
+        onChange={setBirth}
+        disabled={busy}
+      />
       <VisualField label="Sexo" value={sex} onChangeText={setSex} />
       {message ? <BodyText>{message}</BodyText> : null}
       <VisualButton
-        label="Guardar datos online"
+        label="Guardar y continuar"
         disabled={!session || busy || !rut.trim()}
         onPress={() => void save()}
       />
@@ -335,10 +370,10 @@ export function DevicesScreen() {
     }
   }
   return (
-    <Screen title="Mis dispositivos">
+    <Screen mascotPose="explicacion" title="Mis dispositivos">
       <BodyText>
-        Una asociación habilita notificaciones push. Revocarla no cierra la sesión central ni
-        cancela de inmediato los avisos de otro teléfono sin conexión.
+        Quitar un teléfono desactiva sus próximos avisos cuando vuelva a conectarse. No cierra su
+        sesión.
       </BodyText>
       {message ? (
         <InfoCard>
@@ -347,7 +382,7 @@ export function DevicesScreen() {
       ) : null}
       {pending ? (
         <BodyText>
-          Hay {pending} revocaciones pendientes de esta cuenta. No se han confirmado en el servidor.
+          Hay {pending} revocaciones pendientes de esta cuenta. Todavía no se han confirmado.
         </BodyText>
       ) : null}
       <VisualButton

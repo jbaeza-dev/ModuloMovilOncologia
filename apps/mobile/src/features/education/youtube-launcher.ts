@@ -4,6 +4,7 @@ import { launchYouTubeVideo, parseYouTubeVideoId } from '../../data/local/educat
 import type { AppRepository } from '../../data/local/repository';
 
 export interface ExecuteYouTubeLaunchOptions {
+  openVideo?: (videoId: string) => Promise<{ success: boolean; error?: string }>;
   resourceId: string;
   youtubeVideoId?: string | null;
   version: string;
@@ -65,7 +66,7 @@ export async function executeYouTubeLaunch(
   const videoId = options.youtubeVideoId ? parseYouTubeVideoId(options.youtubeVideoId) : null;
   if (!videoId)
     return { success: false, error: 'Este video no tiene un enlace de YouTube válido.' };
-  const result = await launchYouTubeVideo(videoId);
+  const result = await (options.openVideo ?? launchYouTubeVideo)(videoId);
 
   // 3. Persistencia rastreada si la apertura fue exitosa y el contexto sigue vigente
   if (result.success && options.patientId && options.repository) {

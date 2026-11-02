@@ -6,6 +6,7 @@ import * as Crypto from 'expo-crypto';
 import type { GatewayConfiguracionRecordatorio, GatewayRecordatorio } from '@quimiocare/contracts';
 import { agendaDate } from '@quimiocare/contracts/agenda';
 import { Screen } from '../../components/Screen';
+import { DateTimePickerField } from '../../components/DateTimePickerField';
 import {
   BodyText,
   InfoCard,
@@ -97,7 +98,7 @@ export function SharedAgendaEditScreen() {
           };
           if (!validConfiguration(config))
             throw new Error(
-              'Revisa el título, entre 1 y 8 horas HH:mm sin repetir, al menos un día y las fechas AAAA-MM-DD en orden.',
+              'Revisa el título, elige de uno a ocho horarios distintos, al menos un día y una fecha de término posterior al inicio.',
             );
           await agenda.save(id, config, old?.version);
         }
@@ -117,11 +118,8 @@ export function SharedAgendaEditScreen() {
     if (done) router.back();
   }, [done]);
   return (
-    <Screen title={old ? 'Editar recordatorio' : 'Nuevo recordatorio'}>
-      <BodyText>
-        Los horarios se comparten entre tus dispositivos. Guardar requiere conexión. No se infieren
-        dosis ni tratamientos.
-      </BodyText>
+    <Screen mascotPose="recordatorio" title={old ? 'Editar recordatorio' : 'Nuevo recordatorio'}>
+      <BodyText>Elige tus avisos. No cambian las indicaciones de tu equipo de salud.</BodyText>
       {error && (
         <Text accessibilityRole="alert" style={{ color: theme.colors.error }}>
           {error}
@@ -160,12 +158,44 @@ export function SharedAgendaEditScreen() {
           </Pressable>
         ))}
       </View>
-      <VisualField
-        label="Horas (HH:mm, separadas por coma)"
-        value={hours}
-        onChangeText={update(setHours)}
-        editable={!busy}
-        helperText="Ejemplo: 08:00, 14:00, 20:00. Máximo 8 horas distintas."
+      <SectionTitle>Horarios del aviso</SectionTitle>
+      {hours.split(',').map((hour, index, current) => (
+        <InfoCard key={index}>
+          <DateTimePickerField
+            mode="time"
+            label={`Horario ${index + 1}`}
+            value={hour.trim()}
+            disabled={!ready || busy}
+            onChange={(value) => {
+              const next = [...current];
+              next[index] = value;
+              update(setHours)(next.join(', '));
+            }}
+          />
+          {current.length > 1 ? (
+            <VisualButton
+              secondary
+              label={`Quitar horario ${index + 1}`}
+              disabled={!ready || busy}
+              onPress={() =>
+                update(setHours)(current.filter((_, position) => position !== index).join(', '))
+              }
+            />
+          ) : null}
+        </InfoCard>
+      ))}
+      <VisualButton
+        secondary
+        label="Añadir otro horario"
+        disabled={!ready || busy || hours.split(',').length >= 8}
+        onPress={() => {
+          const current = hours.split(',').map((hour) => hour.trim());
+          const available = Array.from(
+            { length: 24 },
+            (_, hour) => `${String(hour).padStart(2, '0')}:00`,
+          ).find((hour) => !current.includes(hour));
+          if (available) update(setHours)([...current, available].join(', '));
+        }}
       />
       <SectionTitle>Días de la semana</SectionTitle>
       <View style={{ gap: 8 }}>
@@ -193,23 +223,33 @@ export function SharedAgendaEditScreen() {
           </Pressable>
         ))}
       </View>
-      <VisualField
-        label="Fecha de inicio (AAAA-MM-DD)"
+      <DateTimePickerField
+        mode="date"
+        label="Fecha de inicio"
         value={start}
-        onChangeText={update(setStart)}
-        editable={!busy}
+        onChange={update(setStart)}
+        disabled={!ready || busy}
       />
-      <VisualField
-        label="Fecha de término, opcional (AAAA-MM-DD)"
-        value={end}
-        onChangeText={update(setEnd)}
-        editable={!busy}
+      <DateTimePickerField
+        mode="date"
+        label="Fecha de término, opcional"
+        value={end || null}
+        onChange={update(setEnd)}
+        minimumDate={start}
+        placeholder="Sin fecha de término"
+        disabled={!ready || busy}
       />
+      {end ? (
+        <VisualButton
+          secondary
+          label="Dejar sin fecha de término"
+          disabled={busy}
+          onPress={() => update(setEnd)('')}
+        />
+      ) : null}
       <InfoCard>
         <BodyText>
-          Se usará la hora de America/Santiago aunque cambies la zona horaria del teléfono. Los
-          recordatorios de signos y cuestionario se omiten el día en que guardes ese tipo de
-          registro completo; los de medicación no se marcan como cumplidos automáticamente.
+          Los avisos mantienen la hora de Chile. Las tomas se registran por separado.
         </BodyText>
       </InfoCard>
       <VisualButton
@@ -225,7 +265,7 @@ export function SharedAgendaEditScreen() {
           onPress={() =>
             Alert.alert(
               '¿Eliminar este recordatorio?',
-              'Se cancelarán sus avisos pendientes cuando este teléfono pueda conciliar la agenda.',
+              'Sus avisos pendientes se cancelarán cuando se confirme el cambio.',
               [
                 { text: 'Conservar', style: 'cancel' },
                 { text: 'Eliminar', style: 'destructive', onPress: () => void submit(true) },

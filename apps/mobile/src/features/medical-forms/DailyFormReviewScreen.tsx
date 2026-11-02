@@ -1,4 +1,4 @@
-import Feather from '@expo/vector-icons/Feather';
+import { AppIcon as Feather } from '../../components/AppIcon';
 import { router, useLocalSearchParams } from 'expo-router';
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import { Alert, ScrollView, StyleSheet, Text, View } from 'react-native';
@@ -174,6 +174,8 @@ export function DailyFormReviewScreen() {
   return (
     <Screen
       isRoot={false}
+      scroll={false}
+      mascotPose={isConfirmed ? 'confirmacion' : 'explicacion'}
       title={isConfirmed ? 'Seguimiento registrado' : `Revisión: ${formDef.titulo}`}
     >
       <ScrollView contentContainerStyle={styles.scrollContent}>
@@ -190,12 +192,12 @@ export function DailyFormReviewScreen() {
           </SectionTitle>
           <BodyText>
             {isConfirmed
-              ? 'Tu seguimiento ha quedado guardado localmente de forma segura y encolado para sincronización cuando haya conexión disponible.'
+              ? 'Tu seguimiento está guardado en este teléfono. Se enviará cuando haya conexión disponible.'
               : 'Verifica que tus respuestas reflejen cómo te has sentido en las últimas 24 horas antes de confirmar la entrega en este dispositivo.'}
           </BodyText>
           <BodyText style={styles.disclaimerText}>
-            Modo demostración: los datos se conservan localmente en este dispositivo y no generan
-            alertas médicas automáticas a tu equipo de salud.
+            Guardar o enviar este formulario no significa que tu equipo de salud ya lo haya
+            revisado.
           </BodyText>
         </InfoCard>
 

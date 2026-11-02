@@ -60,7 +60,7 @@ describe('v12 independent pressure readings', () => {
       presion_diastolica: 80,
     });
     expect(await db.all('PRAGMA foreign_key_check')).toEqual([]);
-    expect(await db.first('PRAGMA user_version')).toEqual({ user_version: 13 });
+    expect(await db.first('PRAGMA user_version')).toEqual({ user_version: 17 });
   });
   it('rolls back the table rebuild and version if the migration is interrupted by a SQL failure', async () => {
     const db = harness.open();

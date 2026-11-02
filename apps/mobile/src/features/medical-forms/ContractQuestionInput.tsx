@@ -55,8 +55,8 @@ export function ContractQuestionInput({
         >
           {multiple ? (
             <BodyText>
-              Puedes marcar más de una opción. Las opciones indicadas como exclusivas deben ir
-              solas.
+              Puedes marcar más de una opción. Si eliges una opción que debe ir sola, se quitarán
+              las demás.
             </BodyText>
           ) : null}
           {options.map((option) => (
@@ -66,7 +66,7 @@ export function ContractQuestionInput({
               accessibilityLabel={
                 option.etiqueta +
                 (Array.isArray(exclusive) && exclusive.includes(option.codigo)
-                  ? ', opción exclusiva'
+                  ? ', se selecciona sola'
                   : '')
               }
               accessibilityState={{ checked: selected(option.codigo), disabled }}
@@ -75,10 +75,12 @@ export function ContractQuestionInput({
                 if (multiple) {
                   const current = Array.isArray(latestValue.current) ? latestValue.current : [],
                     code = String(option.codigo);
-                  // Preserve all choices; validation explains incompatibilities instead of erasing them.
+                  const exclusiveCodes = Array.isArray(exclusive) ? exclusive.map(String) : [];
                   const next = current.includes(code)
                     ? current.filter((item) => item !== code)
-                    : [...current, code];
+                    : exclusiveCodes.includes(code)
+                      ? [code]
+                      : [...current.filter((item) => !exclusiveCodes.includes(item)), code];
                   latestValue.current = next;
                   onChange(next);
                 } else onChange(option.codigo);
@@ -104,7 +106,7 @@ export function ContractQuestionInput({
                 {selected(option.codigo) ? '✓ ' : ''}
                 {option.etiqueta}
                 {Array.isArray(exclusive) && exclusive.includes(option.codigo)
-                  ? ' (opción exclusiva)'
+                  ? ' (se selecciona sola)'
                   : ''}
               </Text>
             </Pressable>
@@ -114,7 +116,7 @@ export function ContractQuestionInput({
       {q.tipo === 'texto_libre' ? (
         <>
           <VisualField
-            label={q.titulo}
+            label="Tu respuesta"
             value={text}
             multiline
             editable={!disabled}
@@ -129,7 +131,7 @@ export function ContractQuestionInput({
       ) : null}
       {q.tipo === 'numerico' ? (
         <VisualField
-          label={q.titulo}
+          label="Tu respuesta"
           value={typeof value === 'number' ? String(value) : ''}
           editable={!disabled}
           keyboardType="decimal-pad"
@@ -156,5 +158,5 @@ export function ContractQuestionInput({
 const styles = StyleSheet.create({
   question: { gap: 12, marginVertical: 8 },
   options: { gap: 8 },
-  option: { minHeight: 52, padding: 14, borderWidth: 2, borderRadius: 12 },
+  option: { minHeight: 58, padding: 14, borderWidth: 2, borderRadius: 14 },
 });

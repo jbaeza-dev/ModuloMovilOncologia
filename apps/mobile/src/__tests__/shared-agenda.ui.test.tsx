@@ -15,7 +15,11 @@ const mockPush = jest.fn(),
   mockParams: Record<string, string> = {};
 jest.mock('expo-router', () => {
   return {
-    router: { push: (...args: unknown[]) => mockPush(...args), back: () => mockBack() },
+    router: {
+      canGoBack: () => false,
+      push: (...args: unknown[]) => mockPush(...args),
+      back: () => mockBack(),
+    },
     useLocalSearchParams: () => mockParams,
     useNavigation: () => ({ dispatch: jest.fn() }),
     useFocusEffect: (callback: () => void) => {
@@ -84,6 +88,24 @@ beforeEach(() => {
 });
 afterEach(cleanup);
 describe('Agenda compartida: interfaz confirmada', () => {
+  it('permite añadir y retirar un horario con selectores y conserva el contrato al guardar', async () => {
+    mockParams.id = rule.id;
+    await render(
+      <ThemeProvider>
+        <SharedAgendaEditScreen />
+      </ThemeProvider>,
+    );
+    await screen.findByDisplayValue('Mi registro diario');
+    expect(screen.queryByLabelText('Horas (HH:mm, separadas por coma)')).toBeNull();
+    await fireEvent.press(screen.getByRole('button', { name: 'Añadir otro horario' }));
+    expect(screen.getByText('Horario 2')).toBeTruthy();
+    await fireEvent.press(screen.getByRole('button', { name: 'Quitar horario 2' }));
+    expect(screen.queryByText('Horario 2')).toBeNull();
+    await fireEvent.press(screen.getByRole('button', { name: 'Guardar y confirmar horario' }));
+    await waitFor(() =>
+      expect(mockSave).toHaveBeenCalledWith(rule.id, normalizedReminder(rule), 1),
+    );
+  });
   it('muestra horarios confirmados y cobertura limitada real', async () => {
     await render(
       <ThemeProvider>
@@ -91,7 +113,8 @@ describe('Agenda compartida: interfaz confirmada', () => {
       </ThemeProvider>,
     );
     await waitFor(() => expect(screen.getByText('Mi registro diario')).toBeTruthy());
-    expect(screen.getByText(/64 avisos locales programados/)).toBeTruthy();
+    await fireEvent.press(screen.getByRole('button', { name: 'Estado de los avisos' }));
+    expect(screen.getByText(/64 avisos programados/)).toBeTruthy();
     expect(screen.getByText(/48 avisos fuera/)).toBeTruthy();
     expect(screen.getByText(/no registran una toma/)).toBeTruthy();
   });

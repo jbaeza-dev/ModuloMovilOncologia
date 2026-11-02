@@ -30,7 +30,7 @@ export function MedicalTeamScreen() {
   } = useFocusedValue(load, [] as AssignedProfessional[]);
 
   return (
-    <Screen title="Equipo tratante">
+    <Screen mascotPose="explicacion" title="Equipo tratante">
       <DemoBadge />
       <BodyText>
         Profesionales de salud vinculados a tu atención oncológica disponibles para consulta sin
@@ -43,14 +43,14 @@ export function MedicalTeamScreen() {
         </InfoCard>
       ) : error ? (
         <InfoCard>
-          <BodyText>No se pudo consultar el equipo médico local.</BodyText>
+          <BodyText>No se pudo consultar tu equipo de salud.</BodyText>
           <VisualButton label="Reintentar" onPress={refresh} />
         </InfoCard>
       ) : !team || team.length === 0 ? (
         <EmptyState
           icon="user"
           title="Sin equipo médico vinculado"
-          description="No se encontraron profesionales de salud vinculados activamente a este paciente en el almacenamiento local."
+          description="Aún no hay profesionales asociados a tu cuenta."
         />
       ) : (
         team.map((prof) => (

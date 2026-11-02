@@ -12,6 +12,8 @@ export default tseslint.config(
       '**/build/**',
       '**/coverage/**',
       '**/.expo/**',
+      'apps/mobile/android/**',
+      'apps/mobile/assets/pdfjs/**',
       'test-stubs/**',
     ],
   },

@@ -1,8 +1,43 @@
+import type { SqlConnection } from '../data/local/core/sql';
+let mockIdentity: unknown = null;
+jest.mock('../features/profile/IdentityProfileScreens', () => {
+  const actual = jest.requireActual('../features/profile/IdentityProfileScreens');
+  return {
+    ...actual,
+    useProfileIdentity: () => ({
+      identity: mockIdentity,
+      session: null,
+      snapshot: { identity: mockIdentity },
+      trackOperation: (fn: () => unknown) => fn(),
+      isClosing: false,
+    }),
+  };
+});
+
+const mockLogMedicationIntake = jest.fn().mockResolvedValue(undefined);
+const mockIntakeAlert = jest.spyOn(Alert, 'alert').mockImplementation(() => undefined);
+async function confirmLastIntake() {
+  const buttons = mockIntakeAlert.mock.calls.at(-1)?.[2];
+  const confirm = buttons?.find((button) => button.text === 'Confirmar registro');
+  if (!confirm?.onPress) throw new Error('Falta confirmación de toma');
+  await act(async () => {
+    await confirm.onPress?.();
+  });
+}
+
+const mockGetMedicationIntakesForDate = jest.fn().mockResolvedValue([]);
+jest.mock('../data/local/medication-intake-log', () => ({
+  generateIntakeLogId: (pacienteId: string, medId: string, fechaCivil: string, horario: string) =>
+    `${pacienteId}#${medId}#${fechaCivil}#${horario}`,
+  logMedicationIntake: (...args: unknown[]) => mockLogMedicationIntake(...args),
+  getMedicationIntakesForDate: (...args: unknown[]) => mockGetMedicationIntakesForDate(...args),
+}));
+
 /// <reference types="jest" />
 
-import { fireEvent, render, screen } from '@testing-library/react-native';
+import { act, fireEvent, render, screen } from '@testing-library/react-native';
 import React from 'react';
-import { Linking } from 'react-native';
+import { Alert, Linking } from 'react-native';
 
 const mockRouterPush = jest.fn();
 const mockEproHub = jest.fn();
@@ -65,6 +100,9 @@ jest.mock('../providers/ThemeProvider', () => ({
 }));
 
 let mockDemoMode = true;
+mockIdentity = null;
+mockLogMedicationIntake.mockClear();
+mockGetMedicationIntakesForDate.mockResolvedValue([]);
 jest.mock('../utils/environment', () => ({
   isDemoMode: () => mockDemoMode,
 }));
@@ -90,6 +128,7 @@ const mockRepository = {
 
 const mockLocalData = {
   patientId: 'paciente-demo-001',
+  database: { run: jest.fn(), all: jest.fn() } as unknown as SqlConnection,
   manager: {
     getPatientId: () => 'paciente-demo-001',
     getContextEpoch: () => 1,
@@ -158,8 +197,14 @@ let mockReminderState = {
   retryScheduling: jest.fn(),
 };
 
+let mockMedReminderState: unknown = null;
 jest.mock('../hooks/use-reminder-status', () => ({
-  useReminderStatus: () => mockReminderState,
+  useReminderStatus: (opts?: { tipo?: string }) => {
+    if (opts?.tipo === 'medicacion' && mockMedReminderState) {
+      return mockMedReminderState;
+    }
+    return mockReminderState;
+  },
 }));
 
 import { HomeScreen, resolveHomeGreeting } from '../features/home/HomeScreen';
@@ -173,6 +218,8 @@ describe('HomeScreen UI tests (Bloque 2)', () => {
   beforeEach(() => {
     jest.clearAllMocks();
     mockDemoMode = true;
+    mockMedReminderState = null;
+    mockGetMedicationIntakesForDate.mockResolvedValue([]);
     mockLocalData.patientId = 'paciente-demo-001';
     mockRepository.profile.mockResolvedValue(mockProfile);
     mockEproHub.mockResolvedValue({
@@ -270,7 +317,7 @@ describe('HomeScreen UI tests (Bloque 2)', () => {
       expect(vitalButtons).toHaveLength(1);
 
       await fireEvent.press(vitalButtons[0]);
-      expect(mockRouterPush).toHaveBeenCalledWith('/(tabs)/(inicio)/registrar-vitales');
+      expect(mockRouterPush).toHaveBeenCalledWith('/vitales/registrar');
     },
   );
 
@@ -299,7 +346,7 @@ describe('HomeScreen UI tests (Bloque 2)', () => {
     const vitalButtons = screen.getAllByRole('button', { name: 'Registrar signos vitales' });
     expect(vitalButtons).toHaveLength(1);
     await fireEvent.press(vitalButtons[0]);
-    expect(mockRouterPush).toHaveBeenCalledWith('/(tabs)/(inicio)/registrar-vitales');
+    expect(mockRouterPush).toHaveBeenCalledWith('/vitales/registrar');
   });
 
   it('muestra aviso claro y botón para abrir ajustes cuando deviceAvailability === permission_blocked', async () => {
@@ -367,17 +414,22 @@ describe('HomeScreen UI tests (Bloque 2)', () => {
     expect(greetingDesync).not.toContain('Paciente A');
   });
 
-  it('muestra el acceso secundario a Mis medicamentos, Avisos, Recordatorios y Asistente en el orden acordado', async () => {
+  it('muestra el MascotHero (pose reposo) y el acceso secundario a Mis medicamentos, Avisos, Recordatorios, Reportes y Asistente', async () => {
     await render(<HomeScreen />);
 
+    expect(
+      screen.getByTestId('mascot-avatar-reposo', { includeHiddenElements: true }),
+    ).toBeTruthy();
+    expect(screen.getByText('TU CUIDADO DE HOY')).toBeTruthy();
     expect(screen.getByText('Mis medicamentos')).toBeTruthy();
     expect(screen.getByText('Mis recordatorios')).toBeTruthy();
     expect(screen.getByText('Bandeja de avisos')).toBeTruthy();
+    expect(screen.getByText('Mis reportes')).toBeTruthy();
     expect(screen.getByText('Asistente QuimioCare')).toBeTruthy();
 
     // Navegación a mis medicamentos
     await fireEvent.press(screen.getByLabelText('Mis medicamentos'));
-    expect(mockRouterNavigate).toHaveBeenCalledWith('/perfil/medicacion', { withAnchor: true });
+    expect(mockRouterPush).toHaveBeenCalledWith('/perfil/medicacion');
   });
 
   it('muestra la tarjeta «Cómo me siento hoy» y permite navegar a /formulario', async () => {
@@ -388,5 +440,325 @@ describe('HomeScreen UI tests (Bloque 2)', () => {
 
     await fireEvent.press(screen.getByLabelText('Cómo me siento hoy'));
     expect(mockRouterPush).toHaveBeenCalledWith('/formulario');
+  });
+
+  it('no muestra ayuda urgente ni cerrar sesión en Inicio', async () => {
+    await render(<HomeScreen />);
+    expect(screen.queryByText('Signos de alarma y ayuda urgente')).toBeNull();
+    expect(screen.queryByText('Cerrar sesión')).toBeNull();
+    expect(screen.getByRole('button', { name: 'Mis medicamentos' })).toBeTruthy();
+  });
+
+  it('variante con medicamentos sin horario programado: muestra "Sin horario configurado", botón "Configurar aviso de horario" y registra toma sin horario', async () => {
+    mockIdentity = {
+      treatmentStatus: 'available',
+      clinicalProfile: {
+        medicamentos: [
+          {
+            id: 'med-ondansetron',
+            nombre: 'Ondansetrón 8 mg',
+            dosis: '1 comprimido',
+            frecuencia: 'Cada 12 horas',
+          },
+        ],
+      },
+    };
+    mockMedReminderState = {
+      loading: false,
+      evaluation: { status: 'idle' },
+      snapshot: { rules: [] },
+    };
+
+    await render(<HomeScreen />);
+
+    expect(screen.getByText('Ondansetrón 8 mg')).toBeTruthy();
+    expect(screen.getByText('Sin horario configurado')).toBeTruthy();
+    expect(screen.getByText(/Puedes añadir un aviso o registrar una toma./)).toBeTruthy();
+
+    const configButton = screen.getByRole('button', { name: 'Configurar aviso de horario' });
+    expect(configButton).toBeTruthy();
+    await fireEvent.press(configButton);
+    expect(mockRouterPush).toHaveBeenCalledWith({
+      pathname: '/recordatorios/editar',
+      params: { tipo: 'medicacion', medicamentoId: 'med-ondansetron' },
+    });
+
+    const takeButton = screen.getByRole('button', { name: 'Tomé una dosis (sin horario)' });
+    expect(takeButton).toBeTruthy();
+    await fireEvent.press(takeButton);
+    expect(mockLogMedicationIntake).not.toHaveBeenCalled();
+    expect(mockIntakeAlert.mock.calls.at(-1)?.[1]).toContain('Ondansetrón 8 mg');
+    expect(mockIntakeAlert.mock.calls.at(-1)?.[2]?.[0]).toEqual(
+      expect.objectContaining({ text: 'Volver', style: 'cancel' }),
+    );
+    await confirmLastIntake();
+
+    expect(mockLogMedicationIntake).toHaveBeenCalledWith(
+      expect.anything(),
+      expect.objectContaining({
+        medicamento_id: 'med-ondansetron',
+        estado: 'taken',
+        horario_programado: 'sin_horario#1',
+        es_programado: 0,
+      }),
+    );
+
+    const omitButton = screen.getByRole('button', { name: 'Omitir' });
+    await fireEvent.press(omitButton);
+    await confirmLastIntake();
+    expect(mockLogMedicationIntake).toHaveBeenCalledWith(
+      expect.anything(),
+      expect.objectContaining({
+        medicamento_id: 'med-ondansetron',
+        estado: 'omitted',
+        horario_programado: 'sin_horario#1',
+        es_programado: 0,
+      }),
+    );
+  });
+
+  it('distingue explícitamente "registrar otra toma (sin horario)" de "corregir toma anterior", evitando que la segunda sobrescriba a la primera', async () => {
+    mockIdentity = {
+      treatmentStatus: 'available',
+      clinicalProfile: {
+        medicamentos: [
+          {
+            id: 'med-ondansetron',
+            nombre: 'Ondansetrón 8 mg',
+            dosis: '1 comprimido',
+            frecuencia: 'Cada 12 horas',
+          },
+        ],
+      },
+    };
+    mockMedReminderState = {
+      loading: false,
+      evaluation: { status: 'idle' },
+      snapshot: { rules: [] },
+    };
+
+    // Simulamos que ya existe una primera toma registrada hoy (sin horario)
+    mockGetMedicationIntakesForDate.mockResolvedValue([
+      {
+        id: 'paciente-demo-001#med-ondansetron#2026-11-02#sin_horario#1',
+        paciente_id: 'paciente-demo-001',
+        medicamento_id: 'med-ondansetron',
+        medicamento_nombre: 'Ondansetrón 8 mg',
+        dosis: '1 comprimido',
+        fecha_civil: '2026-11-02',
+        horario_programado: 'sin_horario#1',
+        es_programado: 0,
+        fecha_hora: '2026-11-02T12:30:00.000Z',
+        estado: 'taken',
+        registrado_en: '2026-11-02T12:30:00.000Z',
+      },
+    ]);
+
+    await render(<HomeScreen />);
+
+    // Esperar a que se carguen las tomas de hoy
+    expect(await screen.findByText('1 toma sin horario registrada hoy:')).toBeTruthy();
+    expect(screen.getByText(/Toma sin horario 1/)).toBeTruthy();
+    expect(screen.getByText('Tomada')).toBeTruthy();
+
+    // 1. Probar "Corregir a omitida" sobre la toma existente (sin_horario#1)
+    const rectifyButton = screen.getByRole('button', { name: 'Corregir a omitida' });
+    expect(rectifyButton).toBeTruthy();
+    await fireEvent.press(rectifyButton);
+    await confirmLastIntake();
+
+    expect(mockLogMedicationIntake).toHaveBeenCalledWith(
+      expect.anything(),
+      expect.objectContaining({
+        medicamento_id: 'med-ondansetron',
+        horario_programado: 'sin_horario#1',
+        estado: 'omitted',
+        es_programado: 0,
+      }),
+    );
+
+    // 2. Probar "Registrar otra toma (sin horario)" (debe generar sin_horario#2 sin sobrescribir la 1)
+    const registerAnotherButton = screen.getByRole('button', {
+      name: 'Registrar otra toma (sin horario)',
+    });
+    expect(registerAnotherButton).toBeTruthy();
+    await fireEvent.press(registerAnotherButton);
+    await confirmLastIntake();
+
+    expect(mockLogMedicationIntake).toHaveBeenCalledWith(
+      expect.anything(),
+      expect.objectContaining({
+        medicamento_id: 'med-ondansetron',
+        horario_programado: 'sin_horario#2',
+        estado: 'taken',
+        es_programado: 0,
+      }),
+    );
+  });
+
+  it('variante con medicamentos y horario programado: muestra horario y permite registrar toma u omisión', async () => {
+    mockIdentity = {
+      treatmentStatus: 'available',
+      clinicalProfile: {
+        medicamentos: [
+          {
+            id: 'med-ondansetron',
+            nombre: 'Ondansetrón 8 mg',
+            dosis: '1 comprimido',
+            frecuencia: 'Cada 12 horas',
+          },
+        ],
+      },
+    };
+    mockMedReminderState = {
+      loading: false,
+      evaluation: { status: 'scheduled' },
+      snapshot: {
+        rules: [
+          {
+            id: 'rule-med-1',
+            tipo: 'medicacion',
+            medicamentoId: 'med-ondansetron',
+            habilitado: true,
+            horasMinutos: ['08:00'],
+          },
+        ],
+      },
+    };
+
+    await render(<HomeScreen />);
+
+    expect(screen.getByText('Ondansetrón 8 mg')).toBeTruthy();
+    expect(screen.getByText('Horario: 08:00')).toBeTruthy();
+    expect(screen.getByText('Dosis: 1 comprimido · Frecuencia: Cada 12 horas')).toBeTruthy();
+
+    const takeButton = screen.getByRole('button', { name: 'Tomé mi dosis' });
+    expect(takeButton).toBeTruthy();
+    await fireEvent.press(takeButton);
+    await confirmLastIntake();
+
+    expect(mockLogMedicationIntake).toHaveBeenCalledWith(
+      expect.anything(),
+      expect.objectContaining({
+        medicamento_id: 'med-ondansetron',
+        estado: 'taken',
+        horario_programado: '08:00',
+        es_programado: 1,
+      }),
+    );
+
+    const omitButton = screen.getByRole('button', { name: 'Omitir' });
+    await fireEvent.press(omitButton);
+    await confirmLastIntake();
+    expect(mockLogMedicationIntake).toHaveBeenCalledWith(
+      expect.anything(),
+      expect.objectContaining({
+        medicamento_id: 'med-ondansetron',
+        estado: 'omitted',
+        horario_programado: '08:00',
+        es_programado: 1,
+      }),
+    );
+  });
+
+  it('variante sin tratamiento vinculado: muestra aviso tranquilo y botón para solicitar código', async () => {
+    mockIdentity = {
+      treatmentStatus: 'unavailable',
+      clinicalProfile: null,
+    };
+
+    await render(<HomeScreen />);
+
+    expect(screen.getByText('Tu cuaderno ya está disponible')).toBeTruthy();
+    expect(screen.getByText('Tratamiento aún no vinculado')).toBeTruthy();
+    expect(screen.getByText(/Vincula tu tratamiento con tu equipo de salud/i)).toBeTruthy();
+
+    const linkBtn = screen.getByRole('button', { name: 'Solicitar código de vinculación' });
+    expect(linkBtn).toBeTruthy();
+    await fireEvent.press(linkBtn);
+    expect(mockRouterPush).toHaveBeenCalledWith('/perfil/vinculacion');
+  });
+
+  it('variante sin medicamentos: explica calmadamente sin forzar tarjeta vacía de dosis', async () => {
+    mockIdentity = {
+      treatmentStatus: 'available',
+      clinicalProfile: {
+        medicamentos: [],
+      },
+    };
+
+    await render(<HomeScreen />);
+
+    expect(screen.getByText('Medicamentos de tratamiento')).toBeTruthy();
+    expect(
+      screen.getByText(
+        'Sin medicamentos registrados. Puedes anotar mediciones y responder tu formulario.',
+      ),
+    ).toBeTruthy();
+    expect(screen.queryByRole('button', { name: 'Tomé mi dosis' })).toBeNull();
+  });
+
+  it('variante con múltiples horarios programados (08:00 y 20:00): permite registrar ambas tomas independientemente con su horario correspondiente', async () => {
+    mockIdentity = {
+      treatmentStatus: 'available',
+      clinicalProfile: {
+        medicamentos: [
+          {
+            id: 'med-ondansetron',
+            nombre: 'Ondansetrón 8 mg',
+            dosis: '1 comprimido',
+            frecuencia: 'Cada 12 horas',
+          },
+        ],
+      },
+    };
+
+    mockMedReminderState = {
+      loading: false,
+      evaluation: { status: 'scheduled' },
+      snapshot: {
+        rules: [
+          {
+            id: 'rule-med-1',
+            tipo: 'medicacion',
+            medicamentoId: 'med-ondansetron',
+            habilitado: true,
+            horasMinutos: ['08:00', '20:00'],
+          },
+        ],
+      },
+    };
+
+    await render(<HomeScreen />);
+
+    expect(screen.getByText('Horario programado: 08:00')).toBeTruthy();
+    expect(screen.getByText('Horario programado: 20:00')).toBeTruthy();
+
+    const takeButtons = screen.getAllByRole('button', { name: 'Tomé mi dosis' });
+    expect(takeButtons).toHaveLength(2);
+
+    // Registrar dosis de las 08:00
+    await fireEvent.press(takeButtons[0]);
+    await confirmLastIntake();
+    expect(mockLogMedicationIntake).toHaveBeenCalledWith(
+      expect.anything(),
+      expect.objectContaining({
+        medicamento_id: 'med-ondansetron',
+        horario_programado: '08:00',
+        estado: 'taken',
+      }),
+    );
+
+    // Registrar dosis de las 20:00
+    await fireEvent.press(takeButtons[1]);
+    await confirmLastIntake();
+    expect(mockLogMedicationIntake).toHaveBeenCalledWith(
+      expect.anything(),
+      expect.objectContaining({
+        medicamento_id: 'med-ondansetron',
+        horario_programado: '20:00',
+        estado: 'taken',
+      }),
+    );
   });
 });

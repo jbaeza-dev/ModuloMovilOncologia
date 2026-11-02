@@ -4,7 +4,7 @@ import { useFocusedValue } from '../../hooks/use-local-query';
 import { useLocalData } from '../../providers/LocalDataProvider';
 import { createReplicatedEducationReader } from './replicated-education-reader';
 import { InMemoryEducationalCatalogReader } from './educational-catalog-service';
-import { formatDate } from '../../data/local/repository';
+import { useAutomaticEducationStatus } from './AutomaticEducationDownloads';
 
 const unavailable = new InMemoryEducationalCatalogReader([]);
 export function useEducationalCatalog() {
@@ -16,6 +16,7 @@ export function useEducationalCatalog() {
   );
 }
 export function CatalogStatusNotice() {
+  const automatic = useAutomaticEducationStatus();
   const { repository } = useLocalData();
   const load = useCallback(
     () => repository?.replicatedCatalog.status() ?? Promise.resolve(null),
@@ -24,13 +25,17 @@ export function CatalogStatusNotice() {
   const { value, loading, error } = useFocusedValue(load, null);
   return (
     <BodyText>
-      {loading
-        ? 'Consultando la réplica educativa…'
-        : error
-          ? 'No se pudo consultar el estado del catálogo.'
-          : !value?.completed_at
-            ? 'Aún no se recibió una réplica educativa completa. Conéctate para obtenerla.'
-            : `Última réplica completa: ${formatDate(value.completed_at)}.${value.error_code ? ' La actualización falló; se conserva esa copia.' : ''} La fecha no confirma conexión actual. Los retiros se aplican cuando llega una nueva réplica.`}
+      {automatic === 'working'
+        ? 'Preparando tus infografías para verlas sin internet…'
+        : automatic === 'pending'
+          ? 'Quedan guías por preparar. Se reintentará automáticamente con conexión.'
+          : loading
+            ? 'Buscando tus guías de cuidado…'
+            : error
+              ? 'No se pudo consultar el estado del catálogo.'
+              : !value?.completed_at
+                ? 'Todavía no hemos recibido la biblioteca completa. Conéctate para recibirla por primera vez.'
+                : 'Las infografías se guardan automáticamente. Videos y podcasts requieren internet.'}
     </BodyText>
   );
 }

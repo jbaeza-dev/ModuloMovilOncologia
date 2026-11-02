@@ -1,7 +1,9 @@
 import { router } from 'expo-router';
 import { useState } from 'react';
-import { StyleSheet, Text, View } from 'react-native';
+import { StyleSheet, View } from 'react-native';
 
+import { MascotHero } from '../../components/MascotAvatar';
+import { NavigationCard } from '../../components/NavigationCard';
 import { Screen } from '../../components/Screen';
 import {
   BodyText,
@@ -9,73 +11,40 @@ import {
   InfoCard,
   ProgressBar,
   SectionTitle,
+  StatusPill,
   VisualButton,
   VisualField,
 } from '../../components/Visual';
-import { useAppTheme } from '../../providers/ThemeProvider';
+import { isDemoMode } from '../../utils/environment';
 import { theme } from '../../theme';
 import { useIdentity } from './SessionScreens';
-import { isDemoMode } from '../../utils/environment';
-
-function AccessIntro({ subtitle }: { subtitle: string }) {
-  const { theme: appTheme } = useAppTheme();
-  const styles = createStyles(appTheme.colors);
-  return (
-    <View style={styles.intro}>
-      <Text style={styles.logo}>Q</Text>
-      <Text style={styles.brand}>QuimioCare</Text>
-      <BodyText>{subtitle}</BodyText>
-    </View>
-  );
-}
 
 export function LoginScreen() {
   const { session, data, snapshot } = useIdentity();
-  const [busy, setBusy] = useState(false),
-    [feedback, setFeedback] = useState<string | null>(null);
-  const [email, setEmail] = useState('');
-  const [password, setPassword] = useState('');
+  const [busy, setBusy] = useState(false);
+  const [feedback, setFeedback] = useState<string | null>(null);
+
+  const demoMode = isDemoMode() || session?.config.mode === 'demo';
+  const isOAuthConfigured =
+    session?.config.mode === 'production' || session?.config.mode === 'universidad-demo';
+
   return (
-    <Screen>
-      <AccessIntro subtitle="Acompañamiento durante tu quimioterapia." />
+    <Screen isRoot>
+      <MascotHero
+        pose="saludo"
+        eyebrow="QUIMIOCARE · CONTIGO EN CASA"
+        title="Te damos la bienvenida."
+        description="Anota tus signos vitales, responde cómo te sientes y consulta las guías de cuidado preparadas para tu tratamiento."
+        centered
+      />
+
       <DemoBadge />
-      <InfoCard>
-        <SectionTitle>Servicios de acceso</SectionTitle>
-        <BodyText>
-          {session?.config.mode === 'demo'
-            ? 'Accede con una cuenta sintética del simulador. Sus datos locales se conservan al cerrar sesión.'
-            : session
-              ? 'Accede con Google mediante el proveedor central.'
-              : 'El proveedor de autenticación no está configurado. Las cuentas de prueba requieren configurar el simulador.'}
-        </BodyText>
-      </InfoCard>
-      {isDemoMode() ? (
-        <VisualButton
-          label="Seleccionar paciente de prueba"
-          onPress={() => router.navigate('/acceso/seleccionar-paciente')}
-        />
-      ) : null}
-      <VisualField
-        label="Correo electrónico (deshabilitado · sin servicio central)"
-        value={email}
-        onChangeText={setEmail}
-        keyboardType="email-address"
-        placeholder="Autenticación central no configurada"
-        editable={false}
-      />
-      <VisualField
-        label="Contraseña (deshabilitado · sin servicio central)"
-        value={password}
-        onChangeText={setPassword}
-        secureTextEntry
-        placeholder="Autenticación central no configurada"
-        editable={false}
-      />
-      {feedback ? <BodyText>{feedback}</BodyText> : null}
+
       {snapshot.state === 'closing' && snapshot.user && !data?.patientId ? (
         <InfoCard>
+          <SectionTitle>Cerrando la sesión anterior</SectionTitle>
           <BodyText>
-            El cierre anterior no se ha completado. Reintenta antes de entrar con otra cuenta.
+            Estamos limpiando los datos temporales del teléfono antes de abrir otra cuenta.
           </BodyText>
           <VisualButton
             label="Reintentar cierre anterior"
@@ -94,35 +63,51 @@ export function LoginScreen() {
           />
         </InfoCard>
       ) : null}
-      {session?.config.mode === 'production' || session?.config.mode === 'universidad-demo' ? (
-        <VisualButton
-          label="Continuar con Google"
-          disabled={busy || !data}
-          onPress={() => {
-            setBusy(true);
-            void data?.manager
-              .authenticate()
-              .catch((e) => setFeedback(e instanceof Error ? e.message : 'No se pudo acceder.'))
-              .finally(() => setBusy(false));
-          }}
-        />
-      ) : (
-        <VisualButton label="Iniciar sesión · No configurado" disabled />
-      )}
-      <VisualButton
-        label="¿Olvidaste tu contraseña?"
-        secondary
-        onPress={() => router.navigate('/acceso/recuperar')}
-      />
-      <VisualButton
-        label="Crear cuenta nueva"
-        secondary
-        onPress={() => router.navigate('/acceso/registro')}
-      />
-      <VisualButton
-        label="Ver términos y consentimientos"
-        secondary
-        onPress={() => router.navigate('/acceso/consentimientos')}
+
+      <InfoCard>
+        <View style={styles.cardHeaderRow}>
+          <SectionTitle>
+            {demoMode ? 'Demostración con datos de prueba' : 'Ingresa a tu cuenta'}
+          </SectionTitle>
+          <StatusPill>{demoMode ? 'Demostración' : 'Cuenta institucional'}</StatusPill>
+        </View>
+        <BodyText>
+          {demoMode
+            ? 'Este teléfono está en modo demostración con datos ficticios. Tus registros de prueba quedan separados de las cuentas reales.'
+            : isOAuthConfigured
+              ? 'Usa el correo asociado a tu atención en el centro de salud. Se abrirá una ventana segura de Google para confirmar tu identidad.'
+              : 'El servicio de acceso institucional no está disponible en este momento. Puedes revisar los términos informados mientras se restablece.'}
+        </BodyText>
+
+        {feedback ? <BodyText>{feedback}</BodyText> : null}
+
+        {demoMode ? (
+          <VisualButton
+            label="Seleccionar paciente de prueba"
+            onPress={() => router.push('/acceso/seleccionar-paciente')}
+          />
+        ) : isOAuthConfigured ? (
+          <VisualButton
+            label={busy ? 'Abriendo acceso seguro…' : 'Continuar con Google'}
+            disabled={busy || !data}
+            onPress={() => {
+              setBusy(true);
+              void data?.manager
+                .authenticate()
+                .catch((e) => setFeedback(e instanceof Error ? e.message : 'No se pudo acceder.'))
+                .finally(() => setBusy(false));
+            }}
+          />
+        ) : (
+          <VisualButton label="Continuar con Google · No disponible" disabled />
+        )}
+      </InfoCard>
+
+      <NavigationCard
+        title="Términos y consentimiento informado"
+        description="Conoce cómo cuidamos tu información médica antes de ingresar."
+        icon="shield"
+        href="/acceso/consentimientos"
       />
     </Screen>
   );
@@ -144,7 +129,7 @@ export function RegisterScreen() {
       {isDemoMode() ? (
         <VisualButton
           label="Seleccionar paciente de prueba"
-          onPress={() => router.navigate('/acceso/seleccionar-paciente')}
+          onPress={() => router.push('/acceso/seleccionar-paciente')}
         />
       ) : null}
       <VisualField
@@ -179,7 +164,7 @@ export function RegisterScreen() {
       />
       <VisualButton
         label="Ver consentimientos"
-        onPress={() => router.navigate('/acceso/consentimientos')}
+        onPress={() => router.push('/acceso/consentimientos')}
       />
       <VisualButton label="Registrarse · No configurado" secondary disabled />
     </Screen>
@@ -197,7 +182,7 @@ export function RecoverScreen() {
       <BodyText>Paso 1 de 3 · Ingresa tu correo</BodyText>
       <InfoCard>
         <BodyText>
-          La recuperación remota de contraseña no está conectada en esta versión local.
+          La recuperación de contraseña no está disponible. Usa Google para entrar.
         </BodyText>
       </InfoCard>
       <VisualField
@@ -212,7 +197,7 @@ export function RecoverScreen() {
       <VisualButton
         label="Ver estado de correo enviado"
         secondary
-        onPress={() => router.navigate('/acceso/correo')}
+        onPress={() => router.push('/acceso/correo')}
       />
     </Screen>
   );
@@ -234,7 +219,7 @@ export function MailSentScreen() {
       <VisualButton
         label="Ver nueva contraseña"
         secondary
-        onPress={() => router.navigate('/acceso/nueva-clave')}
+        onPress={() => router.push('/acceso/nueva-clave')}
       />
     </Screen>
   );
@@ -274,51 +259,12 @@ export function NewPasswordScreen() {
   );
 }
 
-function createStyles(colors: ReturnType<typeof useAppTheme>['theme']['colors']) {
-  return StyleSheet.create({
-    intro: { alignItems: 'center', gap: theme.spacing.sm, paddingVertical: theme.spacing.lg },
-    logo: {
-      width: 72,
-      height: 72,
-      overflow: 'hidden',
-      borderRadius: 18,
-      backgroundColor: colors.primaryContainer,
-      textAlign: 'center',
-      textAlignVertical: 'center',
-      fontSize: 34,
-      fontWeight: '700',
-      color: colors.primary,
-    },
-    brand: { fontSize: 28, fontWeight: '700', color: colors.primary },
-    termHeader: {
-      gap: theme.spacing.xs,
-      marginBottom: theme.spacing.xs,
-    },
-    contentBox: {
-      backgroundColor: colors.surface,
-      padding: theme.spacing.md,
-      borderRadius: theme.radius.sm,
-      marginVertical: theme.spacing.sm,
-      borderWidth: 1,
-      borderColor: colors.border,
-    },
-    contentText: {
-      fontSize: 14,
-      lineHeight: 20,
-      color: colors.text,
-    },
-    statusRow: {
-      gap: theme.spacing.sm,
-      marginTop: theme.spacing.xs,
-    },
-    hintText: {
-      fontSize: 13,
-      color: colors.secondary,
-      marginVertical: 4,
-    },
-    feedbackText: {
-      color: colors.primary,
-      fontWeight: '600',
-    },
-  });
-}
+const styles = StyleSheet.create({
+  cardHeaderRow: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    gap: theme.spacing.sm,
+  },
+});

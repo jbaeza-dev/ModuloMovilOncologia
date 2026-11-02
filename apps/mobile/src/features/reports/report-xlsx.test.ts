@@ -1,4 +1,5 @@
-import { activateFileCipher } from '../../data/sync/file-protection';
+import { activateFileCipher, readClinicalFile } from '../../data/sync/file-protection';
+import { resolvePatientReportFile } from '../../data/local/files/report-storage';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import * as XLSX from 'xlsx';
 
@@ -424,6 +425,105 @@ describe('exportador de reportes Excel (.xlsx) con SheetJS', () => {
 
     // Limpieza
     await deletePatientReport(patientId, result.filename);
+  });
+
+  it('persiste, descifra y relee correctamente archivos .xlsx (7, 30 y 90 días) cuando el cifrado nativo agrega cabecera y etiqueta AES-GCM (+35 bytes)', async () => {
+    const magicHeader = new TextEncoder().encode('QCAES1\n'); // 7 bytes
+    const nonceAndTagOverhead = new Uint8Array(28).fill(0xaa); // 12 nonce + 16 tag = 28 bytes
+    const releaseFramingCipher = activateFileCipher({
+      owns: () => true,
+      protect: async (_path, plain) => {
+        const out = new Uint8Array(
+          magicHeader.byteLength + nonceAndTagOverhead.byteLength + plain.byteLength,
+        );
+        out.set(magicHeader, 0);
+        out.set(nonceAndTagOverhead, magicHeader.byteLength);
+        out.set(plain, 35);
+        return out;
+      },
+      unprotect: async (_path, encrypted) => {
+        if (encrypted.byteLength < 35) {
+          throw new Error('Ciphertext truncado');
+        }
+        return encrypted.subarray(35);
+      },
+    });
+
+    try {
+      for (const periodDays of [7, 30, 90] as const) {
+        const longDescription =
+          'Dolor abdominal intermitente con irradiación lumbar tras ingesta matutina; se hidrató con 500 ml de agua y cedió parcialmente tras reposo de 45 minutos.';
+        const data = createMockReportData({
+          periodDays,
+          vitals: [
+            {
+              id: 'v-zero-' + String(periodDays),
+              paciente_id: patientId,
+              fecha_registro: '2026-10-12T08:00:00.000Z',
+              presion_sistolica: 0, // Valor cero explícito que no debe perderse
+              presion_diastolica: null, // Celda vacía que debe preservar su columna
+              pulso: 72,
+              temperatura: 36.4,
+              saturacion_o2: 99,
+              fecha_subida: null,
+            },
+          ],
+          symptoms: [
+            {
+              id: 's-long-' + String(periodDays),
+              paciente_id: patientId,
+              fecha_registro: '2026-10-12T09:15:00.000Z',
+              descripcion: longDescription,
+              fecha_subida: '2026-10-12T09:20:00.000Z',
+            },
+          ],
+        });
+
+        const result = await generateAndPersistReportXlsx(data);
+        expect(result.filename.startsWith('reporte_' + String(periodDays) + 'd_')).toBe(true);
+        expect(result.filename.endsWith('.xlsx')).toBe(true);
+
+        // Resolver mediante resolvePatientReportFile validando pertenencia
+        const resolved = resolvePatientReportFile(patientId, {
+          filename: result.filename,
+          uri: result.persistentUri,
+        });
+        const encryptedOnDisk = await resolved.file.bytes();
+        const plainExpected = generateReportXlsxBytes(data);
+        expect(encryptedOnDisk.byteLength).toBe(plainExpected.byteLength + 35);
+
+        const decryptedBytes = await readClinicalFile(resolved.canonicalUri, encryptedOnDisk);
+        const workbook = XLSX.read(decryptedBytes, { type: 'array' });
+        expect(workbook.SheetNames).toEqual(['Resumen', 'Signos vitales', 'Sintomas']);
+
+        const vitalsRows = XLSX.utils.sheet_to_json<Array<string | number | boolean | null>>(
+          workbook.Sheets['Signos vitales'],
+          { header: 1, defval: null },
+        );
+        expect(vitalsRows[1]?.[0]).toBe('v-zero-' + String(periodDays));
+        expect(vitalsRows[1]?.[3]).toBe(0); // Sistólica = 0 conservada
+        expect(vitalsRows[1]?.[4]).toBeNull(); // Diastólica vacía conservada como null en su columna
+        expect(vitalsRows[1]?.[5]).toBe(72); // Pulso en su índice exacto
+
+        const symptomsRows = XLSX.utils.sheet_to_json<Array<string | number | boolean | null>>(
+          workbook.Sheets['Sintomas'],
+          { header: 1, defval: null },
+        );
+        expect(symptomsRows[1]?.[3]).toBe(longDescription);
+
+        // Rechazar intento de resolver reporte de otro paciente
+        expect(() =>
+          resolvePatientReportFile('paciente-intruso', {
+            filename: result.filename,
+            uri: result.persistentUri,
+          }),
+        ).toThrow('El reporte solicitado pertenece a otro paciente.');
+
+        await deletePatientReport(patientId, result.filename);
+      }
+    } finally {
+      releaseFramingCipher();
+    }
   });
 });
 

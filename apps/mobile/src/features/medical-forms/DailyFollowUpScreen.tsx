@@ -1,10 +1,11 @@
-import Feather from '@expo/vector-icons/Feather';
+import { AppIcon as Feather } from '../../components/AppIcon';
 import { router } from 'expo-router';
 import { useCallback, useEffect, useState } from 'react';
 import { Alert, AppState, StyleSheet, Text, View } from 'react-native';
 
 import { NavigationCard } from '../../components/NavigationCard';
 import { Screen } from '../../components/Screen';
+import { MascotHero } from '../../components/MascotAvatar';
 import {
   BodyText,
   DemoBadge,
@@ -202,12 +203,15 @@ export function DailyFollowUpScreen() {
   const primaryAssigned = selectDailyFormAssignment(assigned);
 
   return (
-    <Screen isRoot title="Cómo me siento hoy">
+    <Screen isRoot showHelp showProfile>
       <DemoBadge />
-      <BodyText>
-        Registro diario de síntomas y bienestar durante tu tratamiento. Tus respuestas quedan
-        guardadas de forma segura en este dispositivo.
-      </BodyText>
+      <MascotHero
+        pose="registro"
+        eyebrow="SEGUIMIENTO DOMICILIARIO"
+        title="Cómo me siento hoy"
+        description="Avanza paso a paso a tu ritmo. Puedes pausar cuando quieras y retomar después."
+        compact
+      />
 
       {isIncompatible ? (
         <InfoCard>
@@ -220,8 +224,7 @@ export function DailyFollowUpScreen() {
             />
             <Text style={styles.incompatibleTitle}>Cuestionario no compatible</Text>
             <BodyText>
-              La definición del cuestionario asignado contiene reglas o tipos no compatibles con
-              esta versión de la aplicación.
+              Necesitas una versión más reciente de QuimioCare para abrir este cuestionario.
             </BodyText>
           </View>
         </InfoCard>
@@ -229,7 +232,7 @@ export function DailyFollowUpScreen() {
         <EmptyState
           icon="clipboard"
           title="Sin cuestionarios asignados"
-          description="Tu equipo tratante aún no ha asignado cuestionarios de seguimiento para tu perfil."
+          description="Todavía no tienes un cuestionario disponible en este teléfono. Revisa tu vinculación o vuelve a consultar cuando tengas conexión."
         />
       ) : (
         <>
@@ -352,8 +355,7 @@ export function DailyFollowUpScreen() {
                   mainForm &&
                   dailyStatus.activeDraft.version !== mainForm.version ? (
                     <BodyText style={styles.versionNotice}>
-                      Tienes un registro en progreso de una versión anterior. Puedes continuarlo y
-                      registrarlo, o descartarlo para comenzar la versión actualizada.
+                      Tu borrador conserva la edición anterior. Puedes continuarlo o descartarlo.
                     </BodyText>
                   ) : null}
                   <VisualButton label="Continuar mi registro" onPress={handleStartOrContinue} />

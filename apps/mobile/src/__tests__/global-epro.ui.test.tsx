@@ -117,7 +117,7 @@ describe('active global ePRO UI', () => {
   });
   it('starts the global definition and routes with a durable draft identity', async () => {
     await render(<GlobalEproHubScreen />);
-    const start = await screen.findByRole('button', { name: 'Iniciar seguimiento de hoy' });
+    const start = await screen.findByRole('button', { name: 'Iniciar seguimiento' });
     await act(async () => {
       await fireEvent.press(start);
     });
@@ -127,22 +127,40 @@ describe('active global ePRO UI', () => {
       params: { draft: draft.id },
     });
   });
+  it('retoma automáticamente la identidad y sección guardadas sin crear otro seguimiento', async () => {
+    mockRepo.hub.mockResolvedValue({
+      status: { completed_at: '2026-10-27T12:00:00Z', error_code: null },
+      current: snapshot,
+      drafts: [{ ...draft, section: 'sec-modulo-1', context: createDailyFormContext() }],
+      captures: [],
+    });
+    await render(<GlobalEproHubScreen />);
+    const resume = await screen.findByRole('button', { name: 'Iniciar seguimiento' });
+    expect(screen.getByText(/Paso 2 de/)).toBeTruthy();
+    expect(screen.queryByText(/Borrador/)).toBeNull();
+    await fireEvent.press(resume);
+    expect(mockRepo.start).not.toHaveBeenCalled();
+    expect(mockPush).toHaveBeenCalledWith({
+      pathname: '/formulario/cuestionario',
+      params: { draft: draft.id },
+    });
+  });
   it('requires an answer before advancing and saves a typed choice before moving to the next section', async () => {
     await render(<ContractEproEditor draftId={draft.id} />);
-    const next = await screen.findByRole('button', { name: 'Guardar y continuar' });
+    const next = await screen.findByRole('button', { name: 'Continuar' });
     await fireEvent.press(next);
     expect(await screen.findByText('Falta una respuesta obligatoria.')).toBeTruthy();
     await act(async () => {
       await fireEvent.press(screen.getByRole('radio', { name: 'No' }));
     });
     await act(async () => {
-      await fireEvent.press(screen.getByRole('button', { name: 'Guardar y continuar' }));
+      await fireEvent.press(screen.getByRole('button', { name: 'Continuar' }));
     });
     expect(await screen.findByRole('header', { name: 'Fiebre e infección' })).toBeTruthy();
     const first = fixture.formulario.preguntas.find((q) => q.codigo === 'P0.1')!;
     expect(mockRepo.save.mock.calls.at(-1)[1][first.id]).toBe('no');
   });
-  it('keeps both incompatible exclusive choices visible and reports the specific error', async () => {
+  it('seleccionar una molestia retira la opción que debe ir sola y guarda la elección válida', async () => {
     await render(<ContractEproEditor draftId={draft.id} />);
     await screen.findByRole('radio', { name: 'Sí' });
     await act(async () => {
@@ -154,17 +172,14 @@ describe('active global ePRO UI', () => {
       await fireEvent.press(normal);
       await fireEvent.press(symptom);
     });
-    expect(await screen.findByText(/La opción exclusiva debe seleccionarse sola/)).toBeTruthy();
+    expect(screen.queryByText(/La opción exclusiva debe seleccionarse sola/)).toBeNull();
     const question = fixture.formulario.preguntas.find((q) => q.codigo === 'P0.1.1')!;
     await waitFor(() =>
-      expect(mockRepo.save.mock.calls.at(-1)[1][question.id]).toEqual([
-        'normal_sin_cambios',
-        'sensible_picazon',
-      ]),
+      expect(mockRepo.save.mock.calls.at(-1)[1][question.id]).toEqual(['sensible_picazon']),
     );
     expect(
       screen.getByRole('checkbox', { name: /Se ve normal/ }).props.accessibilityState.checked,
-    ).toBe(true);
+    ).toBe(false);
     expect(
       screen.getByRole('checkbox', { name: /Está un poco sensible/ }).props.accessibilityState
         .checked,
@@ -182,13 +197,23 @@ describe('active global ePRO UI', () => {
     await act(async () => {
       await fireEvent.press(screen.getByRole('button', { name: 'Reintentar guardado' }));
     });
-    expect(await screen.findByText('Borrador guardado en este dispositivo')).toBeTruthy();
+    expect(await screen.findByText('Guardado automáticamente')).toBeTruthy();
   });
   it('blocks an incomplete replicated definition instead of filling the screen with a bundled sample', async () => {
     mockRepo.hub.mockRejectedValueOnce(new Error('Incomplete checkpoint'));
     await render(<GlobalEproHubScreen />);
-    expect(await screen.findByText(/No se pudo consultar una definición compatible/)).toBeTruthy();
-    expect(screen.queryByRole('button', { name: 'Iniciar seguimiento de hoy' })).toBeNull();
+    expect(await screen.findByText(/No pudimos abrir tu cuestionario/)).toBeTruthy();
+    expect(screen.queryByRole('button', { name: 'Iniciar seguimiento' })).toBeNull();
+  });
+  it('pausar espera el guardado y conserva el borrador si falla', async () => {
+    await render(<ContractEproEditor draftId={draft.id} />);
+    const pause = await screen.findByRole('button', { name: 'Pausar y seguir más tarde' });
+    mockRepo.save.mockRejectedValueOnce(new Error('No se pudo guardar la prueba'));
+    await fireEvent.press(pause);
+    expect(await screen.findByText('No se pudo guardar la prueba')).toBeTruthy();
+    expect(mockReplace).not.toHaveBeenCalled();
+    await fireEvent.press(screen.getByRole('button', { name: 'Pausar y seguir más tarde' }));
+    await waitFor(() => expect(mockReplace).toHaveBeenCalledWith('/formulario'));
   });
   it('renders the original capture snapshot and distinguishes reception from clinical evaluation', async () => {
     const first = fixture.formulario.preguntas.find((q) => q.codigo === 'P0.1')!;
@@ -200,6 +225,8 @@ describe('active global ePRO UI', () => {
     await render(<EproSubmissionRoute />);
     expect(await screen.findByText(first.titulo)).toBeTruthy();
     expect(screen.getByText('No')).toBeTruthy();
-    expect(screen.getByText(/no implica evaluación clínica/)).toBeTruthy();
+    expect(
+      screen.getByText(/no significa que tu equipo de salud ya lo haya revisado/),
+    ).toBeTruthy();
   });
 });

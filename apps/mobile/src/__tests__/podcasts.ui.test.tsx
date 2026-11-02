@@ -1,6 +1,33 @@
+jest.mock('../features/education/podcast-catalog', () => ({
+  CUIDAQUIMIO_PODCASTS: [
+    { id: 'test-podcast-cancer', title: 'El Cáncer', category: 'Conociendo el Cáncer' },
+    {
+      id: 'test-podcast-quimio',
+      title: 'La quimioterapia',
+      category: 'Conociendo la Quimioterapia',
+    },
+    {
+      id: 'test-podcast-efectos',
+      title: 'Efectos secundarios de la quimioterapia',
+      category: 'Efectos Secundarios',
+    },
+    { id: 'test-podcast-alarmas', title: 'Signos de Alarma', category: 'Signos de Alarma' },
+  ],
+}));
 /// <reference types="jest" />
 import React from 'react';
 import { fireEvent, render, screen, waitFor } from '@testing-library/react-native';
+
+jest.mock('expo-router', () => ({
+  router: {
+    push: jest.fn(),
+    navigate: jest.fn(),
+    replace: jest.fn(),
+    back: jest.fn(),
+  },
+  useLocalSearchParams: () => ({}),
+}));
+
 const mockLaunch = jest.fn();
 jest.mock('../features/education/podcasts', () => ({
   ...jest.requireActual('../features/education/podcasts'),
@@ -39,6 +66,11 @@ jest.mock('../components/Visual', () => {
     ),
   };
 });
+jest.mock('../providers/LocalDataProvider', () => ({
+  useLocalData: () => ({ patientId: 'paciente-a', isClosing: false }),
+  useOptionalLocalData: () => ({ patientId: 'paciente-a', isClosing: false }),
+}));
+
 import { PodcastsScreen } from '../features/education/PodcastsScreen';
 describe('Online podcast screen', () => {
   it('offers four accessible episode actions and explains an offline failure without hiding them', async () => {
@@ -48,7 +80,7 @@ describe('Online podcast screen', () => {
     });
     await render(<PodcastsScreen />);
     expect(screen.getAllByRole('button')).toHaveLength(4);
-    expect(screen.getByText(/los audios no se guardan/)).toBeTruthy();
+    expect(screen.getByText('Escucha mientras usas la app. Requiere internet.')).toBeTruthy();
     await fireEvent.press(screen.getByRole('button', { name: 'Escuchar: El Cáncer' }));
     await waitFor(() => expect(screen.getByRole('alert')).toHaveTextContent(/requiere conexión/));
     expect(screen.getByRole('button', { name: 'Escuchar: Signos de Alarma' })).toBeTruthy();
