@@ -180,6 +180,18 @@ export function createSimulator(config: SimulatorConfig, db: Database) {
         send(res, 200, { status: 'ok', service: config.service });
         return;
       }
+      // Public general educational metadata only; no patient or operator data.
+      if (
+        config.service === 'clinical' &&
+        req.method === 'GET' &&
+        url.pathname.replace(/^\/quimiocare(?=\/)/, '') === '/educacion/api/v1/podcasts'
+      ) {
+        const result = await db.query(
+          'SELECT drive_id AS id,titulo AS title,categoria AS category FROM qc_educacion_podcast WHERE activo=true ORDER BY fecha_creacion,id LIMIT 1000',
+        );
+        send(res, 200, { episodios: result.rows });
+        return;
+      }
       if (await handleSwaggerRoute(config, db, req, res, url.pathname)) {
         return;
       }

@@ -24,7 +24,7 @@ import { MULTIMEDIA_AND_EDUCATION_COPY } from '../../content/patient-copy';
 import { useAppTheme } from '../../providers/ThemeProvider';
 import { theme } from '../../theme';
 import { usePodcastPlayback } from './PodcastPlaybackContext';
-import { CUIDAQUIMIO_PODCASTS } from './podcasts';
+import { usePodcastCatalog } from './use-podcast-catalog';
 
 function formatTime(seconds: number): string {
   if (isNaN(seconds) || seconds < 0) return '00:00';
@@ -34,6 +34,7 @@ function formatTime(seconds: number): string {
 }
 
 export function PodcastPlayerScreen() {
+  const { episodes: publishedPodcasts } = usePodcastCatalog();
   const { theme: appTheme } = useAppTheme();
   const styles = createStyles(appTheme.colors);
   const {
@@ -51,7 +52,7 @@ export function PodcastPlayerScreen() {
   const { fontScale } = useWindowDimensions();
 
   const episodeIndex = currentEpisode
-    ? CUIDAQUIMIO_PODCASTS.findIndex((p) => p.id === currentEpisode.id)
+    ? publishedPodcasts.findIndex((p) => p.id === currentEpisode.id)
     : -1;
   const episodeNumber = episodeIndex >= 0 ? episodeIndex + 1 : 1;
 
@@ -106,7 +107,9 @@ export function PodcastPlayerScreen() {
 
               <View style={styles.metaContainer}>
                 <StatusPill>
-                  Episodio {episodeNumber} de {CUIDAQUIMIO_PODCASTS.length}
+                  {episodeIndex >= 0
+                    ? `Episodio ${episodeNumber} de ${publishedPodcasts.length}`
+                    : 'Podcast'}
                 </StatusPill>
                 <Text style={styles.episodeTitle}>{currentEpisode.title}</Text>
                 <Text style={styles.episodeCategory}>{currentEpisode.category} · CUIDAQUIMIO</Text>
@@ -205,7 +208,7 @@ export function PodcastPlayerScreen() {
                 la aplicación:
               </BodyText>
 
-              {CUIDAQUIMIO_PODCASTS.map((podcast) => (
+              {publishedPodcasts.map((podcast) => (
                 <View key={podcast.id} style={{ marginTop: theme.spacing.sm }}>
                   <VisualButton
                     label={`Escuchar: ${podcast.title}`}

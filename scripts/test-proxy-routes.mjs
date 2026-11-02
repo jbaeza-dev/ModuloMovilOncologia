@@ -109,6 +109,18 @@ try {
     await new Promise((resolve) => setTimeout(resolve, 200));
   }
   for (const [base, path, expected, upstream] of [
+    [
+      clinical,
+      '/quimiocare/educacion/api/v1/podcasts',
+      '/educacion/api/v1/podcasts',
+      'qc-clinical',
+    ],
+    [
+      publicBase,
+      '/quimiocare/educacion/api/v1/podcasts',
+      '/educacion/api/v1/podcasts',
+      'qc-clinical',
+    ],
     [clinical, '/quimiocare/api/v1/pacientes', '/api/v1/pacientes', 'qc-clinical'],
     [clinical, '/quimiocare/api/v1/chat', '/api/v1/chat', 'qc-ai'],
     [

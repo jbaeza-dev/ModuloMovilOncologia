@@ -2,7 +2,7 @@ import { beforeAll, afterAll, describe, expect, it } from 'vitest';
 import { randomUUID, createHash } from 'node:crypto';
 import { once } from 'node:events';
 import { spawn } from 'node:child_process';
-import { mkdtemp, readdir, readFile, rm, appendFile } from 'node:fs/promises';
+import { mkdtemp, readdir, readFile, rm, appendFile, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import type { Server } from 'node:http';
@@ -153,7 +153,7 @@ describe('Preparation HTTP with real PostgreSQL', () => {
       200,
     );
     const spec = await call('/quimiocare/docs/preparacion/openapi.json');
-    expect(Object.keys(spec.body.paths)).toHaveLength(12);
+    expect(Object.keys(spec.body.paths)).toHaveLength(15);
     expect(
       spec.body.paths['/admin/api/v1/preparacion/terminos'].post.requestBody.content[
         'application/json'
@@ -437,6 +437,135 @@ describe('Preparation HTTP with real PostgreSQL', () => {
     // A valid publication still works on this server after both rejected requests.
     expect((await upload(imageForm())).status).toBe(201);
     expect(getActivePublishes()).toBe(0);
+  });
+  it('publishes server podcasts, replays safely, protects writes and withdraws metadata', async () => {
+    const input = {
+      operacion_id: randomUUID(),
+      titulo: 'Audio sintético',
+      descripcion: 'Audio autorizado de prueba',
+      categoria: 'Categoría de evaluación',
+      url: 'https://drive.google.com/file/d/test_drive_audio_123/view',
+    };
+    expect((await prep('contenido-educativo/podcasts', input, patientToken)).status).toBe(403);
+    const created = await prep('contenido-educativo/podcasts', input);
+    expect(created.status).toBe(201);
+    expect((await prep('contenido-educativo/podcasts', input)).status).toBe(200);
+    expect((await prep('contenido-educativo/podcasts', { ...input, titulo: 'Otro' })).status).toBe(
+      409,
+    );
+    expect(
+      (await prep('contenido-educativo/podcasts', { ...input, operacion_id: randomUUID() })).status,
+    ).toBe(409);
+    expect(
+      (
+        await prep('contenido-educativo/podcasts', {
+          ...input,
+          operacion_id: randomUUID(),
+          url: 'http://localhost/private',
+        })
+      ).status,
+    ).toBe(422);
+    const published = await fetch(base + '/educacion/api/v1/podcasts');
+    expect(published.status).toBe(200);
+    expect((await published.json()).episodios).toContainEqual({
+      id: 'test_drive_audio_123',
+      title: input.titulo,
+      category: input.categoria,
+    });
+    expect((await prep(`podcasts/${created.body.id}/estado`, { activo: false })).status).toBe(200);
+    expect(
+      (await (await fetch(base + '/quimiocare/educacion/api/v1/podcasts')).json()).episodios,
+    ).toEqual([]);
+  });
+  it('checks and imports private files through the reusable publisher without duplicate replay', async () => {
+    const file = join(media, 'import.png');
+    const bytes = PNG.sync.write(new PNG({ width: 2, height: 2 }));
+    await writeFile(file, bytes);
+    const manifest = join(media, 'import.json');
+    const elementos = [
+      {
+        tipo: 'imagen',
+        clave: 'import-image',
+        titulo: 'Imagen importada',
+        descripcion: 'Material de prueba',
+        categoria: 'Importación de prueba',
+        archivo: 'import.png',
+        sha256: createHash('sha256').update(bytes).digest('hex'),
+      },
+      {
+        tipo: 'podcast',
+        clave: 'import-audio',
+        titulo: 'Audio importado',
+        descripcion: 'Audio de prueba',
+        categoria: 'Importación de prueba',
+        url: 'https://drive.google.com/file/d/test_import_audio_123/view',
+      },
+    ];
+    await writeFile(manifest, JSON.stringify({ version: 1, elementos }));
+    async function run(mode: string) {
+      const child = spawn(
+        process.execPath,
+        ['dist/import-education.js', manifest, PATIENTS.A, mode],
+        {
+          cwd: join(import.meta.dirname, '..'),
+          windowsHide: true,
+          env: {
+            ...process.env,
+            APP_ENV: 'demo',
+            AUTH_PROVIDER: 'demo',
+            DATABASE_URL: config.databaseUrl,
+            DEMO_CONTROL_KEY: config.controlKey,
+            DEMO_SIGNING_KEY: config.signingKey,
+            AUTH_EXPECTED_ISSUER: config.issuer,
+            SIMULATOR_PUBLIC_BASE_URL: base,
+            PREPARATION_ENABLED: 'true',
+            EDUCATION_MEDIA_ROOT: config.educationMediaRoot,
+            EDUCATION_TEMP_DIR: config.educationTempDir,
+          },
+        },
+      );
+      let output = '';
+      child.stdout.on('data', (c) => {
+        output += String(c);
+      });
+      child.stderr.on('data', () => undefined);
+      const [code] = await once(child, 'exit');
+      return { code, output };
+    }
+    expect((await run('--check')).code).toBe(0);
+    expect(
+      (
+        await db.query(
+          "SELECT count(*) AS n FROM contenido_educativo WHERE categoria='Importación de prueba'",
+        )
+      ).rows[0].n,
+    ).toBe('0');
+    const first = await run('--apply');
+    expect(first.code).toBe(0);
+    expect(first.output).toContain('201');
+    const replay = await run('--apply');
+    expect(replay.code).toBe(0);
+    expect(replay.output).not.toContain('201');
+    expect(
+      (
+        await db.query(
+          "SELECT count(*) AS n FROM contenido_educativo WHERE categoria='Importación de prueba'",
+        )
+      ).rows[0].n,
+    ).toBe('1');
+    expect(
+      (
+        await db.query(
+          "SELECT count(*) AS n FROM qc_educacion_podcast WHERE drive_id='test_import_audio_123'",
+        )
+      ).rows[0].n,
+    ).toBe('1');
+    elementos[0]!.sha256 = '0'.repeat(64);
+    await writeFile(manifest, JSON.stringify({ version: 1, elementos }));
+    expect((await run('--check')).code).not.toBe(0);
+    await db.query(
+      "UPDATE qc_educacion_podcast SET activo=false WHERE drive_id='test_import_audio_123'",
+    );
   });
   it('registers videos and applies per-patient scenarios', async () => {
     const video = await prep('contenido-educativo/videos', {

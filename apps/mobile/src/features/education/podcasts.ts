@@ -1,14 +1,18 @@
 import * as WebBrowser from 'expo-web-browser';
 import * as Network from 'expo-network';
 import { Platform } from 'react-native';
+import type { PodcastEpisode } from './PodcastPlaybackContext';
 
 /** Online links observed on the author's site, 28-10-2026; ordered by the CUIDAQUIMIO PPT. */
 import { CUIDAQUIMIO_PODCASTS } from './podcast-catalog';
 export { CUIDAQUIMIO_PODCASTS } from './podcast-catalog';
 
-export async function launchPodcast(id: string): Promise<{ opened: boolean; error?: string }> {
-  // Only the four reviewed links can be opened. No audio bytes or listening claims are stored.
-  if (!CUIDAQUIMIO_PODCASTS.some((item) => item.id === id))
+export async function launchPodcast(
+  id: string,
+  catalog: readonly PodcastEpisode[] = CUIDAQUIMIO_PODCASTS,
+): Promise<{ opened: boolean; error?: string }> {
+  // Only identifiers present in the published catalog can be opened.
+  if (!catalog.some((item) => item.id === id))
     return { opened: false, error: 'Este podcast no pertenece al catálogo de CUIDAQUIMIO.' };
   try {
     const network = await Network.getNetworkStateAsync();

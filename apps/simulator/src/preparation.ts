@@ -98,7 +98,8 @@ export async function prepare(
                   ? ['perfil_clinico', 'tratamiento']
                   : action.endsWith('/escenario')
                     ? ['escenario']
-                    : action === 'contenido-educativo/videos'
+                    : action === 'contenido-educativo/videos' ||
+                        action === 'contenido-educativo/podcasts'
                       ? ['titulo', 'descripcion', 'categoria', 'url']
                       : [];
     if (Object.keys(input).some((key) => key !== 'operacion_id' && !allowed.includes(key)))
@@ -158,6 +159,38 @@ export async function prepare(
           name.toLowerCase(),
         ]);
         status = existed ? 200 : 201;
+      } else if (action === 'contenido-educativo/podcasts') {
+        const category = await categoryName(client, input.categoria);
+        const match =
+          /^https:\/\/drive\.google\.com\/file\/d\/([A-Za-z0-9_-]{10,100})\/(?:view|preview)$/.exec(
+            String(input.url ?? ''),
+          );
+        if (!match)
+          throw new ApiError(
+            422,
+            'ERROR_VALIDACION',
+            'Use un enlace de archivo de audio público de Drive, terminado en /view.',
+          );
+        const id = randomUUID();
+        const title = text(input.titulo);
+        const description = text(input.descripcion, 1000);
+        if (await one(client, 'SELECT id FROM qc_educacion_podcast WHERE drive_id=$1', [match[1]]))
+          throw new ApiError(409, 'CONFLICTO_ESTADO', 'Este episodio ya está publicado.');
+        await client.query(
+          'INSERT INTO qc_educacion_podcast(id,profesional_id,titulo,descripcion,categoria,drive_id) VALUES($1,$2,$3,$4,$5,$6)',
+          [id, operator, title, description, category, match[1]],
+        );
+        body = { id, titulo: title, categoria: category, drive_id: match[1], activo: true };
+        status = 201;
+      } else if (parts[0] === 'podcasts' && parts[2] === 'estado') {
+        if (typeof input.activo !== 'boolean')
+          throw new ApiError(422, 'ERROR_VALIDACION', 'activo debe ser booleano.');
+        body = await one(
+          client,
+          'UPDATE qc_educacion_podcast SET activo=$2 WHERE id=$1 RETURNING id,activo',
+          [requireUuid(parts[1]), input.activo],
+        );
+        if (!body) throw new ApiError(404, 'RECURSO_NO_ENCONTRADO', 'Podcast inexistente.');
       } else if (action === 'contenido-educativo/videos') {
         const category = await categoryName(client, input.categoria);
         const url = String(input.url ?? '');

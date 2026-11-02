@@ -1,3 +1,11 @@
+jest.mock('../features/education/use-podcast-catalog', () => ({
+  usePodcastCatalog: () => ({
+    episodes: jest.requireMock('../features/education/podcast-catalog').CUIDAQUIMIO_PODCASTS,
+    loading: false,
+    error: false,
+    refresh: jest.fn(),
+  }),
+}));
 jest.mock('../features/education/podcast-catalog', () => ({
   CUIDAQUIMIO_PODCASTS: [
     { id: 'test-podcast-cancer', title: 'El Cáncer', category: 'Conociendo el Cáncer' },
