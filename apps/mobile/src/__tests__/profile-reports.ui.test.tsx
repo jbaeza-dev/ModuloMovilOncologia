@@ -220,23 +220,14 @@ describe('Profile y Reports UI (Bloque 5)', () => {
         expect(screen.getByText('María González')).toBeTruthy();
       });
 
-      // Secciones principales como encabezados
-      expect(screen.getByRole('header', { name: 'Mi tratamiento' })).toBeTruthy();
-      expect(screen.getByRole('header', { name: 'Mis datos' })).toBeTruthy();
-      expect(screen.getByRole('header', { name: 'Configuración y privacidad' })).toBeTruthy();
-
-      // Entradas bajo Mi tratamiento
-      expect(screen.getByRole('button', { name: 'Mi tratamiento' })).toBeTruthy();
-      expect(screen.getByRole('button', { name: 'Mis medicamentos' })).toBeTruthy();
-      expect(screen.getByRole('button', { name: 'Mi equipo de salud' })).toBeTruthy();
-
-      // Entradas bajo Mis datos
-      expect(screen.getByRole('button', { name: 'Datos personales' })).toBeTruthy();
+      // Three destinations from the mockup, plus the patient's own editable data.
+      expect(screen.getByRole('button', { name: 'Actualizar mis datos' })).toBeTruthy();
+      const treatment = screen.getByRole('button', { name: 'Tratamiento, equipo y medicamentos' });
+      expect(treatment).toBeTruthy();
       expect(screen.getByRole('button', { name: 'Código de vinculación' })).toBeTruthy();
-
-      // Entradas bajo Configuración y privacidad
-      expect(screen.getByRole('button', { name: 'Preferencias' })).toBeTruthy();
-      expect(screen.getByRole('button', { name: 'Consentimientos' })).toBeTruthy();
+      expect(screen.getByRole('button', { name: 'Apariencia, sesión y teléfonos' })).toBeTruthy();
+      await fireEvent.press(treatment);
+      expect(mockRouterPush).toHaveBeenCalledWith('/perfil/clinico');
       expect(screen.getByText('Cerrar sesión')).toBeTruthy();
     });
   });
@@ -259,7 +250,9 @@ describe('Profile y Reports UI (Bloque 5)', () => {
       // Fechas civiles en formato DD/MM/AAAA
       expect(screen.getByText('01/10/2026')).toBeTruthy();
       expect(screen.getByText('20/10/2026')).toBeTruthy();
-      expect(screen.getByText(/Última consulta completa/)).toBeTruthy();
+      expect(screen.queryByText(/Última consulta:/)).toBeNull();
+      await fireEvent.press(screen.getByRole('button', { name: 'Estado de mi información' }));
+      expect(screen.getByText(/Última consulta:/)).toBeTruthy();
 
       const configButton = screen.getByText('Configurar aviso');
       expect(configButton).toBeTruthy();
@@ -280,17 +273,19 @@ describe('Profile y Reports UI (Bloque 5)', () => {
       await render(<ReportsScreen />);
 
       await waitFor(() => {
-        expect(screen.getByText('Reportes')).toBeTruthy();
+        expect(screen.getByText('Mis reportes')).toBeTruthy();
       });
 
       // Resumen sin duplicar período o formato
+      expect(screen.queryByText('Signos vitales registrados')).toBeNull();
+      await fireEvent.press(screen.getByRole('button', { name: 'Ver resumen del período' }));
       expect(screen.getByText('Signos vitales registrados')).toBeTruthy();
       expect(screen.getByText('5 registros')).toBeTruthy();
       expect(screen.getByText('Síntomas reportados')).toBeTruthy();
       expect(screen.getByText('2 reportes')).toBeTruthy();
 
-      // Acción principal para generar o actualizar
-      expect(screen.getByText('Actualizar y compartir PDF')).toBeTruthy();
+      // Acción principal para generar o actualizar y abrir visor (sin compartir automáticamente)
+      expect(screen.getByText('Actualizar y abrir PDF')).toBeTruthy();
 
       // Tarjeta simplificada de reporte guardado: título claro, fecha y acciones visibles
       expect(screen.getByText('Reporte PDF de 30 días')).toBeTruthy();
@@ -398,6 +393,63 @@ describe('Profile y Reports UI (Bloque 5)', () => {
       mockLocalDataContext.patientId = 'paciente-a';
       mockLocalDataContext.epoch = 0;
       alertSpy.mockRestore();
+    });
+
+    it('separa generar y abrir de compartir en Excel (.xlsx) para 7, 30 y 90 días, y conserva el archivo si falla compartir', async () => {
+      // eslint-disable-next-line @typescript-eslint/no-require-imports
+      const { shareReportFile } = require('../data/local/files/report-storage');
+      // eslint-disable-next-line @typescript-eslint/no-require-imports
+      const { generateAndPersistReportXlsx } = require('../features/reports/report-xlsx');
+
+      await render(<ReportsScreen />);
+
+      await waitFor(() => {
+        expect(screen.getByText('Excel (.xlsx)')).toBeTruthy();
+      });
+
+      await fireEvent.press(screen.getByText('Excel (.xlsx)'));
+
+      // Al seleccionar Excel sin archivo previo de 30d xlsx, el CTA es "Generar y abrir XLSX"
+      expect(await screen.findByText('Generar y abrir XLSX')).toBeTruthy();
+
+      await fireEvent.press(screen.getByText('Generar y abrir XLSX'));
+
+      await waitFor(() => {
+        expect(generateAndPersistReportXlsx).toHaveBeenCalledTimes(1);
+      });
+
+      // Generar NO debe abrir automáticamente la hoja de compartir del sistema
+      expect(shareReportFile).not.toHaveBeenCalled();
+
+      // Debe navegar directamente al visor de planilla Excel
+      expect(mockRouterPush).toHaveBeenCalledWith({
+        pathname: '/reportes/visor-xlsx',
+        params: {
+          uri: '/mock/reports/paciente-a/reporte.xlsx',
+          filename: 'reporte_paciente-a_30d_2026-10-17T12-00-00.xlsx',
+          periodDays: '30',
+        },
+      });
+
+      // Probar también con 7 días
+      await fireEvent.press(screen.getByText('7 días'));
+      await fireEvent.press(screen.getByText('Generar y abrir XLSX'));
+      await waitFor(() => {
+        expect(generateAndPersistReportXlsx).toHaveBeenCalledTimes(2);
+      });
+
+      // Probar fallo/cancelación de compartir sobre un reporte guardado: no borra el archivo ni afirma fallo de generación
+      (shareReportFile as jest.Mock).mockResolvedValueOnce('sharing_unavailable');
+      await fireEvent.press(screen.getByText('Compartir PDF'));
+
+      await waitFor(() => {
+        expect(
+          screen.getByText(
+            'No se completó el envío externo. Tu archivo sigue guardado en este teléfono.',
+          ),
+        ).toBeTruthy();
+      });
+      expect(mockDeletePatientReport).not.toHaveBeenCalled();
     });
   });
 });

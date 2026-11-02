@@ -4,7 +4,7 @@ import { fireEvent, render, screen } from '@testing-library/react-native';
 const mockNavigate = jest.fn();
 let mockState = { user: { id: 'synthetic' }, state: 'terms_pending' };
 let mockSummary = { pending: 1, paused: 0, rejected: 1, runtimePaused: true };
-jest.mock('expo-router', () => ({ router: { navigate: (path: string) => mockNavigate(path) } }));
+jest.mock('expo-router', () => ({ router: { push: (path: string) => mockNavigate(path) } }));
 jest.mock('../features/access/SessionScreens', () => ({
   useIdentity: () => ({ snapshot: mockState, data: { patientId: 'synthetic' } }),
   SessionNotice: () => null,

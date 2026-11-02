@@ -1,16 +1,48 @@
 export const typography = {
-  screenTitle: { fontSize: 28, lineHeight: 34, fontWeight: '700' as const },
-  sectionTitle: { fontSize: 20, lineHeight: 26, fontWeight: '700' as const },
-  body: { fontSize: 16, lineHeight: 24 },
-  label: { fontSize: 16, lineHeight: 22, fontWeight: '600' as const },
-  editableValue: { fontSize: 18, lineHeight: 24 },
-  button: { fontSize: 16, lineHeight: 22, fontWeight: '700' as const },
-  helper: { fontSize: 14, lineHeight: 20 },
+  screenTitle: {
+    fontFamily: 'NunitoSans-Bold',
+    fontSize: 28,
+    lineHeight: 34,
+    fontWeight: '800' as const,
+  },
+  sectionTitle: {
+    fontFamily: 'NunitoSans-Bold',
+    fontSize: 20,
+    lineHeight: 26,
+    fontWeight: '700' as const,
+  },
+  body: {
+    fontFamily: 'NunitoSans-Regular',
+    fontSize: 16,
+    lineHeight: 24,
+  },
+  label: {
+    fontFamily: 'NunitoSans-SemiBold',
+    fontSize: 16,
+    lineHeight: 22,
+    fontWeight: '600' as const,
+  },
+  editableValue: {
+    fontFamily: 'NunitoSans-Regular',
+    fontSize: 18,
+    lineHeight: 24,
+  },
+  button: {
+    fontFamily: 'NunitoSans-Bold',
+    fontSize: 16,
+    lineHeight: 22,
+    fontWeight: '700' as const,
+  },
+  helper: {
+    fontFamily: 'NunitoSans-Regular',
+    fontSize: 14,
+    lineHeight: 20,
+  },
 } as const;
 
 export const theme = {
   spacing: { xs: 4, sm: 8, md: 16, lg: 24, xl: 32 },
-  radius: { sm: 12, md: 18 },
+  radius: { sm: 12, md: 20 },
   typography,
 } as const;
 
@@ -18,12 +50,12 @@ export const PALETTE_OPTIONS = [
   {
     id: 'turquoise',
     label: 'Turquesa',
-    light: '#00695C',
-    dark: '#80CBC4',
-    lightContainer: '#E0F2EF',
-    darkContainer: '#263533',
-    onLightContainer: '#183B36',
-    onDarkContainer: '#D9F5F0',
+    light: '#006A70',
+    dark: '#82D9CD',
+    lightContainer: '#D9EFEA',
+    darkContainer: '#1E3E44',
+    onLightContainer: '#06444A',
+    onDarkContainer: '#E2F7F4',
   },
   {
     id: 'blue',
@@ -66,12 +98,15 @@ export type AppTheme = typeof theme & {
   colors: {
     background: string;
     surface: string;
+    surfaceRaised: string;
     mutedSurface: string;
     border: string;
+    cardBorder: string;
     inputBorder: string;
     inputBorderFocused: string;
     text: string;
     secondary: string;
+    heading: string;
     inverse: string;
     pressed: string;
     primary: string;
@@ -102,28 +137,31 @@ export function resolveTheme(paletteId: PaletteId, colorScheme: ColorScheme): Ap
     paletteId: palette.id,
     colorScheme,
     colors: {
-      background: isDark ? '#121212' : '#FFFFFF',
-      surface: isDark ? '#1E1E1E' : '#F3F3F3',
-      mutedSurface: isDark ? '#2A2A2A' : '#E8E8E8',
-      border: isDark ? '#484848' : '#D6D6D6',
-      inputBorder: isDark ? '#757575' : '#767676',
+      background: isDark ? '#0E1C20' : '#FFF7E7',
+      surface: isDark ? '#172C32' : '#FFFFFF',
+      surfaceRaised: isDark ? '#1D353C' : '#FFFDF8',
+      mutedSurface: isDark ? '#13252A' : '#F3EFE4',
+      border: isDark ? '#7FA8A2' : '#5C746C',
+      cardBorder: isDark ? '#7FA8A2' : '#5C746C',
+      inputBorder: isDark ? '#7FA8A2' : '#5C746C',
       inputBorderFocused: isDark ? palette.dark : palette.light,
-      text: isDark ? '#F5F5F5' : '#202020',
-      secondary: isDark ? '#C2C2C2' : '#595959',
-      inverse: isDark ? '#121212' : '#FFFFFF',
-      pressed: isDark ? '#383838' : '#E0E0E0',
+      text: isDark ? '#EDF5EF' : '#173940',
+      secondary: isDark ? '#BDD0CA' : '#3F5957',
+      heading: isDark ? '#82D9CD' : '#064E55',
+      inverse: isDark ? '#0E1C20' : '#FFFFFF',
+      pressed: isDark ? '#23444D' : '#E8DFCC',
       primary: isDark ? palette.dark : palette.light,
-      onPrimary: isDark ? '#202020' : '#FFFFFF',
+      onPrimary: isDark ? '#0E1C20' : '#FFFFFF',
       primaryContainer: isDark ? palette.darkContainer : palette.lightContainer,
       onPrimaryContainer: isDark ? palette.onDarkContainer : palette.onLightContainer,
-      success: isDark ? '#81C784' : '#2E7D32',
+      success: isDark ? '#81C784' : '#1E5E46',
       warning: isDark ? '#FFCC80' : '#8D5700',
       warningContainer: isDark ? '#3A2D1F' : '#FEF3C7',
       onWarningContainer: isDark ? '#FFE2B8' : '#5A3600',
-      error: isDark ? '#EF9A9A' : '#B3261E',
+      error: isDark ? '#EF9A9A' : '#9B2628',
       onError: isDark ? '#202020' : '#FFFFFF',
-      errorContainer: isDark ? '#3E1C1A' : '#FDE8E8',
-      onErrorContainer: isDark ? '#FFCDD2' : '#8A1C14',
+      errorContainer: isDark ? '#3E1C1A' : '#FDECEC',
+      onErrorContainer: isDark ? '#FFCDD2' : '#9B2628',
     },
   };
 }

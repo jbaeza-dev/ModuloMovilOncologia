@@ -4,6 +4,7 @@ import { router, useFocusEffect } from 'expo-router';
 import type { GatewayRecordatorio } from '@quimiocare/contracts';
 import { normalizedReminder } from '@quimiocare/contracts/agenda';
 import { Screen } from '../../components/Screen';
+import { DetailsDisclosure } from '../../components/DetailsDisclosure';
 import { BodyText, DemoBadge, InfoCard, SectionTitle, VisualButton } from '../../components/Visual';
 import { useLocalData } from '../../providers/LocalDataProvider';
 import { registerNativePush } from '../../services/session/native-session';
@@ -81,23 +82,24 @@ export function SharedAgendaScreen() {
       await reconcileReminders();
     });
   return (
-    <Screen title="Mis recordatorios">
+    <Screen mascotPose="recordatorio" title="Mis recordatorios">
       <DemoBadge />
       <InfoCard>
         <BodyText>
-          Los cambios de horario requieren conexión y confirmación. Los avisos te recuerdan entrar a
-          la aplicación; no registran una toma ni una atención médica.
+          Necesitas internet para cambiar horarios. Los avisos no registran una toma por ti.
         </BodyText>
-        <BodyText>
-          {lastSync
-            ? 'Última actualización: ' + new Date(lastSync).toLocaleString('es-CL')
-            : 'Aún no hay una agenda confirmada en este teléfono.'}
-        </BodyText>
-        <BodyText>
-          {coverage?.permission
-            ? `${coverage.confirmed} avisos locales programados${coverage.until ? ', hasta ' + new Date(coverage.until).toLocaleString('es-CL') : ''}.`
-            : 'El respaldo local aún no está disponible. Activa las notificaciones y revisa los permisos.'}
-        </BodyText>
+        <DetailsDisclosure title="Estado de los avisos">
+          <BodyText>
+            {lastSync
+              ? 'Última actualización: ' + new Date(lastSync).toLocaleString('es-CL')
+              : 'Aún no hay una agenda confirmada en este teléfono.'}
+          </BodyText>
+          <BodyText>
+            {coverage?.permission
+              ? `${coverage.confirmed} avisos programados${coverage.until ? ', hasta ' + new Date(coverage.until).toLocaleString('es-CL') : ''}.`
+              : 'Activa las notificaciones para recibir avisos en este teléfono.'}
+          </BodyText>
+        </DetailsDisclosure>
         {!!coverage?.pendingCancellations && (
           <BodyText>
             Quedan avisos anteriores pendientes de cancelar en este teléfono. Vuelve a actualizar la
@@ -111,9 +113,8 @@ export function SharedAgendaScreen() {
           </BodyText>
         )}
         <BodyText>
-          El respaldo se intenta dos minutos después del horario. Android puede retrasar o impedir
-          avisos con permisos desactivados, ahorro de batería o detención forzada. La cobertura se
-          renueva al abrir o conectar la app y abarca como máximo 14 días.
+          Los avisos pueden retrasarse si faltan permisos o el teléfono restringe la app. Se
+          renuevan al abrir QuimioCare.
         </BodyText>
         {!agendaBackgroundReady && (
           <BodyText>

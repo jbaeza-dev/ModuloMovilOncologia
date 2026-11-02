@@ -1,4 +1,5 @@
-import Feather from '@expo/vector-icons/Feather';
+import { MascotAvatar } from '../../components/MascotAvatar';
+import { AppIcon as Feather } from '../../components/AppIcon';
 import * as Crypto from 'expo-crypto';
 import { router, useFocusEffect } from 'expo-router';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
@@ -141,7 +142,7 @@ export function AssistantScreen() {
     if (router.canGoBack()) {
       router.back();
     } else {
-      router.navigate('/');
+      router.replace('/');
     }
   };
 
@@ -150,13 +151,15 @@ export function AssistantScreen() {
   const canSend = !isSending && input.trim().length > 0 && characterCount <= 2000;
   const fixedHeader = (
     <View style={styles.scopeNotice}>
-      <Text accessibilityRole="header" style={styles.scopeTitle}>
-        Asistente QuimioCare
-      </Text>
-      <Text style={styles.scopeText}>
-        Este asistente ofrece orientación de autocuidado. Sus respuestas no constituyen un
-        diagnóstico ni una prescripción y no sustituyen la consulta médica.
-      </Text>
+      <MascotAvatar pose="explicacion" size="md" framed={false} />
+      <View style={styles.scopeCopy}>
+        <Text accessibilityRole="header" style={styles.scopeTitle}>
+          Asistente QuimioCare
+        </Text>
+        <Text style={styles.scopeText}>
+          Orientación educativa. No reemplaza a tu equipo de salud.
+        </Text>
+      </View>
     </View>
   );
 
@@ -242,8 +245,7 @@ export function AssistantScreen() {
       ) : null}
       <VisualButton label="Enviar consulta" disabled={!canSend} onPress={handleSend} />
       <BodyText style={styles.disclaimerText}>
-        La conversación se conserva temporalmente en memoria durante la sesión y no se registra en
-        el almacenamiento permanente.
+        La conversación se borra al cerrar la sesión.
       </BodyText>
     </View>
   );
@@ -276,6 +278,7 @@ export function AssistantScreen() {
                   isUser ? styles.userWrapper : styles.assistantWrapper,
                 ]}
               >
+                {!isUser ? <MascotAvatar pose="explicacion" size="sm" framed={false} /> : null}
                 <Text
                   style={isUser ? styles.userBubble : styles.assistantBubble}
                   accessibilityLabel={`${senderLabel}: ${msg.text}`}
@@ -300,9 +303,8 @@ export function AssistantScreen() {
                         style={styles.urgencyNotice}
                       >
                         <Text style={styles.urgencyText}>
-                          La respuesta del asistente indica urgencia. Busca ayuda por los canales
-                          habituales de salud; no esperes una respuesta ni la sincronización de la
-                          app. QuimioCare no avisó automáticamente a profesionales.
+                          Busca ayuda urgente. No esperes a la app: QuimioCare no ha avisado a
+                          profesionales.
                         </Text>
                       </View>
                     ) : null}
@@ -382,12 +384,16 @@ export function AssistantScreen() {
 function createStyles(colors: ReturnType<typeof useAppTheme>['theme']['colors']) {
   return StyleSheet.create({
     scopeNotice: {
+      flexDirection: 'row',
+      alignItems: 'center',
+      gap: 12,
       paddingHorizontal: theme.spacing.md,
       paddingBottom: theme.spacing.sm,
       backgroundColor: colors.background,
       borderBottomColor: colors.border,
       borderBottomWidth: 1,
     },
+    scopeCopy: { flex: 1, minWidth: 0 },
     scopeTitle: {
       fontSize: 22,
       lineHeight: 28,

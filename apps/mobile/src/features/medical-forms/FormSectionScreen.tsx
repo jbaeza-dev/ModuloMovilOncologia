@@ -429,7 +429,7 @@ export function FormSectionScreen() {
   const progressPercent = Math.round(((currentSectionIndex + 1) / sections.length) * 100);
 
   return (
-    <Screen isRoot={false} title={formDef.titulo}>
+    <Screen isRoot={false} scroll={false}>
       <ScrollView
         ref={scrollRef}
         contentContainerStyle={styles.scrollContent}
@@ -510,7 +510,7 @@ export function FormSectionScreen() {
           {currentSectionIndex > 0 ? (
             <VisualButton label="Anterior" secondary onPress={handlePrevSection} />
           ) : null}
-          <VisualButton label="Guardar y salir" secondary onPress={handleSaveAndExit} />
+          <VisualButton label="Pausar y seguir más tarde" secondary onPress={handleSaveAndExit} />
         </View>
       </ScrollView>
     </Screen>

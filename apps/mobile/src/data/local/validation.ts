@@ -50,7 +50,7 @@ export function validateVitalInput(input: VitalInput): VitalValidationResult {
     }
     const parsed = Number(value.replace(',', '.'));
     if (!Number.isFinite(parsed) || parsed < min || parsed > max) {
-      errors[key] = `${label}: ingresa un valor válido.`;
+      errors[key] = `${label}: ingresa un valor entre ${min} y ${max}.`;
       return null;
     }
     return parsed;

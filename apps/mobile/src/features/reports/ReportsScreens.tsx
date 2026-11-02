@@ -1,10 +1,11 @@
-import Feather from '@expo/vector-icons/Feather';
+import { AppIcon as Feather } from '../../components/AppIcon';
 import { File } from 'expo-file-system';
 import { router, useFocusEffect, useLocalSearchParams } from 'expo-router';
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { AccessibilityInfo, Alert, Pressable, StyleSheet, Text, View } from 'react-native';
 
 import { Screen } from '../../components/Screen';
+import { DetailsDisclosure } from '../../components/DetailsDisclosure';
 import {
   BodyText,
   ChoiceChip,
@@ -39,11 +40,12 @@ import { generateAndPersistReportXlsx } from './report-xlsx';
 interface SavedReportCardProps {
   report: PatientReportItem;
   saving: boolean;
+  onOpen: () => void;
   onShare: () => void;
   onDelete: () => void;
 }
 
-function SavedReportCard({ report, saving, onShare, onDelete }: SavedReportCardProps) {
+function SavedReportCard({ report, saving, onOpen, onShare, onDelete }: SavedReportCardProps) {
   const { theme: appTheme } = useAppTheme();
   const styles = createStyles(appTheme.colors);
   const [expanded, setExpanded] = useState(false);
@@ -106,7 +108,12 @@ function SavedReportCard({ report, saving, onShare, onDelete }: SavedReportCardP
       ) : null}
 
       <View style={styles.reportActions}>
-        <VisualButton label={isPdf ? 'Compartir PDF' : 'Compartir Excel'} onPress={onShare} />
+        <VisualButton label={isPdf ? 'Ver reporte PDF' : 'Ver planilla Excel'} onPress={onOpen} />
+        <VisualButton
+          label={isPdf ? 'Compartir PDF' : 'Compartir Excel'}
+          secondary
+          onPress={onShare}
+        />
         <VisualButton label="Eliminar reporte" secondary disabled={saving} onPress={onDelete} />
       </View>
     </InfoCard>
@@ -173,42 +180,122 @@ export function ReportsScreen() {
   const hasClinicalData =
     reportData && (reportData.summary.vitalsCount > 0 || reportData.summary.symptomsCount > 0);
 
-  async function handleGenerateAndShare() {
+  async function handleGenerateAndOpen() {
     if (!repository || !patientId || saving || !reportData || !hasClinicalData) return;
     const targetDays = days;
     const targetFormat = selectedFormat;
+    const activePatient = manager?.getPatientId?.() ?? patientId;
+    const activeEpoch = manager?.getContextEpoch?.() ?? 0;
 
     setReportFeedback(null);
     setReportError(null);
 
+    let failedStage: 'datos' | 'serializacion' | 'persistencia' | 'navegacion' = 'datos';
     try {
       await runSave(async () => {
-        // Capturar una instantánea fresca al momento de confirmar
+        // 1. Etapa de datos: Capturar instantánea fresca al momento de confirmar
+        failedStage = 'datos';
         const freshData = await repository.reports.getReportData(targetDays);
         if (freshData.summary.vitalsCount === 0 && freshData.summary.symptomsCount === 0) {
           throw new Error('No hay registros clínicos en el período para generar el reporte.');
         }
 
+        const checkPatientBefore = manager?.getPatientId?.() ?? patientId;
+        const checkEpochBefore = manager?.getContextEpoch?.() ?? 0;
+        if (checkPatientBefore !== activePatient || checkEpochBefore !== activeEpoch) {
+          return;
+        }
+
+        // 2. Etapa de serialización y persistencia cifrada
+        failedStage = 'persistencia';
         const res =
           targetFormat === 'pdf'
             ? await generateAndPersistReportPdf(freshData)
             : await generateAndPersistReportXlsx(freshData);
 
-        if (!isMountedRef.current || !isFocusedRef.current) return;
+        const checkPatientAfter = manager?.getPatientId?.() ?? patientId;
+        const checkEpochAfter = manager?.getContextEpoch?.() ?? 0;
+        if (
+          !isMountedRef.current ||
+          !isFocusedRef.current ||
+          checkPatientAfter !== activePatient ||
+          checkEpochAfter !== activeEpoch
+        ) {
+          return;
+        }
+
+        // 3. Actualizar listado local y notificar guardado exitoso (sin invocar compartir)
         refreshReports();
+        setReportFeedback('Archivo guardado en este teléfono. Puedes abrirlo o compartirlo.');
 
-        await shareReportFile(res.persistentUri, targetFormat);
-        if (!isMountedRef.current || !isFocusedRef.current) return;
-
-        setReportFeedback('Archivo guardado. Puedes compartirlo cuando quieras.');
-
-        router.navigate('/vitales/reporte-estado?archivo=' + encodeURIComponent(res.filename));
+        // 4. Etapa de navegación: Abrir directamente el visor interno
+        failedStage = 'navegacion';
+        const viewerRoute = targetFormat === 'pdf' ? '/reportes/visor-pdf' : '/reportes/visor-xlsx';
+        router.push({
+          pathname: viewerRoute as never,
+          params: {
+            uri: res.persistentUri,
+            filename: res.filename,
+            periodDays: String(targetDays),
+          },
+        });
       });
+    } catch (err) {
+      if (
+        !isMountedRef.current ||
+        !isFocusedRef.current ||
+        (manager?.getContextEpoch?.() ?? 0) !== activeEpoch
+      ) {
+        return;
+      }
+      const formatLabel = targetFormat === 'pdf' ? 'PDF' : 'Excel';
+      const detail = err instanceof Error ? err.message : '';
+      if (failedStage === 'datos') {
+        setReportError(
+          detail || 'No se pudieron consultar los registros clínicos para generar el reporte.',
+        );
+      } else if (failedStage === 'navegacion') {
+        setReportError(
+          `El reporte ${formatLabel} se guardó en este teléfono, pero no se pudo abrir el visor automáticamente.`,
+        );
+      } else {
+        setReportError(
+          `No se pudo guardar el reporte en formato ${formatLabel} en este dispositivo.`,
+        );
+      }
+    }
+  }
+
+  async function handleShareSavedReport(report: PatientReportItem) {
+    const activePatient = manager?.getPatientId?.() ?? patientId;
+    const activeEpoch = manager?.getContextEpoch?.() ?? 0;
+    if (!activePatient || saving) return;
+
+    setReportFeedback(null);
+    setReportError(null);
+
+    try {
+      const dir = getPatientReportDirectory(activePatient);
+      const targetUri = report.uri || `${dir.uri}/${report.filename}`;
+      const result = await shareReportFile(targetUri, report.format);
+      if (
+        !isMountedRef.current ||
+        !isFocusedRef.current ||
+        (manager?.getContextEpoch?.() ?? 0) !== activeEpoch
+      ) {
+        return;
+      }
+      if (result === 'shared_sheet_opened') {
+        setReportFeedback('Hoja de compartir del sistema abierta. El reporte sigue guardado.');
+      } else {
+        setReportFeedback(
+          'No se completó el envío externo. Tu archivo sigue guardado en este teléfono.',
+        );
+      }
     } catch {
       if (!isMountedRef.current || !isFocusedRef.current) return;
-      const formatLabel = targetFormat === 'pdf' ? 'PDF' : 'Excel';
-      setReportError(
-        `No se pudo generar el reporte en formato ${formatLabel} en este dispositivo.`,
+      setReportFeedback(
+        'No se pudo abrir la hoja de compartir. Tu archivo sigue guardado en este teléfono.',
       );
     }
   }
@@ -254,7 +341,7 @@ export function ReportsScreen() {
         return;
       }
       if (ok) {
-        setReportFeedback('Reporte eliminado del almacenamiento local.');
+        setReportFeedback('Reporte eliminado de este teléfono.');
       } else {
         setReportError('No se pudo encontrar el archivo del reporte para eliminarlo.');
       }
@@ -302,57 +389,54 @@ export function ReportsScreen() {
   }
 
   return (
-    <Screen title="Reportes">
+    <Screen mascotPose="resumen" title="Mis reportes">
       <BodyText>Crea un resumen de tus mediciones y síntomas para compartirlo.</BodyText>
+      <InfoCard>
+        <SectionTitle>Generar nuevo informe</SectionTitle>
+        <SectionTitle>Período</SectionTitle>
+        <View style={styles.chips}>
+          {([7, 30, 90] as const).map((item) => (
+            <ChoiceChip
+              key={item}
+              label={`${item} días`}
+              selected={days === item}
+              disabled={saving || loadingData}
+              onPress={() => {
+                if (saving) return;
+                setDays(item);
+                setReportFeedback(null);
+                setReportError(null);
+              }}
+            />
+          ))}
+        </View>
 
-      <SectionTitle>Período</SectionTitle>
-      <View style={styles.chips}>
-        {([7, 30, 90] as const).map((item) => (
+        <SectionTitle>Formato del archivo</SectionTitle>
+        <View style={styles.chips}>
           <ChoiceChip
-            key={item}
-            label={`${item} días`}
-            selected={days === item}
+            label="PDF (Documento)"
+            selected={selectedFormat === 'pdf'}
             disabled={saving || loadingData}
             onPress={() => {
               if (saving) return;
-              setDays(item);
+              setSelectedFormat('pdf');
               setReportFeedback(null);
               setReportError(null);
             }}
           />
-        ))}
-      </View>
-
-      <SectionTitle>Formato de exportación</SectionTitle>
-      <View style={styles.chips}>
-        <ChoiceChip
-          label="PDF (Documento)"
-          selected={selectedFormat === 'pdf'}
-          disabled={saving || loadingData}
-          onPress={() => {
-            if (saving) return;
-            setSelectedFormat('pdf');
-            setReportFeedback(null);
-            setReportError(null);
-          }}
-        />
-        <ChoiceChip
-          label="Excel (.xlsx)"
-          selected={selectedFormat === 'xlsx'}
-          disabled={saving || loadingData}
-          onPress={() => {
-            if (saving) return;
-            setSelectedFormat('xlsx');
-            setReportFeedback(null);
-            setReportError(null);
-          }}
-        />
-      </View>
-      <BodyText>
-        {selectedFormat === 'pdf'
-          ? 'Documento estructurado con resumen, signos vitales y detalle de síntomas con formato legible.'
-          : 'Planilla Excel (.xlsx) con tres hojas independientes: Resumen, Signos vitales y Síntomas.'}
-      </BodyText>
+          <ChoiceChip
+            label="Excel (.xlsx)"
+            selected={selectedFormat === 'xlsx'}
+            disabled={saving || loadingData}
+            onPress={() => {
+              if (saving) return;
+              setSelectedFormat('xlsx');
+              setReportFeedback(null);
+              setReportError(null);
+            }}
+          />
+        </View>
+      </InfoCard>
 
       {error ? (
         <>
@@ -366,52 +450,55 @@ export function ReportsScreen() {
       ) : (
         <>
           <InfoCard>
-            <SectionTitle>Resumen de datos clínicos en el período</SectionTitle>
-            <DetailRow
-              label="Signos vitales registrados"
-              value={
-                loadingData
-                  ? 'Calculando…'
-                  : `${reportData?.summary.vitalsCount ?? 0} ${
-                      (reportData?.summary.vitalsCount ?? 0) === 1 ? 'registro' : 'registros'
-                    }`
-              }
-            />
-            <DetailRow
-              label="Síntomas reportados"
-              value={
-                loadingData
-                  ? 'Calculando…'
-                  : `${reportData?.summary.symptomsCount ?? 0} ${
-                      (reportData?.summary.symptomsCount ?? 0) === 1 ? 'reporte' : 'reportes'
-                    }`
-              }
-            />
-            {reportData?.summary.avgTemperature !== null &&
-            reportData?.summary.avgTemperature !== undefined ? (
+            <DetailsDisclosure title="Ver resumen del período">
+              <SectionTitle>Resumen de datos clínicos en el período</SectionTitle>
               <DetailRow
-                label="Temperatura prom."
-                value={`${reportData.summary.avgTemperature.toLocaleString('es-CL')} °C`}
+                label="Signos vitales registrados"
+                value={
+                  loadingData
+                    ? 'Calculando…'
+                    : `${reportData?.summary.vitalsCount ?? 0} ${
+                        (reportData?.summary.vitalsCount ?? 0) === 1 ? 'registro' : 'registros'
+                      }`
+                }
               />
-            ) : null}
-            {reportData?.summary.avgPulse !== null && reportData?.summary.avgPulse !== undefined ? (
               <DetailRow
-                label="Pulso prom."
-                value={`${reportData.summary.avgPulse.toLocaleString('es-CL')} lpm`}
+                label="Síntomas reportados"
+                value={
+                  loadingData
+                    ? 'Calculando…'
+                    : `${reportData?.summary.symptomsCount ?? 0} ${
+                        (reportData?.summary.symptomsCount ?? 0) === 1 ? 'reporte' : 'reportes'
+                      }`
+                }
               />
-            ) : null}
-            <StatusPill>Almacenamiento local aislado</StatusPill>
+              {reportData?.summary.avgTemperature !== null &&
+              reportData?.summary.avgTemperature !== undefined ? (
+                <DetailRow
+                  label="Temperatura prom."
+                  value={`${reportData.summary.avgTemperature.toLocaleString('es-CL')} °C`}
+                />
+              ) : null}
+              {reportData?.summary.avgPulse !== null &&
+              reportData?.summary.avgPulse !== undefined ? (
+                <DetailRow
+                  label="Pulso prom."
+                  value={`${reportData.summary.avgPulse.toLocaleString('es-CL')} lpm`}
+                />
+              ) : null}
+              <StatusPill>Guardado en este teléfono</StatusPill>
 
-            {existingForPeriodAndFormat ? (
-              <BodyText>
-                Ya existe un reporte {selectedFormat.toUpperCase()} guardado para los últimos {days}{' '}
-                días (
-                {existingForPeriodAndFormat.generatedAt
-                  ? formatDate(existingForPeriodAndFormat.generatedAt)
-                  : 'reciente'}
-                ). Al generar uno nuevo se actualizará de forma segura.
-              </BodyText>
-            ) : null}
+              {existingForPeriodAndFormat ? (
+                <BodyText>
+                  Ya existe un reporte {selectedFormat.toUpperCase()} guardado para los últimos{' '}
+                  {days} días (
+                  {existingForPeriodAndFormat.generatedAt
+                    ? formatDate(existingForPeriodAndFormat.generatedAt)
+                    : 'reciente'}
+                  ). Al generar uno nuevo se actualizará de forma segura.
+                </BodyText>
+              ) : null}
+            </DetailsDisclosure>
             {reportFeedback ? <StatusPill>{reportFeedback}</StatusPill> : null}
             {reportError ? <Text style={styles.errorText}>{reportError}</Text> : null}
           </InfoCard>
@@ -425,7 +512,7 @@ export function ReportsScreen() {
               </BodyText>
               <VisualButton
                 label="Registrar signos vitales"
-                onPress={() => router.navigate('/vitales/registrar')}
+                onPress={() => router.push('/vitales/registrar')}
               />
             </InfoCard>
           ) : (
@@ -434,17 +521,18 @@ export function ReportsScreen() {
                 saving
                   ? `Generando ${selectedFormat.toUpperCase()}…`
                   : existingForPeriodAndFormat
-                    ? `Actualizar y compartir ${selectedFormat.toUpperCase()}`
-                    : `Generar y compartir ${selectedFormat.toUpperCase()}`
+                    ? `Actualizar y abrir ${selectedFormat.toUpperCase()}`
+                    : `Generar y abrir ${selectedFormat.toUpperCase()}`
               }
               disabled={loadingData || saving || !hasClinicalData}
-              onPress={handleGenerateAndShare}
+              onPress={handleGenerateAndOpen}
             />
           )}
         </>
       )}
 
       <SectionTitle>Reportes guardados en el dispositivo</SectionTitle>
+      <BodyText>Abre un informe para leerlo aquí. Solo se comparte cuando tú lo decides.</BodyText>
       {loadingReports ? (
         <BodyText>Cargando reportes guardados…</BodyText>
       ) : errorReports ? (
@@ -452,7 +540,7 @@ export function ReportsScreen() {
           <EmptyState
             icon="alert-circle"
             title="Error al cargar reportes guardados"
-            description="No se pudieron leer los archivos del almacenamiento local."
+            description="No se pudieron abrir tus informes guardados."
           />
           <VisualButton label="Reintentar lectura" secondary onPress={refreshReports} />
         </InfoCard>
@@ -466,11 +554,21 @@ export function ReportsScreen() {
             key={report.filename}
             report={report}
             saving={saving}
-            onShare={() =>
-              router.navigate(
-                '/vitales/reporte-estado?archivo=' + encodeURIComponent(report.filename),
-              )
-            }
+            onOpen={() => {
+              const route =
+                report.format === 'pdf' ? '/reportes/visor-pdf' : '/reportes/visor-xlsx';
+              router.push({
+                pathname: route as never,
+                params: {
+                  uri: report.uri,
+                  filename: report.filename,
+                  periodDays: String(report.periodDays ?? 30),
+                },
+              });
+            }}
+            onShare={() => {
+              void handleShareSavedReport(report);
+            }}
             onDelete={() => confirmDeleteReport(report.filename)}
           />
         ))
@@ -516,7 +614,7 @@ export function ReportStatusScreen() {
 
   if (!isValidFormat || !fileExists || !targetFile || !archivo) {
     return (
-      <Screen title="Estado del reporte">
+      <Screen mascotPose="confirmacion" title="Estado del reporte">
         <DemoBadge />
         <EmptyState
           icon="alert-circle"
@@ -542,7 +640,7 @@ export function ReportStatusScreen() {
   const formattedDate = timestampIso ? formatDate(timestampIso) : 'Reciente';
 
   return (
-    <Screen title="Estado del reporte">
+    <Screen mascotPose="confirmacion" title="Estado del reporte">
       <DemoBadge />
       <InfoCard>
         <SectionTitle>Reporte generado y guardado</SectionTitle>
@@ -558,7 +656,21 @@ export function ReportStatusScreen() {
       </InfoCard>
 
       <VisualButton
+        label={fileFormat === 'pdf' ? 'Ver reporte PDF' : 'Ver planilla Excel'}
+        onPress={() => {
+          const route = fileFormat === 'pdf' ? '/reportes/visor-pdf' : '/reportes/visor-xlsx';
+          router.push({
+            pathname: route as never,
+            params: {
+              uri: targetFile.uri,
+              filename: archivo,
+            },
+          });
+        }}
+      />
+      <VisualButton
         label={fileFormat === 'pdf' ? 'Compartir PDF' : 'Compartir Excel'}
+        secondary
         onPress={handleReshare}
       />
       <VisualButton

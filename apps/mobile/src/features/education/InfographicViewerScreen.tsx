@@ -1,5 +1,5 @@
 import { verifiedLocalImageCopy } from './infographic-storage-service';
-import Feather from '@expo/vector-icons/Feather';
+import { AppIcon as Feather } from '../../components/AppIcon';
 import { Asset } from 'expo-asset';
 import { router, useLocalSearchParams } from 'expo-router';
 import { useCallback, useEffect, useRef, useState } from 'react';
@@ -110,7 +110,7 @@ export function InfographicViewerScreen() {
           id: recurso ?? localCopy.contentId,
           title: localCopy.titulo ?? localCopy.metadataLocal?.titulo ?? 'Infografía guardada',
           category: 0,
-          categoryName: 'Material local',
+          categoryName: 'Material guardado',
           description:
             localCopy.descripcion ??
             localCopy.metadataLocal?.descripcion ??
@@ -346,7 +346,7 @@ export function InfographicViewerScreen() {
             <Feather name="image" size={36} color="#888888" />
             <Text style={styles.errorTitle}>Imagen no disponible</Text>
             <BodyText style={{ textAlign: 'center', color: '#CCCCCC' }}>
-              No se encontró una copia local ni recurso empaquetado para visualizar.
+              Este contenido aún no está guardado. Descárgalo con internet.
             </BodyText>
           </View>
         ) : (

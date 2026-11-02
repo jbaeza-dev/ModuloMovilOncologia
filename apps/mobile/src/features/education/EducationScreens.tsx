@@ -1,7 +1,8 @@
-import Feather from '@expo/vector-icons/Feather';
+import { AppIcon as Feather } from '../../components/AppIcon';
 import * as Network from 'expo-network';
 import { router, useLocalSearchParams } from 'expo-router';
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
+import { searchEducationalContent, type EducationSearchFilter } from './education-search';
 import {
   ActivityIndicator,
   Alert,
@@ -15,6 +16,10 @@ import {
 } from 'react-native';
 
 import { Screen } from '../../components/Screen';
+import { ActionCard } from '../../components/ActionCard';
+import { CUIDAQUIMIO_PODCASTS } from './podcasts';
+import { EDUCATIONAL_CATEGORIES } from './educational-categories';
+import { MascotHero } from '../../components/MascotAvatar';
 import {
   BodyText,
   DemoBadge,
@@ -23,6 +28,8 @@ import {
   SectionTitle,
   StatusPill,
   VisualButton,
+  VisualField,
+  ChoiceChip,
 } from '../../components/Visual';
 import type {
   EducationalInteraction,
@@ -50,436 +57,169 @@ import {
   verifiedLocalImageCopies,
   removeLocalInfographicCopy,
 } from './infographic-storage-service';
-import { useBulkInfographicDownload } from './use-bulk-infographic-download';
 import { executeYouTubeLaunch } from './youtube-launcher';
 
 export { downloadAndSaveInfographic, removeLocalInfographicCopy };
 
 export function EducationScreen() {
   const catalogReader = useEducationalCatalog();
-  const { theme: appTheme } = useAppTheme();
-  const { repository, patientId, runSave } = useLocalData();
-  const styles = useStyles();
-  const params = useLocalSearchParams<{ filtro?: string }>();
-  const isOfflineFilter = params.filtro === 'offline';
-
-  // Modal para acciones individuales en biblioteca sin conexión
-  const [infoResource, setInfoResource] = useState<EducationalResource | null>(null);
-  const [modalActionBusy, setModalActionBusy] = useState(false);
-  const [modalError, setModalError] = useState<string | null>(null);
-
-  const loadCopies = useCallback(async (): Promise<EducationalLocalCopy[]> => {
-    if (!repository || !patientId) return [];
-    const verified = await verifiedLocalImageCopies(
-      await repository.education.listLocalCopies(),
-      patientId,
-    );
-    if (!verified.length) return [];
-    const activeIds = new Set(
-      (await catalogReader.getAllResources('infografia')).map((item) => item.id),
-    );
-    // Historical and technical files remain on disk, but are not current library publications.
-    return verified.filter((copy) => activeIds.has(copy.contentId));
-  }, [repository, patientId, catalogReader]);
-
-  const { items: copies, error: copiesError, refresh: refreshCopies } = useFocusedList(loadCopies);
-
-  const loadCategories = useCallback(async (): Promise<EducationalCategory[]> => {
-    return catalogReader.getCategories();
+  const [query, setQuery] = useState('');
+  const [searchFilter, setSearchFilter] = useState<EducationSearchFilter>('all');
+  useEffect(() => {
+    setQuery('');
+    setSearchFilter('all');
   }, [catalogReader]);
-
-  const { items: categories } = useFocusedList(loadCategories);
-
-  const {
-    isDownloading,
-    isCancelling,
-    progress,
-    summaryMessage,
-    error: bulkError,
-    hasPending,
-    startDownload,
-    cancelDownload,
-    clearSummary,
-  } = useBulkInfographicDownload(refreshCopies);
-
-  // Copias físicas válidas existentes en disco
-  const physicallyPresentCopies = useMemo(() => {
-    if (!patientId) return [];
-    return copies.filter(
-      (c) =>
-        c.rutaRelativa &&
-        resourceFileExists(patientId, c.contentId, c.rutaRelativa) &&
-        c.estado !== 'error',
-    );
-  }, [copies, patientId]);
-
-  // Acciones individuales en modal de biblioteca sin conexión
-  async function handleDeleteFromModal(
-    targetResource: EducationalResource,
-    copy?: EducationalLocalCopy | null,
-  ) {
-    if (!repository || !patientId || modalActionBusy) return;
-    setModalActionBusy(true);
-    setModalError(null);
-    try {
-      await runSave(async () => {
-        await removeLocalInfographicCopy({
-          contentId: targetResource.id,
-          patientId,
-          repository,
-          localCopy: copy,
-        });
-      });
-      refreshCopies();
-      setInfoResource(null);
-    } catch (err) {
-      setModalError(
-        err instanceof Error
-          ? err.message
-          : 'No se pudo eliminar el archivo local en el dispositivo.',
+  const loadResources = useCallback(
+    async () => ({ source: catalogReader, resources: await catalogReader.getAllResources() }),
+    [catalogReader],
+  );
+  const searchCatalog = useFocusedValue(loadResources, null);
+  const currentResources =
+    searchCatalog.value?.source === catalogReader ? searchCatalog.value.resources : [];
+  const searching = query.trim().length > 0 || searchFilter !== 'all';
+  const searchResults = searching
+    ? searchEducationalContent(currentResources, query, searchFilter)
+    : [];
+  const load = useCallback(async () => {
+    const categories = await catalogReader.getCategories();
+    return categories.map((category) => {
+      const known = EDUCATIONAL_CATEGORIES.find(
+        (entry) =>
+          entry.title.localeCompare(category.title.trim(), 'es', { sensitivity: 'base' }) === 0,
       );
-    } finally {
-      setModalActionBusy(false);
-    }
-  }
-
-  async function handleDeclareReviewedFromModal(targetResource: EducationalResource) {
-    if (!repository || modalActionBusy) return;
-    setModalActionBusy(true);
-    setModalError(null);
-    try {
-      await runSave(async () => {
-        await repository.education.declareCopyReviewed(targetResource.id);
-      });
-      refreshCopies();
-    } catch {
-      setModalError('No se pudo registrar la revisión del material.');
-    } finally {
-      setModalActionBusy(false);
-    }
-  }
-
-  // Vista unificada de biblioteca sin conexión (/educacion?filtro=offline)
-  if (isOfflineFilter) {
-    return (
-      <Screen isRoot title="Mis copias guardadas">
-        <DemoBadge />
-        <BodyText>
-          Materiales guardados en este dispositivo para lectura y consulta sin conexión.
-        </BodyText>
-
-        {/* Barra de control para salir del filtro sin conexión */}
-        <View style={styles.offlineFilterHeader}>
-          <View style={styles.activeFilterChip}>
-            <Feather name="check" size={16} color={appTheme.colors.onPrimary} />
-            <Text style={styles.activeFilterChipText}>Filtro: Sin conexión</Text>
-          </View>
-          <Pressable
-            accessibilityRole="button"
-            accessibilityLabel="Ver todas las categorías"
-            onPress={() => router.navigate('/educacion')}
-            style={styles.exitFilterButton}
-          >
-            <Text style={styles.exitFilterButtonText}>Ver categorías</Text>
-          </Pressable>
-        </View>
-
-        {physicallyPresentCopies.length === 0 ? (
-          <EmptyState
-            icon="folder"
-            title={copiesError ? 'No se pudieron consultar las copias' : 'Sin copias guardadas'}
-            description={
-              copiesError
-                ? 'Reintenta consultar los archivos y el catálogo guardado.'
-                : 'Aún no has guardado infografías en este dispositivo.'
-            }
-          />
-        ) : (
-          physicallyPresentCopies.map((copy) => {
-            const formatChipLabel = 'Infografía · Disponible sin internet';
-            const isReviewed = Boolean(copy.revisionDeclarada);
-            const reviewedDate = copy.revisionDeclaradaEn
-              ? formatDate(copy.revisionDeclaradaEn)
-              : null;
-            const resourceItem: EducationalResource = {
-              id: copy.contentId,
-              title: copy.titulo ?? copy.metadataLocal?.titulo ?? 'Infografía guardada',
-              category: 0,
-              categoryName: 'Material guardado',
-              description:
-                copy.descripcion ??
-                copy.metadataLocal?.descripcion ??
-                'Infografía disponible sin conexión.',
-              type: 'infografia',
-              version: copy.metadataLocal?.versionOrigen ?? 'local',
-              textoAccesible: copy.metadataLocal?.textoAccesible,
-            };
-
-            return (
-              <View key={copy.contentId} style={styles.cardContainer}>
-                {/* 1 toque abre directamente el visor a pantalla completa */}
-                <Pressable
-                  accessibilityRole="button"
-                  accessibilityLabel={`${resourceItem.title}, ${formatChipLabel}`}
-                  onPress={() =>
-                    router.push('/visor-infografia?recurso=' + encodeURIComponent(copy.contentId))
-                  }
-                  style={styles.cardMainPressable}
-                >
-                  <Feather name="image" size={28} color={appTheme.colors.primary} />
-                  <View style={styles.cardContent}>
-                    <Text style={styles.heading}>{resourceItem.title}</Text>
-                    <View style={styles.chipsRow}>
-                      <StatusPill>{formatChipLabel}</StatusPill>
-                      {isReviewed && reviewedDate ? (
-                        <StatusPill>{`Revisado el ${reviewedDate}`}</StatusPill>
-                      ) : null}
-                    </View>
-                  </View>
-                </Pressable>
-
-                {/* Botón aislado para información y acciones individuales */}
-                <Pressable
-                  accessibilityRole="button"
-                  accessibilityLabel={`Información de ${resourceItem.title}`}
-                  onPress={() => {
-                    setModalError(null);
-                    setInfoResource(resourceItem);
-                  }}
-                  style={styles.cardInfoButton}
-                >
-                  <Feather name="info" size={20} color={appTheme.colors.primary} />
-                  <Text style={styles.cardInfoButtonText}>Info</Text>
-                </Pressable>
-              </View>
-            );
-          })
-        )}
-
-        {copiesError ? (
-          <VisualButton label="Reintentar consulta de copias" onPress={refreshCopies} />
-        ) : null}
-        {/* Modal de información y acciones individuales para la biblioteca sin conexión */}
-        {infoResource ? (
-          <Modal
-            visible={Boolean(infoResource)}
-            transparent={true}
-            animationType="fade"
-            onRequestClose={() => {
-              setInfoResource(null);
-              setModalError(null);
-            }}
-            accessibilityViewIsModal={true}
-          >
-            {(() => {
-              const currentCopy = physicallyPresentCopies.find(
-                (c) => c.contentId === infoResource.id,
-              );
-              return (
-                <View style={styles.modalOverlay}>
-                  <View style={styles.modalCard}>
-                    <View style={styles.modalHeader}>
-                      <View style={{ flex: 1 }}>
-                        <SectionTitle>{infoResource.title}</SectionTitle>
-                      </View>
-                      <Pressable
-                        accessibilityRole="button"
-                        accessibilityLabel="Cerrar información"
-                        onPress={() => {
-                          setInfoResource(null);
-                          setModalError(null);
-                        }}
-                        style={styles.modalCloseIcon}
-                      >
-                        <Feather name="x" size={24} color={appTheme.colors.text} />
-                      </Pressable>
-                    </View>
-
-                    <ScrollView style={styles.modalScroll} contentContainerStyle={{ gap: 12 }}>
-                      <BodyText>{infoResource.description}</BodyText>
-                      <View style={styles.noticeBox}>
-                        <StatusPill>
-                          {currentCopy?.revisionDeclarada
-                            ? `Material revisado el ${currentCopy.revisionDeclaradaEn ? formatDate(currentCopy.revisionDeclaradaEn) : 'sí'}`
-                            : 'Guardado en este dispositivo'}
-                        </StatusPill>
-                      </View>
-                      {modalError ? (
-                        <Text accessibilityRole="alert" style={styles.errorText}>
-                          {modalError}
-                        </Text>
-                      ) : null}
-                    </ScrollView>
-
-                    <View style={styles.modalFooter}>
-                      <VisualButton
-                        label="Ver en pantalla completa"
-                        disabled={modalActionBusy}
-                        onPress={() => {
-                          setInfoResource(null);
-                          router.push(
-                            '/visor-infografia?recurso=' + encodeURIComponent(infoResource.id),
-                          );
-                        }}
-                      />
-                      {!currentCopy?.revisionDeclarada ? (
-                        <VisualButton
-                          label={modalActionBusy ? 'Confirmando…' : 'Marcar como visto'}
-                          disabled={modalActionBusy}
-                          onPress={() => void handleDeclareReviewedFromModal(infoResource)}
-                        />
-                      ) : null}
-                      <VisualButton
-                        label={modalActionBusy ? 'Quitando…' : 'Quitar descarga'}
-                        secondary
-                        disabled={modalActionBusy}
-                        onPress={() => void handleDeleteFromModal(infoResource, currentCopy)}
-                      />
-                      <VisualButton
-                        label="Cerrar"
-                        secondary
-                        onPress={() => {
-                          setInfoResource(null);
-                          setModalError(null);
-                        }}
-                      />
-                    </View>
-                  </View>
-                </View>
-              );
-            })()}
-          </Modal>
-        ) : null}
-      </Screen>
-    );
-  }
-
-  // Vista principal de biblioteca (/educacion)
+      return {
+        ...category,
+        icon: known?.icon ?? category.icon,
+        description: category.description ?? known?.description,
+      };
+    });
+  }, [catalogReader]);
+  const { items: categories, error, loading, refresh } = useFocusedList(load);
   return (
-    <Screen isRoot title="Contenido educativo">
-      <CatalogStatusNotice />
-      <DemoBadge />
-      <BodyText>
-        Biblioteca sobre quimioterapia: imágenes descargables, videos y podcasts online.
-      </BodyText>
-      <VisualButton
-        label="Podcasts de CUIDAQUIMIO · solo online"
-        secondary
-        onPress={() => router.navigate('/educacion/podcasts')}
+    <Screen isRoot showHelp showProfile>
+      <MascotHero
+        pose="lectura"
+        eyebrow="MATERIAL CUIDAQUIMIO"
+        title="Aprende a tu ritmo."
+        description="Guías, videos y podcasts para acompañarte."
+        compact
       />
-
-      {/* Banner de progreso o estado de descarga masiva */}
-      {isDownloading ? (
-        <View style={styles.downloadBanner} accessibilityLiveRegion="polite">
-          <View style={styles.downloadBannerHeader}>
-            <ActivityIndicator size="small" color={appTheme.colors.primary} />
-            <Text style={styles.downloadBannerTitle}>
-              {isCancelling
-                ? 'Cancelando…'
-                : progress
-                  ? `Guardando ${progress.current} de ${progress.total}… (${progress.percent}%)`
-                  : 'Iniciando descarga…'}
-            </Text>
-          </View>
-          {progress ? (
-            <Text style={styles.downloadBannerSubtitle} numberOfLines={1}>
-              {progress.currentTitle}
-            </Text>
-          ) : null}
-          <VisualButton
-            label={isCancelling ? 'Cancelando…' : 'Cancelar descarga'}
-            secondary
-            disabled={isCancelling}
-            onPress={cancelDownload}
-          />
-        </View>
-      ) : null}
-
-      {bulkError ? (
-        <View style={styles.errorBanner} accessibilityRole="alert">
-          <Feather name="alert-circle" size={20} color={appTheme.colors.error} />
-          <Text style={styles.errorBannerText}>{bulkError}</Text>
-        </View>
-      ) : null}
-
-      {!isDownloading && summaryMessage ? (
-        <View style={styles.summaryBanner} accessibilityLiveRegion="polite">
-          <View style={styles.summaryBannerContentRow}>
-            <Feather
-              name={hasPending ? 'alert-triangle' : 'check-circle'}
-              size={20}
-              color={hasPending ? appTheme.colors.warning : appTheme.colors.primary}
-            />
-            <Text style={styles.summaryBannerText}>{summaryMessage}</Text>
-            <Pressable
-              accessibilityRole="button"
-              accessibilityLabel="Cerrar aviso"
-              onPress={clearSummary}
-              style={styles.summaryCloseIcon}
-            >
-              <Feather name="x" size={18} color={appTheme.colors.text} />
-            </Pressable>
-          </View>
-          {hasPending ? (
-            <View style={styles.summaryRetryContainer}>
-              <VisualButton
-                label="Reintentar pendientes"
-                secondary
-                onPress={() => void startDownload()}
-              />
-            </View>
-          ) : null}
-        </View>
-      ) : null}
-
-      {!isDownloading && !summaryMessage ? (
-        <View style={styles.bulkDownloadCard}>
-          <VisualButton
-            label="Guardar todas las infografías sin conexión"
-            secondary
-            onPress={() => void startDownload()}
-          />
-        </View>
-      ) : null}
-
-      {/* Acceso a copias locales descargadas unificadas */}
-      <Pressable
-        accessibilityRole="button"
-        accessibilityLabel="Ver mis copias guardadas sin conexión"
-        onPress={() => router.navigate('/educacion?filtro=offline')}
-        style={[styles.row, styles.copiesCard]}
+      <DemoBadge />
+      <VisualField
+        label="Buscar contenido"
+        placeholder="Infografía, video o podcast"
+        value={query}
+        onChangeText={setQuery}
+        autoCapitalize="none"
+        maxLength={120}
+        returnKeyType="search"
+      />
+      <ScrollView
+        horizontal
+        showsHorizontalScrollIndicator={false}
+        contentContainerStyle={{ gap: 8 }}
+        style={{ flexGrow: 0 }}
       >
-        <Feather name="folder" size={28} color={appTheme.colors.primary} />
-        <View style={styles.copy}>
-          <Text style={styles.heading}>Mis copias guardadas</Text>
-          <BodyText>
-            {copiesError
-              ? 'No se pudieron consultar las copias guardadas.'
-              : physicallyPresentCopies.length === 1
-                ? '1 material disponible sin conexión'
-                : `${physicallyPresentCopies.length} materiales disponibles sin conexión`}
-          </BodyText>
-        </View>
-        <Feather name="chevron-right" size={22} color={appTheme.colors.text} />
-      </Pressable>
-
-      {/* Categorías educativas dinámicas */}
-      {categories.map((category) => (
-        <Pressable
-          key={category.id}
-          accessibilityRole="button"
-          accessibilityLabel={category.title}
-          onPress={() => router.navigate('/educacion/categoria?categoria=' + String(category.id))}
-          style={styles.row}
-        >
-          <Feather name={category.icon} size={28} color={appTheme.colors.primary} />
-          <View style={styles.copy}>
-            <Text style={styles.heading}>{category.title}</Text>
-            <BodyText>{category.countLabel}</BodyText>
-          </View>
-          <Feather name="chevron-right" size={22} color={appTheme.colors.text} />
-        </Pressable>
-      ))}
+        {(
+          [
+            ['all', 'Todo'],
+            ['infografia', 'Infografías'],
+            ['video', 'Videos'],
+            ['podcast', 'Podcasts'],
+          ] as const
+        ).map(([id, label]) => (
+          <ChoiceChip
+            key={id}
+            label={label}
+            selected={searchFilter === id}
+            onPress={() => setSearchFilter(id)}
+          />
+        ))}
+      </ScrollView>
+      {searching ? (
+        <>
+          {searchCatalog.loading ? <BodyText>Buscando contenido…</BodyText> : null}
+          {searchCatalog.error ? (
+            <InfoCard>
+              <BodyText>No se pudo consultar todo el contenido.</BodyText>
+              <VisualButton label="Reintentar búsqueda" onPress={searchCatalog.refresh} />
+            </InfoCard>
+          ) : null}
+          {!searchCatalog.loading && !searchCatalog.error && !searchResults.length ? (
+            <EmptyState
+              icon="search"
+              title="No encontramos coincidencias"
+              description="Prueba con otra palabra."
+            />
+          ) : null}
+          {searchResults.map((result) => (
+            <ActionCard
+              key={result.key}
+              title={result.title}
+              description={result.subtitle}
+              icon={result.type === 'podcast' || result.type === 'video' ? 'play' : 'book-open'}
+              onPress={() =>
+                router.push(
+                  result.type === 'podcast'
+                    ? '/educacion/podcasts?episodio=' + encodeURIComponent(result.id)
+                    : '/educacion/recurso?recurso=' + encodeURIComponent(result.id),
+                )
+              }
+            />
+          ))}
+          <VisualButton
+            label="Limpiar búsqueda"
+            secondary
+            onPress={() => {
+              setQuery('');
+              setSearchFilter('all');
+            }}
+          />
+        </>
+      ) : (
+        <>
+          <ActionCard
+            title={`Podcasts (${CUIDAQUIMIO_PODCASTS.length})`}
+            icon="play"
+            description="Escucha con internet"
+            onPress={() => router.push('/educacion/podcasts')}
+          />
+          <SectionTitle>Categorías CUIDAQUIMIO</SectionTitle>
+          {error ? (
+            <InfoCard>
+              <BodyText>
+                No pudimos abrir las categorías. Tus guías guardadas se conservan.
+              </BodyText>
+              <VisualButton label="Reintentar categorías" secondary onPress={refresh} />
+            </InfoCard>
+          ) : null}
+          {loading ? <BodyText>Buscando categorías…</BodyText> : null}
+          {categories
+            .slice()
+            .sort(
+              (a, b) =>
+                Number(b.title.trim().toLowerCase() === 'signos de alarma') -
+                Number(a.title.trim().toLowerCase() === 'signos de alarma'),
+            )
+            .map((category) => (
+              <ActionCard
+                key={category.id}
+                title={category.title}
+                icon={
+                  category.title.trim().toLowerCase() === 'signos de alarma'
+                    ? 'alert-triangle'
+                    : category.icon
+                }
+                tone={
+                  category.title.trim().toLowerCase() === 'signos de alarma' ? 'warning' : 'neutral'
+                }
+                description={category.description || category.countLabel}
+                onPress={() => router.push('/educacion/categoria?categoria=' + String(category.id))}
+              />
+            ))}
+        </>
+      )}
+      <CatalogStatusNotice />
     </Screen>
   );
 }
@@ -543,6 +283,19 @@ export function EducationCategoryScreen() {
   async function handleDirectOpen(resource: EducationalResource) {
     if (resource.type === 'video') {
       const res = await executeYouTubeLaunch({
+        openVideo: async (videoId) => {
+          router.push({
+            pathname: '/educacion/video-youtube',
+            params: {
+              videoId,
+              resourceId: resource.id,
+              version: resource.version,
+              title: resource.title,
+              description: resource.description,
+            },
+          });
+          return { success: true };
+        },
         resourceId: resource.id,
         youtubeVideoId: resource.youtubeVideoId,
         version: resource.version,
@@ -555,7 +308,7 @@ export function EducationCategoryScreen() {
         getCurrentEpoch: () => manager.getContextEpoch(),
       });
       if (!res.success && res.error) {
-        Alert.alert('Video online', res.error);
+        Alert.alert('Video educativo', res.error);
       }
       refreshData();
     } else if (resource.type === 'infografia') {
@@ -614,7 +367,7 @@ export function EducationCategoryScreen() {
       setModalError(
         err instanceof Error
           ? err.message
-          : 'No se pudo eliminar el archivo local en el dispositivo.',
+          : 'No se pudo eliminar el archivo guardado en este teléfono.',
       );
     } finally {
       setModalActionBusy(false);
@@ -631,7 +384,7 @@ export function EducationCategoryScreen() {
       });
       refreshData();
     } catch {
-      setModalError('No se pudo registrar la revisión de la copia local.');
+      setModalError('No se pudo guardar que revisaste este material.');
     } finally {
       setModalActionBusy(false);
     }
@@ -661,7 +414,7 @@ export function EducationCategoryScreen() {
   }
 
   return (
-    <Screen title={value?.currentCategory?.title ?? 'Categoría educativa'}>
+    <Screen mascotPose="lectura" title={value?.currentCategory?.title ?? 'Categoría educativa'}>
       <CatalogStatusNotice />
       <DemoBadge />
       <BodyText>Recursos y guías diseñadas para acompañarte en tu cuidado diario.</BodyText>
@@ -687,7 +440,7 @@ export function EducationCategoryScreen() {
         </Pressable>
         <Pressable
           accessibilityRole="button"
-          accessibilityLabel="Filtrar videos online"
+          accessibilityLabel="Filtrar videos"
           accessibilityState={{ selected: formatFilter === 'video' }}
           style={[styles.filterChip, formatFilter === 'video' && styles.filterChipActive]}
           onPress={() => setFormatFilter('video')}
@@ -872,7 +625,7 @@ export function EducationCategoryScreen() {
                             ? `Video revisado el ${formatDate(currentInteraction.revisionDeclaradaEn)}`
                             : currentInteraction
                               ? 'Video abierto (pendiente de confirmar)'
-                              : 'Disponible online'
+                              : 'Requiere internet'
                           : isDownloaded
                             ? currentCopy?.revisionDeclarada
                               ? `Material revisado el ${currentCopy.revisionDeclaradaEn ? formatDate(currentCopy.revisionDeclaradaEn) : 'sí'}`
@@ -1055,11 +808,11 @@ export function EducationResourceScreen() {
           id: recurso ?? localCopy.contentId,
           title: localCopy.titulo ?? localCopy.metadataLocal?.titulo ?? 'Material guardado',
           category: 0,
-          categoryName: 'Material local',
+          categoryName: 'Material guardado',
           description:
             localCopy.descripcion ??
             localCopy.metadataLocal?.descripcion ??
-            'Copia local disponible para lectura sin conexión.',
+            'Material disponible para leer sin conexión.',
           type:
             localCopy.tipo ??
             localCopy.metadataLocal?.tipo ??
@@ -1082,7 +835,7 @@ export function EducationResourceScreen() {
 
   if (!effectiveResource) {
     return (
-      <Screen title="Recurso no encontrado">
+      <Screen mascotPose="apoyo" title="Recurso no encontrado">
         <DemoBadge />
         <EmptyState
           icon="alert-circle"
@@ -1118,6 +871,19 @@ export function EducationResourceScreen() {
       }
 
       const res = await executeYouTubeLaunch({
+        openVideo: async (videoId) => {
+          router.push({
+            pathname: '/educacion/video-youtube',
+            params: {
+              videoId,
+              resourceId: effectiveResource.id,
+              version: effectiveResource.version,
+              title: effectiveResource.title,
+              description: effectiveResource.description,
+            },
+          });
+          return { success: true };
+        },
         resourceId: effectiveResource.id,
         youtubeVideoId: effectiveResource.youtubeVideoId,
         version: effectiveResource.version,
@@ -1135,7 +901,7 @@ export function EducationResourceScreen() {
       }
       refreshStatus();
     } catch {
-      setOpError('Error al iniciar la apertura externa de YouTube.');
+      setOpError('No se pudo abrir el video. Vuelve a intentarlo.');
     } finally {
       if (isMountedRef.current) setActionBusy(false);
     }
@@ -1209,7 +975,7 @@ export function EducationResourceScreen() {
       });
       refreshStatus();
     } catch {
-      setOpError('No se pudo registrar la revisión de la copia local.');
+      setOpError('No se pudo guardar que revisaste este material.');
     } finally {
       if (isMountedRef.current) setActionBusy(false);
     }
@@ -1237,7 +1003,7 @@ export function EducationResourceScreen() {
       setOpError(
         err instanceof Error
           ? err.message
-          : 'No se pudo eliminar el archivo local en el dispositivo.',
+          : 'No se pudo eliminar el archivo guardado en este teléfono.',
       );
     } finally {
       if (isMountedRef.current) setActionBusy(false);
@@ -1257,7 +1023,7 @@ export function EducationResourceScreen() {
         setOpError('No se pudo leer el archivo de la guía en el disco.');
       }
     } catch {
-      setOpError('Error al leer el archivo desde el almacenamiento local.');
+      setOpError('No se pudo abrir el archivo guardado en este teléfono.');
     } finally {
       if (isMountedRef.current) setActionBusy(false);
     }
@@ -1292,11 +1058,11 @@ export function EducationResourceScreen() {
               ? `Video revisado el ${formatDate(interaction.revisionDeclaradaEn)}`
               : interaction
                 ? 'Video abierto (pendiente de confirmar)'
-                : 'Disponible online'
+                : 'Requiere internet'
             : isDownloaded
               ? localCopy?.revisionDeclarada
                 ? `Material revisado el ${localCopy.revisionDeclaradaEn ? formatDate(localCopy.revisionDeclaradaEn) : 'sí'}`
-                : 'Copia guardada en disco (pendiente de revisión)'
+                : 'Guardado en este teléfono (pendiente de revisión)'
               : isFileMissing
                 ? 'Archivo no disponible'
                 : 'Disponible para descarga'}
@@ -1306,8 +1072,8 @@ export function EducationResourceScreen() {
           <View style={styles.noticeBox}>
             <Feather name="info" size={18} color={appTheme.colors.primary} />
             <Text style={styles.noticeText}>
-              Los videos educativos se abren externamente en YouTube y requieren conexión activa. No
-              se descargan videos al almacenamiento local.
+              Puedes ver este video aquí, dentro de QuimioCare. Necesitas conexión a internet; los
+              videos no se descargan para verlos sin conexión.
             </Text>
           </View>
         ) : null}
@@ -1324,7 +1090,7 @@ export function EducationResourceScreen() {
       {/* Visor de infografía (PNG) */}
       {effectiveResource.type === 'infografia' && isDownloaded && localCopy?.rutaRelativa ? (
         <InfoCard>
-          <SectionTitle>Infografía guardada en disco</SectionTitle>
+          <SectionTitle>Infografía guardada en este teléfono</SectionTitle>
           <Image
             key={`infographic-${localCopy.rutaRelativa}-${imageRetryCount}`}
             source={{ uri: localCopy.rutaRelativa }}
@@ -1346,8 +1112,8 @@ export function EducationResourceScreen() {
               <View style={styles.imageLoadingBox}>
                 <Feather name="alert-triangle" size={18} color={appTheme.colors.error} />
                 <BodyText style={{ color: appTheme.colors.error }}>
-                  No se pudo renderizar la infografía desde el almacenamiento local. El archivo
-                  podría estar dañado o no ser compatible.
+                  No se pudo mostrar la infografía guardada. El archivo podría estar dañado o no ser
+                  compatible.
                 </BodyText>
               </View>
               <VisualButton
@@ -1375,7 +1141,7 @@ export function EducationResourceScreen() {
       {/* Visor de lectura Markdown para guías */}
       {readingContent ? (
         <InfoCard>
-          <SectionTitle>Contenido local del archivo</SectionTitle>
+          <SectionTitle>Contenido guardado</SectionTitle>
           <BodyText>{readingContent}</BodyText>
         </InfoCard>
       ) : null}
@@ -1447,8 +1213,8 @@ export function EducationResourceScreen() {
           <InfoCard>
             <SectionTitle>Archivo no disponible</SectionTitle>
             <BodyText>
-              La copia física no se encuentra en el almacenamiento local o presentó errores al
-              guardar. Puedes reintentar la descarga para restaurarla.
+              No encontramos el archivo guardado o hubo un problema al guardar. Puedes reintentar la
+              descarga para restaurarla.
             </BodyText>
           </InfoCard>
           <VisualButton
@@ -1491,7 +1257,7 @@ export function EducationStateScreen() {
     'sin-conexion': ['Requiere conexión', 'Este recurso no está descargado.'],
   }[state];
   return (
-    <Screen title="Estado de biblioteca">
+    <Screen mascotPose="resumen" title="Estado de biblioteca">
       <DemoBadge />
       <EmptyState
         icon={state === 'sin-conexion' ? 'wifi-off' : 'book-open'}

@@ -135,6 +135,27 @@ describe('VitalsDataScreens UI tests (Bloque 3)', () => {
   });
 
   describe('RegisterVitalsDataScreen', () => {
+    it.each([
+      ['Temperatura corporal (°C)', '30 y 45', '36,8'],
+      ['Presión sistólica (mmHg)', '40 y 300', '120'],
+      ['Presión diastólica (mmHg)', '30 y 200', '80'],
+      ['Pulso', '30 y 250', '72'],
+      ['Saturación de oxígeno (%)', '50 y 100', '98'],
+    ])(
+      'valida %s al escribir, impide guardar 20000 y permite corregir sin alterar el dato',
+      async (label, range, valid) => {
+        await render(<RegisterVitalsDataScreen />);
+        await fireEvent.changeText(screen.getByLabelText(label), '20000');
+        expect(screen.getByText(new RegExp(`entre ${range}`))).toBeTruthy();
+        expect(screen.getByDisplayValue('20000')).toBeTruthy();
+        expect(screen.getByRole('button', { name: 'Guardar registro' })).toBeDisabled();
+        expect(mockRepository.createVitals).not.toHaveBeenCalled();
+        await fireEvent.changeText(screen.getByLabelText(label), valid);
+        expect(screen.getByRole('button', { name: 'Guardar registro' })).toBeEnabled();
+        await fireEvent.press(screen.getByRole('button', { name: 'Guardar registro' }));
+        expect(mockRepository.createVitals).toHaveBeenCalledTimes(1);
+      },
+    );
     it('muestra error general accesible al guardar sin datos', async () => {
       await render(<RegisterVitalsDataScreen />);
 
@@ -211,7 +232,7 @@ describe('VitalsDataScreens UI tests (Bloque 3)', () => {
       const verRegistroBtn = screen.getByRole('button', { name: 'Ver registro' });
       expect(verRegistroBtn).toBeTruthy();
       await fireEvent.press(verRegistroBtn);
-      expect(mockRouterNavigate).toHaveBeenCalledWith({
+      expect(mockRouterPush).toHaveBeenCalledWith({
         pathname: '/vitales/detalle',
         params: { id: 'vital-new-123' },
       });
@@ -281,12 +302,12 @@ describe('VitalsDataScreens UI tests (Bloque 3)', () => {
       const registrarBtn = screen.getByRole('button', { name: 'Registrar signos vitales' });
       expect(registrarBtn).toBeTruthy();
       await fireEvent.press(registrarBtn);
-      expect(mockRouterNavigate).toHaveBeenCalledWith('/vitales/registrar');
+      expect(mockRouterPush).toHaveBeenCalledWith('/vitales/registrar');
 
       const reportesBtn = screen.getByRole('button', { name: 'Ver reportes' });
       expect(reportesBtn).toBeTruthy();
       await fireEvent.press(reportesBtn);
-      expect(mockRouterNavigate).toHaveBeenCalledWith('/vitales/reportes');
+      expect(mockRouterPush).toHaveBeenCalledWith('/vitales/reportes');
     });
 
     it('las tarjetas del historial muestran resúmenes dinámicos y no mencionan Sin registro para campos ausentes', async () => {
@@ -314,7 +335,7 @@ describe('VitalsDataScreens UI tests (Bloque 3)', () => {
       const card = screen.getByRole('button', { name: /Presión: 130\/85 mmHg/ });
       expect(card).toBeTruthy();
       await fireEvent.press(card);
-      expect(mockRouterNavigate).toHaveBeenCalledWith({
+      expect(mockRouterPush).toHaveBeenCalledWith({
         pathname: '/vitales/detalle',
         params: { id: 'v-only-pressure' },
       });

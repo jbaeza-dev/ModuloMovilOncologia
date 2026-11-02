@@ -28,7 +28,7 @@ export function GlobalStatusNotice() {
       <Pressable
         accessibilityRole="button"
         accessibilityLabel={label}
-        onPress={() => router.navigate(data?.patientId ? '/perfil/estado-envios' : '/acceso')}
+        onPress={() => router.push(data?.patientId ? '/perfil/estado-envios' : '/acceso')}
         style={{ minHeight: 48, paddingHorizontal: 16, paddingVertical: 8 }}
       >
         <Text style={{ color: theme.colors.primary, fontSize: 14, fontWeight: '600' }}>
@@ -41,7 +41,7 @@ export function GlobalStatusNotice() {
 
 export function SyncStatusScreen() {
   return (
-    <Screen title="Estado de los envíos">
+    <Screen mascotPose="resumen" title="Estado de los envíos">
       <BodyText>
         Las capturas se conservan en este dispositivo. Revisa aquí los permisos y el estado de
         envío.
@@ -51,17 +51,17 @@ export function SyncStatusScreen() {
       <VisualButton
         label="Revisar consentimiento"
         secondary
-        onPress={() => router.navigate('/perfil/consentimientos')}
+        onPress={() => router.push('/perfil/consentimientos')}
       />
       <VisualButton
         label="Consultar historial de signos"
         secondary
-        onPress={() => router.navigate('/vitales')}
+        onPress={() => router.push('/vitales')}
       />
       <VisualButton
         label="Consultar seguimientos"
         secondary
-        onPress={() => router.navigate('/formulario')}
+        onPress={() => router.push('/formulario')}
       />
     </Screen>
   );

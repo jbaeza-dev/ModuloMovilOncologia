@@ -1,4 +1,4 @@
-import Feather from '@expo/vector-icons/Feather';
+import { AppIcon as Feather } from '../../components/AppIcon';
 import { router } from 'expo-router';
 import { useCallback, useState } from 'react';
 import { Linking, Pressable, StyleSheet, Text, View } from 'react-native';
@@ -153,7 +153,7 @@ export function NoticesTrayScreen() {
   };
 
   return (
-    <Screen title="Bandeja de avisos">
+    <Screen mascotPose="recordatorio" title="Bandeja de avisos">
       <DemoBadge />
 
       <InfoCard>

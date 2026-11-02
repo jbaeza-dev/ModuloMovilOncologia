@@ -3,24 +3,8 @@ import * as Network from 'expo-network';
 import { Platform } from 'react-native';
 
 /** Online links observed on the author's site, 28-10-2026; ordered by the CUIDAQUIMIO PPT. */
-export const CUIDAQUIMIO_PODCASTS = [
-  { id: '1zWaInWBiNJ-_4XjAiEz5DZ1tIQfs0--7', title: 'El Cáncer', category: 'Conociendo el Cáncer' },
-  {
-    id: '1NH2579goZpnhR1PR5yDrGlzguXOcRFH6',
-    title: 'La quimioterapia',
-    category: 'Conociendo la Quimioterapia',
-  },
-  {
-    id: '1-hw_XMI5y_u5Ehl76JxgnYyYc7djYRhz',
-    title: 'Efectos secundarios de la quimioterapia',
-    category: 'Efectos Secundarios',
-  },
-  {
-    id: '1sMhlYuXe0dBdusc_IsKazPzbWBF5W1Jx',
-    title: 'Signos de Alarma',
-    category: 'Signos de Alarma',
-  },
-] as const;
+import { CUIDAQUIMIO_PODCASTS } from './podcast-catalog';
+export { CUIDAQUIMIO_PODCASTS } from './podcast-catalog';
 
 export async function launchPodcast(id: string): Promise<{ opened: boolean; error?: string }> {
   // Only the four reviewed links can be opened. No audio bytes or listening claims are stored.

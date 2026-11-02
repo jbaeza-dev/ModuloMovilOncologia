@@ -1,8 +1,9 @@
-import Feather from '@expo/vector-icons/Feather';
+import { AppIcon as Feather } from './AppIcon';
 import { router } from 'expo-router';
 import { useNavigationState } from 'expo-router/react-navigation';
 import type { ReactNode, RefObject } from 'react';
 import {
+  Image,
   KeyboardAvoidingView,
   type NativeScrollEvent,
   type NativeSyntheticEvent,
@@ -14,6 +15,13 @@ import {
   useWindowDimensions,
   View,
 } from 'react-native';
+
+import {
+  BRAND_SYMBOL_DARK,
+  BRAND_SYMBOL_LIGHT,
+  MascotAvatar,
+  type MascotPose,
+} from './MascotAvatar';
 import { SafeAreaView } from 'react-native-safe-area-context';
 
 import { useAppTheme } from '../providers/ThemeProvider';
@@ -22,6 +30,8 @@ import { theme } from '../theme';
 type Props = {
   children: ReactNode;
   title?: string;
+  /** Pose oficial de la mascota mostrada (decorativa) junto al título de la pantalla. */
+  mascotPose?: MascotPose;
   isRoot?: boolean;
   showProfile?: boolean;
   showHelp?: boolean;
@@ -36,6 +46,7 @@ type Props = {
 export function Screen({
   children,
   title,
+  mascotPose,
   isRoot = false,
   showProfile = false,
   showHelp = false,
@@ -48,16 +59,28 @@ export function Screen({
 }: Props) {
   const { theme: appTheme } = useAppTheme();
   const styles = createStyles(appTheme.colors);
-  const hasBackHistory = useNavigationState((state) => (state ? state.index > 0 : false));
+  // A child navigator can be at index zero while its parent still has the real origin.
+  const hasBackHistory = useNavigationState(() => router.canGoBack());
   const canGoBack = !isRoot && hasBackHistory;
 
   const { fontScale, height } = useWindowDimensions();
   const isConstrained = fontScale > 1.3 || height < 550;
+  const isLargeFont = fontScale >= 1.2;
   const renderBottomActionInline = Boolean(bottomAction && scroll && isConstrained);
+
+  // Al aumentar la letra (≥ 120%) o en subpantallas con título propio, ocultamos la marca central para evitar desbordes
+  const showBrandText = !isLargeFont && isRoot;
 
   const content = (
     <>
-      {title ? (
+      {title && mascotPose ? (
+        <View style={styles.titleRow}>
+          <MascotAvatar pose={mascotPose} size="sm" />
+          <Text accessibilityRole="header" style={[styles.title, styles.titleFlex]}>
+            {title}
+          </Text>
+        </View>
+      ) : title ? (
         <Text accessibilityRole="header" style={styles.title}>
           {title}
         </Text>
@@ -65,6 +88,7 @@ export function Screen({
       {children}
     </>
   );
+
   return (
     <SafeAreaView style={styles.safeArea} edges={['top', 'left', 'right']}>
       <View style={styles.header}>
@@ -84,12 +108,12 @@ export function Screen({
         ) : showHelp ? (
           <Pressable
             accessibilityRole="button"
-            accessibilityLabel="Abrir ayuda"
-            onPress={() => router.navigate('/asistente', { withAnchor: true })}
+            accessibilityLabel="Abrir asistente de orientación"
+            onPress={() => router.push('/asistente')}
             style={({ pressed }) => [styles.headerAction, pressed && styles.pressed]}
           >
             <Feather
-              name="help-circle"
+              name="message-square"
               size={24}
               color={appTheme.colors.primary}
               accessible={false}
@@ -98,18 +122,36 @@ export function Screen({
         ) : (
           <View style={styles.headerAction} />
         )}
-        <Text style={styles.brand}>QuimioCare</Text>
+
+        {isRoot ? (
+          <View
+            style={styles.brandRow}
+            accessible={false}
+            importantForAccessibility="no-hide-descendants"
+          >
+            <Image
+              source={appTheme.colorScheme === 'dark' ? BRAND_SYMBOL_DARK : BRAND_SYMBOL_LIGHT}
+              resizeMode="contain"
+              accessible={false}
+              style={styles.brandSymbol}
+            />
+            {showBrandText ? <Text style={styles.brand}>QuimioCare</Text> : null}
+          </View>
+        ) : (
+          <View style={styles.brandSpacer} />
+        )}
+
         {showProfile ? (
           <Pressable
             accessibilityRole="button"
             accessibilityLabel="Abrir mi perfil"
-            onPress={() => router.navigate('/perfil', { withAnchor: true })}
+            onPress={() => router.push('/perfil')}
             style={({ pressed }) => [styles.profileButton, pressed && styles.pressed]}
           >
             <View style={styles.avatar}>
               <Feather name="user" size={18} color={appTheme.colors.primary} accessible={false} />
             </View>
-            <Text style={styles.profileText}>Mi perfil</Text>
+            {!isLargeFont ? <Text style={styles.profileText}>Mi perfil</Text> : null}
           </Pressable>
         ) : (
           <View style={styles.headerAction} />
@@ -159,6 +201,7 @@ function createStyles(colors: ReturnType<typeof useAppTheme>['theme']['colors'])
       paddingHorizontal: theme.spacing.md,
       paddingVertical: theme.spacing.sm,
       gap: theme.spacing.sm,
+      minHeight: 56,
     },
     headerAction: {
       minWidth: 48,
@@ -185,16 +228,31 @@ function createStyles(colors: ReturnType<typeof useAppTheme>['theme']['colors'])
       backgroundColor: colors.primaryContainer,
     },
     profileText: {
+      fontFamily: 'NunitoSans-SemiBold',
       fontSize: 14,
       fontWeight: '600',
       color: colors.text,
     },
-    brand: {
+    brandRow: {
       flex: 1,
+      flexDirection: 'row',
+      alignItems: 'center',
+      justifyContent: 'center',
+      gap: 6,
+    },
+    brandSymbol: {
+      width: 24,
+      height: 24,
+    },
+    brand: {
       textAlign: 'center',
+      fontFamily: 'NunitoSans-Bold',
       fontSize: 22,
-      fontWeight: '700',
-      color: colors.text,
+      fontWeight: '800',
+      color: colors.heading ?? colors.text,
+    },
+    brandSpacer: {
+      flex: 1,
     },
     content: {
       flexGrow: 1,
@@ -215,7 +273,14 @@ function createStyles(colors: ReturnType<typeof useAppTheme>['theme']['colors'])
       borderTopColor: colors.border,
       gap: theme.spacing.sm,
     },
-    title: { fontSize: 28, fontWeight: '700', color: colors.text },
+    title: {
+      fontFamily: 'NunitoSans-Bold',
+      fontSize: 28,
+      fontWeight: '800',
+      color: colors.heading,
+    },
+    titleRow: { flexDirection: 'row', alignItems: 'center', gap: theme.spacing.md },
+    titleFlex: { flex: 1 },
     pressed: { backgroundColor: colors.pressed },
   });
 }

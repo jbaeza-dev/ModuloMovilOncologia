@@ -5,6 +5,8 @@ coverage/
 .expo/
 pnpm-lock.yaml
 .agents/
+apps/mobile/android/
+apps/mobile/assets/pdfjs/**
 
 # Fuentes contractuales copiadas byte a byte y tipos generados deterministas
 packages/contracts/specs/**

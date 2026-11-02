@@ -1,3 +1,4 @@
+import { readableTreatmentText } from './treatment-labels';
 import { router } from 'expo-router';
 import type { ClinicalMedicamentoResponse } from '@quimiocare/contracts';
 import { cacheMedicationForReminder } from '../../data/local/clinical-context/medication-cache';
@@ -5,6 +6,8 @@ import { formatCivilDateDisplay } from '../../services/reminders/reminder-status
 import { useState, useSyncExternalStore } from 'react';
 import { Text } from 'react-native';
 import { Screen } from '../../components/Screen';
+import { MascotHero } from '../../components/MascotAvatar';
+import { DetailsDisclosure } from '../../components/DetailsDisclosure';
 import { NavigationCard } from '../../components/NavigationCard';
 import { ConfirmLogoutButton } from '../../components/ConfirmLogoutButton';
 import { BodyText, DetailRow, InfoCard, SectionTitle, VisualButton } from '../../components/Visual';
@@ -65,17 +68,22 @@ function SourceNotice({ section }: { section?: 'clinical' | 'treatment' }) {
     <InfoCard>
       <BodyText>
         {!identity
-          ? 'Aún no se dispone de una respuesta del servicio para esta cuenta.'
+          ? 'Información no disponible.'
           : status === 'missing'
-            ? 'El servidor informó que este registro todavía no existe.'
-            : `${snapshot.stale || status === 'unavailable' ? 'Copia guardada; no se pudo confirmar su actualización.' : 'Información recibida del servicio REST.'} Última consulta completa: ${formatDate(identity.fetchedAt)}.`}
+            ? 'Aún no hay información registrada.'
+            : snapshot.stale || status === 'unavailable'
+              ? 'Mostramos tu última información guardada.'
+              : 'Información actualizada.'}
       </BodyText>
-      <BodyText>
-        {snapshot.uploadAllowed
-          ? 'Los envíos están habilitados.'
-          : 'Los envíos están pausados. Las capturas locales se conservan.'}
-        {snapshot.terms ? ` Términos consultados: versión ${snapshot.terms.version}.` : ''}
-      </BodyText>
+      <DetailsDisclosure title="Estado de mi información">
+        {identity ? <BodyText>Última consulta: {formatDate(identity.fetchedAt)}.</BodyText> : null}
+        <BodyText>
+          {snapshot.uploadAllowed
+            ? 'Los envíos están habilitados.'
+            : 'Los envíos están pausados. Tus registros están guardados en este teléfono.'}
+          {snapshot.terms ? ` Términos consultados: versión ${snapshot.terms.version}.` : ''}
+        </BodyText>
+      </DetailsDisclosure>
       <NavigationCard
         title="Revisar términos y sesión"
         icon="shield"
@@ -83,7 +91,7 @@ function SourceNotice({ section }: { section?: 'clinical' | 'treatment' }) {
         compact
       />
       <VisualButton
-        label={busy ? 'Actualizando…' : 'Actualizar desde el servidor'}
+        label={busy ? 'Actualizando…' : 'Actualizar información'}
         secondary
         disabled={!session || busy || isClosing}
         onPress={() => void refresh()}
@@ -107,37 +115,35 @@ function PersonalFields() {
 }
 export function ProfileScreen() {
   return (
-    <Screen title="Mi perfil">
+    <Screen>
+      <MascotHero pose="reposo" title="Mi perfil" eyebrow="TU CUENTA" compact />
       <PersonalFields />
-      <SourceNotice />
-      <SectionTitle>Mi tratamiento</SectionTitle>
-      <NavigationCard title="Mi tratamiento" icon="file-text" href="/perfil/clinico" compact />
-      <NavigationCard title="Mis medicamentos" icon="activity" href="/perfil/medicacion" compact />
-      <NavigationCard title="Mi equipo de salud" icon="users" href="/perfil/equipo" compact />
-      <SectionTitle>Mis datos</SectionTitle>
-      <NavigationCard title="Datos personales" icon="user" href="/perfil/datos" compact />
+      <NavigationCard title="Actualizar mis datos" icon="edit-2" href="/perfil/completar" compact />
+      <NavigationCard
+        title="Tratamiento, equipo y medicamentos"
+        description="Tu información de salud"
+        icon="users"
+        href="/perfil/clinico"
+      />
       <NavigationCard
         title="Código de vinculación"
+        description="Vincula tu cuenta con tu centro de salud"
         icon="link-2"
         href="/perfil/vinculacion"
-        compact
       />
-      <SectionTitle>Configuración y privacidad</SectionTitle>
-      <NavigationCard title="Preferencias" icon="settings" href="/perfil/preferencias" compact />
       <NavigationCard
-        title="Consentimientos"
-        icon="check-square"
-        href="/perfil/consentimientos"
-        compact
+        title="Apariencia, sesión y teléfonos"
+        description="Colores, avisos y privacidad"
+        icon="settings"
+        href="/perfil/preferencias"
       />
-      <NavigationCard title="Sesión y dispositivos" icon="shield" href="/perfil/sesion" compact />
       <ConfirmLogoutButton />
     </Screen>
   );
 }
 export function PersonalDataScreen() {
   return (
-    <Screen title="Datos personales">
+    <Screen mascotPose="resumen" title="Datos personales">
       <PersonalFields />
       <SourceNotice />
     </Screen>
@@ -148,15 +154,24 @@ export function ClinicalProfileScreen() {
     treatment = identity?.treatment,
     clinical = identity?.clinicalProfile;
   return (
-    <Screen title="Perfil clínico">
+    <Screen mascotPose="reposo" title="Perfil clínico">
       <SectionTitle>Tratamiento</SectionTitle>
       <SourceNotice section="treatment" />
       {treatment ? (
         <InfoCard>
-          <DetailRow label="Tratamiento" value={treatment.tipo_tratamiento_nombre} />
-          <DetailRow label="Estado" value={treatment.estado ?? 'Sin registro'} />
-          <DetailRow label="Fase" value={treatment.fase ?? 'Sin registro'} />
-          <DetailRow label="Intención" value={treatment.intencion ?? 'Sin registro'} />
+          <DetailRow
+            label="Tratamiento"
+            value={readableTreatmentText(treatment.tipo_tratamiento_nombre)}
+          />
+          <DetailRow
+            label="Estado"
+            value={readableTreatmentText(treatment.estado ?? 'Sin registro')}
+          />
+          <DetailRow label="Fase" value={readableTreatmentText(treatment.fase ?? 'Sin registro')} />
+          <DetailRow
+            label="Intención"
+            value={readableTreatmentText(treatment.intencion ?? 'Sin registro')}
+          />
           <DetailRow label="Inicio" value={treatment.fecha_inicio_tratamiento ?? 'Sin fecha'} />
           <DetailRow
             label="Término"
@@ -164,7 +179,12 @@ export function ClinicalProfileScreen() {
           />
           {Object.entries(treatment.parametros ?? {}).map(([name, value]) =>
             typeof value === 'string' || typeof value === 'number' ? (
-              <DetailRow key={name} label={name} value={String(value)} layout="vertical" />
+              <DetailRow
+                key={name}
+                label={readableTreatmentText(name)}
+                value={readableTreatmentText(String(value))}
+                layout="vertical"
+              />
             ) : null,
           )}
         </InfoCard>
@@ -188,6 +208,8 @@ export function ClinicalProfileScreen() {
           />
         </InfoCard>
       ) : null}
+      <NavigationCard title="Mis medicamentos" icon="paperclip" href="/perfil/medicacion" />
+      <NavigationCard title="Mi equipo de salud" icon="users" href="/perfil/equipo" />
     </Screen>
   );
 }
@@ -224,7 +246,7 @@ export function MedicationScreen() {
   }
   const medications = clinical?.medicamentos;
   return (
-    <Screen title="Mis medicamentos">
+    <Screen mascotPose="recordatorio" title="Mis medicamentos">
       <SourceNotice section="clinical" />
       <BodyText>
         Consulta la indicación recibida. No cambies ni suspendas medicamentos sin indicación de tu

@@ -1,6 +1,6 @@
 import { QueryRevisionContext } from '../../providers/QueryRevision';
 import { clinicalStatusLabel } from '../../data/sync/visible-status';
-import Feather from '@expo/vector-icons/Feather';
+import { AppIcon as Feather } from '../../components/AppIcon';
 import * as Crypto from 'expo-crypto';
 import { router, useLocalSearchParams } from 'expo-router';
 import { useCallback, useContext, useEffect, useMemo, useState } from 'react';
@@ -83,7 +83,7 @@ export function MedicalFormsHubScreen() {
   );
 
   return (
-    <Screen isRoot title="Cuestionarios médicos">
+    <Screen mascotPose="registro" isRoot title="Cuestionarios médicos">
       <DemoBadge />
       <BodyText>
         Muestras de evaluaciones estructuradas para el seguimiento continuo de tu bienestar.
@@ -91,7 +91,7 @@ export function MedicalFormsHubScreen() {
 
       <NavigationCard
         title="Registro de síntomas de hoy"
-        description="Describe libremente sensaciones o molestias para tu historial local."
+        description="Anota cómo te sientes."
         icon="edit-3"
         href="/formulario/sintomas-libres"
       />
@@ -124,9 +124,7 @@ export function MedicalFormsHubScreen() {
       {formImportStatus === 'importing' ? (
         <InfoCard>
           <StatusPill>Preparando cuestionarios…</StatusPill>
-          <BodyText>
-            Recuperando y sincronizando borradores del paciente en este dispositivo.
-          </BodyText>
+          <BodyText>Buscando tus borradores…</BodyText>
         </InfoCard>
       ) : null}
 
@@ -135,9 +133,7 @@ export function MedicalFormsHubScreen() {
           <EmptyState
             icon="alert-circle"
             title="Error al preparar almacenamiento"
-            description={
-              formImportError ?? 'No se pudo sincronizar el almacenamiento local de formularios.'
-            }
+            description={formImportError ?? 'No se pudieron recuperar tus formularios.'}
           />
           <View style={{ marginTop: theme.spacing.sm }}>
             <VisualButton label="Reintentar preparación" onPress={retryFormImport} />
@@ -181,7 +177,7 @@ export function MedicalFormsHubScreen() {
                   label="Continuar borrador"
                   disabled={!formStorageReady}
                   onPress={() =>
-                    router.navigate(
+                    router.push(
                       `/formulario/cuestionario?id=${encodeURIComponent(form.formulario_id)}&version=${encodeURIComponent(form.version)}`,
                     )
                   }
@@ -192,7 +188,7 @@ export function MedicalFormsHubScreen() {
                     label="Ver respuestas registradas"
                     disabled={!formStorageReady}
                     onPress={() =>
-                      router.navigate(
+                      router.push(
                         `/formulario/entrega?id=${encodeURIComponent(form.ultima_entrega_id!)}`,
                       )
                     }
@@ -202,7 +198,7 @@ export function MedicalFormsHubScreen() {
                     secondary
                     disabled={!formStorageReady}
                     onPress={() =>
-                      router.navigate(
+                      router.push(
                         `/formulario/cuestionario?id=${encodeURIComponent(form.formulario_id)}&version=${encodeURIComponent(form.version)}`,
                       )
                     }
@@ -213,7 +209,7 @@ export function MedicalFormsHubScreen() {
                   label="Responder cuestionario"
                   disabled={!formStorageReady}
                   onPress={() =>
-                    router.navigate(
+                    router.push(
                       `/formulario/cuestionario?id=${encodeURIComponent(form.formulario_id)}&version=${encodeURIComponent(form.version)}`,
                     )
                   }
@@ -301,13 +297,13 @@ export function MedicalFormDetailScreen() {
   if (!formStorageReady) {
     if (formImportStatus === 'error') {
       return (
-        <Screen title="Error de almacenamiento">
+        <Screen mascotPose="apoyo" title="Error de almacenamiento">
           <DemoBadge />
           <InfoCard>
             <EmptyState
               icon="alert-circle"
               title="No se pudo preparar el cuestionario"
-              description={formImportError ?? 'Error al procesar el almacenamiento local.'}
+              description={formImportError ?? 'No se pudieron leer tus datos guardados.'}
             />
             <View style={{ marginTop: theme.spacing.md }}>
               <VisualButton label="Reintentar preparación" onPress={retryFormImport} />
@@ -321,7 +317,7 @@ export function MedicalFormDetailScreen() {
         <DemoBadge />
         <InfoCard>
           <StatusPill>Preparando evaluación…</StatusPill>
-          <BodyText>Recuperando datos locales y verificando borrador previo…</BodyText>
+          <BodyText>Buscando tu borrador…</BodyText>
         </InfoCard>
       </Screen>
     );
@@ -341,7 +337,7 @@ export function MedicalFormDetailScreen() {
 
   if (detailError) {
     return (
-      <Screen title="Error de carga">
+      <Screen mascotPose="apoyo" title="Error de carga">
         <DemoBadge />
         <InfoCard>
           <EmptyState
@@ -359,7 +355,7 @@ export function MedicalFormDetailScreen() {
 
   if (!formDef) {
     return (
-      <Screen title="Cuestionario no encontrado">
+      <Screen mascotPose="apoyo" title="Cuestionario no encontrado">
         <DemoBadge />
         <EmptyState
           icon="alert-circle"
@@ -446,9 +442,9 @@ export function MedicalFormDetailScreen() {
           stableDeliveryId,
         );
       });
-      setFeedback('Borrador guardado localmente en este dispositivo.');
+      setFeedback('Borrador guardado en este teléfono.');
     } catch {
-      setFeedback('No se pudo guardar el borrador en el almacenamiento local.');
+      setFeedback('No se pudo guardar el borrador.');
     } finally {
       setBusy(false);
     }
@@ -483,9 +479,7 @@ export function MedicalFormDetailScreen() {
       setFeedback(clinicalStatusLabel(savedStatus));
     } catch (err) {
       setFeedback(
-        err instanceof Error
-          ? err.message
-          : 'No se pudo confirmar la entrega en el almacenamiento local.',
+        err instanceof Error ? err.message : 'No se pudo confirmar que el registro se guardó.',
       );
     } finally {
       setBusy(false);
@@ -516,7 +510,7 @@ export function MedicalFormDetailScreen() {
   // Vista de Revisión y Confirmación
   if (isReviewing) {
     return (
-      <Screen title={`Revisión: ${formDef.titulo}`}>
+      <Screen mascotPose="explicacion" title={`Revisión: ${formDef.titulo}`}>
         <DemoBadge />
         <InfoCard>
           <StatusPill>
@@ -641,7 +635,7 @@ export function MedicalFormDetailScreen() {
           onPress={handleReview}
         />
         <VisualButton
-          label="Guardar borrador local"
+          label="Guardar borrador"
           secondary
           disabled={busy || !formStorageReady}
           onPress={handleSaveDraft}
@@ -729,11 +723,9 @@ export function MedicalFormSubmissionsScreen() {
   }
 
   return (
-    <Screen title="Historial de evaluaciones">
+    <Screen mascotPose="resumen" title="Historial de evaluaciones">
       <DemoBadge />
-      <BodyText>
-        Registro de evaluaciones médicas confirmadas localmente en este dispositivo.
-      </BodyText>
+      <BodyText>Tus evaluaciones guardadas en este teléfono.</BodyText>
 
       {historyError ? (
         <InfoCard>
@@ -787,7 +779,7 @@ export function MedicalFormSubmissionsScreen() {
           <VisualButton
             label="Ver respuestas"
             secondary
-            onPress={() => router.navigate(`/formulario/entrega?id=${encodeURIComponent(sub.id)}`)}
+            onPress={() => router.push(`/formulario/entrega?id=${encodeURIComponent(sub.id)}`)}
           />
         </InfoCard>
       ))}
@@ -872,7 +864,7 @@ export function MedicalFormSubmissionDetailScreen() {
 
   if (!submission || !formDef || !medicalForm) {
     return (
-      <Screen title="Evaluación no encontrada">
+      <Screen mascotPose="apoyo" title="Evaluación no encontrada">
         <DemoBadge />
         <EmptyState
           icon="alert-circle"
@@ -884,7 +876,7 @@ export function MedicalFormSubmissionDetailScreen() {
   }
 
   return (
-    <Screen title={`Entrega: ${submission.titulo}`}>
+    <Screen mascotPose="confirmacion" title={`Entrega: ${submission.titulo}`}>
       <DemoBadge />
       <InfoCard>
         <StatusPill>{clinicalStatusLabel(submission.estado_envio)}</StatusPill>

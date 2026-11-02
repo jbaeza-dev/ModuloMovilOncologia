@@ -1,4 +1,4 @@
-import Feather from '@expo/vector-icons/Feather';
+import { AppIcon as Feather } from '../../components/AppIcon';
 import { router, useLocalSearchParams } from 'expo-router';
 import { useState } from 'react';
 import { FlatList, Pressable, StyleSheet, Text, View } from 'react-native';
@@ -29,7 +29,7 @@ function RecordCard({ item }: { item: RecordItem }) {
     <Pressable
       accessibilityRole="button"
       accessibilityLabel={'Ver registro del ' + item.date}
-      onPress={() => router.navigate('/vitales/demo-detalle')}
+      onPress={() => router.push('/vitales/demo-detalle')}
       style={styles.record}
     >
       <View style={styles.row}>
@@ -128,12 +128,12 @@ export function VitalsScreen() {
           <View style={styles.stack}>
             <VisualButton
               label="Registrar signos vitales"
-              onPress={() => router.navigate('/vitales/registrar')}
+              onPress={() => router.push('/vitales/registrar')}
             />
             <VisualButton
               label="Ver reportes"
               secondary
-              onPress={() => router.navigate('/vitales/reportes')}
+              onPress={() => router.push('/vitales/reportes')}
             />
           </View>
         }

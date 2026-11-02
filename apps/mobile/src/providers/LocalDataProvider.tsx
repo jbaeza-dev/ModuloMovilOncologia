@@ -1,3 +1,5 @@
+import { AppLoadingScreen } from '../components/AppLoadingScreen';
+import { AutomaticEducationDownloads } from '../features/education/AutomaticEducationDownloads';
 import type { ClinicalStore } from '../data/sync/native-runtime';
 import { openClinicalStore } from '../data/sync/native-runtime';
 import { QueryRevisionContext } from './QueryRevision';
@@ -309,6 +311,8 @@ export function LocalDataProvider({ children }: { children: ReactNode }) {
                 'qc_storage_control',
                 'qc_catalog_status',
                 'qc_definition_snapshot',
+                'descarga',
+                'interaccion_educativa_local',
                 'signos_vitales',
                 'respuesta_formulario',
                 'qc_gateway_outbox',
@@ -777,16 +781,13 @@ export function LocalDataProvider({ children }: { children: ReactNode }) {
         />
       </Screen>
     );
-  if (!sessionRestored || (!labOnly && patientId && !database))
-    return (
-      <Screen title="Preparando almacenamiento">
-        <BodyText>Abriendo la base de datos local…</BodyText>
-      </Screen>
-    );
+  if (!sessionRestored || (!labOnly && patientId && !database)) return <AppLoadingScreen />;
 
   return (
     <QueryRevisionContext.Provider value={queryRevision}>
-      <DataContext.Provider value={context}>{children}</DataContext.Provider>
+      <DataContext.Provider value={context}>
+        <AutomaticEducationDownloads>{children}</AutomaticEducationDownloads>
+      </DataContext.Provider>
     </QueryRevisionContext.Provider>
   );
 }

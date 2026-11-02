@@ -227,7 +227,7 @@ describe('Screen, NavigationCard, rutas de Inicio y reinicio dirigido (Bloque 1 
         <NavigationCard
           title="Acceso push"
           icon="activity"
-          href="/(tabs)/(inicio)/registrar-vitales"
+          href="/vitales/registrar"
           navigationMethod="push"
         />
         <NavigationCard title="Acceso replace" icon="home" href="/" replace />
@@ -235,10 +235,10 @@ describe('Screen, NavigationCard, rutas de Inicio y reinicio dirigido (Bloque 1 
     );
 
     await fireEvent.press(screen.getByLabelText('Acceso navigate'));
-    expect(mockRouterNavigate).toHaveBeenCalledWith('/recordatorios', { withAnchor: true });
+    expect(mockRouterPush).toHaveBeenCalledWith('/recordatorios');
 
     await fireEvent.press(screen.getByLabelText('Acceso push'));
-    expect(mockRouterPush).toHaveBeenCalledWith('/(tabs)/(inicio)/registrar-vitales');
+    expect(mockRouterPush).toHaveBeenCalledWith('/vitales/registrar');
 
     await fireEvent.press(screen.getByLabelText('Acceso replace'));
     expect(mockRouterReplace).toHaveBeenCalledWith('/');
@@ -255,7 +255,7 @@ describe('Screen, NavigationCard, rutas de Inicio y reinicio dirigido (Bloque 1 
     expect(screen.getByText('Completa tu cuestionario diario de seguimiento.')).toBeTruthy();
 
     await fireEvent.press(screen.getByLabelText('Registrar signos vitales'));
-    expect(mockRouterPush).toHaveBeenCalledWith('/(tabs)/(inicio)/registrar-vitales');
+    expect(mockRouterPush).toHaveBeenCalledWith('/vitales/registrar');
 
     await fireEvent.press(screen.getByLabelText('Cómo me siento hoy'));
     expect(mockRouterPush).toHaveBeenCalledWith('/formulario');
@@ -404,16 +404,16 @@ describe('Screen, NavigationCard, rutas de Inicio y reinicio dirigido (Bloque 1 
     expect(screen.getByRole('button', { name: 'Abrir seguimiento ePRO' })).toBeTruthy();
   });
 
-  it('RegisterVitalsDataScreen distingue flecha Volver (router.back) de Ver historial de mediciones (router.navigate)', async () => {
+  it('RegisterVitalsDataScreen conserva Volver y una sola acción de guardar al pie', async () => {
     mockNavIndex = 1;
     await render(<RegisterVitalsDataScreen />);
 
     await fireEvent.press(screen.getByLabelText('Volver'));
     expect(mockRouterBack).toHaveBeenCalledTimes(1);
-    expect(mockRouterNavigate).not.toHaveBeenCalled();
+    expect(mockRouterPush).not.toHaveBeenCalled();
 
-    await fireEvent.press(screen.getByText('Ver historial de mediciones'));
-    expect(mockRouterNavigate).toHaveBeenCalledWith('/vitales');
+    expect(screen.queryByText('Ver historial de mediciones')).toBeNull();
+    expect(screen.getByRole('button', { name: 'Guardar registro' })).toBeTruthy();
   });
 
   it('handleHomeTabPress despacha popToTop dirigido solo a la pila de (inicio) cuando index > 0 y solicita scroll a y=0', () => {

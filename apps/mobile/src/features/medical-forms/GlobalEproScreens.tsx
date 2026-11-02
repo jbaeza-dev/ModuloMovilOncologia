@@ -1,3 +1,4 @@
+import { createDailyFormContext } from '../../services/forms/daily-form-context';
 import {
   activeQuestionIds,
   answerErrors,
@@ -10,11 +11,13 @@ import { usePreventRemove } from 'expo-router/react-navigation';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { AccessibilityInfo, AppState, Text } from 'react-native';
 import { Screen } from '../../components/Screen';
+import { MascotHero } from '../../components/MascotAvatar';
 import { NavigationCard } from '../../components/NavigationCard';
 import {
   BodyText,
   DetailRow,
   InfoCard,
+  ProgressBar,
   SectionTitle,
   StatusPill,
   VisualButton,
@@ -44,25 +47,36 @@ function answerLabel(q: FormQuestion, value: AnswerValue | undefined): string {
 }
 export function GlobalEproHubScreen() {
   const repo = useEproRepository(),
-    { repository, trackOperation, isClosing } = useLocalData();
+    { trackOperation, isClosing } = useLocalData();
   const [busy, setBusy] = useState(false),
     [feedback, setFeedback] = useState('');
   const load = useCallback(async () => {
     if (!repo) return null;
     const hub = await repo.hub();
-    const legacy = [];
-    if (repository?.listAssignedForms && repository.getDailyFormStatus)
-      for (const form of await repository.listAssignedForms()) {
-        const status = await repository.getDailyFormStatus(form.formulario_id);
-        for (const draft of [status.activeDraft, status.olderDraft])
-          if (draft) legacy.push({ form, draft });
-      }
-    return { source: repo, hub, legacy };
-  }, [repo, repository]);
+    return { source: repo, hub };
+  }, [repo]);
   const { value, loading, error, refresh } = useFocusedValue(load, null);
   const data = value?.source === repo ? value : null;
+  const today = createDailyFormContext().fechaSeguimiento;
+  const continuation = data?.hub.drafts.find(
+    (draft) =>
+      (!data.hub.current || draft.definition.form.codigo === data.hub.current.form.codigo) &&
+      draft.context.fechaSeguimiento === today,
+  );
+  const progressLabel = (draft: EproDraft) => {
+    const steps = formSections(draft.definition);
+    const index = Math.max(
+      0,
+      steps.findIndex((step) => step.id === draft.section),
+    );
+    return `Paso ${index + 1} de ${steps.length} · ${steps[index]?.titulo ?? 'Tu seguimiento'}`;
+  };
   async function start() {
-    if (!repo || !data?.hub.current || busy || isClosing) return;
+    if (!repo || !data || (!data.hub.current && !continuation) || busy || isClosing) return;
+    if (continuation) {
+      router.push({ pathname: '/formulario/cuestionario', params: { draft: continuation.id } });
+      return;
+    }
     setBusy(true);
     setFeedback('');
     try {
@@ -75,90 +89,66 @@ export function GlobalEproHubScreen() {
     }
   }
   return (
-    <Screen isRoot title="Seguimiento domiciliario">
-      {data?.hub.current ? (
-        <VisualButton
-          label={busy ? 'Preparando…' : 'Iniciar seguimiento de hoy'}
-          disabled={busy || isClosing}
-          onPress={() => void start()}
-        />
-      ) : null}
-      <BodyText>
-        Cuestionario global para pacientes en quimioterapia. Tus respuestas se guardan en este
-        dispositivo y se envían cuando la sesión y la conexión lo permiten.
-      </BodyText>
-      {loading || !repo ? <BodyText>Consultando el catálogo completo…</BodyText> : null}
+    <Screen isRoot showHelp showProfile>
+      <MascotHero
+        pose="registro"
+        eyebrow="SEGUIMIENTO DOMICILIARIO"
+        title="¿Cómo te has sentido?"
+        description="A tu ritmo. Puedes pausar y continuar después."
+        compact
+      />
+      <BodyText>Se guarda en este teléfono. Los envíos pendientes requieren conexión.</BodyText>
+      {loading || !repo ? <BodyText>Buscando tu cuestionario…</BodyText> : null}
       {error ? (
         <InfoCard>
           <BodyText>
-            No se pudo consultar una definición compatible. Tus borradores e historial se conservan.
+            No pudimos abrir tu cuestionario. Tus respuestas e historial se conservan.
           </BodyText>
           <VisualButton label="Reintentar" onPress={refresh} />
         </InfoCard>
       ) : null}
       {data?.hub.status?.completed_at ? (
         <BodyText>
-          Última réplica completa: {formatDate(data.hub.status.completed_at)}.
-          {data.hub.status.error_code
-            ? ' Falló una actualización; se conserva la última copia completa.'
-            : ''}{' '}
-          Esta fecha no confirma conexión actual.
+          Cuestionario recibido: {formatDate(data.hub.status.completed_at)}.
+          {data.hub.status.error_code ? ' No se pudo actualizar. Se conserva la última copia.' : ''}
         </BodyText>
       ) : null}
-      {data?.hub.current ? (
+      {data?.hub.current || continuation ? (
         <InfoCard>
-          <SectionTitle>{String(data.hub.current.form.titulo)}</SectionTitle>
-          <BodyText>{String(data.hub.current.form.descripcion ?? '')}</BodyText>
+          <SectionTitle>
+            {String((continuation?.definition ?? data?.hub.current)?.form.titulo)}
+          </SectionTitle>
           <BodyText>
-            Edición {String(data.hub.current.form.version)} · {data.hub.current.questions.length}{' '}
-            preguntas, con preguntas condicionales.
+            {String((continuation?.definition ?? data?.hub.current)?.form.descripcion ?? '')}
           </BodyText>
+          <BodyText>
+            Edición {String((continuation?.definition ?? data?.hub.current)?.form.version)} ·{' '}
+            {(continuation?.definition ?? data?.hub.current)?.questions.length} preguntas
+          </BodyText>
+          {continuation ? <BodyText>{progressLabel(continuation)}</BodyText> : null}
+          <VisualButton
+            label={busy ? 'Abriendo…' : 'Iniciar seguimiento'}
+            disabled={busy || isClosing}
+            onPress={() => void start()}
+          />
         </InfoCard>
       ) : !loading && !error ? (
-        <BodyText>
-          Aún no hay un seguimiento global activo y completo disponible. Conéctate para recibirlo.
-        </BodyText>
+        <InfoCard>
+          <SectionTitle>Todavía no tienes un cuestionario disponible</SectionTitle>
+          <BodyText>
+            Conéctate para recibirlo por primera vez. Si ya tienes conexión, revisa tu vinculación
+            con el equipo de salud.
+          </BodyText>
+          <VisualButton label="Volver a consultar" secondary onPress={refresh} />
+          <NavigationCard
+            title="Revisar mi vinculación"
+            icon="link-2"
+            href="/perfil/vinculacion"
+            compact
+          />
+        </InfoCard>
       ) : null}
       {feedback ? <Text accessibilityRole="alert">{feedback}</Text> : null}
-      {data?.hub.drafts.map((draft) => (
-        <InfoCard key={draft.id}>
-          <SectionTitle>Borrador del {draft.context.fechaSeguimiento}</SectionTitle>
-          <BodyText>
-            Edición {String(draft.definition.form.version)}. Se conserva su definición original
-            aunque llegue una edición nueva.
-          </BodyText>
-          <VisualButton
-            label="Continuar borrador"
-            secondary
-            disabled={isClosing}
-            onPress={() =>
-              router.push({ pathname: '/formulario/cuestionario', params: { draft: draft.id } })
-            }
-          />
-        </InfoCard>
-      ))}
-      {data?.legacy.map(({ form, draft }) => (
-        <InfoCard key={draft.entrega_id}>
-          <SectionTitle>Borrador anterior: {form.titulo}</SectionTitle>
-          <BodyText>
-            Se conserva su edición anterior {form.version}; no se convierte al nuevo instrumento.
-          </BodyText>
-          <VisualButton
-            label="Abrir borrador anterior"
-            secondary
-            onPress={() =>
-              router.push({
-                pathname: '/formulario/cuestionario',
-                params: {
-                  id: form.formulario_id,
-                  version: form.version,
-                  periodoClave: draft.periodo_clave,
-                },
-              })
-            }
-          />
-        </InfoCard>
-      ))}
       {data?.hub.captures.slice(0, 10).map((capture) => (
         <InfoCard key={capture.id}>
           <SectionTitle>Seguimiento del {capture.context.fechaSeguimiento}</SectionTitle>
@@ -179,11 +169,6 @@ export function GlobalEproHubScreen() {
         title="Historial de evaluaciones"
         icon="clipboard"
         href="/formulario/historial"
-      />
-      <NavigationCard
-        title="Historial de síntomas libres"
-        icon="file-text"
-        href="/formulario/sintomas-libres"
       />
     </Screen>
   );
@@ -235,7 +220,7 @@ export function ContractEproEditor({ draftId }: { draftId: string }) {
           if (!active) return;
           if (!draft)
             throw new Error(
-              'No se encontró este borrador. Consulta el historial si ya lo confirmaste.',
+              'No se encontró este seguimiento. Consulta el historial si ya lo confirmaste.',
             );
           setLoaded({ source: repo, draft });
           answersRef.current = draft.answers;
@@ -244,7 +229,9 @@ export function ContractEproEditor({ draftId }: { draftId: string }) {
         })
         .catch((error) => {
           if (active)
-            setError(error instanceof Error ? error.message : 'No se pudo abrir el borrador.');
+            setError(
+              error instanceof Error ? error.message : 'No se pudieron recuperar tus respuestas.',
+            );
         })
         .finally(() => {
           if (active) setLoading(false);
@@ -293,9 +280,7 @@ export function ContractEproEditor({ draftId }: { draftId: string }) {
     void queue.current.then(
       () => setPendingAction(data.action),
       () => {
-        AccessibilityInfo.announceForAccessibility(
-          'No se pudo guardar el borrador. Reintenta antes de salir.',
-        );
+        AccessibilityInfo.announceForAccessibility('No se pudo guardar. Reintenta antes de salir.');
       },
     );
   });
@@ -305,7 +290,7 @@ export function ContractEproEditor({ draftId }: { draftId: string }) {
   if (loading || !repo)
     return (
       <Screen title="Seguimiento domiciliario">
-        <BodyText>Abriendo el borrador cifrado…</BodyText>
+        <BodyText>Recuperando tus respuestas…</BodyText>
       </Screen>
     );
   if (error || !draft || !edition)
@@ -374,18 +359,14 @@ export function ContractEproEditor({ draftId }: { draftId: string }) {
     <Screen
       key={review ? 'review' : current.id}
       title={review ? 'Revisar seguimiento' : current.titulo}
+      mascotPose={review ? 'explicacion' : undefined}
     >
       <BodyText>
         Seguimiento del {draft.context.fechaSeguimiento} · edición{' '}
-        {String(draft.definition.form.version)}. Ventana de referencia:{' '}
-        {formatDate(draft.context.ventanaDesde)} a {formatDate(draft.context.ventanaHasta)}.
+        {String(draft.definition.form.version)}.
       </BodyText>
       <StatusPill>
-        {pending
-          ? 'Guardando borrador…'
-          : saveError
-            ? 'Guardado pendiente'
-            : 'Borrador guardado en este dispositivo'}
+        {pending ? 'Guardando…' : saveError ? 'Guardado pendiente' : 'Guardado automáticamente'}
       </StatusPill>
       {saveError ? (
         <InfoCard>
@@ -431,6 +412,7 @@ export function ContractEproEditor({ draftId }: { draftId: string }) {
             Paso {currentIndex + 1} de {sections.length}. Se muestran las preguntas que corresponden
             a tus respuestas.
           </BodyText>
+          <ProgressBar progress={Math.round(((currentIndex + 1) / sections.length) * 100)} />
           {visible.filter(inSection).map((q) => (
             <ContractQuestionInput
               key={q.id}
@@ -452,9 +434,7 @@ export function ContractEproEditor({ draftId }: { draftId: string }) {
             />
           ))}
           <VisualButton
-            label={
-              currentIndex === sections.length - 1 ? 'Revisar respuestas' : 'Guardar y continuar'
-            }
+            label={currentIndex === sections.length - 1 ? 'Revisar respuestas' : 'Continuar'}
             disabled={busy || isClosing}
             onPress={() => void next()}
           />
@@ -471,6 +451,22 @@ export function ContractEproEditor({ draftId }: { draftId: string }) {
               }}
             />
           ) : null}
+          <VisualButton
+            label="Pausar y seguir más tarde"
+            secondary
+            disabled={busy || isClosing}
+            onPress={() => {
+              setBusy(true);
+              void save(answersRef.current, section)
+                .then(() => {
+                  if (mounted.current) router.replace('/formulario');
+                })
+                .catch(() => undefined)
+                .finally(() => {
+                  if (mounted.current) setBusy(false);
+                });
+            }}
+          />
         </>
       )}
     </Screen>
@@ -493,14 +489,14 @@ export function EproSubmissionRoute() {
   if (error)
     return (
       <Screen title="Detalle de evaluación">
-        <BodyText>No se pudo leer el snapshot de la captura.</BodyText>
+        <BodyText>No se pudieron abrir las respuestas guardadas.</BodyText>
       </Screen>
     );
   if (!value.capture) return <MedicalFormSubmissionDetailScreen />;
   const { record, status } = value.capture,
     edition = contractForm(record.definition);
   return (
-    <Screen title="Seguimiento confirmado">
+    <Screen mascotPose="confirmacion" title="Seguimiento confirmado">
       <BodyText>
         Seguimiento del {record.context.fechaSeguimiento} · confirmado el{' '}
         {formatDate(record.submittedAt)}.
@@ -510,7 +506,8 @@ export function EproSubmissionRoute() {
       </BodyText>
       <StatusPill>{clinicalStatusLabel(status)}</StatusPill>
       <BodyText>
-        La confirmación del servidor indica recepción del registro; no implica evaluación clínica.
+        Recibido significa que tu registro llegó; no significa que tu equipo de salud ya lo haya
+        revisado.
       </BodyText>
       {edition.preguntas
         .filter((q) => Object.hasOwn(record.answers, q.id))

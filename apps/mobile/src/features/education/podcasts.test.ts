@@ -1,3 +1,8 @@
+vi.mock('./podcast-catalog', () => ({
+  CUIDAQUIMIO_PODCASTS: [
+    { id: 'test-drive-audio', title: 'Podcast sintético', category: 'Prueba' },
+  ],
+}));
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import * as WebBrowser from 'expo-web-browser';
 import * as Network from 'expo-network';

@@ -135,7 +135,7 @@ describe('Online consent in the actual screen and session adapter', () => {
     );
     expect(
       await screen.findByText(
-        'Aceptación confirmada por el servidor. Falta la vinculación clínica: solicita tu código desde Perfil.',
+        'Tu aceptación quedó confirmada. Falta la vinculación clínica: solicita tu código desde Perfil.',
       ),
     ).toBeTruthy();
     expect(session.getSnapshot().uploadAllowed).toBe(false);
@@ -154,7 +154,7 @@ describe('Online consent in the actual screen and session adapter', () => {
     await fireEvent.press(
       screen.getByRole('button', { name: 'Acepto y autorizo el tratamiento de mis datos' }),
     );
-    expect(await screen.findByText('Aceptación confirmada por el servidor.')).toBeTruthy();
+    expect(await screen.findByText('Tu aceptación quedó confirmada.')).toBeTruthy();
     expect(session.getSnapshot().uploadAllowed).toBe(true);
     expect(bodies).toEqual([
       { definicion_terminos_id: term, operacion_id: operation, codigo: 'TERMINOS_PLATAFORMA' },
@@ -174,13 +174,13 @@ describe('Online consent in the actual screen and session adapter', () => {
     );
     expect(await screen.findByText('La cuenta no tiene permiso para esta operación.')).toBeTruthy();
     expect(session.getSnapshot().uploadAllowed).toBe(false);
-    expect(screen.queryByText('Aceptación confirmada por el servidor.')).toBeNull();
+    expect(screen.queryByText('Tu aceptación quedó confirmada.')).toBeNull();
   });
   it('does not offer a local grant without a configured service', async () => {
     await render(<OnlineConsentScreen />);
     expect(
       await screen.findByText(
-        'El servicio de términos no está configurado. Una aceptación local no habilita envíos.',
+        'No podemos consultar los términos ahora. Necesitas revisarlos y confirmar tu aceptación antes de enviar registros.',
       ),
     ).toBeTruthy();
     expect(

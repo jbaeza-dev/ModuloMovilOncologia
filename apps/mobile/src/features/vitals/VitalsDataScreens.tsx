@@ -1,4 +1,5 @@
-import Feather from '@expo/vector-icons/Feather';
+import { AppIcon as Feather } from '../../components/AppIcon';
+import { WeeklyVitalsChart } from './WeeklyVitalsChart';
 import { router, useLocalSearchParams, useNavigation } from 'expo-router';
 import { usePreventRemove } from 'expo-router/react-navigation';
 import { useCallback, useMemo, useRef, useState } from 'react';
@@ -13,6 +14,7 @@ import {
 } from 'react-native';
 
 import { Screen } from '../../components/Screen';
+import { PatientFieldRow } from '../../components/PatientLayout';
 import {
   BodyText,
   ChoiceChip,
@@ -66,7 +68,7 @@ function RecordCard({ item }: { item: VitalWithSyncRecord }) {
     <Pressable
       accessibilityRole="button"
       accessibilityLabel={accessibilityLabel}
-      onPress={() => router.navigate({ pathname: '/vitales/detalle', params: { id: item.id } })}
+      onPress={() => router.push({ pathname: '/vitales/detalle', params: { id: item.id } })}
       style={styles.record}
     >
       <View style={styles.row}>
@@ -96,7 +98,7 @@ export function VitalsDataScreen() {
   );
 
   return (
-    <Screen isRoot title="Historial de signos vitales" scroll={false}>
+    <Screen mascotPose="resumen" isRoot title="Historial de signos vitales" scroll={false}>
       <SectionList
         sections={sections}
         keyExtractor={(item) => item.id}
@@ -115,12 +117,12 @@ export function VitalsDataScreen() {
               <VisualButton
                 label="Registrar signos vitales"
                 disabled={!repository}
-                onPress={() => router.navigate('/vitales/registrar')}
+                onPress={() => router.push('/vitales/registrar')}
               />
               <VisualButton
                 label="Ver reportes"
                 secondary
-                onPress={() => router.navigate('/vitales/reportes')}
+                onPress={() => router.push('/vitales/reportes')}
               />
             </View>
             <View style={styles.chips}>
@@ -133,6 +135,7 @@ export function VitalsDataScreen() {
                 />
               ))}
             </View>
+            <WeeklyVitalsChart records={list.items} days={days} />
             <BodyText>Las mediciones se guardan en este dispositivo.</BodyText>
           </View>
         }
@@ -148,7 +151,7 @@ export function VitalsDataScreen() {
             }
             description={
               list.error
-                ? 'Reintenta la consulta local.'
+                ? 'Vuelve a intentar abrir tus registros.'
                 : 'Las mediciones aparecerán aquí después de guardarlas.'
             }
           />
@@ -236,14 +239,9 @@ export function RegisterVitalsDataScreen() {
   });
 
   const handleChange = (field: keyof VitalInput, text: string) => {
-    setValues((prev) => ({ ...prev, [field]: text }));
-    if (fieldErrors[field]) {
-      setFieldErrors((prev) => {
-        const next = { ...prev };
-        delete next[field];
-        return next;
-      });
-    }
+    const next = { ...values, [field]: text };
+    setValues(next);
+    setFieldErrors(validateVitalInput(next).errors);
     if (generalError) {
       setGeneralError(null);
     }
@@ -285,23 +283,16 @@ export function RegisterVitalsDataScreen() {
     <View style={styles.bottomActionStack}>
       <VisualButton
         label={busy ? 'Guardando…' : 'Guardar registro'}
-        disabled={busy || !repository}
+        disabled={busy || !repository || (isDirty && !validateVitalInput(values).valid)}
         onPress={() => void save()}
-      />
-      <VisualButton
-        label="Ver historial de mediciones"
-        secondary
-        onPress={() => router.navigate('/vitales')}
       />
     </View>
   );
 
   return (
-    <Screen title="Registrar signos vitales" bottomAction={bottomAction}>
-      <BodyText>
-        Guarda las mediciones que tengas disponibles. Puedes dejar las demás en blanco. No se
-        realiza evaluación clínica.
-      </BodyText>
+    <Screen mascotPose="registro" title="Registrar signos vitales" bottomAction={bottomAction}>
+      <SectionTitle>Anota lo que hayas medido.</SectionTitle>
+      <BodyText>Puedes dejar en blanco los datos que no te hayas tomado hoy.</BodyText>
 
       {savedRecord ? (
         <FeedbackBanner
@@ -310,7 +301,7 @@ export function RegisterVitalsDataScreen() {
           message={savedRecord.summary}
           actionLabel="Ver registro"
           onAction={() =>
-            router.navigate({ pathname: '/vitales/detalle', params: { id: savedRecord.id } })
+            router.push({ pathname: '/vitales/detalle', params: { id: savedRecord.id } })
           }
         />
       ) : null}
@@ -321,7 +312,7 @@ export function RegisterVitalsDataScreen() {
         onChangeText={(t) => handleChange('temperature', t)}
         keyboardType="decimal-pad"
         placeholder="Ej.: 36,8"
-        helperText="Ejemplo de formato: 36,8"
+        helperText="30,0 a 45,0 °C. Puedes usar coma o punto."
         errorText={fieldErrors.temperature}
         inputRef={tempRef}
         returnKeyType="next"
@@ -330,54 +321,58 @@ export function RegisterVitalsDataScreen() {
       />
 
       <SectionTitle>Presión arterial</SectionTitle>
-      <VisualField
-        label="Presión sistólica (mmHg)"
-        value={values.systolic}
-        onChangeText={(s) => handleChange('systolic', s)}
-        keyboardType="number-pad"
-        helperText="Valor superior del tensiómetro"
-        errorText={fieldErrors.systolic}
-        inputRef={sysRef}
-        returnKeyType="next"
-        onSubmitEditing={() => diaRef.current?.focus()}
-        editableValueStyle
-      />
-      <VisualField
-        label="Presión diastólica (mmHg)"
-        value={values.diastolic}
-        onChangeText={(d) => handleChange('diastolic', d)}
-        keyboardType="number-pad"
-        helperText="Valor inferior del tensiómetro"
-        errorText={fieldErrors.diastolic}
-        inputRef={diaRef}
-        returnKeyType="next"
-        onSubmitEditing={() => pulseRef.current?.focus()}
-        editableValueStyle
-      />
+      <PatientFieldRow>
+        <VisualField
+          label="Presión sistólica (mmHg)"
+          value={values.systolic}
+          onChangeText={(s) => handleChange('systolic', s)}
+          keyboardType="number-pad"
+          helperText="Valor superior del tensiómetro: 40 a 300"
+          errorText={fieldErrors.systolic}
+          inputRef={sysRef}
+          returnKeyType="next"
+          onSubmitEditing={() => diaRef.current?.focus()}
+          editableValueStyle
+        />
+        <VisualField
+          label="Presión diastólica (mmHg)"
+          value={values.diastolic}
+          onChangeText={(d) => handleChange('diastolic', d)}
+          keyboardType="number-pad"
+          helperText="Valor inferior del tensiómetro: 30 a 200"
+          errorText={fieldErrors.diastolic}
+          inputRef={diaRef}
+          returnKeyType="next"
+          onSubmitEditing={() => pulseRef.current?.focus()}
+          editableValueStyle
+        />
+      </PatientFieldRow>
+      <PatientFieldRow>
+        <VisualField
+          label="Pulso"
+          value={values.pulse}
+          onChangeText={(p) => handleChange('pulse', p)}
+          keyboardType="number-pad"
+          helperText="30 a 250 latidos por minuto"
+          errorText={fieldErrors.pulse}
+          inputRef={pulseRef}
+          returnKeyType="next"
+          onSubmitEditing={() => satRef.current?.focus()}
+          editableValueStyle
+        />
 
-      <VisualField
-        label="Pulso"
-        value={values.pulse}
-        onChangeText={(p) => handleChange('pulse', p)}
-        keyboardType="number-pad"
-        helperText="Latidos por minuto"
-        errorText={fieldErrors.pulse}
-        inputRef={pulseRef}
-        returnKeyType="next"
-        onSubmitEditing={() => satRef.current?.focus()}
-        editableValueStyle
-      />
-
-      <VisualField
-        label="Saturación de oxígeno (%)"
-        value={values.saturation}
-        onChangeText={(s) => handleChange('saturation', s)}
-        keyboardType="number-pad"
-        errorText={fieldErrors.saturation}
-        inputRef={satRef}
-        returnKeyType="done"
-        editableValueStyle
-      />
+        <VisualField
+          label="Saturación de oxígeno (%)"
+          value={values.saturation}
+          onChangeText={(s) => handleChange('saturation', s)}
+          keyboardType="number-pad"
+          helperText="50 a 100 %"
+          errorText={fieldErrors.saturation}
+          inputRef={satRef}
+          returnKeyType="done"
+          editableValueStyle
+        />
+      </PatientFieldRow>
 
       {generalError ? (
         <Text accessibilityRole="alert" style={styles.generalError}>
@@ -405,19 +400,19 @@ export function VitalDataDetailScreen() {
   const syncLabel = record ? getSyncStatusLabel(record) : 'Guardado en este dispositivo';
 
   return (
-    <Screen title="Detalle del registro">
+    <Screen mascotPose="resumen" title="Detalle del registro">
       {loading ? (
         <BodyText>Cargando registro…</BodyText>
       ) : error ? (
         <>
-          <BodyText>No se pudo leer el registro local.</BodyText>
+          <BodyText>No se pudo abrir el registro guardado.</BodyText>
           <VisualButton label="Reintentar" onPress={refresh} />
         </>
       ) : !record ? (
         <EmptyState
           icon="alert-circle"
           title="Registro no encontrado"
-          description="No existe un registro con este ID para el paciente seleccionado."
+          description="No encontramos esta medición entre tus registros. Vuelve al historial."
         />
       ) : (
         <>
@@ -441,8 +436,8 @@ export function VitalDataDetailScreen() {
           </InfoCard>
           <StatusPill>{syncLabel}</StatusPill>
           <BodyText>
-            El estado de envío indica la confirmación del servidor. El registro no implica
-            evaluación clínica.
+            El estado de envío indica si se recibió tu registro. Esto no significa que tu equipo de
+            salud ya lo haya revisado.
           </BodyText>
         </>
       )}

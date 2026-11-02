@@ -186,9 +186,7 @@ export async function removeLocalInfographicCopy({
       localCopy.rutaRelativa,
     );
     if (!physicallyDeleted) {
-      throw new Error(
-        'No se pudo confirmar la eliminación física del archivo del almacenamiento local.',
-      );
+      throw new Error('No pudimos confirmar que el archivo se haya eliminado.');
     }
   }
   await repository.education.removeLocalCopy(contentId);

@@ -1,3 +1,4 @@
-import { RegisterVitalsDataScreen } from '../../../features/vitals/VitalsDataScreens';
-
-export default RegisterVitalsDataScreen;
+import { Redirect } from 'expo-router';
+export default function LegacyRoute() {
+  return <Redirect href="/vitales/registrar" />;
+}

@@ -94,7 +94,8 @@ async function handle(data: unknown, opened = false) {
     const connection = createSyncConnection(database);
     await assertEncryptedDatabase(connection);
     const version = await connection.first<{ user_version: number }>('PRAGMA user_version');
-    if (version?.user_version !== 13 || !(await isActive(binding))) return null;
+    if (![13, 14, 15, 16, 17].includes(version?.user_version ?? 0) || !(await isActive(binding)))
+      return null;
     let valid = true;
     // Recheck the durable active identity before each native side effect, including a concurrent logout.
     const adapter = new ExpoAgendaNotifications();

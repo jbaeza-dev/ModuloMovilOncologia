@@ -11,7 +11,7 @@ import {
   View,
 } from 'react-native';
 
-import Feather from '@expo/vector-icons/Feather';
+import { AppIcon as Feather } from './AppIcon';
 import { useAppTheme } from '../providers/ThemeProvider';
 import { isDemoMode } from '../utils/environment';
 import { theme } from '../theme';
@@ -108,6 +108,7 @@ type FieldProps = {
     | 'number-pad';
   multiline?: boolean;
   maxLength?: number;
+  autoCapitalize?: 'none' | 'sentences' | 'words' | 'characters';
   editable?: boolean;
   helperText?: string;
   errorText?: string;
@@ -148,7 +149,9 @@ export function VisualField({
         accessibilityLabel={label}
         accessibilityHint={accessibilityHint}
         aria-invalid={hasError}
-        autoCapitalize={input.keyboardType === 'email-address' ? 'none' : 'sentences'}
+        autoCapitalize={
+          input.autoCapitalize ?? (input.keyboardType === 'email-address' ? 'none' : 'sentences')
+        }
         placeholderTextColor={appTheme.colors.secondary}
         style={[
           styles.input,
@@ -319,9 +322,11 @@ function useStyles() {
     sectionTitle: { fontSize: 20, fontWeight: '700', color: colors.text },
     card: {
       padding: theme.spacing.md,
-      gap: theme.spacing.md,
+      gap: 10,
       borderRadius: theme.radius.md,
       backgroundColor: colors.surface,
+      borderWidth: 1.5,
+      borderColor: colors.border,
     },
     body: { ...theme.typography.body, color: colors.secondary },
     pill: {

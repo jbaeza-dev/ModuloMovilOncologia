@@ -6,6 +6,7 @@ import { useLocalData } from '../../providers/LocalDataProvider';
 import { createLinkCodeClient, type LinkCodeState } from '../../services/session/link-code-client';
 import { formatDate } from '../../data/local/repository';
 import { useAppTheme } from '../../providers/ThemeProvider';
+import { router } from 'expo-router';
 
 export function LinkCodeScreen() {
   const { clinicalStore, identitySession, trackOperation, isClosing } = useLocalData();
@@ -79,10 +80,8 @@ export function LinkCodeScreen() {
     }
   }
   return (
-    <Screen title="Código de vinculación">
-      <BodyText>
-        Solicita el código al servidor y compártelo únicamente con tu equipo de salud.
-      </BodyText>
+    <Screen mascotPose="apoyo" title="Código de vinculación">
+      <BodyText>Solicita un código y muéstralo a tu equipo de salud.</BodyText>
       <InfoCard>
         <SectionTitle>
           {value?.kind === 'known'
@@ -103,25 +102,27 @@ export function LinkCodeScreen() {
               {value.code}
             </Text>
             <BodyText>
-              Vence el {formatDate(value.expiresAt)}. Puede consumirse antes; la copia local no
-              confirma que siga disponible en el servidor.
+              Vence el {formatDate(value.expiresAt)}. Tu equipo puede usarlo una sola vez.
             </BodyText>
           </>
         ) : null}
         {value?.kind === 'uncertain' && !expired ? (
-          <BodyText>
-            El servidor puede haber emitido un código cuya respuesta no llegó. No existe una
-            consulta para recuperarlo. Para evitar solicitudes repetidas, podrás volver a intentarlo
-            después del {formatDate(value.retryAfter)}.
-          </BodyText>
+          <>
+            <BodyText>
+              No pudimos confirmar la solicitud. Podrás pedir otro código después del{' '}
+              {formatDate(value.retryAfter)}.
+            </BodyText>
+            <VisualButton
+              label="Revisar mi vinculación"
+              secondary
+              onPress={() => router.push('/perfil/clinico')}
+            />
+          </>
         ) : null}
-        <BodyText>
-          La vigencia de un código emitido es de 24 horas. Necesitas conexión para solicitarlo; la
-          copia cifrada puede consultarse sin conexión.
-        </BodyText>
+        <BodyText>Muéstralo a tu equipo de salud. Necesitas internet para solicitarlo.</BodyText>
         {!value || value.kind === 'empty' || expired ? (
           <VisualButton
-            label={busy ? 'Solicitando…' : 'Solicitar código al servidor'}
+            label={busy ? 'Solicitando…' : 'Solicitar código'}
             disabled={!client || busy || isClosing}
             onPress={() => void generate()}
           />

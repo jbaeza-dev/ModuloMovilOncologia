@@ -414,9 +414,7 @@ describe('Pruebas de UI: Componentes y Pantallas de Formularios Médicos', () =>
       await render(<DailyFollowUpScreen />);
 
       await waitFor(() => {
-        expect(
-          screen.getByText(/Tienes un registro en progreso de una versión anterior/),
-        ).toBeTruthy();
+        expect(screen.getByText(/Tu borrador conserva la edición anterior/)).toBeTruthy();
         expect(screen.getByText('Continuar mi registro')).toBeTruthy();
         expect(screen.getByText('Descartar este borrador')).toBeTruthy();
       });
@@ -878,7 +876,7 @@ describe('Pruebas de UI: Componentes y Pantallas de Formularios Médicos', () =>
       await fireEvent.press(optionSi);
 
       // Presionar "Guardar y salir"
-      const btnGuardarSalir = screen.getByText('Guardar y salir');
+      const btnGuardarSalir = screen.getByRole('button', { name: 'Pausar y seguir más tarde' });
       await fireEvent.press(btnGuardarSalir);
 
       // Esperar a que se procese el flush fallido

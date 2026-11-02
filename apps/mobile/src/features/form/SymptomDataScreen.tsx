@@ -26,7 +26,7 @@ export function SymptomDataScreen() {
   const list = useFocusedList(load);
 
   return (
-    <Screen title="Historial de síntomas libres" scroll={false}>
+    <Screen mascotPose="resumen" title="Historial de síntomas libres" scroll={false}>
       <FlatList<SymptomWithSyncRecord>
         data={list.items}
         keyExtractor={(item) => item.id}
@@ -49,7 +49,7 @@ export function SymptomDataScreen() {
               label="Abrir seguimiento ePRO"
               onPress={() => router.push('/formulario')}
             />
-            <SectionTitle>Historial local</SectionTitle>
+            <SectionTitle>Mi historial</SectionTitle>
           </View>
         }
         ListEmptyComponent={
@@ -62,9 +62,7 @@ export function SymptomDataScreen() {
                   ? 'Cargando síntomas'
                   : 'Aún no hay síntomas guardados'
             }
-            description={
-              list.error ? 'Reintenta la consulta local.' : 'Tus descripciones aparecerán aquí.'
-            }
+            description={list.error ? 'Vuelve a intentarlo.' : 'Tus descripciones aparecerán aquí.'}
           />
         }
         ListFooterComponent={

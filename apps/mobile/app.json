@@ -6,16 +6,20 @@
     "version": "0.1.0",
     "orientation": "portrait",
     "userInterfaceStyle": "automatic",
+    "icon": "./assets/icons/app-icon-1024.png",
     "androidStatusBar": {
       "barStyle": "dark-content",
-      "backgroundColor": "#FFFFFF",
+      "backgroundColor": "#FFF7E7",
       "translucent": true
     },
     "android": {
       "package": "cl.ubiobio.quimiocare",
       "googleServicesFile": "./google-services.json",
       "adaptiveIcon": {
-        "backgroundColor": "#FFFFFF"
+        "foregroundImage": "./assets/icons/adaptive-foreground-432.png",
+        "backgroundImage": "./assets/icons/adaptive-background-432.png",
+        "monochromeImage": "./assets/icons/adaptive-monochrome-432.png",
+        "backgroundColor": "#006A70"
       }
     },
     "plugins": [
@@ -24,11 +28,33 @@
       "expo-system-ui",
       "expo-dev-client",
       "./plugins/withReproducibleGradle.js",
+      "./plugins/withPdfJsAssets.js",
+      [
+        "expo-splash-screen",
+        {
+          "image": "./assets/icons/splash-mascot-light.png",
+          "imageWidth": 200,
+          "resizeMode": "contain",
+          "backgroundColor": "#FFF7E7",
+          "dark": {
+            "image": "./assets/icons/splash-mascot-dark.png",
+            "backgroundColor": "#0E1C20"
+          }
+        }
+      ],
+      [
+        "expo-audio",
+        {
+          "enableBackgroundPlayback": true,
+          "microphonePermission": false,
+          "recordAudioAndroid": false
+        }
+      ],
       [
         "expo-notifications",
         {
           "icon": "./assets/notification-icon.png",
-          "color": "#0d9488",
+          "color": "#006A70",
           "sounds": []
         }
       ],
