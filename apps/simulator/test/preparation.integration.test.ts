@@ -512,7 +512,7 @@ describe('Preparation HTTP with real PostgreSQL', () => {
           env: {
             ...process.env,
             APP_ENV: 'demo',
-            AUTH_PROVIDER: 'demo',
+            AUTH_PROVIDER: 'synthetic',
             DATABASE_URL: config.databaseUrl,
             DEMO_CONTROL_KEY: config.controlKey,
             DEMO_SIGNING_KEY: config.signingKey,
@@ -528,11 +528,20 @@ describe('Preparation HTTP with real PostgreSQL', () => {
       child.stdout.on('data', (c) => {
         output += String(c);
       });
-      child.stderr.on('data', () => undefined);
+      child.stderr.on('data', (c) => {
+        output += String(c);
+      });
       const [code] = await once(child, 'exit');
-      return { code, output };
+      return {
+        code,
+        output: output
+          .replaceAll(config.databaseUrl, '[database]')
+          .replaceAll(config.signingKey, '[signing-key]')
+          .replaceAll(config.controlKey, '[control-key]'),
+      };
     }
-    expect((await run('--check')).code).toBe(0);
+    const checked = await run('--check');
+    expect(checked.code, checked.output).toBe(0);
     expect(
       (
         await db.query(
@@ -541,10 +550,10 @@ describe('Preparation HTTP with real PostgreSQL', () => {
       ).rows[0].n,
     ).toBe('0');
     const first = await run('--apply');
-    expect(first.code).toBe(0);
+    expect(first.code, first.output).toBe(0);
     expect(first.output).toContain('201');
     const replay = await run('--apply');
-    expect(replay.code).toBe(0);
+    expect(replay.code, replay.output).toBe(0);
     expect(replay.output).not.toContain('201');
     expect(
       (
