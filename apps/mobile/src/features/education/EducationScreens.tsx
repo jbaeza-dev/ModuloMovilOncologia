@@ -17,7 +17,7 @@ import {
 
 import { Screen } from '../../components/Screen';
 import { ActionCard } from '../../components/ActionCard';
-import { CUIDAQUIMIO_PODCASTS } from './podcasts';
+import { usePodcastCatalog } from './use-podcast-catalog';
 import { EDUCATIONAL_CATEGORIES } from './educational-categories';
 import { MascotHero } from '../../components/MascotAvatar';
 import {
@@ -62,6 +62,7 @@ import { executeYouTubeLaunch } from './youtube-launcher';
 export { downloadAndSaveInfographic, removeLocalInfographicCopy };
 
 export function EducationScreen() {
+  const { episodes: publishedPodcasts } = usePodcastCatalog();
   const catalogReader = useEducationalCatalog();
   const [query, setQuery] = useState('');
   const [searchFilter, setSearchFilter] = useState<EducationSearchFilter>('all');
@@ -78,7 +79,7 @@ export function EducationScreen() {
     searchCatalog.value?.source === catalogReader ? searchCatalog.value.resources : [];
   const searching = query.trim().length > 0 || searchFilter !== 'all';
   const searchResults = searching
-    ? searchEducationalContent(currentResources, query, searchFilter)
+    ? searchEducationalContent(currentResources, query, searchFilter, publishedPodcasts)
     : [];
   const load = useCallback(async () => {
     const categories = await catalogReader.getCategories();
@@ -179,7 +180,7 @@ export function EducationScreen() {
       ) : (
         <>
           <ActionCard
-            title={`Podcasts (${CUIDAQUIMIO_PODCASTS.length})`}
+            title={`Podcasts (${publishedPodcasts.length})`}
             icon="play"
             description="Escucha con internet"
             onPress={() => router.push('/educacion/podcasts')}

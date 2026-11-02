@@ -3288,6 +3288,359 @@
           }
         }
       }
+    },
+    "/admin/api/v1/preparacion/contenido-educativo/podcasts": {
+      "post": {
+        "tags": [
+          "2. Contenido educativo"
+        ],
+        "summary": "Publicar podcast de Drive",
+        "description": "Publica un episodio de audio de Drive en la app. El archivo debe permitir reproducción pública. Requiere internet; no descarga audio al teléfono.",
+        "security": [
+          {
+            "OperadorBearer": []
+          }
+        ],
+        "parameters": [],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "additionalProperties": false,
+                "required": [
+                  "operacion_id",
+                  "titulo",
+                  "descripcion",
+                  "categoria",
+                  "url"
+                ],
+                "properties": {
+                  "operacion_id": {
+                    "type": "string",
+                    "format": "uuid"
+                  },
+                  "titulo": {
+                    "type": "string",
+                    "maxLength": 200
+                  },
+                  "descripcion": {
+                    "type": "string",
+                    "maxLength": 1000
+                  },
+                  "categoria": {
+                    "type": "string",
+                    "maxLength": 200
+                  },
+                  "url": {
+                    "type": "string",
+                    "maxLength": 200
+                  }
+                }
+              },
+              "example": {
+                "operacion_id": "11111111-1111-4111-8111-111111111112",
+                "titulo": "Podcast educativo",
+                "descripcion": "Audio educativo autorizado.",
+                "categoria": "Categoría previamente creada",
+                "url": "https://drive.google.com/file/d/ID_REAL_DEL_ARCHIVO/view"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Resultado o replay confirmado",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object"
+                }
+              }
+            }
+          },
+          "201": {
+            "description": "Recurso creado",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Sesión inválida",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Operador no autorizado",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Recurso no encontrado",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "Identificador o versión en conflicto",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object"
+                }
+              }
+            }
+          },
+          "413": {
+            "description": "Archivo mayor a 5 MiB",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Datos inválidos",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "Servicio temporalmente no disponible",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object"
+                }
+              }
+            }
+          }
+        },
+        "operationId": "prepararPodcast"
+      }
+    },
+    "/admin/api/v1/preparacion/podcasts/{id}/estado": {
+      "post": {
+        "tags": [
+          "2. Contenido educativo"
+        ],
+        "summary": "Activar o retirar podcast",
+        "description": "Activa o retira un episodio del catálogo de la app. Use el UUID devuelto al publicar y un operacion_id nuevo para cada cambio.",
+        "security": [
+          {
+            "OperadorBearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "in": "path",
+            "name": "id",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            },
+            "example": "22222222-2222-4222-8222-222222222222"
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "required": [
+                  "operacion_id",
+                  "activo"
+                ],
+                "properties": {
+                  "operacion_id": {
+                    "type": "string",
+                    "format": "uuid"
+                  },
+                  "activo": {
+                    "type": "boolean"
+                  }
+                },
+                "additionalProperties": false
+              },
+              "example": {
+                "operacion_id": "11111111-1111-4111-8111-111111111113",
+                "activo": false
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Resultado o replay confirmado",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object"
+                }
+              }
+            }
+          },
+          "201": {
+            "description": "Recurso creado",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Sesión inválida",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Operador no autorizado",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Recurso no encontrado",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "Identificador o versión en conflicto",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object"
+                }
+              }
+            }
+          },
+          "413": {
+            "description": "Archivo mayor a 5 MiB",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Datos inválidos",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "Servicio temporalmente no disponible",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object"
+                }
+              }
+            }
+          }
+        },
+        "operationId": "estadoPodcast"
+      }
+    },
+    "/educacion/api/v1/podcasts": {
+      "get": {
+        "operationId": "catalogoPodcasts",
+        "summary": "Consultar podcasts publicados",
+        "description": "Extensión propia de educación. Metadatos educativos públicos; no contiene datos de pacientes. Los episodios requieren internet.",
+        "tags": [
+          "Contenido educativo"
+        ],
+        "security": [],
+        "responses": {
+          "200": {
+            "description": "Episodios activos",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "required": [
+                    "episodios"
+                  ],
+                  "properties": {
+                    "episodios": {
+                      "type": "array",
+                      "items": {
+                        "type": "object",
+                        "required": [
+                          "id",
+                          "title",
+                          "category"
+                        ],
+                        "properties": {
+                          "id": {
+                            "type": "string",
+                            "description": "Identificador público del archivo de Drive."
+                          },
+                          "title": {
+                            "type": "string"
+                          },
+                          "category": {
+                            "type": "string"
+                          }
+                        }
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
     }
   },
   "components": {

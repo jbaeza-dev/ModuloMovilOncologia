@@ -1,5 +1,5 @@
 import type { EducationalResource } from '../../data/local/education/education-types';
-import { CUIDAQUIMIO_PODCASTS } from './podcast-catalog';
+import type { PodcastEpisode } from './PodcastPlaybackContext';
 
 export type EducationSearchFilter = 'all' | 'infografia' | 'video' | 'podcast';
 export interface EducationSearchResult {
@@ -21,6 +21,7 @@ export function searchEducationalContent(
   resources: readonly EducationalResource[],
   query: string,
   filter: EducationSearchFilter = 'all',
+  podcasts: readonly PodcastEpisode[] = [],
 ): EducationSearchResult[] {
   const words = normalizedSearch(query).split(/\s+/).filter(Boolean);
   const matches = (text: string) => words.every((word) => normalizedSearch(text).includes(word));
@@ -41,7 +42,7 @@ export function searchEducationalContent(
       });
   }
   if (filter === 'all' || filter === 'podcast') {
-    for (const podcast of CUIDAQUIMIO_PODCASTS) {
+    for (const podcast of podcasts) {
       if (matches(`${podcast.title} ${podcast.category} Podcast`))
         results.push({
           key: 'podcast:' + podcast.id,

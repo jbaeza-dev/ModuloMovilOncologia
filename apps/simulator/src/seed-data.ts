@@ -275,6 +275,7 @@ export async function resetDatabase(db: Database, publicBaseUrl: string): Promis
       throw new ApiError(403, 'RESET_NO_PERMITIDO', 'Base no identificada como dataset sintético.');
     await client.query("SELECT pg_advisory_xact_lock(hashtext('quimiocare-demo-seed'))");
     for (const table of [
+      'qc_educacion_podcast',
       'qc_preparacion_auditoria',
       'qc_preparacion_operacion',
       'qc_demo_operacion_educativa',

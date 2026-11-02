@@ -12,13 +12,20 @@ import {
 } from '../../components/Visual';
 import { useAppTheme } from '../../providers/ThemeProvider';
 import { usePodcastPlayback } from './PodcastPlaybackContext';
-import { CUIDAQUIMIO_PODCASTS, launchPodcast } from './podcasts';
+import { launchPodcast } from './podcasts';
+import { usePodcastCatalog } from './use-podcast-catalog';
 
 export function PodcastsScreen() {
+  const {
+    episodes: publishedPodcasts,
+    loading: podcastsLoading,
+    error: podcastsError,
+    refresh: refreshPodcasts,
+  } = usePodcastCatalog();
   const { episodio } = useLocalSearchParams<{ episodio?: string }>();
   const episodes = episodio
-    ? CUIDAQUIMIO_PODCASTS.filter((episode) => episode.id === episodio)
-    : CUIDAQUIMIO_PODCASTS;
+    ? publishedPodcasts.filter((episode) => episode.id === episodio)
+    : publishedPodcasts;
   const { theme } = useAppTheme();
   const playback = usePodcastPlayback();
   const opening = useRef(false);
@@ -31,16 +38,16 @@ export function PodcastsScreen() {
     setBusyId(id);
     setError(null);
     try {
-      const episode = CUIDAQUIMIO_PODCASTS.find((p) => p.id === id);
+      const episode = publishedPodcasts.find((p) => p.id === id);
       if (playback?.isConfigured && episode) {
         await playback.playEpisode(episode);
         router.push('/educacion/podcast-reproductor');
       } else {
-        const result = await launchPodcast(id);
+        const result = await launchPodcast(id, publishedPodcasts);
         if (!result.opened) setError(result.error ?? 'No se pudo abrir el podcast.');
       }
     } catch {
-      const result = await launchPodcast(id);
+      const result = await launchPodcast(id, publishedPodcasts);
       if (!result.opened) setError(result.error ?? 'No se pudo abrir el podcast.');
     } finally {
       opening.current = false;
@@ -63,7 +70,11 @@ export function PodcastsScreen() {
           onPress={() => router.replace('/educacion/podcasts')}
         />
       ) : null}
-      {!episodes.length ? <BodyText>Aún no hay podcasts publicados.</BodyText> : null}
+      {podcastsLoading ? <BodyText>Buscando podcasts…</BodyText> : null}
+      {podcastsError ? <VisualButton label="Reintentar" onPress={refreshPodcasts} /> : null}
+      {!podcastsLoading && !podcastsError && !episodes.length ? (
+        <BodyText>Aún no hay podcasts publicados.</BodyText>
+      ) : null}
       {episodes.map((podcast) => (
         <InfoCard key={podcast.id}>
           <SectionTitle>{podcast.title}</SectionTitle>
