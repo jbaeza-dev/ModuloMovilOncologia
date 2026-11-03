@@ -130,6 +130,24 @@ try {
       'qc-clinical',
     ],
     [gateway, '/quimiocare-backend/api/gateway/upload', '/api/gateway/upload', 'qc-gateway'],
+    [
+      gateway,
+      '/write-checkpoint2.json?client_id=synthetic-client',
+      '/write-checkpoint2.json?client_id=synthetic-client',
+      'qc-powersync',
+    ],
+    [
+      gateway,
+      '/quimiocare-backend/write-checkpoint2.json?client_id=synthetic-client',
+      '/write-checkpoint2.json?client_id=synthetic-client',
+      'qc-powersync',
+    ],
+    [
+      publicBase,
+      '/quimiocare-backend/write-checkpoint2.json?client_id=synthetic-client',
+      '/write-checkpoint2.json?client_id=synthetic-client',
+      'qc-powersync',
+    ],
     [gateway, '/quimiocare-backend/health', '/health', 'qc-gateway'],
     [
       publicBase,

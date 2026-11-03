@@ -24,4 +24,10 @@ if [[ -n "$(printenv PUBLIC_ORIGIN || true)" ]]; then
  code=$(curl --silent --show-error --max-time 15 -X POST -H 'Content-Type: application/json' -d '{}' -o /dev/null -w '%{http_code}' "$PUBLIC_ORIGIN/quimiocare-backend/sync/stream")
  [[ "$code" == 401 ]] || { echo 'Public TLS/PowerSync prefix failed' >&2; exit 1; }
 fi
+# The SDK needs this second public PowerSync endpoint to apply post-upload checkpoints.
+for base in http://127.0.0.1:8019 "${PUBLIC_ORIGIN:+$PUBLIC_ORIGIN/quimiocare-backend}"; do
+ [[ -n "$base" ]] || continue
+ code=$(curl --silent --show-error --max-time 15 -o /dev/null -w '%{http_code}' "$base/write-checkpoint2.json?client_id=00000000-0000-4000-8000-000000000001")
+ [[ "$code" == 401 ]] || { echo "Write checkpoint route expected 401, got $code" >&2; exit 1; }
+done
 echo 'PASS: database-backed services, worker, initial snapshot, replication lag and public prefixes.'
