@@ -24,6 +24,7 @@ import {
 } from '../../services/reminders/reminder-status';
 import { theme } from '../../theme';
 import { isDemoMode } from '../../utils/environment';
+import { syntheticReviewEnabled } from '../triage/triage-review';
 import { consumeHomeScrollToTop, subscribeHomeScrollToTop } from './home-scroll-signal';
 
 export function resolveHomeGreeting(options: {
@@ -458,7 +459,11 @@ export function HomeScreen() {
         </ActionCardGrid>
         <NavigationCard
           title="Orientación de síntomas"
-          description="Consulta los contactos de ayuda."
+          description={
+            syntheticReviewEnabled()
+              ? 'Revisa el triaje con un caso ficticio.'
+              : 'Consulta los contactos de ayuda.'
+          }
           icon="help-circle"
           href="/orientacion"
           navigationMethod="push"
