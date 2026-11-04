@@ -202,13 +202,11 @@ jobs:
     permissions:
       contents: read
     steps:
-      - name: Verify public TLS and PowerSync prefix from outside the host
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: ${{ github.sha }}
+          persist-credentials: false
+      - name: Observe public TLS and PowerSync from GitHub; report network isolation explicitly
         env:
           QC_PUBLIC_ORIGIN: ${{ vars.QC_PUBLIC_ORIGIN }}
-        run: |
-          node --input-type=module -e 'const raw=process.env.QC_PUBLIC_ORIGIN;const u=new URL(raw);if(u.protocol!=="https:"||u.origin!==raw)throw Error("Configure QC_PUBLIC_ORIGIN as the exact HTTPS origin")'
-          curl --fail --silent --show-error --max-time 20 "$QC_PUBLIC_ORIGIN/quimiocare-backend/health" > /dev/null
-          code=$(curl --silent --show-error --max-time 20 -X POST -H 'Content-Type: application/json' -d '{}' -o /dev/null -w '%{http_code}' "$QC_PUBLIC_ORIGIN/quimiocare-backend/sync/stream")
-          test "$code" = 401
-          code=$(curl --silent --show-error --max-time 20 -o /dev/null -w '%{http_code}' "$QC_PUBLIC_ORIGIN/quimiocare-backend/write-checkpoint2.json?client_id=00000000-0000-4000-8000-000000000001")
-          test "$code" = 401
+        run: bash scripts/verify-university-public.sh

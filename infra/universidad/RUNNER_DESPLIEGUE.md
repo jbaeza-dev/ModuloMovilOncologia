@@ -5,6 +5,14 @@ el runner `parra-quimiocare`, con etiquetas `self-hosted`, `linux`, `x64` y
 `quimiocare-deploy`. La comprobación pública posterior vuelve a ejecutarse en
 GitHub. El workflow reutilizable conserva el requisito de CI aprobado en `main`.
 
+La comprobación desde GitHub distingue un timeout sin respuesta HTTP de un fallo
+de la aplicación: el primero queda como **INCONCLUSIVE** y emite una advertencia
+con solicitud de comprobación desde otra red. Una respuesta inesperada, un error
+TLS o un timeout después de recibir respuesta siguen haciendo fallar el job.
+Las pruebas obligatorias de readiness y rutas públicas desde Parra siguen dentro
+de `deploy.sh`. Un CI verde con advertencia externa no acredita acceso desde
+todas las redes: revisar el resumen del job y comprobarlo desde un equipo externo.
+
 ## Registro inicial
 
 Requiere autorización institucional para el agente persistente. Usar la cuenta
@@ -50,6 +58,9 @@ versiones. Las dependencias del sistema que falten las instala el administrador.
   además de los registros usados por las imágenes de infraestructura.
 - No escucha en nuevos puertos. Solo se publican 8018 y 8019 como antes.
 - El dotenv permanece en `~/quimiocare/shared/universidad.env`, modo 600.
+- La entrega solo contiene configuración pública: archivos 644 y directorios 755
+  permiten leer los montajes a usuarios sin privilegios dentro de los contenedores.
+  Los secretos se mantienen fuera de esa entrega, con permisos privados.
 - `QC_SSH_*` ya no se utiliza en el workflow nuevo. Conservar temporalmente los
   secretos para contingencia; retirarlos tras verificar la primera entrega.
 - `GITHUB_TOKEN` efímero, con `packages: read`, autentica la descarga de imágenes.

@@ -4,6 +4,7 @@ import io
 import json
 import os
 import subprocess
+import stat
 import tarfile
 import tempfile
 import unittest
@@ -45,9 +46,22 @@ class LocalDeliveryTests(unittest.TestCase):
                     bundle.addfile(extra, io.BytesIO(b'x' * extra.size))
             module.extract(archive, destination, IDENTITY)
             self.assertTrue((destination / 'manifest.json').is_file())
+            if os.name != 'nt':
+                self.assertEqual(stat.S_IMODE((destination / 'manifest.json').stat().st_mode), 0o644)
+                self.assertEqual(stat.S_IMODE(destination.stat().st_mode), 0o755)
+                for path in destination.rglob('*'):
+                    self.assertEqual(stat.S_IMODE(path.stat().st_mode), 0o755 if path.is_dir() else 0o644)
 
     def test_valid_bundle(self):
         self.exercise()
+
+    @unittest.skipIf(os.name == 'nt', 'POSIX bind-mount permissions')
+    def test_container_config_readable_with_restrictive_deployment_umask(self):
+        previous = os.umask(0o077)
+        try:
+            self.exercise(tarfile.TarInfo('infra/powersync/service.yaml'))
+        finally:
+            os.umask(previous)
 
     def test_retry_reuses_identical_release_and_preserves_tampered_one(self):
         with tempfile.TemporaryDirectory() as temp:

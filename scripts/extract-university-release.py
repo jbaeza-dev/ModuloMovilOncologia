@@ -41,6 +41,13 @@ def extract(archive, destination, identity):
                 with bundle.extractfile(member) as source, target.open("xb") as output:
                     import shutil
                     shutil.copyfileobj(source, output)
+                # Release files contain public configuration only. Container users must
+                # read bind-mounted files even when deployment uses umask 077.
+                target.chmod(0o644)
+        for directory in root.rglob('*'):
+            if directory.is_dir():
+                directory.chmod(0o755)
+        root.chmod(0o755)
 
 
 def prepare(archive, destination, identity):
