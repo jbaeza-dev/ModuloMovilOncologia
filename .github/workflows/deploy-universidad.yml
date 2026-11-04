@@ -145,6 +145,15 @@ jobs:
         run: |
           latest=$(gh api "repos/$GITHUB_REPOSITORY/git/ref/heads/main" --jq .object.sha)
           if [[ "$latest" == "$GITHUB_SHA" ]]; then echo 'deploy=true' >> "$GITHUB_OUTPUT"; else echo 'deploy=false' >> "$GITHUB_OUTPUT"; fi
+      - name: Diagnose SSH network without authentication
+        if: steps.latest.outputs.deploy == 'true'
+        continue-on-error: true
+        timeout-minutes: 2
+        env:
+          SSH_HOST: ${{ secrets.QC_SSH_HOST }}
+          SSH_PORT: ${{ secrets.QC_SSH_PORT }}
+          QC_PUBLIC_ORIGIN: ${{ vars.QC_PUBLIC_ORIGIN }}
+        run: python3 infra/universidad/scripts/diagnose-ssh.py
       - name: Transfer and deploy over pinned SSH
         if: steps.latest.outputs.deploy == 'true'
         env:
