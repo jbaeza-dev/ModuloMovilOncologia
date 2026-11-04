@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import { Linking, Text } from 'react-native';
 import { router, useFocusEffect } from 'expo-router';
 import type { GatewayRecordatorio } from '@quimiocare/contracts';
@@ -34,13 +34,37 @@ export function SharedAgendaScreen() {
     [lastSync, setLastSync] = useState<string | null>(null),
     [error, setError] = useState<string | null>(null),
     [busy, setBusy] = useState(false);
+  const loadVersion = useRef(0),
+    currentAgenda = useRef(agenda),
+    mounted = useRef(true);
+  currentAgenda.current = agenda;
+  useEffect(() => {
+    mounted.current = true;
+    return () => {
+      mounted.current = false;
+      loadVersion.current++;
+    };
+  }, []);
   const load = useCallback(async () => {
+    const version = ++loadVersion.current;
     if (!agenda) return;
+    const isCurrent = () =>
+      mounted.current && currentAgenda.current === agenda && loadVersion.current === version;
     const cached = await agenda.read();
-    setRules(cached.rules);
+    if (!isCurrent()) return;
+    agenda.assert();
+    setRules(
+      [...cached.rules].sort(
+        (a, b) => Date.parse(b.creado_en) - Date.parse(a.creado_en) || a.id.localeCompare(b.id),
+      ),
+    );
     setLastSync(cached.state?.synchronized_at ?? null);
-    setPending(await agenda.repository.intents());
-    setCoverage((await agendaCoordinator?.coverage()) ?? null);
+    const intents = await agenda.repository.intents();
+    if (!isCurrent()) return;
+    setPending(intents);
+    const nextCoverage = (await agendaCoordinator?.coverage()) ?? null;
+    if (!isCurrent()) return;
+    setCoverage(nextCoverage);
   }, [agenda, agendaCoordinator]);
   useEffect(() => {
     void load().catch(() => undefined);
@@ -87,6 +111,90 @@ export function SharedAgendaScreen() {
   return (
     <Screen mascotPose="recordatorio" title="Mis recordatorios">
       <DemoBadge />
+      {Boolean(error) && (
+        <Text accessibilityRole="alert" style={{ color: theme.colors.error }}>
+          {error}
+        </Text>
+      )}
+      <VisualButton
+        label="Crear recordatorio"
+        disabled={busy || !agenda}
+        onPress={() => router.push('/recordatorios/editar')}
+      />
+      {!rules.length && <BodyText>No tienes horarios confirmados.</BodyText>}
+      {rules.map((rule) => (
+        <InfoCard key={rule.id}>
+          <SectionTitle>{rule.titulo}</SectionTitle>
+          {rule.tipo === 'medicacion' ? (
+            <BodyText>
+              {rule.medicamento_paciente_id
+                ? 'Medicamento: ' +
+                  (medications.find((m) => m.id === rule.medicamento_paciente_id)?.nombre ??
+                    'No disponible en la lista actual')
+                : 'Aviso general sin medicamento asociado. Edítalo y elige uno de tu lista para confirmar tomas.'}
+            </BodyText>
+          ) : null}
+          <BodyText>
+            {kinds[rule.tipo]} · {rule.activo ? 'Activo' : 'Pausado'}
+          </BodyText>
+          <BodyText>
+            {rule.horas.join(', ')} · {rule.dias_semana.map((d) => days[d]).join(', ')} · hora de
+            Chile (Santiago)
+          </BodyText>
+          <BodyText>
+            Desde {rule.fecha_inicio}
+            {rule.fecha_fin ? ' hasta ' + rule.fecha_fin : '. Sin fecha de término.'}
+          </BodyText>
+          <VisualButton
+            label={'Editar ' + rule.titulo}
+            secondary
+            disabled={busy}
+            onPress={() =>
+              router.push({ pathname: '/recordatorios/editar', params: { id: rule.id } })
+            }
+          />
+          <VisualButton
+            label={rule.activo ? 'Pausar ' + rule.titulo : 'Activar ' + rule.titulo}
+            secondary
+            disabled={busy || pending.some((v) => v.id === rule.id)}
+            onPress={() => void change(rule)}
+          />
+        </InfoCard>
+      ))}
+      {pending.map((intent) => (
+        <InfoCard key={intent.id}>
+          <SectionTitle>
+            {intent.state === 'conflict' ? 'Cambio en conflicto' : 'Cambio sin confirmar'}
+          </SectionTitle>
+          <BodyText>
+            La configuración solicitada se conserva y aún no reemplaza la agenda confirmada.
+            Actualiza y revisa el horario antes de volver a editar.
+          </BodyText>
+          {intent.state === 'pending' && (
+            <VisualButton
+              label="Comprobar cambio pendiente"
+              disabled={busy}
+              onPress={() =>
+                void act(async () => {
+                  await agenda?.recover(intent.id);
+                  await reconcileReminders();
+                })
+              }
+            />
+          )}
+          <VisualButton
+            label="Descartar intención y revisar agenda"
+            secondary
+            disabled={busy}
+            onPress={() =>
+              void act(async () => {
+                await agenda?.repository.discardIntent(intent.id);
+                await reconcileReminders();
+              })
+            }
+          />
+        </InfoCard>
+      ))}
       <InfoCard>
         <BodyText>
           Necesitas internet para cambiar horarios. Los avisos no registran una toma por ti.
@@ -147,90 +255,6 @@ export function SharedAgendaScreen() {
           onPress={() => void Linking.openSettings()}
         />
       </InfoCard>
-      {Boolean(error) && (
-        <Text accessibilityRole="alert" style={{ color: theme.colors.error }}>
-          {error}
-        </Text>
-      )}
-      <VisualButton
-        label="Crear recordatorio"
-        disabled={busy || !agenda}
-        onPress={() => router.push('/recordatorios/editar')}
-      />
-      {pending.map((intent) => (
-        <InfoCard key={intent.id}>
-          <SectionTitle>
-            {intent.state === 'conflict' ? 'Cambio en conflicto' : 'Cambio sin confirmar'}
-          </SectionTitle>
-          <BodyText>
-            La configuración solicitada se conserva y aún no reemplaza la agenda confirmada.
-            Actualiza y revisa el horario antes de volver a editar.
-          </BodyText>
-          {intent.state === 'pending' && (
-            <VisualButton
-              label="Comprobar cambio pendiente"
-              disabled={busy}
-              onPress={() =>
-                void act(async () => {
-                  await agenda?.recover(intent.id);
-                  await reconcileReminders();
-                })
-              }
-            />
-          )}
-          <VisualButton
-            label="Descartar intención y revisar agenda"
-            secondary
-            disabled={busy}
-            onPress={() =>
-              void act(async () => {
-                await agenda?.repository.discardIntent(intent.id);
-                await reconcileReminders();
-              })
-            }
-          />
-        </InfoCard>
-      ))}
-      {!rules.length && <BodyText>No tienes horarios confirmados.</BodyText>}
-      {rules.map((rule) => (
-        <InfoCard key={rule.id}>
-          <SectionTitle>{rule.titulo}</SectionTitle>
-          {rule.tipo === 'medicacion' ? (
-            <BodyText>
-              {rule.medicamento_paciente_id
-                ? 'Medicamento: ' +
-                  (medications.find((m) => m.id === rule.medicamento_paciente_id)?.nombre ??
-                    'No disponible en la lista actual')
-                : 'Aviso general sin medicamento asociado. Edítalo y elige uno de tu lista para confirmar tomas.'}
-            </BodyText>
-          ) : null}
-          <BodyText>
-            {kinds[rule.tipo]} · {rule.activo ? 'Activo' : 'Pausado'}
-          </BodyText>
-          <BodyText>
-            {rule.horas.join(', ')} · {rule.dias_semana.map((d) => days[d]).join(', ')} · hora de
-            Chile (Santiago)
-          </BodyText>
-          <BodyText>
-            Desde {rule.fecha_inicio}
-            {rule.fecha_fin ? ' hasta ' + rule.fecha_fin : '. Sin fecha de término.'}
-          </BodyText>
-          <VisualButton
-            label={'Editar ' + rule.titulo}
-            secondary
-            disabled={busy}
-            onPress={() =>
-              router.push({ pathname: '/recordatorios/editar', params: { id: rule.id } })
-            }
-          />
-          <VisualButton
-            label={rule.activo ? 'Pausar ' + rule.titulo : 'Activar ' + rule.titulo}
-            secondary
-            disabled={busy || pending.some((v) => v.id === rule.id)}
-            onPress={() => void change(rule)}
-          />
-        </InfoCard>
-      ))}
     </Screen>
   );
 }

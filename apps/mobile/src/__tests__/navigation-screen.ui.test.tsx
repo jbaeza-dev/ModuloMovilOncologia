@@ -1,9 +1,10 @@
 jest.mock('../features/sync/GlobalStatusNotice', () => ({ RecordsStatusCard: () => null }));
 /// <reference types="jest" />
 
-import { fireEvent, render, screen } from '@testing-library/react-native';
+import { act, cleanup, fireEvent, render, screen } from '@testing-library/react-native';
 import React from 'react';
-import { Alert, Text } from 'react-native';
+import { Alert, AppState, Text } from 'react-native';
+import type { GatewayRecordatorio } from '@quimiocare/contracts';
 
 let mockNavIndex = 0;
 const mockRouterBack = jest.fn();
@@ -508,5 +509,79 @@ describe('Área segura inferior de pantallas', () => {
       </ScreenBottomInsetHandledContext.Provider>,
     );
     expect(screen.getByTestId('screen-safe-area').props.edges.bottom).toBe('off');
+  });
+});
+
+describe('Inicio con horarios de agenda compartida', () => {
+  const originalData = mockUseLocalData();
+  const rule: GatewayRecordatorio = {
+    id: 'ed21a163-0102-4b25-98af-4b3552cc87ad',
+    tipo: 'signos',
+    titulo: 'Medición',
+    zona_horaria: 'America/Santiago',
+    horas: ['08:00', '09:00'],
+    dias_semana: [1, 2, 3, 4, 5, 6, 7],
+    fecha_inicio: '2026-01-01',
+    fecha_fin: null,
+    activo: true,
+    version: 1,
+    creado_en: '2026-10-01T00:00:00Z',
+    actualizado_en: '2026-10-01T00:00:00Z',
+    canal: 'push_con_respaldo_local',
+    respaldo_segundos: 120,
+  };
+  const jobs = ['0800', '0900'].map((time) => ({
+    occurrence_id: rule.id + ':1:2026-11-04:' + time,
+    native_id: 'native-' + time,
+    state: 'scheduled',
+  }));
+  const read = jest.fn();
+  beforeEach(() => {
+    jest.useFakeTimers({ doNotFake: ['nextTick', 'setImmediate'] });
+    jest.setSystemTime(new Date('2026-11-04T10:59:30Z'));
+    read.mockResolvedValue({ rules: [rule], completed: new Set() });
+    const data = {
+      ...originalData,
+      sharedAgenda: { read, assert: jest.fn() },
+      agendaCoordinator: {
+        binding: { owner: 'owner-a', environment: 'test', sessionId: 'session-a' },
+        coverage: async () => ({ permission: true, nativeIds: jobs.map((j) => j.native_id) }),
+      },
+      database: { all: async () => jobs },
+    };
+    mockUseLocalData.mockReturnValue(data);
+  });
+  afterEach(() => {
+    cleanup();
+    mockUseLocalData.mockReturnValue(originalData);
+    jest.restoreAllMocks();
+    jest.useRealTimers();
+  });
+  it('muestra la hora elegida sin sumar los dos minutos del respaldo', async () => {
+    await render(<HomeScreen />);
+    expect(await screen.findByText('Hoy a las 08:00')).toBeTruthy();
+    expect(screen.queryByText('Hoy a las 08:02')).toBeNull();
+  });
+  it('pasa al siguiente horario al llegar la hora, sin salir de Inicio', async () => {
+    await render(<HomeScreen />);
+    await screen.findByText(/Hoy a las/);
+    await act(async () => {
+      await jest.advanceTimersByTimeAsync(30_100);
+    });
+    expect(await screen.findByText('Hoy a las 09:00')).toBeTruthy();
+  });
+  it('refresca el próximo horario al volver a primer plano después de un salto de reloj', async () => {
+    const listeners: Array<() => void> = [];
+    jest.spyOn(AppState, 'addEventListener').mockImplementation((_type, listener) => {
+      listeners.push(() => listener('active'));
+      return { remove: jest.fn() };
+    });
+    await render(<HomeScreen />);
+    await screen.findByText(/Hoy a las/);
+    jest.setSystemTime(new Date('2026-11-04T11:05:00Z'));
+    await act(async () => {
+      for (const listener of listeners) listener();
+    });
+    expect(await screen.findByText('Hoy a las 09:00')).toBeTruthy();
   });
 });
