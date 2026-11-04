@@ -37,7 +37,7 @@ describe('Estado de agenda compartida en Inicio', () => {
     expect(sharedReminderStatus([rule], new Set(), jobs, coverage, now)).toMatchObject({
       status: 'scheduled',
       ruleId: rule.id,
-      fechaPrevistaUtc: '2026-10-29T11:02:00.000Z',
+      fechaPrevistaUtc: '2026-10-29T11:00:00.000Z',
     });
     expect(
       sharedReminderStatus([rule], new Set(), jobs, { ...coverage, nativeIds: [] }, now).status,
@@ -56,5 +56,64 @@ describe('Estado de agenda compartida en Inicio', () => {
     expect(sharedReminderStatus([rule], new Set(), [], null, now).deviceAvailability).toBe(
       'permission_required',
     );
+  });
+});
+
+describe('Hora elegida y orden de la próxima medición', () => {
+  it('no salta al día siguiente solo porque el aviso más cercano aún no tiene respaldo confirmado', () => {
+    const laterId = rule.id + ':1:2026-10-30:0800';
+    const laterJob = { occurrence_id: laterId, native_id: 'later-native', state: 'scheduled' };
+    expect(
+      sharedReminderStatus(
+        [rule],
+        new Set(),
+        [laterJob],
+        { ...coverage, nativeIds: ['later-native'] },
+        now,
+      ),
+    ).toMatchObject({
+      status: 'pending_scheduling',
+      fechaPrevistaUtc: '2026-10-29T11:00:00.000Z',
+      fechaCivilLocal: '2026-10-29',
+    });
+  });
+  it('una hora ya alcanzada deja de ser la próxima aunque su respaldo aún esté pendiente', () => {
+    expect(
+      sharedReminderStatus(
+        [{ ...rule, horas: ['08:00', '09:00'] }],
+        new Set(),
+        [],
+        coverage,
+        '2026-10-29T11:00:30Z',
+      ),
+    ).toMatchObject({ fechaPrevistaUtc: '2026-10-29T12:00:00.000Z', horaMinutoLocal: '09:00' });
+  });
+  it('elige el horario más cercano entre reglas, sin depender de su orden de lectura', () => {
+    const later = { ...rule, id: 'ad21a163-0102-4b25-98af-4b3552cc87ad', horas: ['09:00'] };
+    for (const rules of [
+      [later, rule],
+      [rule, later],
+    ]) {
+      expect(sharedReminderStatus(rules, new Set(), jobs, coverage, now)).toMatchObject({
+        status: 'scheduled',
+        ruleId: rule.id,
+        fechaPrevistaUtc: '2026-10-29T11:00:00.000Z',
+      });
+    }
+  });
+  it('conserva la fecha civil y hora elegidas cuando el respaldo cae al día siguiente', () => {
+    expect(
+      sharedReminderStatus(
+        [{ ...rule, horas: ['23:59'] }],
+        new Set(),
+        [],
+        coverage,
+        '2026-10-30T02:58:00Z',
+      ),
+    ).toMatchObject({
+      fechaPrevistaUtc: '2026-10-30T02:59:00.000Z',
+      fechaCivilLocal: '2026-10-29',
+      horaMinutoLocal: '23:59',
+    });
   });
 });

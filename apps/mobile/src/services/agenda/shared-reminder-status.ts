@@ -15,15 +15,16 @@ export function sharedReminderStatus(
     enabled = own.filter((r) => r.activo),
     first = own[0],
     window = upcomingAgendaOccurrences(enabled, now, completed);
-  const confirmed = window.occurrences.find((o) =>
+  // Inicio presenta el horario elegido, no la hora técnica del respaldo.
+  const next = window.occurrences.find((o) => Date.parse(o.programado_en) > Date.parse(now));
+  const confirmed =
+    next &&
     jobs.some(
       (j) =>
-        j.occurrence_id === o.ocurrencia_id &&
+        j.occurrence_id === next.ocurrencia_id &&
         j.state === 'scheduled' &&
         coverage?.nativeIds?.includes(j.native_id),
-    ),
-  );
-  const next = confirmed ?? window.occurrences[0];
+    );
   const status: ReminderStatusEvaluation['status'] = !own.length
     ? 'no_configured'
     : !enabled.length
@@ -42,7 +43,7 @@ export function sharedReminderStatus(
     allEnabledRulesCount: rules.filter((r) => r.activo).length,
     otherEnabledRulesCount: rules.filter((r) => r.activo && r.tipo !== kind).length,
     notificationId: next?.ocurrencia_id ?? null,
-    fechaPrevistaUtc: next?.respaldo_en ?? null,
+    fechaPrevistaUtc: next?.programado_en ?? null,
     fechaCivilLocal: next?.fecha_local ?? null,
     horaMinutoLocal: next?.hora_local ?? null,
     zonaHoraria: 'America/Santiago',

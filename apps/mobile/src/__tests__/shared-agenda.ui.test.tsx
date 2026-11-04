@@ -13,7 +13,7 @@ jest.mock('@react-native-async-storage/async-storage', () => ({
   setItem: jest.fn(async () => undefined),
 }));
 import React from 'react';
-import { render, screen, fireEvent, cleanup, waitFor } from '@testing-library/react-native';
+import { act, render, screen, fireEvent, cleanup, waitFor } from '@testing-library/react-native';
 import { normalizedReminder } from '@quimiocare/contracts/agenda';
 import type { GatewayRecordatorio } from '@quimiocare/contracts';
 import { SharedAgendaScreen } from '../features/reminders/SharedAgendaScreen';
@@ -68,6 +68,7 @@ const mockRead = jest.fn(),
   mockRefresh = jest.fn();
 const mockData = {
   sharedAgenda: {
+    assert: jest.fn(),
     read: mockRead,
     save: mockSave,
     repository: { intents: mockIntents },
@@ -225,5 +226,57 @@ describe('Vínculo explícito medicamento-aviso', () => {
         undefined,
       ),
     );
+  });
+});
+
+describe('Lista de horarios confirmados al abrir Mis recordatorios', () => {
+  it('Una lectura atrasada no oculta un horario que ya apareció confirmado', async () => {
+    let resolveOld!: (value: unknown) => void;
+    const old = new Promise((resolve) => {
+      resolveOld = resolve;
+    });
+    mockRead.mockImplementationOnce(() => old);
+    await render(
+      <ThemeProvider>
+        <SharedAgendaScreen />
+      </ThemeProvider>,
+    );
+    await screen.findByText(rule.titulo);
+    await act(async () => {
+      resolveOld({ rules: [], state: null });
+    });
+    expect(screen.getByText(rule.titulo)).toBeTruthy();
+    expect(screen.queryByText('No tienes horarios confirmados.')).toBeNull();
+  });
+  it('muestra primero los horarios confirmados y deja pendientes y controles técnicos después', async () => {
+    mockIntents.mockResolvedValue([{ id: rule.id, kind: 'create', state: 'pending' }]);
+    await render(
+      <ThemeProvider>
+        <SharedAgendaScreen />
+      </ThemeProvider>,
+    );
+    await screen.findByText('Cambio sin confirmar');
+    const output = JSON.stringify(screen.toJSON());
+    expect(output.indexOf(rule.titulo)).toBeGreaterThan(-1);
+    expect(output.indexOf(rule.titulo)).toBeLessThan(output.indexOf('Cambio sin confirmar'));
+    expect(output.indexOf(rule.titulo)).toBeLessThan(output.indexOf('Estado de los avisos'));
+  });
+  it('pone el recordatorio recién creado antes que los antiguos sin retirar los anteriores', async () => {
+    const latest = {
+      ...rule,
+      id: 'cd21a163-0102-4b25-98af-4b3552cc87ad',
+      titulo: 'Mi horario nuevo',
+      creado_en: '2026-11-04T10:53:00Z',
+    };
+    mockRead.mockResolvedValue({ rules: [rule, latest], state: null });
+    await render(
+      <ThemeProvider>
+        <SharedAgendaScreen />
+      </ThemeProvider>,
+    );
+    await screen.findByText(latest.titulo);
+    expect(screen.getByText(rule.titulo)).toBeTruthy();
+    const output = JSON.stringify(screen.toJSON());
+    expect(output.indexOf(latest.titulo)).toBeLessThan(output.indexOf(rule.titulo));
   });
 });
