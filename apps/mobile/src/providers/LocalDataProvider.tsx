@@ -46,6 +46,7 @@ import { AgendaClient } from '../services/agenda/agenda-client';
 import { activateNativeAgenda, handleAgendaNotification } from '../services/agenda/native-agenda';
 import { notificationPayload, localAgendaData } from '../services/agenda/agenda-coordinator';
 import type { AgendaCoordinator } from '../services/agenda/agenda-coordinator';
+import { reconcileActiveAgenda } from '../services/agenda/active-agenda';
 import type { DeviceClient } from '../services/session/device-client';
 import type { SessionAdapter } from '../services/session/session-adapter';
 import {
@@ -241,25 +242,41 @@ export function LocalDataProvider({ children }: { children: ReactNode }) {
   const [agendaCoordinator, setAgendaCoordinator] = useState<AgendaCoordinator | null>(null);
   const [agendaBackgroundReady, setAgendaBackgroundReady] = useState(false);
   const agendaRuntime = useRef<Awaited<ReturnType<typeof activateNativeAgenda>>>(null);
-  const prepareAgenda = useCallback(
-    async () =>
-      manager.trackOperation(async () => {
-        if (!identitySession || !clinicalStore) return;
-        const runtime = await activateNativeAgenda(identitySession, clinicalStore);
-        if (
-          clinicalStore.closed ||
-          identitySession.getCurrentUser()?.id !== clinicalStore.scope.owner
-        ) {
-          runtime?.dispose();
-          return;
-        }
-        agendaRuntime.current?.dispose();
-        agendaRuntime.current = runtime;
-        setAgendaCoordinator(runtime?.coordinator ?? null);
-        setAgendaBackgroundReady(runtime?.taskRegistered ?? false);
-      }),
-    [identitySession, clinicalStore, manager],
-  );
+  const agendaPreparation = useRef<{
+    session: HttpSessionAdapter;
+    store: ClinicalStore;
+    promise: Promise<void>;
+  } | null>(null);
+  const prepareAgenda = useCallback(() => {
+    if (!identitySession || !clinicalStore) return Promise.resolve();
+    const current = agendaPreparation.current;
+    if (current?.session === identitySession && current.store === clinicalStore)
+      return current.promise;
+    const epoch = manager.getContextEpoch();
+    const promise = manager.trackOperation(async () => {
+      const runtime = await activateNativeAgenda(identitySession, clinicalStore);
+      if (
+        clinicalStore.closed ||
+        identitySession.getCurrentUser()?.id !== clinicalStore.scope.owner ||
+        manager.getContextEpoch() !== epoch ||
+        manager.getPatientId() !== clinicalStore.scope.localPatientId
+      ) {
+        runtime?.dispose();
+        return;
+      }
+      const previous = agendaRuntime.current;
+      agendaRuntime.current = runtime;
+      if (previous !== runtime) previous?.dispose();
+      setAgendaCoordinator(runtime?.coordinator ?? null);
+      setAgendaBackgroundReady(runtime?.taskRegistered ?? false);
+    });
+    const preparation = { session: identitySession, store: clinicalStore, promise };
+    preparation.promise = promise.finally(() => {
+      if (agendaPreparation.current === preparation) agendaPreparation.current = null;
+    });
+    agendaPreparation.current = preparation;
+    return preparation.promise;
+  }, [identitySession, clinicalStore, manager]);
   useEffect(() => {
     let active = true;
     void prepareAgenda().catch(() => {
@@ -488,6 +505,17 @@ export function LocalDataProvider({ children }: { children: ReactNode }) {
 
       let result: CoordinatorResult;
       if (sharedAgenda) {
+        const assertAgendaContext = () => {
+          sharedAgenda.assert();
+          if (manager.getPatientId() !== currentId || manager.getContextEpoch() !== epoch)
+            throw new Error('El contexto de agenda cambió.');
+        };
+        assertAgendaContext();
+        const reconcileCurrent = () =>
+          reconcileActiveAgenda(
+            () => agendaRuntime.current?.coordinator ?? null,
+            assertAgendaContext,
+          );
         // Retire this owner's legacy jobs even before registering a new push association.
         const legacy = await coordinator.cancelPatientSchedule(currentId);
         if (!legacy.success || legacy.pendingCount) {
@@ -503,13 +531,13 @@ export function LocalDataProvider({ children }: { children: ReactNode }) {
           };
         } else {
           // Cancel locally completed occurrences before any potentially slow network request.
-          await agendaCoordinator?.reconcile();
+          await reconcileCurrent();
           try {
             await sharedAgenda.refresh();
           } catch {
             sharedAgenda.assert();
           }
-          const coverage = await agendaCoordinator?.reconcile();
+          const coverage = await reconcileCurrent();
           result = coverage
             ? {
                 status: !coverage.permission
@@ -556,7 +584,7 @@ export function LocalDataProvider({ children }: { children: ReactNode }) {
 
       return result;
     },
-    [coordinator, manager, sharedAgenda, agendaCoordinator],
+    [coordinator, manager, sharedAgenda],
   );
 
   // Reconciliación al seleccionar paciente

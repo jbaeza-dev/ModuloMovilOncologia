@@ -154,6 +154,25 @@ describe('Agenda compartida: interfaz confirmada', () => {
     expect(screen.getByText(/aún no reemplaza la agenda confirmada/)).toBeTruthy();
     expect(screen.queryByLabelText('Comprobar cambio pendiente')).toBeNull();
   });
+  it('distingue un horario confirmado de un fallo posterior del programador y no invita a crearlo otra vez', async () => {
+    mockParams.id = rule.id;
+    mockRefresh.mockRejectedValue(new Error('Fallo del programador nativo'));
+    await render(
+      <ThemeProvider>
+        <SharedAgendaEditScreen />
+      </ThemeProvider>,
+    );
+    await screen.findByDisplayValue(rule.titulo);
+    await fireEvent.press(screen.getByRole('button', { name: 'Guardar y confirmar horario' }));
+    await waitFor(() => expect(screen.getByText('Tu horario está guardado')).toBeTruthy());
+    expect(screen.getByText(/El servidor confirmó el cambio/)).toBeTruthy();
+    expect(screen.queryByText(/El horario solo cambia al recibir confirmación/)).toBeNull();
+    expect(screen.queryByRole('button', { name: 'Guardar y confirmar horario' })).toBeNull();
+    expect(mockSave).toHaveBeenCalledTimes(1);
+    expect(mockBack).not.toHaveBeenCalled();
+    await fireEvent.press(screen.getByRole('button', { name: 'Volver a mis recordatorios' }));
+    await waitFor(() => expect(mockBack).toHaveBeenCalledTimes(1));
+  });
   it('un fallo de red al guardar conserva la edición y no navega como si hubiera ACK', async () => {
     mockParams.id = rule.id;
     mockSave.mockRejectedValue(new Error('Sin conexión'));
