@@ -50,6 +50,9 @@ versiones. Las dependencias del sistema que falten las instala el administrador.
   además de los registros usados por las imágenes de infraestructura.
 - No escucha en nuevos puertos. Solo se publican 8018 y 8019 como antes.
 - El dotenv permanece en `~/quimiocare/shared/universidad.env`, modo 600.
+- La entrega solo contiene configuración pública: archivos 644 y directorios 755
+  permiten leer los montajes a usuarios sin privilegios dentro de los contenedores.
+  Los secretos se mantienen fuera de esa entrega, con permisos privados.
 - `QC_SSH_*` ya no se utiliza en el workflow nuevo. Conservar temporalmente los
   secretos para contingencia; retirarlos tras verificar la primera entrega.
 - `GITHUB_TOKEN` efímero, con `packages: read`, autentica la descarga de imágenes.
