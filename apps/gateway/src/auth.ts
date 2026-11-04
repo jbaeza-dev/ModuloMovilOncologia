@@ -1,4 +1,4 @@
-import { createRemoteJWKSet, jwtVerify, errors } from 'jose';
+import { createRemoteJWKSet, jwtVerify, errors, customFetch } from 'jose';
 import type { GatewayConfig } from './config/index.js';
 import { GatewayError } from './http/errors.js';
 import { dependencyClients } from './dependencies.js';
@@ -15,8 +15,13 @@ export function authenticator(config: GatewayConfig, log: Logger) {
   const key = config.authJwksUrl
     ? createRemoteJWKSet(new URL(config.authJwksUrl), {
         timeoutDuration: config.dependencyTimeoutMs,
-        cooldownDuration: 5000,
-        cacheMaxAge: 300000,
+        cooldownDuration: config.authJwksUrl === 'http://qc-jwks:3004/jwks.json' ? 0 : 5000,
+        cacheMaxAge: config.authJwksUrl === 'http://qc-jwks:3004/jwks.json' ? 0 : 300000,
+        [customFetch]: async (url, options) => {
+          const response = await fetch(url, options);
+          if (response.status !== 200) throw new Error('Key authority unavailable.');
+          return response;
+        },
       })
     : new TextEncoder().encode(config.authVerifyKey);
   const clients = dependencyClients(config, log);

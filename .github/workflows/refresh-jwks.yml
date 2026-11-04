@@ -1,0 +1,50 @@
+name: Renew university public signing keys
+on:
+  schedule:
+    - cron: '15 */6 * * *'
+  workflow_dispatch:
+permissions:
+  contents: read
+concurrency:
+  group: universidad-jwks-refresh
+  cancel-in-progress: false
+jobs:
+  fetch:
+    if: github.ref == 'refs/heads/main'
+    runs-on: ubuntu-latest
+    timeout-minutes: 3
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          persist-credentials: false
+      - uses: pnpm/setup@fa36a5ef7dcdefc3a7cb25655c122e00cf6e636e
+        with:
+          node-version-file: .nvmrc
+          require-lockfile: true
+      - name: Fetch validated public keys with twelve-hour validity
+        env:
+          AUTH_EXPECTED_ISSUER: ${{ vars.QC_AUTH_ISSUER }}
+          AUTH_ALLOWED_ALGORITHM: ${{ vars.QC_AUTH_ALGORITHM || 'ES256' }}
+        run: node infra/universidad/scripts/jwks-snapshot.mjs fetch build/jwks/snapshot.json
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9
+        with:
+          name: jwks-${{ github.run_id }}-${{ github.run_attempt }}
+          path: build/jwks/snapshot.json
+          retention-days: 1
+          if-no-files-found: error
+  install:
+    needs: fetch
+    if: github.ref == 'refs/heads/main'
+    runs-on: [self-hosted, linux, x64, quimiocare-deploy]
+    environment: universidad
+    timeout-minutes: 3
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          persist-credentials: false
+      - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333
+        with:
+          name: jwks-${{ github.run_id }}-${{ github.run_attempt }}
+          path: build/jwks
+      - name: Atomically renew the deployed authority
+        run: bash scripts/renew-university-jwks.sh build/jwks/snapshot.json

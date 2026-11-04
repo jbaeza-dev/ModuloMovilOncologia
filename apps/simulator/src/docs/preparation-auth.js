@@ -200,6 +200,12 @@ window.initPreparationAuth = async function (createUi, config) {
         cache: 'no-store',
       },
     );
+    if (allowed.status === 503)
+      throw new Error(
+        'El servicio de acceso no está disponible temporalmente. Inténtalo más tarde.',
+      );
+    if (allowed.status === 401)
+      throw new Error('La sesión no es válida o venció. Vuelve a entrar con Google.');
     if (allowed.status === 403)
       throw new Error(
         'Tu cuenta Google no está autorizada como operador. Solicita su autorización local una sola vez.',

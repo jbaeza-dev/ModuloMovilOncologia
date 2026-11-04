@@ -12,6 +12,9 @@ for attempt in {1..30}; do
  sleep 2
 done
 systemctl --user is-active --quiet qc-worker.service
+for container in qc-clinical qc-gateway qc-powersync; do
+ "$ENGINE" exec -i "$container" node --input-type=module < "$BASE_DIR/scripts/auth-ready.mjs"
+done
 for url in http://127.0.0.1:8018/healthz http://127.0.0.1:8019/healthz http://127.0.0.1:8019/health; do curl --fail --silent --show-error --max-time 10 "$url" >/dev/null; done
 for url in http://127.0.0.1:8018/__demo/reset http://127.0.0.1:8019/sync/api/admin/v1/diagnostics http://127.0.0.1:8019/internal/ready; do
  code=$(curl --silent --show-error --max-time 10 -o /dev/null -w '%{http_code}' "$url")

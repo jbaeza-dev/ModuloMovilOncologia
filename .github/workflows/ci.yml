@@ -205,9 +205,10 @@ jobs:
           python3 -m unittest discover -s infra/universidad/tests -v
           node scripts/audit-delivery.mjs
           node --test scripts/university-release.test.mjs
+          node --test infra/universidad/tests/*.test.mjs
           find infra/universidad scripts -name "*.sh" -exec bash -n {} \;
-          docker run --rm -v "$PWD:/workspace:ro" -w /workspace koalaman/shellcheck:v0.11.0@sha256:61862eba1fcf09a484ebcc6feea46f1782532571a34ed51fedf90dd25f925a8d scripts/ci-deploy-university.sh scripts/ci-deploy-university-local.sh scripts/verify-university-public.sh infra/universidad/scripts/*.sh infra/universidad/postgres/*.sh
-          docker run --rm -v "$PWD:/repo:ro" rhysd/actionlint:1.7.12@sha256:b1934ee5f1c509618f2508e6eb47ee0d3520686341fec936f3b79331f9315667 -config-file /repo/.github/actionlint.yaml -shellcheck= /repo/.github/workflows/ci.yml /repo/.github/workflows/deploy-universidad.yml /repo/.github/workflows/build-apk.yml
+          docker run --rm -v "$PWD:/workspace:ro" -w /workspace koalaman/shellcheck:v0.11.0@sha256:61862eba1fcf09a484ebcc6feea46f1782532571a34ed51fedf90dd25f925a8d scripts/ci-deploy-university.sh scripts/ci-deploy-university-local.sh scripts/renew-university-jwks.sh scripts/verify-university-public.sh infra/universidad/scripts/*.sh infra/universidad/postgres/*.sh
+          docker run --rm -v "$PWD:/repo:ro" rhysd/actionlint:1.7.12@sha256:b1934ee5f1c509618f2508e6eb47ee0d3520686341fec936f3b79331f9315667 -config-file /repo/.github/actionlint.yaml -shellcheck= /repo/.github/workflows/ci.yml /repo/.github/workflows/deploy-universidad.yml /repo/.github/workflows/build-apk.yml /repo/.github/workflows/refresh-jwks.yml
       - name: Exercise production proxy prefixes over real HTTP
         run: node scripts/test-proxy-routes.mjs
       - name: Validate Nginx Proxy Configurations

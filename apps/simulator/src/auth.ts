@@ -1,5 +1,5 @@
 import { createHash, createHmac, randomBytes, timingSafeEqual } from 'node:crypto';
-import { createRemoteJWKSet, jwtVerify, errors } from 'jose';
+import { createRemoteJWKSet, jwtVerify, errors, customFetch } from 'jose';
 import type { SimulatorConfig } from './config.js';
 import type { Database } from './db.js';
 import { one, transaction } from './db.js';
@@ -21,8 +21,13 @@ function getJwks(url: string) {
   if (!jwks) {
     jwks = createRemoteJWKSet(new URL(url), {
       timeoutDuration: 5000,
-      cooldownDuration: 5000,
-      cacheMaxAge: 300000,
+      cooldownDuration: url === 'http://qc-jwks:3004/jwks.json' ? 0 : 5000,
+      cacheMaxAge: url === 'http://qc-jwks:3004/jwks.json' ? 0 : 300000,
+      [customFetch]: async (url, options) => {
+        const response = await fetch(url, options);
+        if (response.status !== 200) throw new Error('Key authority unavailable.');
+        return response;
+      },
     });
     remoteJwks.set(url, jwks);
   }

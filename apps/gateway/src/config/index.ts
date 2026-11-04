@@ -105,6 +105,12 @@ export function readConfig(env: NodeJS.ProcessEnv = process.env): GatewayConfig 
   if (authAlgorithm === 'HS256' && (Buffer.byteLength(authVerifyKey) < 32 || env.AUTH_JWKS_URL))
     throw new ConfigurationError('AUTH_VERIFY_KEY');
   const authJwksUrl = authAlgorithm === 'HS256' ? undefined : dependencyUrl('AUTH_JWKS_URL');
+  if (
+    authJwksUrl?.startsWith('http:') &&
+    appEnv === 'universidad-demo' &&
+    !(env.AUTH_JWKS_MODE === 'distributed' && authJwksUrl === 'http://qc-jwks:3004/jwks.json')
+  )
+    throw new ConfigurationError('AUTH_JWKS_URL');
   if (authJwksUrl && env.AUTH_VERIFY_KEY) throw new ConfigurationError('AUTH_VERIFY_KEY');
   const cursorKey = env.GATEWAY_CURSOR_KEY ?? (authAlgorithm === 'HS256' ? authVerifyKey : '');
   if (Buffer.byteLength(cursorKey) < 32) throw new ConfigurationError('GATEWAY_CURSOR_KEY');

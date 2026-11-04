@@ -84,8 +84,11 @@ test('immutable release passes Python verification; tampering and wrong publishe
   const temp = await mkdtemp(join(tmpdir(), 'qc-release-test-'));
   try {
     const output = join(temp, 'release');
+    const jwksSnapshot = join(temp, 'snapshot.json');
+    await writeFile(jwksSnapshot, '{"synthetic":"snapshot-for-manifest-test"}');
     const manifest = await packageRelease({
       output,
+      jwksSnapshot,
       revision: 'a'.repeat(40),
       sequence: 2,
       runId: 15,
@@ -95,6 +98,8 @@ test('immutable release passes Python verification; tampering and wrong publishe
     });
     assert.equal(manifest.schema, 2);
     assert.ok(manifest.files['infra/universidad/postgres/02-setup-replication.sql']);
+    assert.ok(manifest.files['infra/universidad/jwks-snapshot.json']);
+    assert.ok(manifest.files['infra/universidad/systemd/qc-jwks-expiry.timer']);
     assert.equal(
       await readFile(join(output, 'infra/universidad/postgres/02-setup-replication.sql'), 'utf8'),
       await readFile('infra/universidad/postgres/02-setup-replication.sql', 'utf8'),
@@ -118,6 +123,10 @@ test('immutable release passes Python verification; tampering and wrong publishe
     ]);
     assert.ok((await readdir(join(temp, 'units'))).includes('qc-powersync.container'));
     assert.throws(() => verify('ghcr.io/other'));
+    const savedSnapshot = await readFile(join(output, 'infra/universidad/jwks-snapshot.json'));
+    await writeFile(join(output, 'infra/universidad/jwks-snapshot.json'), '{}');
+    assert.throws(() => verify(), 'A modified snapshot must invalidate the release');
+    await writeFile(join(output, 'infra/universidad/jwks-snapshot.json'), savedSnapshot);
     await writeFile(join(output, 'infra/universidad/scripts/deploy.sh'), 'tampered\n');
     assert.throws(() => verify());
     assert.equal(

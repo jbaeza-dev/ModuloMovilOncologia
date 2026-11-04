@@ -62,12 +62,24 @@ export function readConfig(env: NodeJS.ProcessEnv = process.env): SimulatorConfi
     const issuer = new URL(required('AUTH_EXPECTED_ISSUER'));
     const jwks = new URL(required('AUTH_JWKS_URL'));
     if (
-      [issuer, jwks].some(
-        (u) => u.protocol !== 'https:' || u.username || u.password || u.search || u.hash,
-      )
+      [
+        issuer,
+        ...(env.AUTH_JWKS_MODE === 'distributed' &&
+        appEnv === 'universidad-demo' &&
+        jwks.href === 'http://qc-jwks:3004/jwks.json'
+          ? []
+          : [jwks]),
+      ].some((u) => u.protocol !== 'https:' || u.username || u.password || u.search || u.hash)
     )
       throw new Error('Supabase exige issuer y JWKS HTTPS.');
-    if (jwks.href !== issuer.href.replace(/\/$/, '') + '/.well-known/jwks.json')
+    if (
+      jwks.href !== issuer.href.replace(/\/$/, '') + '/.well-known/jwks.json' &&
+      !(
+        env.AUTH_JWKS_MODE === 'distributed' &&
+        appEnv === 'universidad-demo' &&
+        jwks.href === 'http://qc-jwks:3004/jwks.json'
+      )
+    )
       throw new Error('AUTH_JWKS_URL no corresponde al issuer.');
   }
 
