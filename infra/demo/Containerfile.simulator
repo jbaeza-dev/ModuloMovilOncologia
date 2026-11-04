@@ -5,6 +5,7 @@ COPY package.json pnpm-lock.yaml pnpm-workspace.yaml tsconfig.base.json ./
 COPY packages/contracts/ ./packages/contracts/
 COPY apps/simulator/ ./apps/simulator/
 RUN sed -i 's/nodeLinker: hoisted/nodeLinker: isolated/' pnpm-workspace.yaml
+COPY patches ./patches
 RUN pnpm install --frozen-lockfile --ignore-scripts --filter @quimiocare/simulator...
 RUN pnpm --filter @quimiocare/contracts run build && pnpm --filter @quimiocare/simulator run build
 
@@ -15,6 +16,7 @@ COPY package.json pnpm-lock.yaml pnpm-workspace.yaml ./
 COPY apps/simulator/package.json ./apps/simulator/package.json
 COPY packages/contracts/package.json ./packages/contracts/package.json
 RUN sed -i "s/nodeLinker: hoisted/nodeLinker: isolated/" pnpm-workspace.yaml
+COPY patches ./patches
 RUN pnpm install --prod --frozen-lockfile --ignore-scripts --filter @quimiocare/simulator...
 COPY --from=build /workspace/apps/simulator/dist ./apps/simulator/dist
 COPY --from=build /workspace/packages/contracts/dist ./packages/contracts/dist
