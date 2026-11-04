@@ -1,4 +1,5 @@
 import { useFocusEffect } from 'expo-router';
+import { AppState } from 'react-native';
 import { sharedReminderStatus } from '../services/agenda/shared-reminder-status';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 
@@ -86,6 +87,20 @@ export function useReminderStatus(options: UseReminderStatusOptions = {}) {
       options.ruleId,
       options.now,
     ]),
+  );
+  // Renovar solo mientras Inicio está enfocado; el reloj también cambia al volver de segundo plano.
+  useFocusEffect(
+    useCallback(() => {
+      if (!data.sharedAgenda) return;
+      const timer = setTimeout(() => setTick((n) => n + 1), 60_000 - (Date.now() % 60_000) + 25);
+      const subscription = AppState.addEventListener('change', (state) => {
+        if (state === 'active') setTick((n) => n + 1);
+      });
+      return () => {
+        clearTimeout(timer);
+        subscription.remove();
+      };
+    }, [data.sharedAgenda, tick]),
   );
   const refresh = useCallback(() => setTick((n) => n + 1), []);
   const retryScheduling = useCallback(async () => {
