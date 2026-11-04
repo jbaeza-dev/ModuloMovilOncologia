@@ -121,7 +121,11 @@ jest.mock('../data/sync/native-runtime', () => ({
     );
     const store = {
       connection,
-      scope: { localPatientId: patientId, owner: session.getCurrentUser().id },
+      scope: {
+        localPatientId: patientId,
+        owner: session.getCurrentUser().id,
+        environment: 'provider-ui-test',
+      },
       closed: false,
       database: { onChange: () => () => {} },
       close: async () => {
@@ -366,6 +370,7 @@ import { LoginScreen, RegisterScreen, AccessConsentScreen } from '../features/ac
 import { AssistantScreen } from '../features/assistant/AssistantScreen';
 import { AppNavigator } from '../app/_layout';
 import { LocalDataProvider, DEMO_PATIENTS, useLocalData } from '../providers/LocalDataProvider';
+import { activateNativeAgenda } from '../services/agenda/native-agenda';
 import { FakeAssistantAdapter } from '../services/assistant/fake-assistant-adapter';
 import { UnconfiguredSessionAdapter } from '../services/session/unconfigured-session-adapter';
 import { UnconfiguredAssistantAdapter } from '../services/assistant/unconfigured-assistant-adapter';
@@ -394,6 +399,113 @@ describe('Incremento 6: UI de Acceso, Navegación Raíz, Sesión y Asistente', (
 
   afterEach(() => {
     cleanup();
+  });
+
+  describe('Reactivación de agenda sin referencias cerradas', () => {
+    it('una acción que registró el teléfono usa la instancia recién preparada aunque conserve su callback anterior', async () => {
+      const activate = jest.mocked(activateNativeAgenda);
+      const runtimes: Array<{ closed: boolean; reconcile: jest.Mock }> = [];
+      const coverage = {
+        permission: true,
+        confirmed: 0,
+        wanted: 0,
+        truncated: 0,
+        until: null,
+        pendingCancellations: 0,
+        nativeIds: [],
+        horizonEndsAt: '2026-11-12T00:00:00Z',
+        checkedAt: '2026-11-05T00:00:00Z',
+      };
+      activate.mockImplementation(async () => {
+        const runtime = { closed: false, reconcile: jest.fn() };
+        runtime.reconcile.mockImplementation(async () => {
+          if (runtime.closed) throw new Error('Coordinador de agenda cerrado.');
+          return coverage;
+        });
+        runtimes.push(runtime);
+        return {
+          coordinator: {
+            reconcile: runtime.reconcile,
+            coverage: async () => coverage,
+            deactivate: () => {
+              runtime.closed = true;
+            },
+          },
+          taskRegistered: true,
+          dispose: () => {
+            runtime.closed = true;
+          },
+        } as unknown as Awaited<ReturnType<typeof activateNativeAgenda>>;
+      });
+      const holder = { current: null as LocalDataContext | null };
+      try {
+        await render(
+          <LocalDataProvider>
+            <ContextConsumer
+              onReady={(ctx) => {
+                holder.current = ctx;
+              }}
+            />
+          </LocalDataProvider>,
+        );
+        await waitFor(() => expect(holder.current).toBeTruthy());
+        await act(async () => holder.current!.selectPatient(DEMO_PATIENTS[0].id));
+        await waitFor(() => expect(holder.current?.agendaCoordinator).toBeTruthy());
+        const beforeRegistration = holder.current!.reconcileReminders;
+        const old = holder.current!.agendaCoordinator;
+        await act(async () => {
+          await holder.current!.prepareAgenda!();
+          await expect(beforeRegistration()).resolves.toMatchObject({ status: 'programada' });
+        });
+        expect(holder.current!.agendaCoordinator).not.toBe(old);
+        expect(runtimes.some((runtime) => runtime.closed)).toBe(true);
+        expect(runtimes.at(-1)!.reconcile).toHaveBeenCalled();
+      } finally {
+        cleanup();
+        activate.mockImplementation(async () => null);
+      }
+    });
+  });
+
+  describe('Preparación simultánea de agenda', () => {
+    it('coalesce la vuelta a primer plano y el registro manual en una misma preparación', async () => {
+      const holder = { current: null as LocalDataContext | null };
+      const activate = jest.mocked(activateNativeAgenda);
+      try {
+        await render(
+          <LocalDataProvider>
+            <ContextConsumer
+              onReady={(ctx) => {
+                holder.current = ctx;
+              }}
+            />
+          </LocalDataProvider>,
+        );
+        await waitFor(() => expect(holder.current).toBeTruthy());
+        await act(async () => holder.current!.selectPatient(DEMO_PATIENTS[0].id));
+        await waitFor(() => expect(holder.current?.clinicalStore).toBeTruthy());
+        await act(async () => {
+          await holder.current!.prepareAgenda!();
+        });
+        activate.mockClear();
+        let release!: (value: null) => void;
+        const blocked = new Promise<null>((resolve) => {
+          release = resolve;
+        });
+        activate.mockImplementationOnce(() => blocked);
+        await act(async () => {
+          const first = holder.current!.prepareAgenda!();
+          const second = holder.current!.prepareAgenda!();
+          expect(first).toBe(second);
+          expect(activate).toHaveBeenCalledTimes(1);
+          release(null);
+          await Promise.all([first, second]);
+        });
+      } finally {
+        cleanup();
+        activate.mockImplementation(async () => null);
+      }
+    });
   });
 
   describe('Navegador Raíz y Stack.Protected en Producción', () => {

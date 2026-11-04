@@ -14,6 +14,7 @@ test('APK university configuration requires real public inputs and produces inst
       ...process.env,
       GITHUB_ENV: path,
       EXPO_PUBLIC_APP_ENV: 'universidad-demo',
+      EXPO_PUBLIC_P07_SYNTHETIC_REVIEW: 'true',
       QC_PUBLIC_ORIGIN: 'https://example.org',
       QC_AUTH_ISSUER: 'https://synthetic.supabase.co/auth/v1',
       QC_AUTH_PUBLIC_KEY: 'sb_publishable_synthetic_public_test_key',
@@ -33,7 +34,10 @@ test('APK university configuration requires real public inputs and produces inst
       'https://example.org/quimiocare-backend/sync/stream',
     );
     assert.match(saved, /EXPO_PUBLIC_DEMO_MODE=false/);
+    assert.match(saved, /EXPO_PUBLIC_P07_SYNTHETIC_REVIEW=true/);
     for (const overrides of [
+      { EXPO_PUBLIC_APP_ENV: 'production' },
+      { EXPO_PUBLIC_P07_SYNTHETIC_REVIEW: 'not-a-boolean' },
       { QC_PUBLIC_ORIGIN: '' },
       { QC_PUBLIC_ORIGIN: 'http://example.org' },
       { QC_PUBLIC_ORIGIN: 'https://:synthetic@example.org' },
@@ -41,6 +45,36 @@ test('APK university configuration requires real public inputs and produces inst
     ])
       assert.throws(() => run(overrides));
     assert.equal(await readFile(path, 'utf8'), saved, 'Rejected configuration must not be written');
+  } finally {
+    await rm(temp, { recursive: true, force: true });
+  }
+});
+
+test('academic APKs include labelled triage review by default and respect explicit opt-out', async () => {
+  const temp = await mkdtemp(join(tmpdir(), 'qc-triage-config-test-'));
+  try {
+    for (const profile of ['demo', 'universidad-demo']) {
+      for (const flag of [undefined, 'false']) {
+        const output = join(temp, profile + '-' + (flag ?? 'default'));
+        const env = {
+          ...process.env,
+          GITHUB_ENV: output,
+          EXPO_PUBLIC_APP_ENV: profile,
+          QC_PUBLIC_ORIGIN: 'https://example.org',
+          QC_AUTH_ISSUER: 'https://synthetic.supabase.co/auth/v1',
+          QC_AUTH_PUBLIC_KEY: 'sb_publishable_synthetic_public_test_key',
+        };
+        delete env.EXPO_PUBLIC_P07_SYNTHETIC_REVIEW;
+        if (flag !== undefined) env.EXPO_PUBLIC_P07_SYNTHETIC_REVIEW = flag;
+        execFileSync(process.execPath, ['scripts/configure-apk.mjs'], { env, stdio: 'pipe' });
+        const saved = await readFile(output, 'utf8');
+        assert.match(
+          saved,
+          new RegExp('EXPO_PUBLIC_P07_SYNTHETIC_REVIEW=' + (flag ?? 'true') + '\\n'),
+        );
+        assert.match(saved, new RegExp('EXPO_PUBLIC_DEMO_MODE=' + (profile === 'demo') + '\\n'));
+      }
+    }
   } finally {
     await rm(temp, { recursive: true, force: true });
   }

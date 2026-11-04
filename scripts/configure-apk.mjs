@@ -1,7 +1,17 @@
 // Public compile-time values only. No server password or Google client secret belongs in an APK.
 import { appendFileSync } from 'node:fs';
-const university = process.env.EXPO_PUBLIC_APP_ENV === 'universidad-demo';
-const values = { EXPO_PUBLIC_DEMO_MODE: university ? 'false' : 'true' };
+const profile = process.env.EXPO_PUBLIC_APP_ENV;
+if (profile !== 'demo' && profile !== 'universidad-demo')
+  throw new Error('The academic APK workflow only accepts demo or universidad-demo profiles.');
+const university = profile === 'universidad-demo';
+const reviewFlag = process.env.EXPO_PUBLIC_P07_SYNTHETIC_REVIEW;
+if (reviewFlag !== undefined && reviewFlag !== 'true' && reviewFlag !== 'false')
+  throw new Error('The triage review flag must be true or false.');
+const values = {
+  EXPO_PUBLIC_DEMO_MODE: university ? 'false' : 'true',
+  // Both profiles are academic demonstrations; draft clinical recommendations stay disabled.
+  EXPO_PUBLIC_P07_SYNTHETIC_REVIEW: reviewFlag ?? 'true',
+};
 if (university) {
   const origin = process.env.QC_PUBLIC_ORIGIN;
   const issuer = process.env.QC_AUTH_ISSUER;

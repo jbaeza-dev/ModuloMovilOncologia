@@ -48,6 +48,7 @@ export function SharedAgendaEditScreen() {
     [dirty, setDirty] = useState(false),
     [busy, setBusy] = useState(false),
     [done, setDone] = useState(false),
+    [confirmation, setConfirmation] = useState<'saved' | 'removed' | null>(null),
     [error, setError] = useState<string | null>(null);
   useEffect(() => {
     let current = true;
@@ -92,6 +93,7 @@ export function SharedAgendaEditScreen() {
     if (!agenda || !ready) return;
     setBusy(true);
     setError(null);
+    let confirmed: 'saved' | 'removed' | null = null;
     try {
       await trackOperation(async () => {
         if (remove && old) await agenda.remove(id, old.version);
@@ -115,13 +117,19 @@ export function SharedAgendaEditScreen() {
             );
           await agenda.save(id, config, old?.version);
         }
+        confirmed = remove && old ? 'removed' : 'saved';
+        setConfirmation(confirmed);
+        setDirty(false);
         await reconcileReminders();
       });
       setDone(true);
     } catch (e) {
       setError(
-        (e instanceof Error ? e.message : 'No se confirmó el cambio.') +
-          ' El horario solo cambia al recibir confirmación. Revisa la agenda si quedó una intención pendiente.',
+        confirmed
+          ? 'El servidor confirmó el cambio, pero no se pudieron actualizar los avisos de este teléfono. ' +
+              (e instanceof Error ? e.message : 'Revisa el estado de los avisos en tu agenda.')
+          : (e instanceof Error ? e.message : 'No se confirmó el cambio.') +
+              ' El horario solo cambia al recibir confirmación. Revisa la agenda si quedó una intención pendiente.',
       );
     } finally {
       setBusy(false);
@@ -130,6 +138,36 @@ export function SharedAgendaEditScreen() {
   useEffect(() => {
     if (done) router.back();
   }, [done]);
+  if (confirmation && !done)
+    return (
+      <Screen
+        mascotPose="recordatorio"
+        title={confirmation === 'removed' ? 'Recordatorio eliminado' : 'Horario confirmado'}
+      >
+        <InfoCard>
+          <SectionTitle>
+            {confirmation === 'removed' ? 'El cambio se confirmó' : 'Tu horario está guardado'}
+          </SectionTitle>
+          <BodyText>
+            {busy
+              ? 'El servidor ya confirmó el cambio. Estamos actualizando los avisos del teléfono.'
+              : confirmation === 'removed'
+                ? 'El servidor confirmó la eliminación. Queda pendiente retirar los avisos de este teléfono.'
+                : 'El servidor confirmó tu horario. Queda pendiente actualizar los avisos en este teléfono.'}
+          </BodyText>
+          {error ? (
+            <Text accessibilityRole="alert" style={{ color: theme.colors.error }}>
+              {error}
+            </Text>
+          ) : null}
+          <VisualButton
+            label="Volver a mis recordatorios"
+            disabled={busy}
+            onPress={() => setDone(true)}
+          />
+        </InfoCard>
+      </Screen>
+    );
   return (
     <Screen mascotPose="recordatorio" title={old ? 'Editar recordatorio' : 'Nuevo recordatorio'}>
       <BodyText>Elige tus avisos. No cambian las indicaciones de tu equipo de salud.</BodyText>
