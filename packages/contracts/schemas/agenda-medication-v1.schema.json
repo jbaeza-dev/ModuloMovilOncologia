@@ -1,0 +1,35 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "urn:quimiocare:agenda-medication:1",
+  "title": "Extensión propia v1: asociación operativa de aviso y medicamento del paciente",
+  "description": "Se aplica sobre una copia de ejecución del gateway. La fuente original permanece intacta. No contiene nombres, dosis ni registros de tomas.",
+  "$defs": {
+    "binding": {
+      "properties": {
+        "medicamento_paciente_id": {
+          "type": ["string", "null"],
+          "format": "uuid"
+        }
+      },
+      "allOf": [
+        {
+          "if": {
+            "required": ["medicamento_paciente_id"],
+            "properties": {
+              "medicamento_paciente_id": {
+                "type": "string"
+              }
+            }
+          },
+          "then": {
+            "properties": {
+              "tipo": {
+                "const": "medicacion"
+              }
+            }
+          }
+        }
+      ]
+    }
+  }
+}

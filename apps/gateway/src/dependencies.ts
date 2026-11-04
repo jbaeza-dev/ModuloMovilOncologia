@@ -89,6 +89,8 @@ export function dependencyClients(config: GatewayConfig, log: Logger) {
   }
   return {
     getProfile: (token: string) => request('clinical', '/api/v1/auth/me', 'GET', token, 'C-01'),
+    getClinicalProfile: (token: string) =>
+      request('clinical', '/api/v1/pacientes/me/perfil-clinico', 'GET', token, 'C-03'),
     queryAi: (token: string, body: unknown) => {
       if (!validateRequest('G-06', { body }).valid)
         return Promise.reject(new GatewayError(422, 'DATOS_INVALIDOS'));

@@ -5,7 +5,12 @@ import type {
   VitalRecord,
 } from '../../data/local/repository';
 import { formatDate } from '../../data/local/repository';
-import type { ReportData, ReportLinkingCodeInfo } from '../../data/local/reports/report-types';
+import type {
+  ReportData,
+  ReportLinkingCodeInfo,
+  ReportEproCapture,
+} from '../../data/local/reports/report-types';
+import { clinicalStatusLabel } from '../../data/sync/visible-status';
 
 export type GenerateReportParams =
   | ReportData
@@ -31,6 +36,8 @@ export type GenerateReportParams =
       periodStart?: string;
       periodEnd?: string;
       timeZone?: string;
+      epro?: readonly ReportEproCapture[];
+      syncStatuses?: Readonly<Record<string, string>>;
     };
 
 export function escapeHtml(str: string): string {
@@ -60,25 +67,57 @@ export function buildReportHtml(data: GenerateReportParams): string {
     'generatedAt' in data && data.generatedAt ? data.generatedAt : new Date().toISOString();
   const generatedAt = formatReportDate(generatedAtIso, timeZone);
 
-  const profile = data.profile;
-  const treatment = data.treatment;
-  const linkingCode = data.linkingCode;
   const periodDays = data.periodDays;
   const summary = data.summary;
   const vitals = data.vitals;
   const symptoms = data.symptoms ?? [];
-
-  const patientName = profile?.nombre ? escapeHtml(profile.nombre) : 'Sin registro';
-  const patientRut = profile?.rut ? escapeHtml(profile.rut) : 'Sin registro';
-  const patientEmail = profile?.email ? escapeHtml(profile.email) : 'Sin registro';
-  const treatmentName = treatment?.nombre
-    ? escapeHtml(treatment.nombre)
-    : 'Sin tratamiento activo registrado';
-
-  const linkingText = linkingCode ? escapeHtml(linkingCode.displayText) : 'No registrado';
-  const linkingObtainedFormatted = linkingCode?.obtainedAt
-    ? formatReportDate(linkingCode.obtainedAt, timeZone)
-    : null;
+  const epro = data.epro ?? [];
+  const dictionaries = new Map<string, { id: number; capture: ReportEproCapture }>();
+  const dictionaryFor = (capture: ReportEproCapture) => {
+    const key = JSON.stringify([
+      capture.formId,
+      capture.version,
+      capture.answers.map((a) => [a.code, a.question]),
+    ]);
+    let entry = dictionaries.get(key);
+    if (!entry) {
+      entry = { id: dictionaries.size + 1, capture };
+      dictionaries.set(key, entry);
+    }
+    return entry.id;
+  };
+  const eproHtml = epro.length
+    ? epro
+        .map((capture) => {
+          const rows: string[] = [];
+          for (let i = 0; i < capture.answers.length; i += 2) {
+            const pair = capture.answers.slice(i, i + 2);
+            rows.push(
+              '<tr>' +
+                pair
+                  .map((a) => `<td>${escapeHtml(a.code)}</td><td>${escapeHtml(a.value)}</td>`)
+                  .join('') +
+                (pair.length === 1 ? '<td></td><td></td>' : '') +
+                '</tr>',
+            );
+          }
+          return `<section>
+    <h3>${escapeHtml(capture.title)} · edición ${escapeHtml(capture.version)}</h3>
+    <p>ID ${escapeHtml(capture.id)} · ${escapeHtml(formatReportDate(capture.capturedAt, timeZone))}<br>
+    UTC: ${escapeHtml(capture.capturedAt)} · ${escapeHtml(clinicalStatusLabel(capture.status))}<br>
+    Preguntas originales: diccionario D${dictionaryFor(capture)} al final de los seguimientos.</p>
+    <table><thead><tr><th>Código</th><th>Respuesta</th><th>Código</th><th>Respuesta</th></tr></thead><tbody>
+    ${rows.join('')}
+    </tbody></table></section>`;
+        })
+        .join('')
+    : '<p>No hay seguimientos ePRO confirmados localmente en este período. Los borradores no se incluyen.</p>';
+  const dictionaryHtml = [...dictionaries.values()]
+    .map(
+      ({ id, capture }) =>
+        `<h3>Diccionario D${id} · ${escapeHtml(capture.title)} · edición ${escapeHtml(capture.version)}</h3><table><thead><tr><th>Código</th><th>Pregunta histórica</th></tr></thead><tbody>${capture.answers.map((a) => `<tr><td>${escapeHtml(a.code)}</td><td>${escapeHtml(a.question)}</td></tr>`).join('')}</tbody></table>`,
+    )
+    .join('');
 
   const periodStartFormatted =
     'periodStart' in data && data.periodStart ? formatReportDate(data.periodStart, timeZone) : null;
@@ -98,21 +137,24 @@ export function buildReportHtml(data: GenerateReportParams): string {
           const fecha = formatReportDate(v.fecha_registro, timeZone);
           const temp = v.temperatura !== null ? `${v.temperatura.toLocaleString('es-CL')} °C` : '—';
           const pa =
-            v.presion_sistolica !== null && v.presion_diastolica !== null
-              ? `${v.presion_sistolica}/${v.presion_diastolica} mmHg`
+            v.presion_sistolica !== null || v.presion_diastolica !== null
+              ? `${v.presion_sistolica ?? '—'}/${v.presion_diastolica ?? '—'} mmHg`
               : '—';
           const pulso = v.pulso !== null ? `${v.pulso} lpm` : '—';
+          const pain = v.dolor_ena == null ? 'Sin registro' : `${v.dolor_ena}/10`;
           const sat = v.saturacion_o2 !== null ? `${v.saturacion_o2} %` : '—';
           return `<tr>
-            <td style="padding: 8px 12px; border-bottom: 1px solid #E2E8F0; font-size: 13px;">${fecha}</td>
+            <td style="padding: 8px 12px; border-bottom: 1px solid #E2E8F0; font-size: 11px;">${escapeHtml(fecha)}<br>UTC: ${escapeHtml(v.fecha_registro)}<br>ID: ${escapeHtml(v.id)}</td>
             <td style="padding: 8px 12px; border-bottom: 1px solid #E2E8F0; font-size: 13px; text-align: center;">${temp}</td>
             <td style="padding: 8px 12px; border-bottom: 1px solid #E2E8F0; font-size: 13px; text-align: center;">${pa}</td>
             <td style="padding: 8px 12px; border-bottom: 1px solid #E2E8F0; font-size: 13px; text-align: center;">${pulso}</td>
             <td style="padding: 8px 12px; border-bottom: 1px solid #E2E8F0; font-size: 13px; text-align: center;">${sat}</td>
+            <td>${pain}</td>
+            <td>${escapeHtml(clinicalStatusLabel(data.syncStatuses?.[v.id] ?? (v.fecha_subida ? 'enviado' : null)))}</td>
           </tr>`;
         })
         .join('')
-    : `<tr><td colspan="5" style="padding: 16px; text-align: center; color: #64748B;">No hay mediciones registradas en este período.</td></tr>`;
+    : `<tr><td colspan="7" style="padding: 16px; text-align: center; color: #64748B;">No hay mediciones registradas en este período.</td></tr>`;
 
   const symptomsRowsHtml = symptoms.length
     ? symptoms
@@ -215,6 +257,8 @@ export function buildReportHtml(data: GenerateReportParams): string {
       margin-top: 8px;
       margin-bottom: 28px;
     }
+    thead { display: table-header-group; }
+    td { padding: 8px; border-bottom: 1px solid #E2E8F0; font-size: 11px; overflow-wrap: anywhere; white-space: pre-wrap; }
     th {
       background-color: #0D9488;
       color: white;
@@ -262,18 +306,16 @@ export function buildReportHtml(data: GenerateReportParams): string {
   </div>
 
   <div class="meta-grid">
-    <div class="meta-item"><span class="meta-label">Paciente:</span> ${patientName}</div>
-    <div class="meta-item"><span class="meta-label">RUT:</span> ${patientRut}</div>
-    <div class="meta-item"><span class="meta-label">Tratamiento:</span> ${treatmentName}</div>
+    <div class="meta-item"><span class="meta-label">Identificador local:</span> ${escapeHtml(data.pacienteId)}</div>
     <div class="meta-item"><span class="meta-label">Período evaluado:</span> ${escapeHtml(periodDisplay)}</div>
-    <div class="meta-item"><span class="meta-label">Correo registrado:</span> ${patientEmail}</div>
     <div class="meta-item"><span class="meta-label">Fecha de emisión:</span> ${generatedAt} <span style="font-size: 11px; color: #64748B;">(${escapeHtml(timeZone)})</span></div>
-    <div class="meta-item"><span class="meta-label">Vinculación clínica:</span> ${linkingText} <em style="font-size: 11px; color: #64748B;">(en caché${linkingObtainedFormatted ? ` · obtenida el ${linkingObtainedFormatted}` : ''})</em></div>
   </div>
 
   <div class="disclaimer">
-    <strong>Aviso técnico y demostrativo:</strong> Este documento contiene mediciones sintéticas guardadas localmente en este dispositivo móvil para la evaluación del proyecto de título. No constituye un diagnóstico médico ni reemplaza las indicaciones formales del equipo oncológico tratante.
+    <strong>Aviso:</strong> Este documento contiene registros guardados localmente. Se omiten los campos de nombre, RUT, correo y código de vinculación. Los textos libres conservan lo que escribiste. Revisa el contenido antes de compartirlo. No constituye un diagnóstico médico ni reemplaza las indicaciones del equipo tratante.
   </div>
+
+  <div class="meta-item"><span class="meta-label">Tratamiento:</span> ${escapeHtml(data.treatment?.nombre ?? data.treatment?.tipo ?? 'Sin dato')}</div>
 
   <div class="summary-card">
     <div class="metric">
@@ -303,6 +345,8 @@ export function buildReportHtml(data: GenerateReportParams): string {
         <th>Presión arterial</th>
         <th>Pulso</th>
         <th>Saturación O₂</th>
+        <th>Dolor ENA (0–10)</th>
+        <th>Estado de envío</th>
       </tr>
     </thead>
     <tbody>
@@ -310,7 +354,11 @@ export function buildReportHtml(data: GenerateReportParams): string {
     </tbody>
   </table>
 
-  <div class="section-title">Detalle cronológico de síntomas reportados</div>
+  <div class="section-title">Seguimientos ePRO (${epro.length})</div>
+  <p>La recepción del servidor no implica revisión clínica. Los datos ausentes se muestran sin inferir valores.</p>
+  ${eproHtml}
+  ${dictionaryHtml}
+  <div class="section-title">Detalle cronológico de síntomas históricos</div>
   <table>
     <thead>
       <tr>

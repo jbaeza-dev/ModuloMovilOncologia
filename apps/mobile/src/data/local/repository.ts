@@ -126,8 +126,8 @@ export function createPatientRepository(
         await tx.run(
           `INSERT INTO signos_vitales (
             id, paciente_id, fecha_registro, presion_sistolica, presion_diastolica,
-            pulso, temperatura, saturacion_o2, creado_localmente_en
-          ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+            pulso, temperatura, saturacion_o2, dolor_ena, creado_localmente_en
+          ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
           [
             id,
             patientId,
@@ -137,6 +137,7 @@ export function createPatientRepository(
             values.pulso,
             values.temperatura,
             values.saturacion_o2,
+            values.dolor_ena ?? null,
             timestamp,
           ],
         );

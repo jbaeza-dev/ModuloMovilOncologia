@@ -29,7 +29,8 @@
     "generate:check": "node scripts/generate-types.mjs --check",
     "build": "pnpm generate && tsc -p tsconfig.build.json && node scripts/copy-assets.mjs",
     "typecheck": "tsc --noEmit -p tsconfig.json",
-    "test": "vitest run --config vitest.config.ts"
+    "test": "vitest run --config vitest.config.ts",
+    "test:coverage": "vitest run --config vitest.config.ts --coverage"
   },
   "dependencies": {
     "ajv": "8.17.1",

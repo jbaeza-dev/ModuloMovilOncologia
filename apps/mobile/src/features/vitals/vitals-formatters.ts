@@ -18,7 +18,12 @@ export function formatTemperature(value: number): string {
 export function formatVitalsSummary(
   record: Pick<
     VitalRecord,
-    'temperatura' | 'presion_sistolica' | 'presion_diastolica' | 'pulso' | 'saturacion_o2'
+    | 'temperatura'
+    | 'presion_sistolica'
+    | 'presion_diastolica'
+    | 'pulso'
+    | 'saturacion_o2'
+    | 'dolor_ena'
   >,
 ): string {
   const parts: string[] = [];
@@ -42,6 +47,8 @@ export function formatVitalsSummary(
   if (record.saturacion_o2 !== null) {
     parts.push(`Saturación: ${record.saturacion_o2} %`);
   }
+
+  if (record.dolor_ena != null) parts.push(`Dolor ENA: ${record.dolor_ena}/10`);
 
   return parts.length > 0 ? parts.join(' · ') : 'Sin mediciones registradas';
 }

@@ -1,4 +1,5 @@
 import type { SqlConnection } from '../../data/local/core/sql';
+import { reminderNotificationCopy } from '../notifications/notification-copy';
 import { createReminderRepository } from '../../data/local/reminders/reminder-repository';
 import { generateUuid, type NotificationRecord } from '../../data/local/reminders/reminder-types';
 import type {
@@ -637,8 +638,7 @@ export class NotificationCoordinator {
         try {
           const res = await this.adapter.schedule({
             triggerDateUtc: cand.fechaPrevistaUtc,
-            title: 'Tienes un recordatorio en QuimioCare',
-            body: 'Ingresa a la aplicación para revisar tu seguimiento diario.',
+            ...reminderNotificationCopy(cand.tipo === 'registro_vitales' ? 'signos' : 'medicacion'),
             payload: {
               version: 1,
               notificacionId: stableNotifId,

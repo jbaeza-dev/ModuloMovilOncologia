@@ -1,6 +1,9 @@
+import { useProfileIdentity } from '../profile/IdentityProfileScreens';
+import { MedicationDaySection } from './MedicationDaySection';
+import { RecordsStatusCard } from '../sync/GlobalStatusNotice';
 import { router, useFocusEffect } from 'expo-router';
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { Alert, AppState, Linking, ScrollView, StyleSheet, Text, View } from 'react-native';
+import { useCallback, useEffect, useRef, useState } from 'react';
+import { AppState, Linking, ScrollView, StyleSheet, Text, View } from 'react-native';
 
 import { ActionCardGrid } from '../../components/ActionCard';
 import { MascotHero } from '../../components/MascotAvatar';
@@ -14,17 +17,10 @@ import { useFocusedValue } from '../../hooks/use-local-query';
 import { useReminderStatus } from '../../hooks/use-reminder-status';
 import { DEMO_PATIENTS, useLocalData } from '../../providers/LocalDataProvider';
 import { useAppTheme } from '../../providers/ThemeProvider';
-import { useProfileIdentity } from '../profile/IdentityProfileScreens';
-import {
-  generateIntakeLogId,
-  getMedicationIntakesForDate,
-  logMedicationIntake,
-  type MedicationIntakeLogEntry,
-} from '../../data/local/medication-intake-log';
+
 import {
   formatCivilDateDisplay,
   formatNextReminderLabel,
-  getCivilPartsInTimeZone,
 } from '../../services/reminders/reminder-status';
 import { theme } from '../../theme';
 import { isDemoMode } from '../../utils/environment';
@@ -58,27 +54,18 @@ export function resolveHomeGreeting(options: {
   return 'Hola, te damos la bienvenida';
 }
 
-function formatIntakeTime(iso: string): string {
-  try {
-    return getCivilPartsInTimeZone(iso, 'America/Santiago').hourMinute;
-  } catch {
-    return '';
-  }
-}
-
 export function HomeScreen() {
   const epro = useEproRepository();
   const { theme: appTheme } = useAppTheme();
   const styles = createStyles(appTheme.colors);
   const scrollRef = useRef<ScrollView | null>(null);
   const {
-    database,
     repository,
-    patientId,
     manager,
+    trackOperation,
+    patientId,
     saving,
     isClosing,
-    trackOperation,
     reconcileReminders,
     bumpRemindersRevision,
     notificationAdapter,
@@ -126,142 +113,8 @@ export function HomeScreen() {
   } = useReminderStatus({ tipo: 'registro_vitales' });
 
   const [resumingNotices, setResumingNotices] = useState(false);
-
   const { identity } = useProfileIdentity();
-  const medications = identity?.clinicalProfile?.medicamentos;
   const isUnlinked = Boolean(identity && identity.treatmentStatus !== 'available');
-  const hasActiveMeds = Boolean(medications && medications.length > 0);
-  const primaryMed = hasActiveMeds ? medications![0] : null;
-
-  const { snapshot: medReminderSnapshot } = useReminderStatus({
-    tipo: 'medicacion',
-    medicamentoId: primaryMed?.id ?? null,
-  });
-
-  const scheduledSlots = useMemo(() => {
-    if (!primaryMed) return [];
-    const hoursSet = new Set<string>();
-    const activeRules =
-      medReminderSnapshot?.rules.filter((r) => r.habilitado && r.medicamentoId === primaryMed.id) ??
-      [];
-    for (const rule of activeRules) {
-      for (const hm of rule.horasMinutos) {
-        if (hm && hm.trim()) hoursSet.add(hm.trim());
-      }
-    }
-    return Array.from(hoursSet).sort();
-  }, [primaryMed, medReminderSnapshot]);
-
-  const [todayIntakes, setTodayIntakes] = useState<MedicationIntakeLogEntry[]>([]);
-  const [loggingIntake, setLoggingIntake] = useState(false);
-
-  const getTodayCivilDate = useCallback(() => {
-    return getCivilPartsInTimeZone(new Date().toISOString()).civilDate;
-  }, []);
-
-  const unprogrammedToday = useMemo(() => {
-    if (!primaryMed) return [];
-    return todayIntakes.filter(
-      (i) => i.medicamento_id === primaryMed.id && i.horario_programado.startsWith('sin_horario'),
-    );
-  }, [primaryMed, todayIntakes]);
-
-  const getNextUnprogrammedSlot = useCallback(() => {
-    let nextNum = unprogrammedToday.length + 1;
-    let slot = `sin_horario#${nextNum}`;
-    while (unprogrammedToday.some((i) => i.horario_programado === slot)) {
-      nextNum++;
-      slot = `sin_horario#${nextNum}`;
-    }
-    return slot;
-  }, [unprogrammedToday]);
-
-  const loadTodayIntakes = useCallback(async () => {
-    if (!database || !patientId) return;
-    try {
-      const today = getTodayCivilDate();
-      const rows = await getMedicationIntakesForDate(database, patientId, today);
-      setTodayIntakes(rows);
-    } catch {
-      // Non-blocking
-    }
-  }, [database, patientId, getTodayCivilDate]);
-
-  useEffect(() => {
-    void loadTodayIntakes();
-  }, [loadTodayIntakes]);
-
-  const handleLogIntake = async (estado: 'taken' | 'omitted', slot?: string) => {
-    if (!database || !patientId || !primaryMed || loggingIntake || isClosing) return;
-    setLoggingIntake(true);
-    try {
-      const now = new Date();
-      const todayCivil = getTodayCivilDate();
-      const scheduledTime =
-        slot ?? (scheduledSlots.length > 0 ? scheduledSlots[0] : getNextUnprogrammedSlot());
-      const isProgramado =
-        scheduledTime === 'sin_horario' || scheduledTime.startsWith('sin_horario') ? 0 : 1;
-      const deterministicId = generateIntakeLogId(
-        patientId,
-        primaryMed.id,
-        todayCivil,
-        scheduledTime,
-      );
-      const nowIso = now.toISOString();
-      const entry: MedicationIntakeLogEntry = {
-        id: deterministicId,
-        paciente_id: patientId,
-        medicamento_id: primaryMed.id,
-        medicamento_nombre: primaryMed.nombre ?? 'Medicamento',
-        dosis: primaryMed.dosis ?? null,
-        fecha_civil: todayCivil,
-        horario_programado: scheduledTime,
-        es_programado: isProgramado,
-        fecha_hora: nowIso,
-        estado,
-        registrado_en: nowIso,
-      };
-      await trackOperation(async () => {
-        await logMedicationIntake(database, entry);
-      });
-      await loadTodayIntakes();
-    } finally {
-      setLoggingIntake(false);
-    }
-  };
-
-  const requestIntake = (estado: 'taken' | 'omitted', slot?: string) => {
-    if (!patientId || !primaryMed || loggingIntake || isClosing) return;
-    const owner = patientId;
-    const epoch = manager?.getContextEpoch?.();
-    const timeLabel =
-      slot && !slot.startsWith('sin_horario')
-        ? `Horario: ${slot}.`
-        : 'Toma sin horario programado.';
-    Alert.alert(
-      'Confirma tu registro',
-      `${primaryMed.nombre ?? 'Medicamento'}${primaryMed.dosis ? ` · ${primaryMed.dosis}` : ''}. ${timeLabel} Registrar como ${estado === 'taken' ? 'tomada' : 'omitida'}. Esto solo anota lo que nos indicas; no cambia tu tratamiento.`,
-      [
-        { text: 'Volver', style: 'cancel' },
-        {
-          text: 'Confirmar registro',
-          onPress: () => {
-            if (
-              (manager?.getPatientId && manager.getPatientId() !== owner) ||
-              manager?.getContextEpoch?.() !== epoch
-            )
-              return;
-            return handleLogIntake(estado, slot).catch(() => {
-              Alert.alert(
-                'No se pudo guardar',
-                'Tu registro no se confirmó. Revisa la lista antes de volver a intentarlo.',
-              );
-            });
-          },
-        },
-      ],
-    );
-  };
 
   useFocusEffect(
     useCallback(() => {
@@ -554,201 +407,7 @@ export function HomeScreen() {
           navigationMethod="push"
         />
 
-        {hasActiveMeds && primaryMed ? (
-          <InfoCard>
-            <View style={styles.row}>
-              <Text style={styles.cardTitle}>{primaryMed.nombre ?? 'Medicación de hoy'}</Text>
-              <StatusPill>
-                {scheduledSlots.length === 0
-                  ? 'Sin horario configurado'
-                  : scheduledSlots.length === 1
-                    ? `Horario: ${scheduledSlots[0]}`
-                    : `${scheduledSlots.length} horarios`}
-              </StatusPill>
-            </View>
-            <Text style={styles.description}>
-              {primaryMed.dosis ? `Dosis: ${primaryMed.dosis}` : ''}
-              {primaryMed.dosis && primaryMed.frecuencia ? ' · ' : ''}
-              {primaryMed.frecuencia ? `Frecuencia: ${primaryMed.frecuencia}` : ''}
-            </Text>
-            {scheduledSlots.length === 0 ? (
-              <>
-                <Text style={styles.helper}>Puedes añadir un aviso o registrar una toma.</Text>
-                {unprogrammedToday.length === 0 ? (
-                  <View style={{ gap: theme.spacing.xs, marginTop: theme.spacing.sm }}>
-                    <View style={styles.intakeActionRow}>
-                      <VisualButton
-                        label={loggingIntake ? 'Guardando…' : 'Tomé una dosis (sin horario)'}
-                        disabled={loggingIntake || isClosing}
-                        onPress={() => requestIntake('taken', getNextUnprogrammedSlot())}
-                      />
-                      <VisualButton
-                        label="Omitir"
-                        secondary
-                        disabled={loggingIntake || isClosing}
-                        onPress={() => requestIntake('omitted', getNextUnprogrammedSlot())}
-                      />
-                    </View>
-                    <VisualButton
-                      label="Configurar aviso de horario"
-                      secondary
-                      disabled={loggingIntake || isClosing}
-                      onPress={() =>
-                        router.push({
-                          pathname: '/recordatorios/editar',
-                          params: { tipo: 'medicacion', medicamentoId: primaryMed.id },
-                        })
-                      }
-                    />
-                  </View>
-                ) : (
-                  <View style={{ gap: theme.spacing.sm, marginTop: theme.spacing.sm }}>
-                    <Text style={styles.helper}>
-                      {unprogrammedToday.length === 1
-                        ? '1 toma sin horario registrada hoy:'
-                        : `${unprogrammedToday.length} tomas sin horario registradas hoy:`}
-                    </Text>
-                    {unprogrammedToday.map((intake, idx) => (
-                      <View key={intake.id} style={styles.slotRow}>
-                        <View style={styles.slotHeader}>
-                          <Text style={styles.slotTitle}>
-                            Toma sin horario {idx + 1}
-                            {intake.fecha_hora ? ` (${formatIntakeTime(intake.fecha_hora)})` : ''}
-                          </Text>
-                          <StatusPill>
-                            {intake.estado === 'taken' ? 'Tomada' : 'Omitida'}
-                          </StatusPill>
-                        </View>
-                        {intake.rectificado_en ? (
-                          <Text style={styles.helper}>
-                            Rectificada ({intake.estado === 'taken' ? 'tomada' : 'omitida'})
-                          </Text>
-                        ) : null}
-                        <View style={styles.intakeActionRow}>
-                          <VisualButton
-                            label={
-                              loggingIntake
-                                ? 'Guardando…'
-                                : intake.estado === 'taken'
-                                  ? 'Corregir a omitida'
-                                  : 'Corregir a tomada'
-                            }
-                            secondary
-                            disabled={loggingIntake || isClosing}
-                            onPress={() =>
-                              requestIntake(
-                                intake.estado === 'taken' ? 'omitted' : 'taken',
-                                intake.horario_programado,
-                              )
-                            }
-                          />
-                        </View>
-                      </View>
-                    ))}
-                    <View style={{ gap: theme.spacing.xs, marginTop: theme.spacing.xs }}>
-                      <VisualButton
-                        label={loggingIntake ? 'Guardando…' : 'Registrar otra toma (sin horario)'}
-                        disabled={loggingIntake || isClosing}
-                        onPress={() => requestIntake('taken', getNextUnprogrammedSlot())}
-                      />
-                      <VisualButton
-                        label="Configurar aviso de horario"
-                        secondary
-                        disabled={loggingIntake || isClosing}
-                        onPress={() =>
-                          router.push({
-                            pathname: '/recordatorios/editar',
-                            params: { tipo: 'medicacion', medicamentoId: primaryMed.id },
-                          })
-                        }
-                      />
-                    </View>
-                  </View>
-                )}
-              </>
-            ) : scheduledSlots.length === 1 ? (
-              <>
-                {todayIntakes.filter((i) => i.medicamento_id === primaryMed.id).length > 0 ? (
-                  <Text style={styles.helper}>
-                    {todayIntakes.find(
-                      (i) => i.medicamento_id === primaryMed.id && i.estado === 'taken',
-                    )
-                      ? `Toma registrada hoy (${todayIntakes.filter((i) => i.medicamento_id === primaryMed.id && i.estado === 'taken').length} registro(s))`
-                      : 'Dosis omitida hoy'}
-                  </Text>
-                ) : null}
-                <View style={styles.intakeActionRow}>
-                  <VisualButton
-                    label={loggingIntake ? 'Guardando…' : 'Tomé mi dosis'}
-                    disabled={loggingIntake || isClosing}
-                    onPress={() => requestIntake('taken', scheduledSlots[0])}
-                  />
-                  <VisualButton
-                    label="Omitir"
-                    secondary
-                    disabled={loggingIntake || isClosing}
-                    onPress={() => requestIntake('omitted', scheduledSlots[0])}
-                  />
-                </View>
-              </>
-            ) : (
-              <View style={styles.slotContainer}>
-                {scheduledSlots.map((slot) => {
-                  const slotIntake = todayIntakes.find(
-                    (i) => i.medicamento_id === primaryMed.id && i.horario_programado === slot,
-                  );
-                  return (
-                    <View key={slot} style={styles.slotRow}>
-                      <View style={styles.slotHeader}>
-                        <Text style={styles.slotTitle}>Horario programado: {slot}</Text>
-                        {slotIntake ? (
-                          <StatusPill>
-                            {slotIntake.estado === 'taken' ? 'Tomada' : 'Omitida'}
-                          </StatusPill>
-                        ) : (
-                          <StatusPill>Pendiente</StatusPill>
-                        )}
-                      </View>
-                      {slotIntake?.rectificado_en ? (
-                        <Text style={styles.helper}>
-                          Rectificada ({slotIntake.estado === 'taken' ? 'tomada' : 'omitida'})
-                        </Text>
-                      ) : null}
-                      <View style={styles.intakeActionRow}>
-                        <VisualButton
-                          label={
-                            loggingIntake
-                              ? 'Guardando…'
-                              : slotIntake?.estado === 'taken'
-                                ? 'Dosis tomada'
-                                : 'Tomé mi dosis'
-                          }
-                          disabled={loggingIntake || isClosing}
-                          onPress={() => requestIntake('taken', slot)}
-                        />
-                        <VisualButton
-                          label={slotIntake?.estado === 'omitted' ? 'Dosis omitida' : 'Omitir'}
-                          secondary
-                          disabled={loggingIntake || isClosing}
-                          onPress={() => requestIntake('omitted', slot)}
-                        />
-                      </View>
-                    </View>
-                  );
-                })}
-              </View>
-            )}
-          </InfoCard>
-        ) : null}
-
-        {identity && !hasActiveMeds && !isUnlinked ? (
-          <InfoCard>
-            <Text style={styles.cardTitle}>Medicamentos de tratamiento</Text>
-            <Text style={styles.description}>
-              Sin medicamentos registrados. Puedes anotar mediciones y responder tu formulario.
-            </Text>
-          </InfoCard>
-        ) : null}
+        <MedicationDaySection />
         <InfoCard>
           <Text style={styles.cardTitle}>Tu próxima medición</Text>
           {renderReminderCardContent()}
@@ -797,6 +456,15 @@ export function HomeScreen() {
             />,
           ]}
         </ActionCardGrid>
+        <NavigationCard
+          title="Orientación de síntomas"
+          description="Consulta los contactos de ayuda."
+          icon="help-circle"
+          href="/orientacion"
+          navigationMethod="push"
+          compact
+        />
+        <RecordsStatusCard />
         <NavigationCard title="Bandeja de avisos" icon="bell" href="/avisos" compact />
         {__DEV__ ? (
           <NavigationCard
@@ -827,9 +495,14 @@ function createStyles(colors: ReturnType<typeof useAppTheme>['theme']['colors'])
     },
     cardTitle: { fontSize: 18, fontWeight: '700', color: colors.text },
     helper: { fontSize: 12, lineHeight: 18, color: colors.secondary },
+    medicationName: {
+      fontSize: 20,
+      fontWeight: '700',
+      color: colors.heading ?? colors.text,
+      flexShrink: 1,
+    },
     intakeActionRow: {
-      flexDirection: 'row',
-      flexWrap: 'wrap',
+      flexDirection: 'column',
       gap: theme.spacing.sm,
       marginTop: theme.spacing.xs,
     },
@@ -847,6 +520,8 @@ function createStyles(colors: ReturnType<typeof useAppTheme>['theme']['colors'])
     },
     slotHeader: {
       flexDirection: 'row',
+      flexWrap: 'wrap',
+      gap: theme.spacing.xs,
       justifyContent: 'space-between',
       alignItems: 'center',
     },

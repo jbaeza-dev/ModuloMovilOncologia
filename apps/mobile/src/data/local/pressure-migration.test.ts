@@ -8,7 +8,7 @@ import {
   measured,
   patientA,
   patientB,
-  validVitals,
+  seedLegacyVital,
 } from './testing/sqlite-test-harness';
 const harness = createSqliteTestHarness();
 afterEach(() => harness.cleanup());
@@ -19,13 +19,8 @@ describe('v12 independent pressure readings', () => {
       db,
       migrations.filter((m) => m.version <= 11),
     );
-    await createPatientRepository(db, patientA, ids('a-old', 'a-q'), () => measured).createVitals(
-      validVitals,
-    );
-    await createPatientRepository(db, patientB, ids('b-old', 'b-q'), () => measured).createVitals({
-      ...validVitals,
-      pulso: 81,
-    });
+    await seedLegacyVital(db, patientA, 'a-old', 'a-q');
+    await seedLegacyVital(db, patientB, 'b-old', 'b-q');
     await db.run(
       "UPDATE signos_vitales SET id_ficha_clinica='retained-file',tratamiento_id='retained-treatment',fecha_subida=? WHERE id='a-old'",
       [measured],
@@ -34,10 +29,13 @@ describe('v12 independent pressure readings', () => {
     const queue = await db.all('SELECT * FROM cola_envio ORDER BY id');
     await migrateDatabase(db);
     await migrateDatabase(db);
-    expect(await db.all('SELECT * FROM signos_vitales ORDER BY id')).toEqual(before);
+    expect(await db.all('SELECT * FROM signos_vitales ORDER BY id')).toEqual(
+      before.map((row) => ({ ...(row as object), dolor_ena: null })),
+    );
     expect(await db.all('SELECT * FROM cola_envio ORDER BY id')).toEqual(queue);
     const partial = {
       temperatura: null,
+      dolor_ena: 0,
       presion_sistolica: null,
       presion_diastolica: null,
       pulso: null,
@@ -60,7 +58,9 @@ describe('v12 independent pressure readings', () => {
       presion_diastolica: 80,
     });
     expect(await db.all('PRAGMA foreign_key_check')).toEqual([]);
-    expect(await db.first('PRAGMA user_version')).toEqual({ user_version: 17 });
+    expect(await db.first('PRAGMA user_version')).toEqual({
+      user_version: migrations[migrations.length - 1]!.version,
+    });
   });
   it('rolls back the table rebuild and version if the migration is interrupted by a SQL failure', async () => {
     const db = harness.open();
@@ -68,9 +68,7 @@ describe('v12 independent pressure readings', () => {
       db,
       migrations.filter((m) => m.version <= 11),
     );
-    await createPatientRepository(db, patientA, ids('kept', 'kept-q'), () => measured).createVitals(
-      validVitals,
-    );
+    await seedLegacyVital(db, patientA, 'kept', 'kept-q');
     const before = await db.all('SELECT * FROM signos_vitales');
     const queue = await db.all('SELECT * FROM cola_envio');
     const schema = await db.first("SELECT sql FROM sqlite_master WHERE name='signos_vitales'");

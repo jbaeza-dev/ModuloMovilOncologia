@@ -1,58 +1,89 @@
+import { useState } from 'react';
 import { router } from 'expo-router';
-import { Pressable, Text } from 'react-native';
-import { SafeAreaView } from 'react-native-safe-area-context';
 import { Screen } from '../../components/Screen';
-import { BodyText, VisualButton } from '../../components/Visual';
-import { useAppTheme } from '../../providers/ThemeProvider';
-import { SessionNotice, useIdentity } from '../access/SessionScreens';
-import { ClinicalSyncNotice, useClinicalSyncSummary } from './ClinicalSyncNotice';
+import { BodyText, InfoCard, SectionTitle, VisualButton } from '../../components/Visual';
+import { useIdentity } from '../access/SessionScreens';
+import { useClinicalSyncSummary } from './ClinicalSyncNotice';
+import { syncPresentation } from './sync-presentation';
 
-/** Keep the persistent status actionable without crowding out the active screen. */
-export function GlobalStatusNotice() {
-  const { snapshot, data } = useIdentity();
+/** Estado integrado en Inicio; no ocupa espacio fijo sobre las otras pantallas. */
+export function RecordsStatusCard({ details = false }: { details?: boolean }) {
+  const { snapshot, data, session } = useIdentity();
   const { summary } = useClinicalSyncSummary();
-  const { theme } = useAppTheme();
-  const sessionPending = Boolean(
-    snapshot.user && !['context_ready', 'closing', 'no_identity'].includes(snapshot.state),
-  );
-  const paused = sessionPending || Boolean(summary?.paused || summary?.runtimePaused);
-  const messages = [
-    paused ? 'Envíos pausados.' : '',
-    summary?.pending ? `${summary.pending} registro(s) pendiente(s).` : '',
-    summary?.rejected ? `${summary.rejected} registro(s) rechazado(s).` : '',
-  ].filter(Boolean);
-  if (!messages.length) return null;
-  const label = `${messages.join(' ')} Revisar estado.`;
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const model = syncPresentation(snapshot, summary);
+  if (!model) return null;
+  async function act() {
+    if (!model || busy) return;
+    setError(null);
+    switch (model.action) {
+      case 'consent':
+        router.push('/perfil/consentimientos');
+        return;
+      case 'profile':
+        router.push('/perfil/completar');
+        return;
+      case 'link':
+        router.push('/perfil/vinculacion');
+        return;
+      case 'details':
+        router.push('/perfil/estado-envios');
+        return;
+      case 'login':
+        if (session?.config.mode === 'demo') {
+          router.push('/acceso/seleccionar-paciente');
+          return;
+        }
+        if (!data?.manager) {
+          router.push('/acceso');
+          return;
+        }
+        break;
+      case 'retry':
+        if (!session) return;
+        break;
+    }
+    setBusy(true);
+    try {
+      if (model.action === 'login') await data?.manager.authenticate();
+      else await session?.refreshIdentity();
+    } catch {
+      setError(
+        model.action === 'login'
+          ? 'No se completó el ingreso. Puedes intentarlo otra vez; tus registros siguen guardados.'
+          : 'No pudimos completar la conexión. Tus registros siguen guardados y la app volverá a intentarlo cuando sea posible.',
+      );
+    } finally {
+      setBusy(false);
+    }
+  }
   return (
-    <SafeAreaView edges={['top']} style={{ backgroundColor: theme.colors.surface }}>
-      <Pressable
-        accessibilityRole="button"
-        accessibilityLabel={label}
-        onPress={() => router.push(data?.patientId ? '/perfil/estado-envios' : '/acceso')}
-        style={{ minHeight: 48, paddingHorizontal: 16, paddingVertical: 8 }}
-      >
-        <Text style={{ color: theme.colors.primary, fontSize: 14, fontWeight: '600' }}>
-          {label}
-        </Text>
-      </Pressable>
-    </SafeAreaView>
+    <InfoCard testID="records-status-card">
+      <SectionTitle>{model.title}</SectionTitle>
+      <BodyText>{model.message}</BodyText>
+      {error ? <BodyText>{error}</BodyText> : null}
+      {!(details && model.action === 'details') ? (
+        <VisualButton
+          label={busy ? 'Comprobando…' : model.label}
+          secondary
+          disabled={busy}
+          onPress={() => {
+            void act();
+          }}
+        />
+      ) : null}
+    </InfoCard>
   );
 }
-
 export function SyncStatusScreen() {
   return (
-    <Screen mascotPose="resumen" title="Estado de los envíos">
+    <Screen mascotPose="resumen" title="Mis registros y envíos">
       <BodyText>
-        Las capturas se conservan en este dispositivo. Revisa aquí los permisos y el estado de
-        envío.
+        Lo que guardas se conserva en este teléfono. La app comprueba la conexión y los permisos
+        automáticamente.
       </BodyText>
-      <SessionNotice />
-      <ClinicalSyncNotice />
-      <VisualButton
-        label="Revisar consentimiento"
-        secondary
-        onPress={() => router.push('/perfil/consentimientos')}
-      />
+      <RecordsStatusCard details />
       <VisualButton
         label="Consultar historial de signos"
         secondary
@@ -62,6 +93,11 @@ export function SyncStatusScreen() {
         label="Consultar seguimientos"
         secondary
         onPress={() => router.push('/formulario')}
+      />
+      <VisualButton
+        label="Consultar mi consentimiento"
+        secondary
+        onPress={() => router.push('/perfil/consentimientos')}
       />
     </Screen>
   );

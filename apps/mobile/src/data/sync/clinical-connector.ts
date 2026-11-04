@@ -1,3 +1,4 @@
+import { storedSessionPause } from './session-pause';
 import type {
   CrudEntry,
   CrudTransaction,
@@ -114,7 +115,17 @@ export class ClinicalConnector implements PowerSyncBackendConnector {
       }) !== canonical(expected)
     )
       await this.pause(command, 'SNAPSHOT_SDK_INCOHERENTE', null);
-    const body = payloadOf(command);
+    if (command.status === 'rechazado') {
+      if (!command.error_json) await this.pause(command, 'RECHAZO_LOCAL_INCOMPLETO', null);
+      return;
+    }
+    let body: Record<string, unknown>;
+    try {
+      body = payloadOf(command);
+    } catch {
+      return this.pause(command, 'SNAPSHOT_FUERA_CONTRATO', null);
+    }
+
     if (command.status === 'aceptado') {
       const saved: unknown = JSON.parse(command.ack_json ?? 'null');
       if (
@@ -127,11 +138,8 @@ export class ClinicalConnector implements PowerSyncBackendConnector {
         await this.pause(command, 'ACK_LOCAL_INCOHERENTE', null);
       return;
     }
-    if (command.status === 'rechazado') {
-      if (!command.error_json) await this.pause(command, 'RECHAZO_LOCAL_INCOMPLETO', null);
-      return;
-    }
-    if (command.status === 'pausado') throw new ClinicalUploadPaused('REQUIERE_REVISION');
+    if (command.status === 'pausado')
+      throw new ClinicalUploadPaused(storedSessionPause(command.error_json) ?? 'REQUIERE_REVISION');
     try {
       await this.session.credentialsForSync();
     } catch (error) {

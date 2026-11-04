@@ -145,6 +145,7 @@ describe('VitalsDataScreens UI tests (Bloque 3)', () => {
       'valida %s al escribir, impide guardar 20000 y permite corregir sin alterar el dato',
       async (label, range, valid) => {
         await render(<RegisterVitalsDataScreen />);
+        await fireEvent.changeText(screen.getByLabelText('Dolor ENA (0 a 10) *'), '0');
         await fireEvent.changeText(screen.getByLabelText(label), '20000');
         expect(screen.getByText(new RegExp(`entre ${range}`))).toBeTruthy();
         expect(screen.getByDisplayValue('20000')).toBeTruthy();
@@ -189,6 +190,7 @@ describe('VitalsDataScreens UI tests (Bloque 3)', () => {
     it('guarda una presión aislada sin exigir una medición ausente', async () => {
       await render(<RegisterVitalsDataScreen />);
       await fireEvent.changeText(screen.getByLabelText('Presión sistólica (mmHg)'), '120');
+      await fireEvent.changeText(screen.getByLabelText('Dolor ENA (0 a 10) *'), '0');
       await fireEvent.press(screen.getByRole('button', { name: 'Guardar registro' }));
       expect(mockRepository.createVitals).toHaveBeenCalledWith(
         expect.objectContaining({
@@ -207,6 +209,7 @@ describe('VitalsDataScreens UI tests (Bloque 3)', () => {
 
       const pulseInput = screen.getByLabelText('Pulso');
       await fireEvent.changeText(pulseInput, '72');
+      await fireEvent.changeText(screen.getByLabelText('Dolor ENA (0 a 10) *'), '0');
 
       await fireEvent.press(screen.getByRole('button', { name: 'Guardar registro' }));
 
@@ -226,7 +229,9 @@ describe('VitalsDataScreens UI tests (Bloque 3)', () => {
 
       // Muestra banner de feedback
       expect(screen.getByText('Medición guardada en este dispositivo')).toBeTruthy();
-      expect(screen.getByText('Temperatura: 36,8 °C · Pulso: 72 latidos/min')).toBeTruthy();
+      expect(
+        screen.getByText('Temperatura: 36,8 °C · Pulso: 72 latidos/min · Dolor ENA: 0/10'),
+      ).toBeTruthy();
 
       // Botón Ver registro navega al detalle
       const verRegistroBtn = screen.getByRole('button', { name: 'Ver registro' });

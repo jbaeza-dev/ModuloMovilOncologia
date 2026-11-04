@@ -20,6 +20,8 @@ export function coherentAck(command: ClinicalCommand, status: number, ack: unkno
       'pulso',
       'temperatura',
       'saturacion_oxigeno',
+      'version_dolor',
+      'dolor_ena',
     ]) {
       const expected = body[key] ?? null,
         actual = ack[key] ?? null;

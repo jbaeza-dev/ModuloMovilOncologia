@@ -1,5 +1,9 @@
 import * as Notifications from 'expo-notifications';
 import type { AgendaNotifications, NativeAgendaData } from './agenda-coordinator';
+import {
+  reminderNotificationCopy,
+  type ReminderNotificationKind,
+} from '../notifications/notification-copy';
 const channel = 'quimiocare-agenda';
 export class ExpoAgendaNotifications implements AgendaNotifications {
   private async ensureChannel() {
@@ -21,13 +25,17 @@ export class ExpoAgendaNotifications implements AgendaNotifications {
       data: v.content.data,
     }));
   }
-  async schedule(id: string, at: string | null, data: NativeAgendaData) {
+  async schedule(
+    id: string,
+    at: string | null,
+    data: NativeAgendaData,
+    kind?: ReminderNotificationKind,
+  ) {
     await this.ensureChannel();
     return Notifications.scheduleNotificationAsync({
       identifier: id,
       content: {
-        title: 'QuimioCare',
-        body: 'Tienes un recordatorio pendiente en la aplicación',
+        ...reminderNotificationCopy(kind),
         data: data as unknown as Record<string, unknown>,
         sound: false,
       },

@@ -1,3 +1,6 @@
+import { MEDICATION_CONFIRMATIONS_SQL } from './020_confirmacion_medicamentos';
+import { prepareLegacyPainFork, migratePain18 } from './018_dolor_ena_compatible';
+import { ORIENTATION_SQL } from './019_orientacion_domiciliaria';
 import { migration17 } from './017_restaurar_horario_documentado';
 import { POWERSYNC_SQL, POWERSYNC_VERSION } from './011_powersync';
 import { AGENDA_COMPARTIDA_SQL, AGENDA_COMPARTIDA_VERSION } from './013_agenda_compartida';
@@ -63,6 +66,9 @@ export const migrations: readonly Migration[] = [
     run: runMigration16,
   },
   { version: 17, run: migration17 },
+  { version: 18, run: migratePain18 },
+  { version: 19, sql: ORIENTATION_SQL },
+  { version: 20, sql: MEDICATION_CONFIRMATIONS_SQL },
 ];
 
 export async function migrateDatabase(
@@ -76,6 +82,7 @@ export async function migrateDatabase(
   const newest = available.at(-1)?.version ?? 0;
   if (current > newest)
     throw new Error('La base de datos requiere una versión más reciente de QuimioCare.');
+  if (available.some((m) => m.version === 18)) await prepareLegacyPainFork(connection, current);
   for (const migration of available) {
     if (migration.version <= current) continue;
     await connection.transaction(async (transaction) => {
@@ -88,4 +95,7 @@ export async function migrateDatabase(
       await transaction.exec(`PRAGMA user_version = ${migration.version}`);
     });
   }
+  // OP-SQLite uses a write connection and multiple readers. Refresh every reader
+  // before a SELECT * can retain pre-migration column metadata after SQLite reparses.
+  await connection.refreshSchema?.();
 }

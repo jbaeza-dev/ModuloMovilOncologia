@@ -1,4 +1,5 @@
 import * as Print from 'expo-print';
+import { shareableReportSnapshot } from './report-privacy';
 
 import {
   persistReportPdf,
@@ -27,7 +28,7 @@ export async function generateAndPersistReportPdf(
     printResult.uri,
     data.periodDays,
     adapter,
-    data,
+    shareableReportSnapshot(data),
   );
   return result;
 }

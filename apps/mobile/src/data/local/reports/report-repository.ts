@@ -6,6 +6,7 @@ import type {
   VitalRecord,
 } from '../repository';
 import type { ReportData, ReportLinkingCodeInfo, ReportSummary } from './report-types';
+import { reportEpro, type ReportEproRow } from './report-epro';
 
 export function createReportRepository(
   database: SqlConnection,
@@ -13,7 +14,9 @@ export function createReportRepository(
   nowProvider: () => string = () => new Date().toISOString(),
 ) {
   return {
-    async getReportData(periodDays: 7 | 30 | 90, customNow?: string): Promise<ReportData> {
+    async getReportData(periodDays: 7 | 30 | 90 | 365, customNow?: string): Promise<ReportData> {
+      if (![7, 30, 90, 365].includes(periodDays))
+        throw new Error('Período de reporte no admitido.');
       // 1. VALIDACIÓN Y NORMALIZACIÓN ESTRICTA DE NOW A ISO UTC CANÓNICO
       const parsedNow = new Date(customNow ?? nowProvider());
       if (!Number.isFinite(parsedNow.getTime())) {
@@ -27,6 +30,8 @@ export function createReportRepository(
       let rawTreatment: TreatmentRecord | null = null;
       let rawVitals: VitalRecord[] = [];
       let rawSymptoms: SymptomRecord[] = [];
+      let epro: ReturnType<typeof reportEpro>[] = [];
+      const syncStatuses: Record<string, string> = {};
       let linkingInfo: ReportLinkingCodeInfo = {
         status: 'unavailable',
         displayText: 'Código de vinculación no disponible',
@@ -152,6 +157,25 @@ export function createReportRepository(
            ORDER BY fecha_registro ASC, id ASC`,
           [patientId, periodStart, now],
         );
+        const commands = await tx.all<{ id: string; status: string }>(
+          `SELECT c.id,c.status FROM qc_clinical_command c
+           JOIN signos_vitales v ON v.id=c.id AND v.fecha_registro=c.captured_at
+           WHERE v.paciente_id=? AND c.kind='signos' AND v.fecha_registro>=? AND v.fecha_registro<=?`,
+          [patientId, periodStart, now],
+        );
+        for (const c of commands) syncStatuses[c.id] = c.status;
+        const rows = await tx.all<ReportEproRow>(
+          `SELECT r.id,r.formulario_id,r.version,r.respuestas_json,r.fecha_confirmacion,f.titulo,
+           s.value_json AS snapshot_json,c.status,c.owner,c.environment
+           FROM respuesta_formulario r
+           LEFT JOIN formulario_cache f ON f.formulario_id=r.formulario_id AND f.version=r.version
+           LEFT JOIN qc_storage_control s ON s.id='epro:capture:' || r.id
+           LEFT JOIN qc_clinical_command c ON c.id=r.id AND c.kind='epro' AND c.captured_at=r.fecha_confirmacion
+           WHERE r.paciente_id=? AND r.fecha_confirmacion>=? AND r.fecha_confirmacion<=?
+           ORDER BY r.fecha_confirmacion ASC,r.id ASC`,
+          [patientId, periodStart, now],
+        );
+        epro = rows.map(reportEpro);
       });
 
       // 3. CÁLCULO ESTADÍSTICO TRAS LIBERAR LA TRANSACCIÓN
@@ -177,6 +201,8 @@ export function createReportRepository(
         summary: Object.freeze(summary),
         vitals: frozenVitals,
         symptoms: frozenSymptoms,
+        epro: Object.freeze(epro),
+        syncStatuses: Object.freeze(syncStatuses),
       });
     },
 

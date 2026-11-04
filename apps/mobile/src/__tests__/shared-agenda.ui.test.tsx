@@ -1,3 +1,12 @@
+let mockMedications: Array<{
+  id: string;
+  medicamento_id: string;
+  nombre: string;
+  activo: boolean;
+}> = [];
+jest.mock('../features/profile/IdentityProfileScreens', () => ({
+  useProfileIdentity: () => ({ identity: { clinicalProfile: { medicamentos: mockMedications } } }),
+}));
 /// <reference types="jest" />
 jest.mock('@react-native-async-storage/async-storage', () => ({
   getItem: jest.fn(async () => null),
@@ -80,6 +89,7 @@ const mockData = {
 };
 beforeEach(() => {
   jest.clearAllMocks();
+  mockMedications = [];
   for (const key of Object.keys(mockParams)) delete mockParams[key];
   mockRead.mockResolvedValue({ rules: [rule], state: { synchronized_at: '2026-10-29T12:00:00Z' } });
   mockIntents.mockResolvedValue([]);
@@ -161,5 +171,40 @@ describe('Agenda compartida: interfaz confirmada', () => {
     await waitFor(() => expect(screen.getByText(/Sin conexión/)).toBeTruthy());
     expect(screen.getByDisplayValue('Horario revisado')).toBeTruthy();
     expect(mockBack).not.toHaveBeenCalled();
+  });
+});
+
+describe('Vínculo explícito medicamento-aviso', () => {
+  it('no guarda medicación sin selección y confirma el medicamento disponible elegido', async () => {
+    mockParams.tipo = 'medicacion';
+    mockRead.mockResolvedValue({ rules: [], state: null });
+    mockMedications = [
+      {
+        id: 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa',
+        medicamento_id: 'bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb',
+        nombre: 'Ejemplo elegido',
+        activo: true,
+      },
+    ];
+    await render(
+      <ThemeProvider>
+        <SharedAgendaEditScreen />
+      </ThemeProvider>,
+    );
+    await screen.findByRole('radio', { name: 'Seleccionar Ejemplo elegido' });
+    expect(screen.getByRole('button', { name: 'Guardar y confirmar horario' })).toBeDisabled();
+    await fireEvent.changeText(screen.getByLabelText('Título del recordatorio'), 'Aviso personal');
+    await fireEvent.press(screen.getByRole('radio', { name: 'Seleccionar Ejemplo elegido' }));
+    await fireEvent.press(screen.getByRole('button', { name: 'Guardar y confirmar horario' }));
+    await waitFor(() =>
+      expect(mockSave).toHaveBeenCalledWith(
+        expect.any(String),
+        expect.objectContaining({
+          tipo: 'medicacion',
+          medicamento_paciente_id: mockMedications[0]!.id,
+        }),
+        undefined,
+      ),
+    );
   });
 });

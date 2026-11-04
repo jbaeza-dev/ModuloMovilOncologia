@@ -91,6 +91,7 @@ function commands(db: Pick<LockContext, 'execute' | 'getAll' | 'getOptional'>) {
 export function createSyncConnection(db: CommonPowerSyncDatabase): SqlConnection {
   return {
     ...commands(db),
+    refreshSchema: () => db.database.refreshSchema(),
     async transaction(work) {
       await db.writeTransaction(async (native) => {
         await work({

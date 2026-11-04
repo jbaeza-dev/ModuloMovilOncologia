@@ -11,7 +11,8 @@
     "bundle:android": "expo export --platform android",
     "doctor": "expo-doctor",
     "test:ui": "jest --runInBand",
-    "typecheck": "tsc --noEmit"
+    "typecheck": "tsc --noEmit",
+    "test:ui:coverage": "jest --runInBand --coverage"
   },
   "dependencies": {
     "@expo/vector-icons": "^15.1.1",
@@ -68,6 +69,13 @@
         "expo-router",
         "expo-sharing"
       ]
+    },
+    "autolinking": {
+      "android": {
+        "buildFromSource": [
+          "expo-print"
+        ]
+      }
     }
   },
   "op-sqlite": {

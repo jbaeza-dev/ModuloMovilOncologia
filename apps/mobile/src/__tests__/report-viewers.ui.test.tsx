@@ -193,113 +193,85 @@ describe('Document Viewers UI (Etapa 5)', () => {
   });
 
   describe('PdfReportViewer', () => {
-    it('muestra el visor visual de PDF por defecto con el WebView local', async () => {
+    it('abre el PDF con navegación y zoom, sin selector de lectura por voz', async () => {
       await render(<PdfReportViewer />);
-
-      await waitFor(() => {
-        expect(screen.getByText('Vista visual')).toBeTruthy();
-      });
-
-      expect(screen.getByText('Lectura accesible por voz')).toBeTruthy();
-      expect(screen.getByTestId('mock-webview')).toBeTruthy();
+      expect(await screen.findByTestId('mock-webview')).toBeTruthy();
+      expect(screen.queryByText('Lectura accesible por voz')).toBeNull();
+      expect(screen.queryByText('Vista visual')).toBeNull();
       expect(screen.getByLabelText('Página anterior')).toBeTruthy();
       expect(screen.getByLabelText('Página siguiente')).toBeTruthy();
       expect(screen.getByLabelText('Aumentar zoom')).toBeTruthy();
       expect(screen.getByLabelText('Reducir zoom')).toBeTruthy();
       expect(screen.getByLabelText('Ajustar zoom al 100%')).toBeTruthy();
+      expect(screen.getAllByRole('button', { name: /Compartir/ })).toHaveLength(1);
+      expect(screen.getByText('Compartir')).toBeTruthy();
     });
 
-    it('permite cambiar al modo de lectura por voz accesible con TalkBack', async () => {
-      const announceSpy = jest.spyOn(AccessibilityInfo, 'announceForAccessibility');
-
+    it('no carga la instantánea ni presenta datos del perfil en el visor simplificado', async () => {
+      const readSnapshot = jest.fn().mockResolvedValue(mockSnapshotData);
+      mockReadPatientReportA11ySnapshotImpl = readSnapshot;
       await render(<PdfReportViewer />);
+      expect(await screen.findByTestId('mock-webview')).toBeTruthy();
+      expect(readSnapshot).not.toHaveBeenCalled();
+      expect(screen.queryByText(/María González/)).toBeNull();
+      expect(screen.queryByText('12.345.678-9')).toBeNull();
+    });
 
-      await waitFor(() => {
-        expect(screen.getByText('Lectura accesible por voz')).toBeTruthy();
-      });
+    it('abre también PDFs antiguos que no tienen instantánea', async () => {
+      mockReadPatientReportA11ySnapshotImpl = () => Promise.resolve(null);
+      await render(<PdfReportViewer />);
+      expect(await screen.findByTestId('mock-webview')).toBeTruthy();
+      expect(screen.queryByText('Lectura accesible por voz')).toBeNull();
+    });
 
-      await fireEvent.press(screen.getByText('Lectura accesible por voz'));
-
-      await waitFor(() => {
-        expect(screen.getByText('Datos del paciente y tratamiento')).toBeTruthy();
-      });
-
-      expect(announceSpy).toHaveBeenCalledWith(
-        'Modo de lectura accesible activado. Navega por encabezados.',
+    it('comparte únicamente cuando se pulsa el botón superior', async () => {
+      // eslint-disable-next-line @typescript-eslint/no-require-imports
+      const storage = require('../data/local/files/report-storage');
+      const announceSpy = jest.spyOn(AccessibilityInfo, 'announceForAccessibility');
+      await render(<PdfReportViewer />);
+      await screen.findByTestId('mock-webview');
+      expect(storage.shareReportFile).not.toHaveBeenCalled();
+      await fireEvent.press(
+        screen.getByRole('button', { name: 'Compartir reporte PDF con tu médico' }),
       );
-
-      // Muestra datos del paciente, resumen clínico y síntomas accesible
-      expect(screen.getByText(/María González/)).toBeTruthy();
-      expect(screen.getByText('Resumen del período')).toBeTruthy();
-      expect(screen.getByText('Total de mediciones:')).toBeTruthy();
-      expect(screen.getByText('Síntomas registrados (1)')).toBeTruthy();
-      expect(screen.getByText(/Náuseas/)).toBeTruthy();
-
+      expect(storage.shareReportFile).toHaveBeenCalledWith(mockSearchParams.uri, 'pdf');
+      expect(announceSpy).toHaveBeenCalledWith('Menú para compartir reporte abierto.');
       announceSpy.mockRestore();
     });
 
-    it('muestra aviso explicativo para reportes antiguos que no tienen instantánea accesible', async () => {
-      mockReadPatientReportA11ySnapshotImpl = () => Promise.resolve(null);
-
+    it('muestra el error y permite reintentar sin crear un PDF alternativo ni un botón de voz', async () => {
+      mockFileBytesImpl = () => Promise.reject(new Error('Archivo de prueba no disponible'));
       await render(<PdfReportViewer />);
-
-      await waitFor(() => {
-        expect(screen.getByText('Lectura accesible por voz')).toBeTruthy();
-      });
-
-      await fireEvent.press(screen.getByText('Lectura accesible por voz'));
-
-      await waitFor(() => {
-        expect(screen.getByText('Reporte de versión anterior')).toBeTruthy();
-      });
-
       expect(
-        screen.getByText(
-          /Este reporte fue generado con una versión anterior que no incluye lectura accesible estructurada/,
-        ),
+        await screen.findByText('No se pudo abrir el archivo PDF original en el visor integrado'),
       ).toBeTruthy();
-    });
-
-    it('muestra el visor visual de PDF incluso para reportes antiguos sin instantánea', async () => {
-      mockReadPatientReportA11ySnapshotImpl = () => Promise.resolve(null);
-
-      await render(<PdfReportViewer />);
-
-      await waitFor(() => {
-        expect(screen.getByText('Vista visual')).toBeTruthy();
-      });
-
-      expect(screen.getByText('Lectura accesible por voz')).toBeTruthy();
-      expect(screen.getByTestId('mock-webview')).toBeTruthy();
-    });
-
-    it('muestra mensaje de error explícito y botón a lectura accesible si falla la lectura del PDF en modo visual', async () => {
-      mockFileBytesImpl = () => {
-        throw new Error('Fallo de decodificación o archivo corrupto');
-      };
-
-      await render(<PdfReportViewer />);
-
-      await waitFor(() => {
-        expect(
-          screen.getByText('No se pudo abrir el archivo PDF original en el visor integrado'),
-        ).toBeTruthy();
-      });
-
-      // No renderiza WebView simulando fallback falso
       expect(screen.queryByTestId('mock-webview')).toBeNull();
+      expect(screen.queryByRole('button', { name: /lectura accesible/ })).toBeNull();
+      expect(screen.getAllByRole('button', { name: /Compartir/ })).toHaveLength(1);
+      mockFileBytesImpl = () => Promise.resolve(new Uint8Array([37, 80, 68, 70, 45]));
+      await fireEvent.press(screen.getByRole('button', { name: 'Reintentar lectura' }));
+      expect(await screen.findByTestId('mock-webview')).toBeTruthy();
+    });
 
-      // Ofrece botón explícito para ver versión accesible
-      const btnAccesible = screen.getByRole('button', {
-        name: 'Ver versión de lectura accesible',
+    it('maneja el error del renderizador PDF y conserva compartir y reintentar', async () => {
+      await render(<PdfReportViewer />);
+      const viewer = await screen.findByTestId('mock-webview');
+      await fireEvent(viewer, 'message', {
+        nativeEvent: { data: JSON.stringify({ type: 'ERROR' }) },
       });
-      expect(btnAccesible).toBeTruthy();
+      expect(
+        await screen.findByText('No se pudo mostrar el PDF. Vuelve a intentarlo.'),
+      ).toBeTruthy();
+      expect(screen.queryByTestId('mock-webview')).toBeNull();
+      expect(screen.getByRole('button', { name: 'Reintentar lectura' })).toBeTruthy();
+      expect(screen.getAllByRole('button', { name: /Compartir/ })).toHaveLength(1);
+    });
 
-      await fireEvent.press(btnAccesible);
-
-      await waitFor(() => {
-        expect(screen.getByText('Datos del paciente y tratamiento')).toBeTruthy();
-      });
+    it('conserva el regreso a la lista de reportes', async () => {
+      await render(<PdfReportViewer />);
+      await screen.findByTestId('mock-webview');
+      await fireEvent.press(screen.getByLabelText('Volver a la lista de reportes'));
+      expect(mockRouterBack).toHaveBeenCalledTimes(1);
     });
   });
 

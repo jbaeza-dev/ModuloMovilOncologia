@@ -72,9 +72,10 @@ export function InfographicViewerScreen() {
     const subscription = BackHandler.addEventListener('hardwareBackPress', () => {
       if (isTextModalVisible) {
         setIsTextModalVisible(false);
-        return true;
+      } else {
+        handleClose();
       }
-      handleClose();
+      // Both actions consume Back; never close the reader and leave the screen together.
       return true;
     });
     return () => subscription.remove();

@@ -1,0 +1,100 @@
+diff --git a/android/src/main/java/expo/modules/print/PrintPDFRenderTask.kt b/android/src/main/java/expo/modules/print/PrintPDFRenderTask.kt
+index d1e413e1035546906db487176493579bbad15f26..4f3ffce60b1f407258707028f8d1308acaf2ef29 100644
+--- a/android/src/main/java/expo/modules/print/PrintPDFRenderTask.kt
++++ b/android/src/main/java/expo/modules/print/PrintPDFRenderTask.kt
+@@ -3,6 +3,8 @@ package expo.modules.print
+ import android.annotation.SuppressLint
+ import android.content.Context
+ import android.os.ParcelFileDescriptor
++import android.os.CancellationSignal
++import android.print.PrintDocumentInfo
+ import android.print.PageRange
+ import android.print.PrintAttributes
+ import android.print.PrintDocumentAdapter
+@@ -28,6 +30,8 @@ internal class PrintPDFRenderTask(private val context: Context, private val opti
+   private var fileDescriptor: ParcelFileDescriptor? = null
+   private lateinit var document: PrintDocumentAdapter
+   private var numberOfPages = 0
++  private var fileRenderStarted = false
++  private var fileRenderCompleted = false
+ 
+   @UiThread
+   fun render(outputFile: File?, fileDescriptor: ParcelFileDescriptor?, callbacks: Callbacks) {
+@@ -87,6 +91,18 @@ internal class PrintPDFRenderTask(private val context: Context, private val opti
+     }
+ 
+     override fun onPageFinished(view: WebView, url: String) {
++      if (fileDescriptor != null) {
++        if (fileRenderStarted) return
++        fileRenderStarted = true
++        // Page loading is not a guarantee that the DOM is ready to render.
++        view.postVisualStateCallback(0, object : WebView.VisualStateCallback() {
++          override fun onComplete(requestId: Long) {
++            if (!fileRenderCompleted) layoutAndWriteFile(view)
++          }
++        })
++        view.postDelayed({ if (!fileRenderCompleted) failFile("Print render timed out") }, 15000)
++        return
++      }
+       document = view.createPrintDocumentAdapter("Document")
+       // layout the document with appropriate print attributes
+       document.onLayout(null, printAttributes, null, object : PrintDocumentAdapterLayoutCallback() {}, null)
+@@ -102,14 +118,57 @@ internal class PrintPDFRenderTask(private val context: Context, private val opti
+       }
+     }
+   }
++
++  private fun layoutAndWriteFile(view: WebView) {
++    document = view.createPrintDocumentAdapter("Document")
++    document.onStart()
++    document.onLayout(null, printAttributes, CancellationSignal(), object : PrintDocumentAdapterLayoutCallback() {
++      override fun onLayoutFinished(info: PrintDocumentInfo, changed: Boolean) {
++        if (fileRenderCompleted) return
++        numberOfPages = info.pageCount.takeIf { it > 0 } ?: 1 +
++          (view.contentHeight / (PIXELS_PER_MIL * printAttributes.mediaSize!!.heightMils)).toInt()
++        document.onWrite(arrayOf(PageRange.ALL_PAGES), fileDescriptor, CancellationSignal(), printDocumentWriteCallback)
++      }
++
++      override fun onLayoutFailed(error: CharSequence?) {
++        failFile(error)
++      }
++
++      override fun onLayoutCancelled() {
++        failFile("Print layout cancelled")
++      }
++    }, null)
++  }
++
++  private fun closeFileRender() {
++    runCatching { document.onFinish() }
++    runCatching { fileDescriptor?.close() }
++    webView.destroy()
++  }
++
++  private fun failFile(error: CharSequence?) {
++    if (fileRenderCompleted) return
++    fileRenderCompleted = true
++    closeFileRender()
++    outputFile.delete()
++    callbacks.onRenderError(PdfWriteException(IllegalStateException(error?.toString() ?: "Android rejected PDF output")))
++  }
++
+   private val printDocumentWriteCallback: PrintDocumentAdapterWriteCallback = object : PrintDocumentAdapterWriteCallback() {
+     override fun onWriteFinished(pages: Array<PageRange>) {
++      if (fileRenderCompleted) return
++      fileRenderCompleted = true
++      closeFileRender()
+       // document and output file are now ready to finish
+       callbacks.onRenderFinished(document, outputFile, numberOfPages)
+     }
+ 
+     override fun onWriteFailed(error: CharSequence?) {
+-      callbacks.onRenderError(PdfWriteException())
++      failFile(error)
++    }
++
++    override fun onWriteCancelled() {
++      failFile("Print output cancelled")
+     }
+   }
+ 

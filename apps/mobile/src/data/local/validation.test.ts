@@ -15,16 +15,17 @@ const blank: VitalInput = {
   diastolic: '',
   pulse: '',
   saturation: '',
+  pain: '0',
 };
 
 describe('validateVitalInput y parseVitalInput', () => {
   it('rechaza formulario completamente vacío con error general', () => {
-    const res = validateVitalInput(blank);
+    const res = validateVitalInput({ ...blank, pain: '' });
     expect(res.valid).toBe(false);
     expect(res.generalError).toBe('Ingresa al menos una medición.');
-    expect(Object.keys(res.errors)).toHaveLength(0);
+    expect(res.errors.pain).toBeDefined();
 
-    expect(() => parseVitalInput(blank)).toThrow(InputError);
+    expect(() => parseVitalInput({ ...blank, pain: '' })).toThrow(InputError);
   });
 
   it('permite registrar solo temperatura tanto con punto como con coma', () => {
@@ -88,13 +89,15 @@ describe('validateVitalInput y parseVitalInput', () => {
 
   it('normaliza temperatura antes de guardar y rechaza valores directos no contractuales', () => {
     const input = {
-      temperatura: 36.66,
+      temperatura: 36.6,
+      dolor_ena: 0,
       presion_sistolica: null,
       presion_diastolica: null,
       pulso: null,
       saturacion_o2: null,
     };
-    expect(normalizeVitalValues(input).temperatura).toBe(36.7);
+    expect(normalizeVitalValues(input).temperatura).toBe(36.6);
+    expect(() => normalizeVitalValues({ ...input, temperatura: 36.66 })).toThrow(InputError);
     expect(() => normalizeVitalValues({ ...input, pulso: 251 })).toThrow(InputError);
     expect(() => normalizeVitalValues({ ...input, temperatura: Number.NaN })).toThrow(InputError);
   });
@@ -123,6 +126,7 @@ describe('validateVitalInput y parseVitalInput', () => {
       systolic: '120.5', // debe ser entero
       diastolic: '80',
       pulse: 'rapido',
+      pain: '0',
       saturation: '105', // excede 100
     });
 

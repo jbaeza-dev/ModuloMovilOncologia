@@ -14,6 +14,7 @@ export const validVitals = {
   presion_diastolica: 80,
   pulso: 72,
   saturacion_o2: 98,
+  dolor_ena: 0, // Explicit synthetic answer for newly created test captures.
 };
 
 export function nodeConnection(database: DatabaseSync): SqlConnection {
@@ -105,4 +106,41 @@ export function createSqliteTestHarness() {
     closeLastOpened,
     cleanup,
   };
+}
+
+/** Historical fixture, deliberately predates the ENA column and never infers pain. */
+export async function seedLegacyVital(
+  db: SqlConnection,
+  patient: string,
+  id: string,
+  queue: string,
+) {
+  const values = {
+    temperatura: 36.8,
+    presion_sistolica: 120,
+    presion_diastolica: 80,
+    pulso: 72,
+    saturacion_o2: 98,
+  };
+  await db.run(
+    `INSERT INTO signos_vitales(id,paciente_id,fecha_registro,presion_sistolica,presion_diastolica,pulso,temperatura,saturacion_o2,creado_localmente_en)
+    VALUES (?,?,?,?,?,?,?,?,?)`,
+    [id, patient, measured, 120, 80, 72, 36.8, 98, measured],
+  );
+  await db.run(
+    `INSERT INTO cola_envio(id,paciente_id,tipo_entidad,registro_id,payload_json,estado,creado_en,actualizado_en)
+    VALUES (?,?,'signos_vitales',?,?,'pendiente',?,?)`,
+    [
+      queue,
+      patient,
+      id,
+      JSON.stringify({
+        schemaVersion: 1,
+        entity: 'signos_vitales',
+        record: { id, paciente_id: patient, fecha_registro: measured, ...values },
+      }),
+      measured,
+      measured,
+    ],
+  );
 }

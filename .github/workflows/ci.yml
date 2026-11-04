@@ -34,10 +34,22 @@ jobs:
         run: pnpm run check
       - name: Verify generated contracts are current
         run: pnpm --filter @quimiocare/contracts run generate:check
-      - name: Test SQLite and local data rules
-        run: pnpm run test:local
-      - name: Test UI component interactions
-        run: pnpm run test:ui
+      - name: Test SQLite and local data rules with Vitest coverage
+        run: pnpm run test:local:coverage
+      - name: Test UI component interactions with Jest coverage
+        run: pnpm run test:ui:coverage
+      - name: Summarize mobile coverage and validate LCOV paths
+        run: pnpm run coverage:summary coverage/mobile-vitest coverage/mobile-jest
+      - name: Upload mobile coverage reports
+        if: ${{ !cancelled() }}
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: coverage-mobile
+          path: |
+            coverage/mobile-vitest/
+            coverage/mobile-jest/
+          if-no-files-found: error
+          retention-days: 14
       - name: Check Expo dependencies
         run: pnpm --filter @modulo-movil-oncologia/mobile run doctor
       - name: Export Android JavaScript bundle
@@ -77,16 +89,29 @@ jobs:
           pnpm --filter @quimiocare/contracts run build
           pnpm --filter @quimiocare/simulator run build
       - name: Test contract boundaries
-        run: pnpm --filter @quimiocare/contracts run test
+        run: pnpm run test:contracts:coverage
       - name: Test simulator domain rules
-        run: pnpm --filter @quimiocare/simulator run test
+        run: pnpm run test:simulator:coverage
       - name: Exercise real HTTP and durable database
         env:
           APP_ENV: demo
           POWERSHELL_BIN: pwsh
           TEST_DATABASE_CONTAINER: ${{ job.services.postgres.id }}
           TEST_DATABASE_URL: postgresql://postgres:quimiocare_ci_only@127.0.0.1:5432/qc_simulator_ci_test
-        run: pnpm --filter @quimiocare/simulator run test:integration
+        run: pnpm run test:integration:coverage
+      - name: Summarize simulator-contracts coverage and validate LCOV paths
+        run: pnpm run coverage:summary coverage/contracts coverage/simulator coverage/simulator-integration
+      - name: Upload simulator-contracts coverage reports
+        if: ${{ !cancelled() }}
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: coverage-simulator-contracts
+          path: |
+            coverage/contracts/
+            coverage/simulator/
+            coverage/simulator-integration/
+          if-no-files-found: error
+          retention-days: 14
       - name: Validate Compose structure without printing credentials
         run: |
           node infra/demo/configure.mjs
@@ -141,9 +166,21 @@ jobs:
       - name: Build contracts and gateway
         run: pnpm --filter @quimiocare/contracts run build && pnpm --filter @quimiocare/gateway run build
       - name: Test configuration, HTTP boundaries, and dependency clients
-        run: pnpm run test:gateway
+        run: pnpm run test:gateway:coverage
       - name: Exercise migrations, concurrency, and recovery against PostgreSQL
-        run: pnpm run test:gateway:integration
+        run: pnpm run test:gateway:integration:coverage
+      - name: Summarize gateway coverage and validate LCOV paths
+        run: pnpm run coverage:summary coverage/gateway coverage/gateway-integration
+      - name: Upload gateway coverage reports
+        if: ${{ !cancelled() }}
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: coverage-gateway
+          path: |
+            coverage/gateway/
+            coverage/gateway-integration/
+          if-no-files-found: error
+          retention-days: 14
       - name: Apply migrations and smoke the standalone gateway
         run: |
           pnpm --filter @quimiocare/gateway run migrate

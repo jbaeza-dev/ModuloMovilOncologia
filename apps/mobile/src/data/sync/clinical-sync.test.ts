@@ -453,3 +453,114 @@ describe('P04 durable clinical writes (SQLite; native SDK acceptance is separate
     ).rejects.toThrow(/UUID/);
   });
 });
+
+describe('compatibilidad de snapshots previos con nuevas restricciones', () => {
+  async function preservedCommand(db: SqlConnection, status: 'pendiente' | 'rechazado') {
+    // Reconstruct a pre-existing snapshot at insertion time. The immutability trigger stays enabled.
+    const payload = JSON.stringify({
+      id: capture,
+      fecha_registro: measured,
+      version_dolor: 1,
+      dolor_ena: 0,
+      temperatura: 1000,
+    });
+    await db.run(
+      'INSERT INTO qc_clinical_command(id,owner,environment,kind,captured_at,payload_json,status,error_json,updated_at) VALUES (?,?,?,?,?,?,?,?,?)',
+      [
+        capture,
+        scope.owner,
+        scope.environment,
+        'signos',
+        measured,
+        payload,
+        status,
+        status === 'rechazado' ? '"ERROR_VALIDACION"' : null,
+        measured,
+      ],
+    );
+    return payload;
+  }
+  it('no reabre un rechazo definitivo histórico al endurecer el dominio de captura', async () => {
+    const db = await database();
+    const payload = await preservedCommand(db, 'rechazado');
+    const x = context(db, async () => {
+        throw new Error('No debe volver a enviarse');
+      }),
+      complete = vi.fn();
+    await x.connector.uploadTransaction({ crud: [operation(await command(db))], complete });
+    expect(x.request).not.toHaveBeenCalled();
+    expect(complete).toHaveBeenCalledTimes(1);
+    expect(await command(db)).toMatchObject({
+      status: 'rechazado',
+      payload_json: payload,
+      captured_at: measured,
+    });
+  });
+  it('conserva un snapshot pendiente inválido y pausa explícitamente sin enviarlo ni retirar su operación', async () => {
+    const db = await database();
+    const payload = await preservedCommand(db, 'pendiente');
+    const x = context(db, async () => {
+        throw new Error('No debe enviarse');
+      }),
+      complete = vi.fn();
+    await expect(
+      x.connector.uploadTransaction({ crud: [operation(await command(db))], complete }),
+    ).rejects.toMatchObject({ code: 'SNAPSHOT_FUERA_CONTRATO' });
+    expect(x.request).not.toHaveBeenCalled();
+    expect(complete).not.toHaveBeenCalled();
+    expect(await command(db)).toMatchObject({
+      status: 'pausado',
+      payload_json: payload,
+      captured_at: measured,
+    });
+  });
+});
+
+describe('Recuperación de la causa de pausa al reabrir el SDK', () => {
+  it.each([
+    ['SESION_EXPIRED', 'SESION_EXPIRED'],
+    ['SNAPSHOT_FUERA_CONTRATO', 'REQUIERE_REVISION'],
+  ])(
+    'conserva %s sin enviar ni completar una transacción todavía pausada',
+    async (code, expected) => {
+      const db = await database();
+      await save(db);
+      const captured = await command(db);
+      await db.run("UPDATE qc_clinical_command SET status='pausado',error_json=? WHERE id=?", [
+        JSON.stringify({ code }),
+        captured.id,
+      ]);
+      const signal = new AbortController().signal;
+      const request = vi.fn(async () => ({ status: 200, body: {} }));
+      const session = {
+        getCurrentUser: () => ({ id: owner, name: 'Prueba', isDemo: true }),
+        getContextSignal: () => signal,
+        credentialsForSync: async () => ({
+          token: 'synthetic',
+          owner,
+          signal,
+          expiresAt: new Date(),
+        }),
+        request,
+      };
+      const connector = new ClinicalConnector(
+        scope,
+        'http://synthetic.test',
+        session,
+        db,
+        () => undefined,
+      );
+      const complete = vi.fn(async () => undefined);
+      await expect(
+        connector.uploadTransaction({ crud: [operation(captured)], complete }),
+      ).rejects.toMatchObject({ code: expected });
+      expect(request).not.toHaveBeenCalled();
+      expect(complete).not.toHaveBeenCalled();
+      const after = await command(db);
+      expect(after.id).toBe(captured.id);
+      expect(after.payload_json).toBe(captured.payload_json);
+      expect(after.captured_at).toBe(captured.captured_at);
+      expect(after.status).toBe('pausado');
+    },
+  );
+});

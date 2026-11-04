@@ -22,6 +22,9 @@ const db = openDatabase(url),
   owner = randomUUID(),
   other = randomUUID();
 const stores = [agendaStore(db), agendaStore(second)];
+const medicationOwner = randomUUID(),
+  medicationOther = randomUUID();
+let medicationActive = true;
 const logs: string[] = [],
   tokens: Record<string, string> = {};
 let clinical: Server,
@@ -75,6 +78,28 @@ beforeAll(async () => {
   await migrate(db);
   clinical = createServer((req, res) => {
     res.setHeader('content-type', 'application/json');
+    if (req.url === '/api/v1/pacientes/me/perfil-clinico') {
+      res.end(
+        JSON.stringify({
+          id: randomUUID(),
+          fecha_actualizacion: new Date().toISOString(),
+          medicamentos: [
+            {
+              id:
+                req.headers.authorization === 'Bearer ' + tokens[owner]
+                  ? medicationOwner
+                  : medicationOther,
+              medicamento_id: randomUUID(),
+              nombre: 'Dato sintético',
+              activo: medicationActive,
+              fecha_inicio: '2020-01-01',
+              fecha_termino: null,
+            },
+          ],
+        }),
+      );
+      return;
+    }
     res.end(
       JSON.stringify({
         id: req.headers.authorization === 'Bearer ' + tokens[owner] ? owner : other,
@@ -138,6 +163,7 @@ beforeAll(async () => {
 });
 beforeEach(async () => {
   aiMode = 'respuesta';
+  medicationActive = true;
   aiCalls = 0;
   aiBody = undefined;
   await db.query(
@@ -454,5 +480,84 @@ describe('Proxy de chat real: RAM en cliente, contrato y ausencia de reintentos 
     expect(response.status).toBe(503);
     expect(response.body).toEqual({ detail: 'Servicio sintético no disponible.' });
     expect(aiCalls).toBe(1);
+  });
+});
+
+describe('Asociación de medicación confirmada y compartida', () => {
+  it('conserva la asociación en PostgreSQL, respuesta, snapshot e historial de versión', async () => {
+    const input = {
+      ...configuration(),
+      tipo: 'medicacion' as const,
+      medicamento_paciente_id: medicationOwner,
+    };
+    const result = await request('/recordatorios', 'POST', input);
+    expect(result.status).toBe(201);
+    expect(result.body.recordatorio.medicamento_paciente_id).toBe(medicationOwner);
+    expect((await request('/recordatorios')).body.recordatorios[0].medicamento_paciente_id).toBe(
+      medicationOwner,
+    );
+    const persisted = await second.query(
+      'SELECT patient_medication_id FROM gw_reminder WHERE id=$1',
+      [input.id],
+    );
+    expect(persisted.rows[0].patient_medication_id).toBe(medicationOwner);
+    const history = await second.query(
+      'SELECT configuration FROM gw_reminder_revision WHERE reminder_id=$1',
+      [input.id],
+    );
+    expect(history.rows[0].configuration.medicamento_paciente_id).toBe(medicationOwner);
+    const replay = await request('/recordatorios', 'POST', input);
+    expect(replay.status).toBe(200);
+  });
+  it('rechaza otra asignación o un medicamento inactivo sin crear avisos', async () => {
+    const input = {
+      ...configuration(),
+      tipo: 'medicacion',
+      medicamento_paciente_id: medicationOther,
+    };
+    expect((await request('/recordatorios', 'POST', input)).status).toBe(422);
+    medicationActive = false;
+    expect(
+      (
+        await request('/recordatorios', 'POST', {
+          ...input,
+          medicamento_paciente_id: medicationOwner,
+        })
+      ).status,
+    ).toBe(422);
+    expect((await db.query('SELECT count(*) n FROM gw_reminder')).rows[0].n).toBe('0');
+  });
+  it('un cliente anterior no borra el vínculo al editar, y permite pausar el aviso aunque el medicamento deje de estar activo', async () => {
+    const input = {
+      ...configuration(),
+      tipo: 'medicacion' as const,
+      medicamento_paciente_id: medicationOwner,
+    };
+    const created = await request('/recordatorios', 'POST', input);
+    expect(created.status).toBe(201);
+    const { id: ignored, ...oldInput } = configuration();
+    void ignored;
+    const edited = await request('/recordatorios/' + input.id, 'PUT', {
+      ...oldInput,
+      tipo: 'medicacion',
+      horas: ['09:00'],
+      version_esperada: 1,
+    });
+    expect(edited.status).toBe(200);
+    expect(edited.body.recordatorio.medicamento_paciente_id).toBe(medicationOwner);
+    medicationActive = false;
+    const paused = await request('/recordatorios/' + input.id, 'PUT', {
+      ...edited.body.recordatorio,
+      version_esperada: 2,
+      activo: false,
+      id: undefined,
+      version: undefined,
+      creado_en: undefined,
+      actualizado_en: undefined,
+      canal: undefined,
+      respaldo_segundos: undefined,
+    });
+    expect(paused.status).toBe(200);
+    expect(paused.body.recordatorio.activo).toBe(false);
   });
 });

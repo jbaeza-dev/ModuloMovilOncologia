@@ -1,4 +1,4 @@
-import type { GatewayConfiguracionRecordatorio, GatewayRecordatorio } from './generated-gateway.js';
+import type { GatewayConfiguracionRecordatorio, GatewayRecordatorio } from './own-gateway.js';
 
 export const AGENDA_TIMEZONE = 'America/Santiago' as const;
 export const AGENDA_POLICY = {
@@ -71,6 +71,33 @@ export function agendaInstant(date: string, time: string): string {
   }
   throw new Error('No hay un instante válido para esa fecha civil.');
 }
+export function validMedicationReference(value: {
+  tipo: string;
+  medicamento_paciente_id?: unknown;
+}): boolean {
+  const id = value.medicamento_paciente_id;
+  return (
+    id === undefined ||
+    id === null ||
+    (value.tipo === 'medicacion' &&
+      typeof id === 'string' &&
+      /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(id))
+  );
+}
+/** Optional activo defaults to true in the upstream medication response. Dates are inclusive civil dates. */
+export function medicationAvailable(
+  medication: { activo?: boolean; fecha_inicio?: string | null; fecha_termino?: string | null },
+  date: string,
+): boolean {
+  const start = medication.fecha_inicio,
+    end = medication.fecha_termino;
+  return (
+    validCivilDate(date) &&
+    medication.activo !== false &&
+    (!start || (validCivilDate(start) && start <= date)) &&
+    (!end || (validCivilDate(end) && end >= date))
+  );
+}
 export function normalizedReminder(
   config: GatewayConfiguracionRecordatorio,
 ): GatewayConfiguracionRecordatorio {
@@ -83,6 +110,9 @@ export function normalizedReminder(
     fecha_inicio: config.fecha_inicio,
     fecha_fin: config.fecha_fin,
     activo: config.activo,
+    ...(config.medicamento_paciente_id
+      ? { medicamento_paciente_id: config.medicamento_paciente_id.toLowerCase() }
+      : {}),
   };
 }
 export function validReminderDates(config: GatewayConfiguracionRecordatorio): boolean {

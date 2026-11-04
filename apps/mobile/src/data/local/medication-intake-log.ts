@@ -1,6 +1,18 @@
+import { agendaInstant, parseOccurrenceId } from '@quimiocare/contracts/agenda';
 import type { SqlConnection } from './core/sql';
 
+export interface MedicationNoticeReference {
+  reminderId: string;
+  version: number;
+  occurrenceId: string;
+  scheduledAt: string;
+  date: string;
+  time: string;
+  timezone: 'America/Santiago';
+}
 export interface MedicationIntakeLogEntry {
+  avisos_confirmados?: MedicationNoticeReference[];
+  avisos_confirmados_json?: string | null;
   id: string;
   paciente_id: string;
   medicamento_id: string;
@@ -19,6 +31,7 @@ export interface MedicationIntakeLogEntry {
 }
 
 export interface MedicationIntakeEvent {
+  avisos_confirmados_json?: string | null;
   id: string;
   toma_id: string;
   paciente_id: string;
@@ -48,17 +61,48 @@ export async function logMedicationIntake(
   connection: SqlConnection,
   entry: MedicationIntakeLogEntry,
 ): Promise<void> {
+  const refs = entry.avisos_confirmados;
+  if (
+    refs &&
+    (!refs.length ||
+      refs.length > 100 ||
+      entry.es_programado !== 1 ||
+      refs.some((ref) => {
+        const parsed = parseOccurrenceId(ref.occurrenceId);
+        return (
+          !parsed ||
+          parsed.id !== ref.reminderId ||
+          parsed.version !== ref.version ||
+          parsed.date !== ref.date ||
+          parsed.time !== ref.time ||
+          ref.timezone !== 'America/Santiago' ||
+          ref.date !== entry.fecha_civil ||
+          entry.horario_programado !== 'aviso#' + ref.time ||
+          ref.scheduledAt !== agendaInstant(ref.date, ref.time)
+        );
+      }))
+  )
+    throw new Error('El registro no corresponde a un aviso confirmado.');
+  const refsJson = refs ? JSON.stringify(refs) : null;
   await connection.transaction(async (tx) => {
+    let lastEventId: string;
     const existing = await tx.first<{
       id: string;
       estado: 'taken' | 'omitted';
       notas: string | null;
+      avisos_confirmados_json?: string | null;
     }>(
-      `SELECT id, estado, notas FROM qc_medication_intake_log
+      `SELECT * FROM qc_medication_intake_log
        WHERE paciente_id = ? AND medicamento_id = ? AND fecha_civil = ? AND horario_programado = ?`,
       [entry.paciente_id, entry.medicamento_id, entry.fecha_civil, entry.horario_programado],
     );
 
+    if (
+      refsJson &&
+      existing?.estado === entry.estado &&
+      existing.avisos_confirmados_json === refsJson
+    )
+      return;
     if (existing) {
       // Rectificación: conservar estado y notas previas, y registrar auditoría inmutable
       await tx.run(
@@ -81,13 +125,13 @@ export async function logMedicationIntake(
         ],
       );
 
-      const eventId = generateEventId(existing.id, entry.registrado_en);
+      lastEventId = generateEventId(existing.id, entry.registrado_en);
       await tx.run(
         `INSERT INTO qc_medication_intake_events
          (id, toma_id, paciente_id, medicamento_id, tipo_evento, estado_nuevo, estado_anterior, notas, creado_en)
          VALUES (?, ?, ?, ?, 'rectificacion', ?, ?, ?, ?)`,
         [
-          eventId,
+          lastEventId,
           existing.id,
           entry.paciente_id,
           entry.medicamento_id,
@@ -122,13 +166,13 @@ export async function logMedicationIntake(
         ],
       );
 
-      const eventId = generateEventId(entry.id, entry.registrado_en);
+      lastEventId = generateEventId(entry.id, entry.registrado_en);
       await tx.run(
         `INSERT INTO qc_medication_intake_events
          (id, toma_id, paciente_id, medicamento_id, tipo_evento, estado_nuevo, estado_anterior, notas, creado_en)
          VALUES (?, ?, ?, ?, 'registro_inicial', ?, NULL, ?, ?)`,
         [
-          eventId,
+          lastEventId,
           entry.id,
           entry.paciente_id,
           entry.medicamento_id,
@@ -136,6 +180,16 @@ export async function logMedicationIntake(
           entry.notas ?? null,
           entry.registrado_en,
         ],
+      );
+    }
+    if (refsJson && lastEventId) {
+      await tx.run(
+        'UPDATE qc_medication_intake_log SET avisos_confirmados_json=? WHERE id=? AND paciente_id=?',
+        [refsJson, existing?.id ?? entry.id, entry.paciente_id],
+      );
+      await tx.run(
+        'UPDATE qc_medication_intake_events SET avisos_confirmados_json=? WHERE id=? AND paciente_id=?',
+        [refsJson, lastEventId, entry.paciente_id],
       );
     }
   });
@@ -162,11 +216,10 @@ export async function getMedicationIntakesForDate(
   datePrefix: string,
 ): Promise<MedicationIntakeLogEntry[]> {
   return connection.all<MedicationIntakeLogEntry>(
-    `SELECT id, paciente_id, medicamento_id, medicamento_nombre, dosis, fecha_civil, horario_programado, es_programado, fecha_hora, estado, notas, registrado_en, rectificado_en, estado_anterior, notas_anteriores
-     FROM qc_medication_intake_log
-     WHERE paciente_id = ? AND (fecha_civil = ? OR fecha_hora LIKE ?)
+    `SELECT * FROM qc_medication_intake_log
+     WHERE paciente_id = ? AND fecha_civil = ?
      ORDER BY horario_programado ASC, fecha_hora ASC`,
-    [pacienteId, datePrefix, `${datePrefix}%`],
+    [pacienteId, datePrefix],
   );
 }
 

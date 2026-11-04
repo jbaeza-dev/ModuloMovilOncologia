@@ -1,3 +1,5 @@
+import { agendaDate, medicationAvailable } from '@quimiocare/contracts/agenda';
+import type { ClinicalPerfilClinicoResponse } from '@quimiocare/contracts';
 import express from 'express';
 import { securityHeaders, corsPolicy } from './security.js';
 import { gatewayDocsMiddleware } from './swagger.js';
@@ -43,6 +45,23 @@ export function createApp(
   const deviceStore = devices(db, config.cursorKey);
   const agenda = agendaStore(db, config.agendaMaxReminders);
   const dependencies = dependencyClients(config, log);
+  async function verifyMedicationBinding(
+    token: string,
+    input: GatewayCrearRecordatorio | GatewayReemplazarRecordatorio,
+  ) {
+    if (!input.medicamento_paciente_id || input.activo === false) return;
+    const response = await dependencies.getClinicalProfile(token);
+    if (response.status === 401) throw new GatewayError(401, 'NO_AUTORIZADO');
+    if (response.status === 403) throw new GatewayError(403, 'ACCESO_DENEGADO');
+    if (response.status === 404) throw new GatewayError(422, 'DATOS_INVALIDOS');
+    if (response.status !== 200) throw new GatewayError(503, 'SERVICIO_NO_DISPONIBLE');
+    const profile = response.body as ClinicalPerfilClinicoResponse;
+    const medicine = profile.medicamentos?.find(
+      (m) => m.id.toLowerCase() === input.medicamento_paciente_id!.toLowerCase(),
+    );
+    if (!medicine || !medicationAvailable(medicine, agendaDate(Date.now())))
+      throw new GatewayError(422, 'DATOS_INVALIDOS');
+  }
   const states = new WeakMap<Request, RequestState>();
   app.disable('x-powered-by');
   app.disable('etag');
@@ -166,10 +185,24 @@ export function createApp(
         } else if (operation.id === 'G-07') {
           result = { status: 200, body: await agenda.list(principal.id, query.desde, query.hasta) };
         } else if (operation.id === 'G-08') {
+          await verifyMedicationBinding(principal.token, body as GatewayCrearRecordatorio);
           result = await agenda.create(principal.id, body as GatewayCrearRecordatorio);
         } else if (operation.id === 'G-09') {
           result = { status: 200, body: await agenda.get(principal.id, String(req.params.id)) };
         } else if (operation.id === 'G-10') {
+          const input = body as GatewayReemplazarRecordatorio;
+          const effective =
+            input.tipo === 'medicacion' &&
+            input.activo &&
+            !Object.hasOwn(input, 'medicamento_paciente_id')
+              ? {
+                  ...input,
+                  medicamento_paciente_id:
+                    (await agenda.get(principal.id, String(req.params.id))).recordatorio
+                      .medicamento_paciente_id ?? null,
+                }
+              : input;
+          await verifyMedicationBinding(principal.token, effective);
           result = {
             status: 200,
             body: await agenda.replace(

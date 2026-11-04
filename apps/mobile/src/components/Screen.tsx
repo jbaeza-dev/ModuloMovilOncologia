@@ -1,7 +1,7 @@
 import { AppIcon as Feather } from './AppIcon';
 import { router } from 'expo-router';
 import { useNavigationState } from 'expo-router/react-navigation';
-import type { ReactNode, RefObject } from 'react';
+import { useContext, type ReactNode, type RefObject } from 'react';
 import {
   Image,
   KeyboardAvoidingView,
@@ -23,6 +23,7 @@ import {
   type MascotPose,
 } from './MascotAvatar';
 import { SafeAreaView } from 'react-native-safe-area-context';
+import { ScreenBottomInsetHandledContext } from './ScreenInsets';
 
 import { useAppTheme } from '../providers/ThemeProvider';
 import { theme } from '../theme';
@@ -58,6 +59,7 @@ export function Screen({
   scrollEventThrottle,
 }: Props) {
   const { theme: appTheme } = useAppTheme();
+  const bottomInsetHandled = useContext(ScreenBottomInsetHandledContext);
   const styles = createStyles(appTheme.colors);
   // A child navigator can be at index zero while its parent still has the real origin.
   const hasBackHistory = useNavigationState(() => router.canGoBack());
@@ -90,7 +92,11 @@ export function Screen({
   );
 
   return (
-    <SafeAreaView style={styles.safeArea} edges={['top', 'left', 'right']}>
+    <SafeAreaView
+      testID="screen-safe-area"
+      style={styles.safeArea}
+      edges={bottomInsetHandled ? ['top', 'left', 'right'] : ['top', 'bottom', 'left', 'right']}
+    >
       <View style={styles.header}>
         {canGoBack ? (
           <Pressable

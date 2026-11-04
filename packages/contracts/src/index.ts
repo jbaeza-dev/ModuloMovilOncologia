@@ -9,3 +9,12 @@ export * from './generated-demo.js';
 export { fixtures, fixtureImageUrl } from './fixtures.js';
 
 export { getPreparationExecutionDoc } from './execution-specs.js';
+
+export type {
+  GatewayConfiguracionRecordatorio,
+  GatewayCrearRecordatorio,
+  GatewayReemplazarRecordatorio,
+  GatewayRecordatorio,
+  GatewayRecordatorioEnvelope,
+  GatewayAgenda,
+} from './own-gateway.js';

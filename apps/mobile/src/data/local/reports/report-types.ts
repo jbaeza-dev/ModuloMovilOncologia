@@ -38,7 +38,7 @@ export interface ReportSummary {
 
 export interface ReportData {
   readonly pacienteId: string;
-  readonly periodDays: 7 | 30 | 90;
+  readonly periodDays: 7 | 30 | 90 | 365;
   readonly generatedAt: string; // ISO 8601 UTC canónico
   readonly timeZone: string; // Zona horaria de referencia
   readonly periodStart: string; // ISO 8601 UTC canónico [ahora - N días]
@@ -49,4 +49,21 @@ export interface ReportData {
   readonly summary: Readonly<ReportSummary>;
   readonly vitals: readonly Readonly<VitalRecord>[];
   readonly symptoms: readonly Readonly<SymptomRecord>[];
+  readonly epro?: readonly ReportEproCapture[];
+  readonly syncStatuses?: Readonly<Record<string, string>>;
+}
+
+export interface ReportEproCapture {
+  readonly id: string;
+  readonly formId: string;
+  readonly version: string;
+  readonly title: string;
+  readonly capturedAt: string;
+  readonly status: string;
+  readonly source: 'snapshot' | 'legacy';
+  readonly answers: readonly {
+    readonly code: string;
+    readonly question: string;
+    readonly value: string;
+  }[];
 }

@@ -1,3 +1,4 @@
+jest.mock('../features/sync/GlobalStatusNotice', () => ({ RecordsStatusCard: () => null }));
 /// <reference types="jest" />
 jest.mock('../services/session/native-session', () => ({ registerNativePush: jest.fn() }));
 

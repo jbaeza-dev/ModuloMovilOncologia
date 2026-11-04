@@ -7,7 +7,11 @@ import type {
 } from '@quimiocare/contracts';
 import type { SqlConnection } from '../local/core/sql';
 import type { OperationalScope, OperationalEvent } from './operational-outbox';
-import { normalizedReminder, validReminderDates } from '@quimiocare/contracts/agenda';
+import {
+  normalizedReminder,
+  validReminderDates,
+  validMedicationReference,
+} from '@quimiocare/contracts/agenda';
 export type AgendaIntent = {
   id: string;
   kind: 'create' | 'replace' | 'delete';
@@ -174,6 +178,7 @@ export function validConfiguration(value: unknown): value is GatewayConfiguracio
   const v = value as GatewayConfiguracionRecordatorio;
   return (
     ['epro', 'signos', 'medicacion'].includes(v.tipo) &&
+    validMedicationReference(v) &&
     typeof v.titulo === 'string' &&
     [...v.titulo].length >= 1 &&
     [...v.titulo].length <= 80 &&

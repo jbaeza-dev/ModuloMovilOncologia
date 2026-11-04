@@ -1,8 +1,26 @@
 import { resolve } from 'node:path';
-import { defineConfig } from 'vitest/config';
+import { coverageConfigDefaults, defineConfig } from 'vitest/config';
 
 export default defineConfig({
   test: {
+    coverage: {
+      provider: 'v8',
+      all: true,
+      include: ['apps/mobile/src/**/*.ts'],
+      exclude: [
+        ...coverageConfigDefaults.exclude,
+        'apps/mobile/src/**/testing/**',
+        'apps/mobile/src/features/preview/**',
+      ],
+      reportsDirectory: resolve(__dirname, 'coverage/mobile-vitest'),
+      reporter: [
+        ['text-summary'],
+        ['json-summary'],
+        ['html'],
+        ['lcovonly', { projectRoot: resolve(__dirname, '.') }],
+      ],
+      reportOnFailure: true,
+    },
     environment: 'node',
     include: ['apps/mobile/src/**/*.test.ts'],
   },

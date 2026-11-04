@@ -8,6 +8,7 @@ import type { SqlConnection } from '../../data/local/core/sql';
 import { agendaRepository } from '../../data/agenda/agenda-repository';
 import { enqueueOperational, type OperationalScope } from '../../data/agenda/operational-outbox';
 import { isUuid, object } from '../session/response-checks';
+import type { ReminderNotificationKind } from '../notifications/notification-copy';
 export interface AgendaBinding extends OperationalScope {
   sessionId: string;
   installationId: string;
@@ -24,7 +25,12 @@ export interface NativeAgendaData {
 export interface AgendaNotifications {
   permission(): Promise<boolean>;
   list(): Promise<{ id: string; data: unknown }[]>;
-  schedule(id: string, at: string | null, data: NativeAgendaData): Promise<string>;
+  schedule(
+    id: string,
+    at: string | null,
+    data: NativeAgendaData,
+    kind?: ReminderNotificationKind,
+  ): Promise<string>;
   cancel(id: string): Promise<void>;
 }
 export interface AgendaCoverage {
@@ -248,6 +254,7 @@ export class AgendaCoordinator {
                 id,
                 occurrence.respaldo_en,
                 this.data(payload, 'respaldo'),
+                occurrence.tipo_registro,
               );
               if (actual !== id) throw new Error('Identificador nativo inesperado.');
               this.assertContext();
@@ -413,7 +420,13 @@ export class AgendaCoordinator {
           throw new Error('Contexto o ventana cambió.');
         this.assertContext();
         const pushId = 'qc06:' + this.binding.sessionId + ':' + payload.ocurrencia_id + ':push';
-        await this.native.schedule(pushId, null, this.data(payload, 'push'));
+        const snapshot = await this.repository.read();
+        this.assertContext();
+        const kind = snapshot.rules.find(
+          (rule) =>
+            rule.id === payload.recordatorio_id && rule.version === payload.version_recordatorio,
+        )?.tipo;
+        await this.native.schedule(pushId, null, this.data(payload, 'push'), kind);
         this.assertContext();
         // Only the client's real handling cancels its persisted backup; a provider ticket never calls this.
         await this.db.transaction(async (tx) => {
@@ -475,7 +488,9 @@ export class AgendaCoordinator {
           ? '/vitales/registrar'
           : rule?.tipo === 'epro'
             ? '/formulario'
-            : '/perfil/medicacion'
+            : rule?.medicamento_paciente_id
+              ? '/medicamentos?medicamentoId=' + encodeURIComponent(rule.medicamento_paciente_id)
+              : '/perfil/medicacion'
         : null;
     });
   }

@@ -77,6 +77,8 @@ export interface EproInput {
   comentario?: string | null;
 }
 export interface SignsInput {
+  version_dolor?: 1;
+  dolor_ena?: number;
   id: string;
   fecha_registro: string;
   presion_arterial_sistolica?: number | null;

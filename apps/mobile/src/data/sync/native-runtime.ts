@@ -1,3 +1,4 @@
+import { isRecoverableSessionPause, retrySessionCommands } from './session-pause';
 import { scopeEducationalCopies } from './native-education-files';
 import { cleanupRetiredEducationalCopies } from '../local/education/retired-copy-cleanup';
 import * as Crypto from 'expo-crypto';
@@ -37,7 +38,7 @@ export interface ClinicalStore {
   filename: string;
   closed: boolean;
   pauseCode: string | null;
-  resume(retryPaused?: boolean): Promise<void>;
+  resume(retryPaused?: boolean | 'session'): Promise<void>;
   disconnect(): Promise<void>;
   close(): Promise<void>;
   settleCatalog(): Promise<void>;
@@ -126,6 +127,7 @@ export async function openClinicalStore(
     lastCheckpoint = 0,
     started = false;
   let pauseTimer: ReturnType<typeof setTimeout> | undefined;
+  let disconnecting: Promise<void> | null = null;
   const store: ClinicalStore = {
     database,
     connection,
@@ -138,24 +140,39 @@ export async function openClinicalStore(
       await projection;
     },
     async disconnect() {
+      if (disconnecting) return disconnecting;
       if (started) {
         started = false;
-        await database.disconnect();
+        const pending = database.disconnect();
+        disconnecting = pending;
+        try {
+          await pending;
+        } finally {
+          if (disconnecting === pending) disconnecting = null;
+        }
       }
     },
     async resume(retryPaused = true) {
+      if (store.closed || signal.aborted || session.getCurrentUser()?.id !== scope.owner) return;
+      if (pauseTimer) {
+        clearTimeout(pauseTimer);
+        pauseTimer = undefined;
+      }
+      if (disconnecting) await disconnecting;
       if (store.closed || signal.aborted || session.getCurrentUser()?.id !== scope.owner) return;
       if (!endpoint) {
         store.pauseCode = 'SIN_CONFIGURACION';
         return;
       }
-      if (retryPaused)
+      if (retryPaused === 'session') await retrySessionCommands(connection, scope);
+      else if (retryPaused)
         await connection.run(
           "UPDATE qc_clinical_command SET status='pendiente',error_json=NULL WHERE owner=? AND environment=? AND status='pausado'",
           [scope.owner, scope.environment],
         );
       store.pauseCode = null;
       await connection.run("DELETE FROM qc_storage_control WHERE id='runtime:pause'");
+      if (store.closed || signal.aborted || session.getCurrentUser()?.id !== scope.owner) return;
       if (!started) {
         started = true;
         try {
@@ -186,6 +203,8 @@ export async function openClinicalStore(
         [JSON.stringify({ code })],
       )
       .catch(() => undefined);
+    if (isRecoverableSessionPause(code) && session.getSnapshot().uploadAllowed)
+      void session.refreshIdentity().catch(() => undefined);
     if (!pauseTimer)
       pauseTimer = setTimeout(() => {
         pauseTimer = undefined;
@@ -242,10 +261,10 @@ export async function openClinicalStore(
     const resumeOnConsent = session.subscribe(() => {
       if (
         !store.closed &&
-        store.pauseCode?.startsWith('SESION_') &&
+        isRecoverableSessionPause(store.pauseCode) &&
         session.getSnapshot().uploadAllowed
       )
-        void store.resume(true).catch(() => undefined);
+        void store.resume('session').catch(() => undefined);
     });
     const unregister = unregisterSession;
     unregisterSession = () => {
