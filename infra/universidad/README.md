@@ -1,6 +1,6 @@
 # Entrega universitaria de QuimioCare
 
-Preparación local; no se ha ejecutado un despliegue ni modificado GitHub, Supabase o Google Cloud. El procedimiento vigente de instalación, variables, actualización y recuperación se conserva en el archivo local `.agents/docs/despliegue-universidad-ci-cd.md` del equipo, excluido de Git y del paquete de despliegue. La aceptación con el teléfono corresponde al usuario.
+El despliegue de entregas verificadas en `main` utiliza un runner de usuario en Parra. Su instalación, requisitos y operación se describen en [RUNNER_DESPLIEGUE.md](RUNNER_DESPLIEGUE.md). Las imágenes y el APK se compilan en GitHub; solo la instalación se ejecuta en el servidor. El procedimiento histórico de instalación y recuperación se conserva también en `.agents/docs/despliegue-universidad-ci-cd.md` del equipo, excluido de Git. La aceptación con el teléfono corresponde al usuario.
 
 ## Arquitectura
 
