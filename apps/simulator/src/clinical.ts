@@ -21,10 +21,26 @@ const SIGN_VALUES = [
   'pulso',
   'temperatura',
   'saturacion_oxigeno',
+  'version_dolor',
+  'dolor_ena',
 ] as const;
 
 export function normalizedSigns(input: SignsInput): SignsInput {
   checkCaptureDate(input.fecha_registro);
+  if (input.version_dolor !== undefined || input.dolor_ena !== undefined) {
+    if (
+      input.version_dolor !== 1 ||
+      !Number.isInteger(input.dolor_ena) ||
+      Number(input.dolor_ena) < 0 ||
+      Number(input.dolor_ena) > 10
+    )
+      invalid('La ampliación ENA exige versión 1 y dolor entero de 0 a 10.');
+    if (
+      typeof input.temperatura === 'number' &&
+      Math.abs(input.temperatura * 10 - Math.round(input.temperatura * 10)) > 1e-7
+    )
+      invalid('La captura nueva de temperatura admite como máximo un decimal sin redondeo.');
+  }
   if (
     input.presion_arterial_sistolica != null &&
     input.presion_arterial_diastolica != null &&
@@ -32,6 +48,7 @@ export function normalizedSigns(input: SignsInput): SignsInput {
   )
     invalid('La presión sistólica debe superar la diastólica.');
   return {
+    ...(input.version_dolor === 1 ? { version_dolor: 1 as const, dolor_ena: input.dolor_ena } : {}),
     id: input.id,
     fecha_registro: new Date(input.fecha_registro).toISOString(),
     presion_arterial_sistolica: input.presion_arterial_sistolica ?? null,

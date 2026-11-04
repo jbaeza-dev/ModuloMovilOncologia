@@ -20,3 +20,6 @@ apps/gateway/src/persistence/migrations/*.sql text eol=lf
 
 # Simulator migration checksums preserve their exact applied bytes across platforms.
 apps/simulator/src/persistence/migrations/*.sql -text
+
+# Dependency patches apply identically on Windows and Linux.
+patches/*.patch text eol=lf

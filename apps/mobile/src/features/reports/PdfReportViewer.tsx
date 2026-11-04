@@ -15,18 +15,9 @@ import {
 import { WebView } from 'react-native-webview';
 
 import { DocumentScreen } from '../../components/DocumentScreen';
-import {
-  BodyText,
-  InfoCard,
-  SectionTitle,
-  StatusPill,
-  VisualButton,
-} from '../../components/Visual';
-import { REPORTS_AND_VIEWERS_COPY, getReportPeriodText } from '../../content/patient-copy';
-import { formatDate } from '../../data/local/repository';
+import { BodyText, VisualButton } from '../../components/Visual';
 import * as reportStorage from '../../data/local/files/report-storage';
 import { clinicalFileLease, readClinicalFile } from '../../data/sync/file-protection';
-import type { GenerateReportParams } from './report-template';
 import { useLocalData } from '../../providers/LocalDataProvider';
 import { useAppTheme } from '../../providers/ThemeProvider';
 import { theme } from '../../theme';
@@ -35,7 +26,7 @@ import { buildPdfJsHtml } from './pdf-viewer-html';
 export { buildPdfJsHtml } from './pdf-viewer-html';
 
 export function PdfReportViewer() {
-  const { uri, filename, periodDays } = useLocalSearchParams<{
+  const { uri, filename } = useLocalSearchParams<{
     uri: string;
     filename: string;
     periodDays?: string;
@@ -47,9 +38,7 @@ export function PdfReportViewer() {
   const { fontScale } = useWindowDimensions();
 
   const webViewRef = useRef<WebView>(null);
-  const [mode, setMode] = useState<'visual' | 'accessible'>('visual');
   const [pdfBase64, setPdfBase64] = useState<string | null>(null);
-  const [snapshot, setSnapshot] = useState<GenerateReportParams | null>(null);
   const [loading, setLoading] = useState(true);
   const [fileError, setFileError] = useState<string | null>(null);
   const [currentPage, setCurrentPage] = useState(1);
@@ -60,23 +49,12 @@ export function PdfReportViewer() {
   const [retryCount, setRetryCount] = useState(0);
   const [resolvedUri, setResolvedUri] = useState<string | null>(uri ?? null);
 
-  const handleSetMode = (nextMode: 'visual' | 'accessible') => {
-    setMode(nextMode);
-    if (nextMode === 'accessible') {
-      AccessibilityInfo.announceForAccessibility(
-        'Modo de lectura accesible activado. Navega por encabezados.',
-      );
-    } else {
-      AccessibilityInfo.announceForAccessibility('Modo visual activado.');
-    }
-  };
-
   useEffect(() => {
     let active = true;
     const startPatient = manager?.getPatientId?.() ?? patientId;
     const startEpoch = manager?.getContextEpoch?.() ?? 0;
 
-    async function loadPdfAndSnapshot() {
+    async function loadPdf() {
       setLoading(true);
       setFileError(null);
       setPdfBase64(null);
@@ -147,28 +125,11 @@ export function PdfReportViewer() {
             }
           }
         }
-
-        // 2. Cargar instantánea de accesibilidad (si existe)
-        if (startPatient && filename) {
-          try {
-            const loaded = await reportStorage.readPatientReportA11ySnapshot<GenerateReportParams>(
-              startPatient,
-              filename,
-            );
-            const snapPatient = manager?.getPatientId?.() ?? patientId;
-            const snapEpoch = manager?.getContextEpoch?.() ?? 0;
-            if (active && snapPatient === startPatient && snapEpoch === startEpoch) {
-              setSnapshot(loaded);
-            }
-          } catch {
-            // Snapshot no disponible (reporte legado o generado previamente)
-          }
-        }
       } finally {
         if (active) setLoading(false);
       }
     }
-    void loadPdfAndSnapshot();
+    void loadPdf();
     return () => {
       active = false;
     };
@@ -227,9 +188,6 @@ export function PdfReportViewer() {
     }
   };
 
-  const parsedDays = periodDays ? (Number(periodDays) as 7 | 30 | 90) : 30;
-  const periodLabel = getReportPeriodText(parsedDays);
-
   // Contenido HTML para el visor integrado de PDF basado en WebView (sin fallback silencioso a HTML)
   const pdfJsHtml = pdfBase64 ? buildPdfJsHtml(pdfBase64) : null;
 
@@ -247,43 +205,6 @@ export function PdfReportViewer() {
           {fontScale < 1.3 ? <Text style={styles.toolbarBtnText}>Volver</Text> : null}
         </Pressable>
 
-        {/* Conmutador de modo accesible */}
-        <View style={styles.modeSwitch}>
-          <Pressable
-            accessibilityRole="tab"
-            accessibilityLabel="Ver formato visual del documento"
-            accessibilityState={{ selected: mode === 'visual' }}
-            onPress={() => handleSetMode('visual')}
-            style={[styles.modeTab, mode === 'visual' && styles.modeTabActive]}
-          >
-            <Feather
-              name="eye"
-              size={16}
-              color={mode === 'visual' ? appTheme.colors.onPrimary : appTheme.colors.text}
-            />
-            <Text style={[styles.modeTabText, mode === 'visual' && styles.modeTabTextActive]}>
-              {REPORTS_AND_VIEWERS_COPY.viewModeVisual}
-            </Text>
-          </Pressable>
-
-          <Pressable
-            accessibilityRole="tab"
-            accessibilityLabel="Ver lectura accesible por voz para TalkBack"
-            accessibilityState={{ selected: mode === 'accessible' }}
-            onPress={() => handleSetMode('accessible')}
-            style={[styles.modeTab, mode === 'accessible' && styles.modeTabActive]}
-          >
-            <Feather
-              name="volume-2"
-              size={16}
-              color={mode === 'accessible' ? appTheme.colors.onPrimary : appTheme.colors.text}
-            />
-            <Text style={[styles.modeTabText, mode === 'accessible' && styles.modeTabTextActive]}>
-              {REPORTS_AND_VIEWERS_COPY.viewModeAccessible}
-            </Text>
-          </Pressable>
-        </View>
-
         {/* Botón de compartir independiente */}
         <Pressable
           accessibilityRole="button"
@@ -298,12 +219,12 @@ export function PdfReportViewer() {
           ]}
         >
           <Feather name="share-2" size={18} color={appTheme.colors.primary} />
-          <Text style={styles.shareBtnText}>Enviar</Text>
+          <Text style={styles.shareBtnText}>Compartir</Text>
         </Pressable>
       </View>
 
       {/* Controles de navegación de página y zoom accesibles en modo visual */}
-      {mode === 'visual' && !loading && pdfJsHtml ? (
+      {!loading && pdfJsHtml ? (
         <View style={styles.viewerControls}>
           <View style={styles.controlGroup}>
             <Pressable
@@ -384,132 +305,6 @@ export function PdfReportViewer() {
           <ActivityIndicator size="large" color={appTheme.colors.primary} />
           <BodyText style={{ marginTop: 12 }}>Cargando informe médico…</BodyText>
         </View>
-      ) : mode === 'accessible' ? (
-        <ScrollView contentContainerStyle={styles.accessibleScroll}>
-          {snapshot ? (
-            <>
-              <InfoCard>
-                <SectionTitle>Datos del paciente y tratamiento</SectionTitle>
-                <View style={styles.detailRow}>
-                  <Text style={styles.detailLabel}>Paciente:</Text>
-                  <Text style={styles.detailValue}>
-                    {snapshot.profile?.nombre ?? 'Sin registro'}
-                  </Text>
-                </View>
-                <View style={styles.detailRow}>
-                  <Text style={styles.detailLabel}>RUT:</Text>
-                  <Text style={styles.detailValue}>{snapshot.profile?.rut ?? 'Sin registro'}</Text>
-                </View>
-                <View style={styles.detailRow}>
-                  <Text style={styles.detailLabel}>Tratamiento:</Text>
-                  <Text style={styles.detailValue}>
-                    {snapshot.treatment?.nombre ?? 'Sin tratamiento activo registrado'}
-                  </Text>
-                </View>
-                <View style={styles.detailRow}>
-                  <Text style={styles.detailLabel}>Período evaluado:</Text>
-                  <Text style={styles.detailValue}>{periodLabel}</Text>
-                </View>
-              </InfoCard>
-
-              <InfoCard>
-                <SectionTitle>Resumen del período</SectionTitle>
-                <View style={styles.detailRow}>
-                  <Text style={styles.detailLabel}>Total de mediciones:</Text>
-                  <Text style={styles.detailHighlight}>
-                    {snapshot.summary?.vitalsCount ?? 0} registros
-                  </Text>
-                </View>
-                <View style={styles.detailRow}>
-                  <Text style={styles.detailLabel}>Temperatura promedio:</Text>
-                  <Text style={styles.detailValue}>
-                    {snapshot.summary?.avgTemperature
-                      ? `${snapshot.summary.avgTemperature.toFixed(1)} °C`
-                      : 'Sin datos'}
-                  </Text>
-                </View>
-                <View style={styles.detailRow}>
-                  <Text style={styles.detailLabel}>Frecuencia cardíaca prom.:</Text>
-                  <Text style={styles.detailValue}>
-                    {snapshot.summary?.avgPulse
-                      ? `${Math.round(snapshot.summary.avgPulse)} lpm`
-                      : 'Sin datos'}
-                  </Text>
-                </View>
-                <View style={styles.detailRow}>
-                  <Text style={styles.detailLabel}>Presión arterial prom.:</Text>
-                  <Text style={styles.detailValue}>
-                    {snapshot.summary?.avgSystolic && snapshot.summary?.avgDiastolic
-                      ? `${Math.round(snapshot.summary.avgSystolic)} / ${Math.round(snapshot.summary.avgDiastolic)} mmHg`
-                      : 'Sin datos'}
-                  </Text>
-                </View>
-              </InfoCard>
-
-              {/* Registro completo de signos vitales sin truncar */}
-              {snapshot.vitals && snapshot.vitals.length > 0 ? (
-                <InfoCard>
-                  <SectionTitle>
-                    Mediciones de signos vitales ({snapshot.vitals.length})
-                  </SectionTitle>
-                  {snapshot.vitals.map((item, idx) => (
-                    <View key={item.id ?? idx} style={styles.vitalItem}>
-                      <View style={styles.vitalHeader}>
-                        <Text style={styles.vitalDate}>
-                          {item.fecha_registro
-                            ? formatDate(item.fecha_registro)
-                            : 'Fecha no registrada'}
-                        </Text>
-                        <StatusPill>Medición registrada</StatusPill>
-                      </View>
-                      <Text style={styles.vitalDetails}>
-                        Temp: {item.temperatura ? `${item.temperatura} °C` : '--'} · Pulso:{' '}
-                        {item.pulso ? `${item.pulso} lpm` : '--'} · PA:{' '}
-                        {item.presion_sistolica && item.presion_diastolica
-                          ? `${item.presion_sistolica}/${item.presion_diastolica}`
-                          : '--'}{' '}
-                        · SatO2: {item.saturacion_o2 ? `${item.saturacion_o2} %` : '--'}
-                      </Text>
-                    </View>
-                  ))}
-                </InfoCard>
-              ) : null}
-
-              {/* Registro completo de síntomas */}
-              {snapshot.symptoms && snapshot.symptoms.length > 0 ? (
-                <InfoCard>
-                  <SectionTitle>Síntomas registrados ({snapshot.symptoms.length})</SectionTitle>
-                  {snapshot.symptoms.map((item, idx) => (
-                    <View key={item.id ?? idx} style={styles.vitalItem}>
-                      <View style={styles.vitalHeader}>
-                        <Text style={styles.vitalDate}>
-                          {item.fecha_registro
-                            ? formatDate(item.fecha_registro)
-                            : 'Fecha no registrada'}
-                        </Text>
-                        <StatusPill>REGISTRADO</StatusPill>
-                      </View>
-                      <Text style={styles.vitalDetails}>
-                        {item.descripcion || 'Síntoma registrado sin notas'}
-                      </Text>
-                    </View>
-                  ))}
-                </InfoCard>
-              ) : null}
-            </>
-          ) : (
-            <InfoCard>
-              <Feather name="info" size={32} color={appTheme.colors.warning} />
-              <SectionTitle>Reporte de versión anterior</SectionTitle>
-              <BodyText>{REPORTS_AND_VIEWERS_COPY.legacyReportNotice}</BodyText>
-              <VisualButton
-                label="Ver en modo visual"
-                onPress={() => handleSetMode('visual')}
-                secondary
-              />
-            </InfoCard>
-          )}
-        </ScrollView>
       ) : (
         /* Modo Visual con visor integrado de PDF basado en WebView */
         <View style={styles.webViewContainer}>
@@ -528,7 +323,9 @@ export function PdfReportViewer() {
               onMessage={handleWebViewMessage}
             />
           ) : (
-            <View style={styles.centerContainer}>
+            <ScrollView
+              contentContainerStyle={[styles.centerContainer, { flexGrow: 1, flex: undefined }]}
+            >
               <Feather name="alert-triangle" size={48} color={appTheme.colors.warning} />
               <Text style={styles.errorTitle}>
                 No se pudo abrir el archivo PDF original en el visor integrado
@@ -538,20 +335,12 @@ export function PdfReportViewer() {
                   'No fue posible leer o descifrar el documento PDF guardado en este dispositivo.'}
               </BodyText>
               <View style={{ marginTop: 16, width: '100%', gap: theme.spacing.sm }}>
-                {snapshot ? (
-                  <VisualButton
-                    label="Ver versión de lectura accesible"
-                    onPress={() => handleSetMode('accessible')}
-                  />
-                ) : null}
                 <VisualButton
                   label="Reintentar lectura"
-                  secondary={Boolean(snapshot)}
                   onPress={() => setRetryCount((c) => c + 1)}
                 />
-                <VisualButton label="Compartir archivo PDF" secondary onPress={handleShare} />
               </View>
-            </View>
+            </ScrollView>
           )}
         </View>
       )}
@@ -657,35 +446,6 @@ function createStyles(colors: ReturnType<typeof useAppTheme>['theme']['colors'])
       color: colors.primary,
       fontWeight: '700',
     },
-    modeSwitch: {
-      flexDirection: 'row',
-      backgroundColor: colors.mutedSurface,
-      borderRadius: 20,
-      padding: 3,
-      gap: 2,
-    },
-    modeTab: {
-      flexDirection: 'row',
-      alignItems: 'center',
-      gap: 5,
-      paddingHorizontal: 10,
-      paddingVertical: 6,
-      borderRadius: 16,
-      minHeight: 48,
-    },
-    modeTabActive: {
-      backgroundColor: colors.primary,
-    },
-    modeTabText: {
-      fontFamily: 'NunitoSans-SemiBold',
-      fontSize: 12.5,
-      fontWeight: '600',
-      color: colors.text,
-    },
-    modeTabTextActive: {
-      color: colors.onPrimary,
-      fontWeight: '700',
-    },
     feedbackBanner: {
       flexDirection: 'row',
       alignItems: 'center',
@@ -714,56 +474,6 @@ function createStyles(colors: ReturnType<typeof useAppTheme>['theme']['colors'])
       color: colors.text,
       textAlign: 'center',
       marginTop: 12,
-    },
-    accessibleScroll: {
-      gap: theme.spacing.md,
-      paddingBottom: theme.spacing.xl,
-    },
-    detailRow: {
-      flexDirection: 'row',
-      justifyContent: 'space-between',
-      paddingVertical: 4,
-      borderBottomWidth: 1,
-      borderBottomColor: colors.border,
-    },
-    detailLabel: {
-      fontFamily: 'NunitoSans-Regular',
-      fontSize: 14,
-      color: colors.secondary,
-    },
-    detailValue: {
-      fontFamily: 'NunitoSans-SemiBold',
-      fontSize: 14,
-      color: colors.text,
-      fontWeight: '600',
-    },
-    detailHighlight: {
-      fontFamily: 'NunitoSans-Bold',
-      fontSize: 15,
-      color: colors.primary,
-      fontWeight: '800',
-    },
-    vitalItem: {
-      paddingVertical: 6,
-      borderBottomWidth: 1,
-      borderBottomColor: colors.border,
-      gap: 2,
-    },
-    vitalHeader: {
-      flexDirection: 'row',
-      justifyContent: 'space-between',
-      alignItems: 'center',
-    },
-    vitalDate: {
-      fontFamily: 'NunitoSans-SemiBold',
-      fontSize: 13,
-      color: colors.text,
-      fontWeight: '600',
-    },
-    vitalDetails: {
-      fontFamily: 'NunitoSans-Regular',
-      fontSize: 12.5,
-      color: colors.secondary,
     },
     webViewContainer: {
       flex: 1,

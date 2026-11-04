@@ -1,3 +1,4 @@
+import { VITAL_DOMAINS } from '../local/validation';
 import type { SqlConnection } from '../local/core/sql';
 import { agendaDate } from '@quimiocare/contracts/agenda';
 import { enqueueOperational } from '../agenda/operational-outbox';
@@ -59,6 +60,8 @@ export function payloadOf(
           'pulso',
           'temperatura',
           'saturacion_oxigeno',
+          'dolor_ena',
+          'version_dolor',
         ]
       : [
           'id',
@@ -74,16 +77,56 @@ export function payloadOf(
   const date = command.kind === 'signos' ? body.fecha_registro : body.fecha_respuesta;
   if (date !== command.captured_at) throw new Error('Se modificó la fecha original.');
   if (command.kind === 'signos') {
+    if (Object.hasOwn(body, 'dolor_ena') || Object.hasOwn(body, 'version_dolor')) {
+      if (
+        body.version_dolor !== 1 ||
+        !Number.isInteger(body.dolor_ena) ||
+        Number(body.dolor_ena) < 0 ||
+        Number(body.dolor_ena) > 10
+      )
+        throw new Error('Escala ENA no contractual.');
+    }
+    const domains = {
+      temperatura: VITAL_DOMAINS.temperature,
+      presion_arterial_sistolica: VITAL_DOMAINS.systolic,
+      presion_arterial_diastolica: VITAL_DOMAINS.diastolic,
+      pulso: VITAL_DOMAINS.pulse,
+      saturacion_oxigeno: VITAL_DOMAINS.saturation,
+      dolor_ena: VITAL_DOMAINS.pain,
+    };
+    for (const [key, domain] of Object.entries(domains)) {
+      const value = body[key];
+      if (value == null) continue;
+      if (
+        typeof value !== 'number' ||
+        !Number.isFinite(value) ||
+        value < domain.min ||
+        value > domain.max ||
+        (domain.integer && !Number.isInteger(value))
+      )
+        throw new Error('Medición fuera del dominio contractual.');
+    }
     if (
-      !allowed.slice(2).some((k) => typeof body[k] === 'number') ||
-      allowed
-        .slice(2)
-        .some(
-          (k) =>
-            body[k] !== undefined &&
-            body[k] !== null &&
-            (typeof body[k] !== 'number' || !Number.isFinite(body[k])),
-        )
+      body.version_dolor === 1 &&
+      typeof body.temperatura === 'number' &&
+      Math.abs(body.temperatura * 10 - Math.round(body.temperatura * 10)) > 1e-7
+    )
+      throw new Error('La captura nueva de temperatura exige precisión explícita.');
+    if (
+      typeof body.presion_arterial_sistolica === 'number' &&
+      typeof body.presion_arterial_diastolica === 'number' &&
+      body.presion_arterial_sistolica <= body.presion_arterial_diastolica
+    )
+      throw new Error('La presión sistólica debe superar la diastólica.');
+    const measurements = allowed.slice(2).filter((key) => key !== 'version_dolor');
+    if (
+      !measurements.some((k) => typeof body[k] === 'number') ||
+      measurements.some(
+        (k) =>
+          body[k] !== undefined &&
+          body[k] !== null &&
+          (typeof body[k] !== 'number' || !Number.isFinite(body[k])),
+      )
     )
       throw new Error('Mediciones no contractuales.');
   } else {

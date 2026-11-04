@@ -109,16 +109,23 @@ describe('registros y cola local', () => {
 });
 
 describe('validación estructural', () => {
-  const blank = { temperature: '', systolic: '', diastolic: '', pulse: '', saturation: '' };
+  const blank = {
+    temperature: '',
+    systolic: '',
+    diastolic: '',
+    pulse: '',
+    saturation: '',
+    pain: '0',
+  };
   it('acepta coma o punto y mediciones parciales', () => {
     expect(parseVitalInput({ ...blank, temperature: '36,8' }).temperatura).toBe(36.8);
     expect(parseVitalInput({ ...blank, temperature: '36.8' }).temperatura).toBe(36.8);
   });
   it('rechaza mediciones vacías y números inválidos, y admite presión aislada', () => {
-    expect(() => parseVitalInput(blank)).toThrow(InputError);
+    expect(() => parseVitalInput({ ...blank, pain: '' })).toThrow(InputError);
     expect(parseVitalInput({ ...blank, systolic: '120' }).presion_sistolica).toBe(120);
     expect(() => parseVitalInput({ ...blank, pulse: '72.5' })).toThrow(InputError);
-    expect(() => parseVitalInput({ ...blank, saturation: '101' })).toThrow(InputError);
+    expect(() => parseVitalInput({ ...blank, saturation: '101', pain: '0' })).toThrow(InputError);
     expect(() => parseVitalInput({ ...blank, temperature: 'Infinity' })).toThrow(InputError);
   });
   it('exige una descripción real de hasta 2.000 caracteres', () => {

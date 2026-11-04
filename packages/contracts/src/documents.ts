@@ -1,3 +1,4 @@
+import { withMedicationBinding } from './gateway-extension.js';
 import clinical from '../specs/openapi-clinico-rc32-bundle.json' with { type: 'json' };
 import ai from '../specs/openapi-ia-rc31.json' with { type: 'json' };
 import gateway from '../specs/openapi-gateway-quimiocare-v1.json' with { type: 'json' };
@@ -31,10 +32,12 @@ export interface ContractDocument {
   paths: Record<string, Record<string, OperationSpec | Array<Parameter | { $ref: string }>>>;
 }
 // The cast only describes document structure; payload validation is performed by AJV below.
-export const documents = { clinical, ai, gateway, demo } as unknown as Record<
-  Service,
-  ContractDocument
->;
+export const documents = {
+  clinical,
+  ai,
+  gateway: withMedicationBinding(gateway as unknown as ContractDocument),
+  demo,
+} as unknown as Record<Service, ContractDocument>;
 export const contractInventory = inventory;
 
 export type OperationId =

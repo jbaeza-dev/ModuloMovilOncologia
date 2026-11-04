@@ -17,6 +17,7 @@ import type { SqlValue } from '../data/local/core/sql';
 jest.setTimeout(15000);
 jest.mock('expo-network', () => ({
   addNetworkStateListener: jest.fn(() => ({ remove: jest.fn() })),
+  getNetworkStateAsync: jest.fn(async () => ({ isConnected: true, isInternetReachable: true })),
 }));
 configure({ asyncUtilTimeout: 8000 });
 
@@ -67,7 +68,7 @@ jest.mock('../services/session/http-session-adapter', () => {
   const { DemoSessionAdapter } = require('../services/session/demo-session-adapter');
   return {
     HttpSessionAdapter: class extends DemoSessionAdapter {
-      config = { mode: 'demo', scope: 'ui-test' };
+      config = { mode: 'demo', scope: 'ui-test', clinicalUrl: 'http://clinical.test' };
       signal = new AbortController().signal;
       getContextSignal = () => this.signal;
       request = async () => ({ status: 503, body: {} });

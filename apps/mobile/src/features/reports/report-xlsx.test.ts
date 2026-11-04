@@ -106,17 +106,17 @@ function createMockReportData(overrides: Partial<ReportData> = {}): ReportData {
 }
 
 describe('exportador de reportes Excel (.xlsx) con SheetJS', () => {
-  it('genera un libro de trabajo con las tres hojas estructuradas requeridas', () => {
+  it('genera un libro de trabajo con las cuatro hojas estructuradas requeridas', () => {
     const data = createMockReportData();
     const wb = buildReportWorkbook(data);
 
-    expect(wb.SheetNames).toEqual(['Resumen', 'Signos vitales', 'Sintomas']);
+    expect(wb.SheetNames).toEqual(['Resumen', 'Signos vitales', 'Sintomas', 'Seguimientos ePRO']);
     expect(wb.Sheets['Resumen']).toBeDefined();
     expect(wb.Sheets['Signos vitales']).toBeDefined();
     expect(wb.Sheets['Sintomas']).toBeDefined();
   });
 
-  it('regresión: conserva exactamente 3 hojas en el libro y mantiene el historial de síntomas sin alterar el contrato de exportación', () => {
+  it('regresión: incluye ePRO y conserva las cuatro hojas en el libro y mantiene el historial de síntomas sin alterar el contrato de exportación', () => {
     const data = createMockReportData({
       symptoms: [
         {
@@ -129,8 +129,8 @@ describe('exportador de reportes Excel (.xlsx) con SheetJS', () => {
       ],
     });
     const wb = buildReportWorkbook(data);
-    expect(wb.SheetNames).toHaveLength(3);
-    expect(wb.SheetNames).toEqual(['Resumen', 'Signos vitales', 'Sintomas']);
+    expect(wb.SheetNames).toHaveLength(4);
+    expect(wb.SheetNames).toEqual(['Resumen', 'Signos vitales', 'Sintomas', 'Seguimientos ePRO']);
     expect(wb.SheetNames).not.toContain('Seguimiento');
     expect(wb.SheetNames).not.toContain('Formularios');
 
@@ -148,7 +148,12 @@ describe('exportador de reportes Excel (.xlsx) con SheetJS', () => {
     expect(bytes.byteLength).toBeGreaterThan(5000); // Archivo ZIP/XLSX válido
 
     const reReadWb = XLSX.read(bytes, { type: 'array' });
-    expect(reReadWb.SheetNames).toEqual(['Resumen', 'Signos vitales', 'Sintomas']);
+    expect(reReadWb.SheetNames).toEqual([
+      'Resumen',
+      'Signos vitales',
+      'Sintomas',
+      'Seguimientos ePRO',
+    ]);
   });
 
   it('garantiza que las celdas de texto sean estrictamente de tipo string (t: "s") y carezcan de propiedad de fórmula o enlace', () => {
@@ -192,11 +197,11 @@ describe('exportador de reportes Excel (.xlsx) con SheetJS', () => {
 
     // 1. Verificar HTML generado para PDF
     const html = buildReportHtml(data);
-    expect(html).toContain(data.profile!.nombre);
-    expect(html).toContain(data.profile!.rut);
+    expect(html).not.toContain(data.profile!.nombre);
+    expect(html).not.toContain(data.profile!.rut);
     expect(html).toContain(data.treatment!.nombre);
-    expect(html).toContain(data.linkingCode.displayText);
-    expect(html).toContain('en caché · obtenida el');
+    expect(html).not.toContain(data.linkingCode.displayText);
+    expect(html).not.toContain(data.linkingCode.code!);
     expect(html).toContain('36,6 °C');
     expect(html).toContain('72 lpm');
     expect(html).toContain('Náuseas moderadas');
@@ -208,11 +213,11 @@ describe('exportador de reportes Excel (.xlsx) con SheetJS', () => {
 
     const summarySheet = reReadWb.Sheets['Resumen'];
     const summaryText = JSON.stringify(summarySheet);
-    expect(summaryText).toContain(data.profile!.nombre);
-    expect(summaryText).toContain(data.profile!.rut);
-    expect(summaryText).toContain(data.profile!.email);
+    expect(summaryText).not.toContain(data.profile!.nombre);
+    expect(summaryText).not.toContain(data.profile!.rut);
+    expect(summaryText).not.toContain(data.profile!.email);
     expect(summaryText).toContain(data.treatment!.nombre);
-    expect(summaryText).toContain(data.linkingCode.displayText);
+    expect(summaryText).not.toContain(data.linkingCode.displayText);
     expect(summaryText).toContain(data.pacienteId);
     expect(summaryText).toContain(data.periodStart);
     expect(summaryText).toContain(data.periodEnd);
@@ -241,7 +246,7 @@ describe('exportador de reportes Excel (.xlsx) con SheetJS', () => {
     expect(symptomsSheet['D3'].v).toBe(data.symptoms[1].descripcion);
   });
 
-  it('incorpora ID del registro, fecha local identificada con zona, fecha de vinculación y celdas vacías para mediciones ausentes', () => {
+  it('incorpora ID del registro, fecha local identificada con zona, privacidad y celdas vacías para mediciones ausentes', () => {
     const dataWithMissing = createMockReportData({
       timeZone: 'America/Santiago',
       vitals: [
@@ -274,9 +279,9 @@ describe('exportador de reportes Excel (.xlsx) con SheetJS', () => {
     // 1. Resumen: fecha de obtención en caché y zona local
     const summarySheet = reReadWb.Sheets['Resumen'];
     const summaryJson = JSON.stringify(summarySheet);
-    expect(summaryJson).toContain('Fecha de obtención en caché (UTC)');
-    expect(summaryJson).toContain(dataWithMissing.linkingCode.obtainedAt);
-    expect(summaryJson).toContain('Fecha de obtención local (America/Santiago)');
+    expect(summaryJson).not.toContain(dataWithMissing.linkingCode.code!);
+    expect(summaryJson).not.toContain(dataWithMissing.profile!.nombre);
+    expect(summaryJson).toContain('America/Santiago');
 
     // 2. Signos vitales: encabezados con ID y zona horaria
     const vitalsSheet = reReadWb.Sheets['Signos vitales'];
@@ -310,7 +315,7 @@ describe('exportador de reportes Excel (.xlsx) con SheetJS', () => {
     expect(symptomsSheet['D2'].v).toBe('Cefalea leve');
   });
 
-  it('etiqueta el código de vinculación explícitamente como histórico fuera de uso si su estado es usado o expirado', () => {
+  it('omite el código de vinculación incluso si su estado es usado, expirado o no disponible', () => {
     // Caso 1: Código usado
     const dataUsed = createMockReportData({
       linkingCode: {
@@ -323,7 +328,7 @@ describe('exportador de reportes Excel (.xlsx) con SheetJS', () => {
     });
     const wbUsed = buildReportWorkbook(dataUsed);
     const summaryUsed = JSON.stringify(wbUsed.Sheets['Resumen']);
-    expect(summaryUsed).toContain('código histórico fuera de uso - utilizado');
+    expect(summaryUsed).not.toContain('VINC-1111');
 
     // Caso 2: Código expirado
     const dataExpired = createMockReportData({
@@ -337,7 +342,7 @@ describe('exportador de reportes Excel (.xlsx) con SheetJS', () => {
     });
     const wbExpired = buildReportWorkbook(dataExpired);
     const summaryExpired = JSON.stringify(wbExpired.Sheets['Resumen']);
-    expect(summaryExpired).toContain('código histórico fuera de uso - expirado');
+    expect(summaryExpired).not.toContain('VINC-2222');
 
     // Caso 3: No disponible
     const dataUnavailable = createMockReportData({
@@ -351,7 +356,7 @@ describe('exportador de reportes Excel (.xlsx) con SheetJS', () => {
     });
     const wbUnavailable = buildReportWorkbook(dataUnavailable);
     const summaryUnavailable = JSON.stringify(wbUnavailable.Sheets['Resumen']);
-    expect(summaryUnavailable).toContain('No disponible');
+    expect(summaryUnavailable).not.toContain('Sin código de vinculación');
   });
 
   it('reloj congelado: alterar el reloj del sistema tras capturar la instantánea no modifica la fecha de emisión en PDF ni en XLSX', () => {
@@ -494,7 +499,12 @@ describe('exportador de reportes Excel (.xlsx) con SheetJS', () => {
 
         const decryptedBytes = await readClinicalFile(resolved.canonicalUri, encryptedOnDisk);
         const workbook = XLSX.read(decryptedBytes, { type: 'array' });
-        expect(workbook.SheetNames).toEqual(['Resumen', 'Signos vitales', 'Sintomas']);
+        expect(workbook.SheetNames).toEqual([
+          'Resumen',
+          'Signos vitales',
+          'Sintomas',
+          'Seguimientos ePRO',
+        ]);
 
         const vitalsRows = XLSX.utils.sheet_to_json<Array<string | number | boolean | null>>(
           workbook.Sheets['Signos vitales'],

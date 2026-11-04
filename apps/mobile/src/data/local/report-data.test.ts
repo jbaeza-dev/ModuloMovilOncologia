@@ -35,6 +35,7 @@ describe('reportes locales y generación de contenido para PDF', () => {
     // Registro 1: medido hace 2 días (dentro de 7, 30 y 90 días)
     currentTime = '2026-09-26T12:00:00.000Z';
     await repoA.createVitals({
+      dolor_ena: 0,
       temperatura: 36.5,
       presion_sistolica: 120,
       presion_diastolica: 80,
@@ -45,6 +46,7 @@ describe('reportes locales y generación de contenido para PDF', () => {
     // Registro 2: medido hace 15 días (fuera de 7 días, pero dentro de 30 y 90 días)
     currentTime = '2026-09-13T12:00:00.000Z';
     await repoA.createVitals({
+      dolor_ena: 0,
       temperatura: 37.5,
       presion_sistolica: 130,
       presion_diastolica: 85,
@@ -55,6 +57,7 @@ describe('reportes locales y generación de contenido para PDF', () => {
     // Registro 3: medido hace 45 días (fuera de 7 y 30 días, pero dentro de 90 días)
     currentTime = '2026-08-14T12:00:00.000Z';
     await repoA.createVitals({
+      dolor_ena: 0,
       temperatura: 38.5,
       presion_sistolica: 135,
       presion_diastolica: 88,
@@ -65,6 +68,7 @@ describe('reportes locales y generación de contenido para PDF', () => {
     // Registro 4: medido hace 100 días (fuera de 7, 30 y 90 días)
     currentTime = '2026-06-20T12:00:00.000Z';
     await repoA.createVitals({
+      dolor_ena: 0,
       temperatura: 39.0,
       presion_sistolica: 140,
       presion_diastolica: 90,
@@ -125,7 +129,7 @@ describe('reportes locales y generación de contenido para PDF', () => {
     expect(vitals[2].temperatura).toBe(36.9);
   });
 
-  it('genera plantilla HTML válida con datos del paciente, resumen y disclaimer sintético', () => {
+  it('genera plantilla HTML válida con identificador mínimo, resumen y aviso', () => {
     const html = buildReportHtml({
       pacienteId: patientA,
       periodDays: 30,
@@ -168,11 +172,11 @@ describe('reportes locales y generación de contenido para PDF', () => {
     });
 
     expect(html).toContain('QuimioCare');
-    expect(html).toContain('Paciente A de Prueba');
-    expect(html).toContain('12.345.678-9');
+    expect(html).not.toContain('Paciente A de Prueba');
+    expect(html).not.toContain('12.345.678-9');
     expect(html).toContain('Esquema de quimioterapia de prueba');
     expect(html).toContain('Últimos 30 días');
-    expect(html).toContain('Aviso técnico y demostrativo');
+    expect(html).toContain('Se omiten los campos de nombre, RUT, correo y código');
     expect(html).toContain('36,8 °C');
     expect(html).toContain('120/80 mmHg');
     expect(html).toContain('72 lpm');
@@ -278,6 +282,7 @@ describe('reportes locales y generación de contenido para PDF', () => {
 
     // Registro 1: temp 36.0, pulso 70, presiones null, sat 98
     await repoA.createVitals({
+      dolor_ena: 0,
       temperatura: 36.0,
       pulso: 70,
       presion_sistolica: null,
@@ -287,6 +292,7 @@ describe('reportes locales y generación de contenido para PDF', () => {
 
     // Registro 2: temp null, pulso 90, presiones 120/80, sat null
     await repoA.createVitals({
+      dolor_ena: 0,
       temperatura: null,
       pulso: 90,
       presion_sistolica: 120,
@@ -296,6 +302,7 @@ describe('reportes locales y generación de contenido para PDF', () => {
 
     // Registro 3: temp 38.0, pulso null, presiones 130/84, sat 96
     await repoA.createVitals({
+      dolor_ena: 0,
       temperatura: 38.0,
       pulso: null,
       presion_sistolica: 130,

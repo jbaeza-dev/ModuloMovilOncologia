@@ -1,0 +1,62 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "urn:quimiocare:signs-pain:1",
+  "title": "Ampliación propia ENA v1, 2026-10-29",
+  "description": "No modifica RC3.2. ENA entera 0–10 autodeclarada en cada captura nueva; sin clasificación clínica automática.",
+  "$defs": {
+    "input": {
+      "allOf": [
+        {
+          "$ref": "urn:quimiocare:clinical#/components/schemas/SignoVitalRegistroInput"
+        },
+        {
+          "type": "object",
+          "properties": {
+            "version_dolor": {
+              "const": 1
+            },
+            "dolor_ena": {
+              "type": "integer",
+              "minimum": 0,
+              "maximum": 10
+            },
+            "temperatura": {
+              "type": ["number", "null"],
+              "multipleOf": 0.1,
+              "description": "Captura nueva de temperatura con máximo una cifra decimal, sin redondeo silencioso."
+            }
+          },
+          "required": ["version_dolor", "dolor_ena"]
+        }
+      ],
+      "unevaluatedProperties": false
+    },
+    "response": {
+      "allOf": [
+        {
+          "$ref": "urn:quimiocare:clinical#/components/schemas/SignoVitalResponse"
+        },
+        {
+          "type": "object",
+          "properties": {
+            "version_dolor": {
+              "const": 1
+            },
+            "dolor_ena": {
+              "type": "integer",
+              "minimum": 0,
+              "maximum": 10
+            },
+            "temperatura": {
+              "type": ["number", "null"],
+              "multipleOf": 0.1,
+              "description": "Captura nueva de temperatura con máximo una cifra decimal, sin redondeo silencioso."
+            }
+          },
+          "required": ["version_dolor", "dolor_ena"]
+        }
+      ],
+      "unevaluatedProperties": false
+    }
+  }
+}

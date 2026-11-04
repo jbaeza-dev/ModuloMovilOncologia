@@ -30,6 +30,7 @@ export interface ReminderRow {
   id: string;
   owner_id: string;
   kind: GatewayRecordatorio['tipo'];
+  patient_medication_id?: string | null;
   title: string;
   timezone: 'America/Santiago';
   hours: string[];
@@ -76,6 +77,7 @@ export function reminderView(row: ReminderRow): GatewayRecordatorio {
   return {
     id: row.id,
     tipo: row.kind,
+    ...(row.patient_medication_id ? { medicamento_paciente_id: row.patient_medication_id } : {}),
     titulo: row.title,
     zona_horaria: row.timezone,
     horas: row.hours.map((h) => h.slice(0, 5)).sort(),
@@ -112,6 +114,7 @@ function values(config: GatewayConfiguracionRecordatorio) {
     config.fecha_inicio,
     config.fecha_fin,
     config.activo,
+    config.medicamento_paciente_id ?? null,
   ];
 }
 function duplicates(items: { operacion_id: string }[]) {
@@ -228,7 +231,7 @@ export function agendaStore(db: Database, maximum = 100, now: () => Date = () =>
           );
           if (count >= maximum) throw invalid();
           const inserted = await client.query(
-            'INSERT INTO gw_reminder(id,owner_id,kind,title,timezone,hours,weekdays,starts_on,ends_on,active,version,create_hash) VALUES($1,$2,$3,$4,$5,$6::time[],$7::smallint[],$8::date,$9::date,$10,1,$11) ON CONFLICT(id) DO NOTHING RETURNING id',
+            'INSERT INTO gw_reminder(id,owner_id,kind,title,timezone,hours,weekdays,starts_on,ends_on,active,patient_medication_id,version,create_hash) VALUES($1,$2,$3,$4,$5,$6::time[],$7::smallint[],$8::date,$9::date,$10,$11::uuid,1,$12) ON CONFLICT(id) DO NOTHING RETURNING id',
             [id, owner, ...values(config), fingerprint],
           );
           if (!inserted.rowCount) throw conflict();
@@ -245,16 +248,21 @@ export function agendaStore(db: Database, maximum = 100, now: () => Date = () =>
         !validReminderDates(input)
       )
         throw invalid();
-      const config = normalizedReminder(input);
       return transaction(db, async (client) => {
         await lockAgenda(client, owner);
         const current = await owned(client, owner, id);
+        // An older client omitting the new optional field must not erase a confirmed binding.
+        const config = normalizedReminder(
+          input.tipo === 'medicacion' && !Object.hasOwn(input, 'medicamento_paciente_id')
+            ? { ...input, medicamento_paciente_id: current.patient_medication_id ?? null }
+            : input,
+        );
         if (current.version !== input.version_esperada)
           throw new GatewayError(409, 'VERSION_EN_CONFLICTO');
         if (JSON.stringify(normalizedReminder(reminderView(current))) === JSON.stringify(config))
           return envelope(client, owner, current);
         await client.query(
-          'UPDATE gw_reminder SET kind=$3,title=$4,timezone=$5,hours=$6::time[],weekdays=$7::smallint[],starts_on=$8::date,ends_on=$9::date,active=$10,version=version+1,updated_at=now() WHERE owner_id=$1 AND id=$2',
+          'UPDATE gw_reminder SET kind=$3,title=$4,timezone=$5,hours=$6::time[],weekdays=$7::smallint[],starts_on=$8::date,ends_on=$9::date,active=$10,patient_medication_id=$11::uuid,version=version+1,updated_at=now() WHERE owner_id=$1 AND id=$2',
           [owner, id, ...values(config)],
         );
         const row = await owned(client, owner, id);

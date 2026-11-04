@@ -35,7 +35,7 @@ export function parsePeriodFromReportFilename(fileName: string): number | null {
   const match = fileName.match(/^reporte_(\d+)d_\d+\.(pdf|xlsx)$/);
   if (!match) return null;
   const days = Number(match[1]);
-  if (days !== 7 && days !== 30 && days !== 90) return null;
+  if (days !== 7 && days !== 30 && days !== 90 && days !== 365) return null;
   return days;
 }
 
@@ -383,7 +383,7 @@ export async function persistReportFile(
   a11ySnapshot?: unknown,
 ): Promise<{ persistentUri: string; filename: string }> {
   assertSafeId(pacienteId, 'pacienteId');
-  if (periodDays !== 7 && periodDays !== 30 && periodDays !== 90) {
+  if (periodDays !== 7 && periodDays !== 30 && periodDays !== 90 && periodDays !== 365) {
     throw new Error(`Período de reporte no admitido: ${periodDays} días.`);
   }
 
@@ -734,7 +734,8 @@ export async function getPatientReportList(
         const match = filename.match(/^reporte_(\d+)d_(\d+)\.(pdf|xlsx)$/);
         if (!match) continue; // Omitir individualmente archivos con nombres no coincidentes
         const periodDays = Number(match[1]);
-        if (periodDays !== 7 && periodDays !== 30 && periodDays !== 90) continue; // Omitir períodos inválidos
+        if (periodDays !== 7 && periodDays !== 30 && periodDays !== 90 && periodDays !== 365)
+          continue; // Omitir períodos inválidos
 
         const timestampMs = Number(match[2]);
         if (!Number.isFinite(timestampMs)) continue;

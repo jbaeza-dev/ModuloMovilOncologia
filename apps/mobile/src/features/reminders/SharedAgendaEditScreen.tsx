@@ -1,3 +1,5 @@
+import { useProfileIdentity } from '../profile/IdentityProfileScreens';
+import { medicationAvailable } from '@quimiocare/contracts/agenda';
 import { useEffect, useState } from 'react';
 import { Alert, Pressable, Text, View } from 'react-native';
 import { router, useLocalSearchParams, useNavigation } from 'expo-router';
@@ -23,7 +25,14 @@ export function SharedAgendaEditScreen() {
   const { sharedAgenda: agenda, reconcileReminders, trackOperation } = useLocalData(),
     { theme } = useAppTheme(),
     navigation = useNavigation(),
-    params = useLocalSearchParams<{ id?: string; tipo?: string }>();
+    params = useLocalSearchParams<{ id?: string; tipo?: string; medicamentoId?: string }>();
+  const { identity } = useProfileIdentity();
+  const available = (identity?.clinicalProfile?.medicamentos ?? []).filter((m) =>
+    medicationAvailable(m, agendaDate(Date.now())),
+  );
+  const [medicationId, setMedicationId] = useState(
+    typeof params.medicamentoId === 'string' ? params.medicamentoId : '',
+  );
   const [id] = useState(() => (typeof params.id === 'string' ? params.id : Crypto.randomUUID())),
     [old, setOld] = useState<GatewayRecordatorio | null>(null),
     [ready, setReady] = useState(false),
@@ -54,6 +63,7 @@ export function SharedAgendaEditScreen() {
         setOld(rule);
         setTitle(rule.titulo);
         setKind(rule.tipo);
+        setMedicationId(rule.medicamento_paciente_id ?? '');
         setHours(rule.horas.join(', '));
         setWeekdays(rule.dias_semana);
         setStart(rule.fecha_inicio);
@@ -95,7 +105,10 @@ export function SharedAgendaEditScreen() {
             fecha_inicio: start.trim(),
             fecha_fin: end.trim() || null,
             activo: active,
+            ...(kind === 'medicacion' ? { medicamento_paciente_id: medicationId || null } : {}),
           };
+          if (kind === 'medicacion' && active && !available.some((m) => m.id === medicationId))
+            throw new Error('Selecciona un medicamento disponible de tu lista.');
           if (!validConfiguration(config))
             throw new Error(
               'Revisa el título, elige de uno a ocho horarios distintos, al menos un día y una fecha de término posterior al inicio.',
@@ -120,7 +133,7 @@ export function SharedAgendaEditScreen() {
   return (
     <Screen mascotPose="recordatorio" title={old ? 'Editar recordatorio' : 'Nuevo recordatorio'}>
       <BodyText>Elige tus avisos. No cambian las indicaciones de tu equipo de salud.</BodyText>
-      {error && (
+      {Boolean(error) && (
         <Text accessibilityRole="alert" style={{ color: theme.colors.error }}>
           {error}
         </Text>
@@ -158,6 +171,53 @@ export function SharedAgendaEditScreen() {
           </Pressable>
         ))}
       </View>
+      {kind === 'medicacion' ? (
+        <InfoCard>
+          <SectionTitle>Medicamento de este aviso</SectionTitle>
+          <BodyText>
+            Elige el medicamento de tu lista. La asociación y los horarios se guardan cuando
+            confirmas este aviso.
+          </BodyText>
+          {available.map((med) => (
+            <Pressable
+              key={med.id}
+              accessibilityRole="radio"
+              accessibilityLabel={`Seleccionar ${med.nombre || 'medicamento sin nombre'}`}
+              accessibilityState={{ checked: medicationId === med.id, disabled: busy || !ready }}
+              disabled={busy || !ready}
+              onPress={() => {
+                setMedicationId(med.id);
+                setDirty(true);
+              }}
+              style={{
+                padding: 16,
+                borderWidth: 1,
+                borderColor: theme.colors.primary,
+                borderRadius: 12,
+              }}
+            >
+              <Text style={{ color: theme.colors.text }}>
+                {medicationId === med.id ? '● ' : '○ '}
+                {med.nombre || 'Nombre no informado'}
+              </Text>
+              {med.dosis ? (
+                <Text style={{ color: theme.colors.text }}>Dosis indicada: {med.dosis}</Text>
+              ) : null}
+            </Pressable>
+          ))}
+          {!available.length ? (
+            <BodyText>
+              No hay medicamentos disponibles para asociar. Revisa tus indicaciones.
+            </BodyText>
+          ) : null}
+          {old?.tipo === 'medicacion' && !old.medicamento_paciente_id ? (
+            <BodyText>
+              Este aviso anterior aún no tiene medicamento asociado. Selecciónalo para habilitar sus
+              confirmaciones.
+            </BodyText>
+          ) : null}
+        </InfoCard>
+      ) : null}
       <SectionTitle>Horarios del aviso</SectionTitle>
       {hours.split(',').map((hour, index, current) => (
         <InfoCard key={index}>
@@ -210,7 +270,7 @@ export function SharedAgendaEditScreen() {
               setWeekdays((current) =>
                 current.includes(index + 1)
                   ? current.filter((v) => v !== index + 1)
-                  : [...current, index + 1].sort(),
+                  : [...current, index + 1].sort((a, b) => a - b),
               );
               setDirty(true);
             }}
@@ -254,7 +314,11 @@ export function SharedAgendaEditScreen() {
       </InfoCard>
       <VisualButton
         label={busy ? 'Esperando confirmación…' : 'Guardar y confirmar horario'}
-        disabled={busy || !ready}
+        disabled={
+          busy ||
+          !ready ||
+          (kind === 'medicacion' && active && !available.some((m) => m.id === medicationId))
+        }
         onPress={() => void submit()}
       />
       {old && (

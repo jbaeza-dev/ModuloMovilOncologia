@@ -40,6 +40,22 @@ describe('real signed demo credentials', () => {
 });
 
 describe('sign capture semantics', () => {
+  it('preserva ENA en la normalización y distingue otro dolor al reintentar el UUID', () => {
+    const input = {
+      id: randomUUID(),
+      fecha_registro: '2026-10-22T12:00:00Z',
+      version_dolor: 1 as const,
+      dolor_ena: 0,
+    };
+    const value = normalizedSigns(input);
+    expect(value).toMatchObject({ version_dolor: 1, dolor_ena: 0 });
+    expect(equivalentSigns(value, { ...value, dolor_ena: 1 })).toBe(false);
+    expect(equivalentSigns(value, { ...value })).toBe(true);
+    expect(() => normalizedSigns({ ...input, dolor_ena: 11 })).toThrow();
+    expect(() =>
+      normalizedSigns({ id: input.id, fecha_registro: input.fecha_registro, version_dolor: 1 }),
+    ).toThrow();
+  });
   it('accepts independent blood pressure values and preserves the original instant', () => {
     const input = {
       id: randomUUID(),

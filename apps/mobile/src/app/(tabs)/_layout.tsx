@@ -5,6 +5,7 @@ import { StyleSheet, Text, useWindowDimensions, View } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 import { PodcastMiniPlayer } from '../../components/PodcastMiniPlayer';
+import { ScreenBottomInsetHandledContext } from '../../components/ScreenInsets';
 import { requestHomeScrollToTop } from '../../features/home/home-scroll-signal';
 import { useAppTheme } from '../../providers/ThemeProvider';
 
@@ -69,63 +70,65 @@ export default function TabsLayout() {
 
   return (
     <View style={{ flex: 1 }}>
-      <Tabs
-        initialRouteName="(inicio)"
-        backBehavior="fullHistory"
-        screenOptions={{
-          headerShown: false,
-          tabBarActiveTintColor: appTheme.colors.primary,
-          tabBarInactiveTintColor: appTheme.colors.secondary,
-          tabBarActiveBackgroundColor: appTheme.colors.primaryContainer,
-          tabBarLabelPosition: 'below-icon',
-          tabBarAllowFontScaling: true,
-          tabBarLabel: ({ color, children }) => (
-            <Text numberOfLines={2} style={[styles.label, { color }]}>
-              {compactLabels && children === 'Formulario'
-                ? 'Formu\nlario'
-                : compactLabels && children === 'Educación'
-                  ? 'Educa\nción'
-                  : children}
-            </Text>
-          ),
-          tabBarItemStyle: styles.item,
-          tabBarStyle: [styles.bar, { height: tabHeight }],
-        }}
-      >
-        <Tabs.Screen
-          name="(inicio)"
-          options={{
-            title: 'Inicio',
-            tabBarIcon: ({ color }) => <Feather name="home" size={24} color={color} />,
+      <ScreenBottomInsetHandledContext.Provider value>
+        <Tabs
+          initialRouteName="(inicio)"
+          backBehavior="fullHistory"
+          screenOptions={{
+            headerShown: false,
+            tabBarActiveTintColor: appTheme.colors.primary,
+            tabBarInactiveTintColor: appTheme.colors.secondary,
+            tabBarActiveBackgroundColor: appTheme.colors.primaryContainer,
+            tabBarLabelPosition: 'below-icon',
+            tabBarAllowFontScaling: true,
+            tabBarLabel: ({ color, children }) => (
+              <Text numberOfLines={2} style={[styles.label, { color }]}>
+                {compactLabels && children === 'Formulario'
+                  ? 'Formu\nlario'
+                  : compactLabels && children === 'Educación'
+                    ? 'Educa\nción'
+                    : children}
+              </Text>
+            ),
+            tabBarItemStyle: styles.item,
+            tabBarStyle: [styles.bar, { height: tabHeight }],
           }}
-          listeners={({ navigation }) => ({
-            tabPress: () => {
-              handleHomeTabPress(navigation);
-            },
-          })}
-        />
-        <Tabs.Screen
-          name="vitales"
-          options={{
-            title: 'Mediciones',
-            tabBarIcon: ({ color }) => <Feather name="activity" size={24} color={color} />,
-          }}
-        />
-        <Tabs.Screen
-          name="formulario"
-          options={{
-            title: 'Formulario',
-            tabBarIcon: ({ color }) => <Feather name="clipboard" size={24} color={color} />,
-          }}
-        />
-        <Tabs.Screen
-          name="educacion"
-          options={{
-            title: 'Educación',
-            tabBarIcon: ({ color }) => <Feather name="book-open" size={24} color={color} />,
-          }}
-        />
-      </Tabs>
+        >
+          <Tabs.Screen
+            name="(inicio)"
+            options={{
+              title: 'Inicio',
+              tabBarIcon: ({ color }) => <Feather name="home" size={24} color={color} />,
+            }}
+            listeners={({ navigation }) => ({
+              tabPress: () => {
+                handleHomeTabPress(navigation);
+              },
+            })}
+          />
+          <Tabs.Screen
+            name="vitales"
+            options={{
+              title: 'Mediciones',
+              tabBarIcon: ({ color }) => <Feather name="activity" size={24} color={color} />,
+            }}
+          />
+          <Tabs.Screen
+            name="formulario"
+            options={{
+              title: 'Formulario',
+              tabBarIcon: ({ color }) => <Feather name="clipboard" size={24} color={color} />,
+            }}
+          />
+          <Tabs.Screen
+            name="educacion"
+            options={{
+              title: 'Educación',
+              tabBarIcon: ({ color }) => <Feather name="book-open" size={24} color={color} />,
+            }}
+          />
+        </Tabs>
+      </ScreenBottomInsetHandledContext.Provider>
       <PodcastMiniPlayer bottomOffset={tabHeight} />
     </View>
   );

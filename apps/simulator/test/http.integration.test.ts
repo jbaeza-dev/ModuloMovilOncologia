@@ -846,3 +846,70 @@ describe('authenticated HTTP against persistent PostgreSQL', () => {
     ).toHaveLength(1);
   });
 });
+
+describe('P07 extensión ENA: HTTP y PostgreSQL reales', () => {
+  it('conserva ENA cero y fecha tras ACK perdido, replay idempotente y conflicto de contenido', async () => {
+    const a = await session();
+    await accept(a.access_token);
+    await scenario('ACK_SIGNOS_PERDIDO');
+    const input = { ...sign(), version_dolor: 1, dolor_ena: 0 };
+    await expect(
+      call('/api/v1/pacientes/me/signos-vitales', {
+        method: 'POST',
+        token: a.access_token,
+        body: input,
+      }),
+    ).rejects.toThrow();
+    const replay = await call('/api/v1/pacientes/me/signos-vitales', {
+      method: 'POST',
+      token: a.access_token,
+      body: input,
+    });
+    expect(replay.status).toBe(200);
+    expect(replay.body).toMatchObject({
+      id: input.id,
+      version_dolor: 1,
+      dolor_ena: 0,
+      fecha_registro: input.fecha_registro,
+      sincronizado: true,
+    });
+    expect(validateResponse('C-06', 200, replay.body).valid).toBe(true);
+    const fresh = openDatabase(databaseUrl);
+    try {
+      const rows = await fresh.query('SELECT request,respuesta FROM qc_demo_signo WHERE id=$1', [
+        input.id,
+      ]);
+      expect(rows.rows).toHaveLength(1);
+      expect(rows.rows[0].request.dolor_ena).toBe(0);
+      expect(rows.rows[0].respuesta.dolor_ena).toBe(0);
+    } finally {
+      await fresh.end();
+    }
+    expect(
+      (
+        await call('/api/v1/pacientes/me/signos-vitales', {
+          method: 'POST',
+          token: a.access_token,
+          body: { ...input, dolor_ena: 1 },
+        })
+      ).status,
+    ).toBe(409);
+  });
+  it.each([{ temperatura: 1000 }, { temperatura: 37.55 }, { dolor_ena: 11 }])(
+    'rechaza sin persistir la captura nueva inválida %j',
+    async (values) => {
+      const a = await session();
+      await accept(a.access_token);
+      const input = { ...sign(), version_dolor: 1, dolor_ena: 0, ...values };
+      const result = await call('/api/v1/pacientes/me/signos-vitales', {
+        method: 'POST',
+        token: a.access_token,
+        body: input,
+      });
+      expect(result.status).toBe(422);
+      expect(
+        (await db.query('SELECT id FROM qc_demo_signo WHERE id=$1', [input.id])).rows,
+      ).toHaveLength(0);
+    },
+  );
+});

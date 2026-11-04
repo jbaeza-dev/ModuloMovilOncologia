@@ -1,3 +1,4 @@
+import { SessionRecovery } from '../services/session/session-recovery';
 import { AppLoadingScreen } from '../components/AppLoadingScreen';
 import { AutomaticEducationDownloads } from '../features/education/AutomaticEducationDownloads';
 import type { ClinicalStore } from '../data/sync/native-runtime';
@@ -188,11 +189,30 @@ export function LocalDataProvider({ children }: { children: ReactNode }) {
 
   useEffect(() => {
     if (!identitySession) return;
-    const sub = AppState.addEventListener('change', (state) => {
-      if (state === 'active' && identitySession.getCurrentUser())
-        void identitySession.refreshIdentity().catch(() => undefined);
+    const localTransport =
+      identitySession.config.mode === 'demo' &&
+      ['localhost', '127.0.0.1'].includes(new URL(identitySession.config.clinicalUrl).hostname);
+    const recovery = new SessionRecovery(identitySession, localTransport);
+    recovery.setForeground(AppState.currentState === 'active');
+    const app = AppState.addEventListener('change', (state) => {
+      recovery.setForeground(state === 'active');
     });
-    return () => sub.remove();
+    let observedNetwork = false;
+    const network = Network.addNetworkStateListener((state) => {
+      observedNetwork = true;
+      recovery.setOnline(state.isConnected === true && state.isInternetReachable !== false);
+    });
+    void Network.getNetworkStateAsync()
+      .then((state) => {
+        if (observedNetwork) return;
+        recovery.setOnline(state.isConnected === true && state.isInternetReachable !== false);
+      })
+      .catch(() => undefined);
+    return () => {
+      recovery.dispose();
+      app.remove();
+      network.remove();
+    };
   }, [identitySession]);
 
   const patientId = manager.getPatientId();

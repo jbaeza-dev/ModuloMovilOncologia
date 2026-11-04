@@ -1,4 +1,3 @@
-import { GlobalStatusNotice } from '../features/sync/GlobalStatusNotice';
 import Feather from '@expo/vector-icons/Feather';
 import { useFonts } from 'expo-font';
 import { router, Stack, useSegments } from 'expo-router';
@@ -63,6 +62,7 @@ export function AppNavigator() {
         segments[0] === 'recordatorios' ||
         segments[0] === 'asistente' ||
         segments[0] === 'avisos' ||
+        segments[0] === 'medicamentos' ||
         segments[0] === 'vitales' ||
         segments[0] === 'formulario';
       if (inProtected) {
@@ -81,9 +81,6 @@ export function AppNavigator() {
 
   return (
     <View style={{ flex: 1 }}>
-      {segments[0] !== 'visor-infografia' && segments[0] !== 'reportes' ? (
-        <GlobalStatusNotice />
-      ) : null}
       <StatusBar
         barStyle={
           segments[0] === 'visor-infografia' || theme.colorScheme === 'dark'
@@ -106,6 +103,7 @@ export function AppNavigator() {
           <Stack.Screen name="recordatorios" />
           <Stack.Screen name="asistente" />
           <Stack.Screen name="avisos" />
+          <Stack.Screen name="medicamentos" />
           <Stack.Screen name="vitales" />
           <Stack.Screen name="formulario" />
         </Stack.Protected>

@@ -90,8 +90,8 @@ describe('seguridad y sanitización de reportes locales', () => {
     expect(html).not.toContain('<b onmouseover');
     expect(html).not.toContain('<iframe');
     // Las entidades escapadas deben estar presentes
-    expect(html).toContain('&lt;b onmouseover=&quot;alert(1)&quot;&gt;Paciente XSS&lt;/b&gt;');
-    expect(html).toContain('12.345.678-9&lt;script&gt;');
+    expect(html).not.toContain('Paciente XSS');
+    expect(html).not.toContain('12.345.678-9');
     expect(html).toContain('&lt;iframe src=&quot;evil.com&quot;&gt;');
   });
 });

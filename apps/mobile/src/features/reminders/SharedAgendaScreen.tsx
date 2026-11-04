@@ -2,6 +2,7 @@ import { useCallback, useEffect, useState } from 'react';
 import { Linking, Text } from 'react-native';
 import { router, useFocusEffect } from 'expo-router';
 import type { GatewayRecordatorio } from '@quimiocare/contracts';
+import { useProfileIdentity } from '../profile/IdentityProfileScreens';
 import { normalizedReminder } from '@quimiocare/contracts/agenda';
 import { Screen } from '../../components/Screen';
 import { DetailsDisclosure } from '../../components/DetailsDisclosure';
@@ -25,6 +26,8 @@ export function SharedAgendaScreen() {
       remindersRevision = 0,
     } = useLocalData(),
     { theme } = useAppTheme();
+  const { identity } = useProfileIdentity();
+  const medications = identity?.clinicalProfile?.medicamentos ?? [];
   const [rules, setRules] = useState<GatewayRecordatorio[]>([]),
     [pending, setPending] = useState<AgendaIntent[]>([]),
     [coverage, setCoverage] = useState<AgendaCoverage | null>(null),
@@ -144,7 +147,7 @@ export function SharedAgendaScreen() {
           onPress={() => void Linking.openSettings()}
         />
       </InfoCard>
-      {error && (
+      {Boolean(error) && (
         <Text accessibilityRole="alert" style={{ color: theme.colors.error }}>
           {error}
         </Text>
@@ -192,6 +195,15 @@ export function SharedAgendaScreen() {
       {rules.map((rule) => (
         <InfoCard key={rule.id}>
           <SectionTitle>{rule.titulo}</SectionTitle>
+          {rule.tipo === 'medicacion' ? (
+            <BodyText>
+              {rule.medicamento_paciente_id
+                ? 'Medicamento: ' +
+                  (medications.find((m) => m.id === rule.medicamento_paciente_id)?.nombre ??
+                    'No disponible en la lista actual')
+                : 'Aviso general sin medicamento asociado. Edítalo y elige uno de tu lista para confirmar tomas.'}
+            </BodyText>
+          ) : null}
           <BodyText>
             {kinds[rule.tipo]} · {rule.activo ? 'Activo' : 'Pausado'}
           </BodyText>

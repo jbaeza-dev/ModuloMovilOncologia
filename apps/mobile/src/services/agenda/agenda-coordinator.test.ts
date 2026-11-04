@@ -1,4 +1,5 @@
 import { afterEach, describe, expect, it } from 'vitest';
+import type { ReminderNotificationKind } from '../notifications/notification-copy';
 import { randomUUID } from 'node:crypto';
 import type {
   GatewayRecordatorio,
@@ -47,7 +48,10 @@ class Native implements AgendaNotifications {
   allowed = true;
   failSchedule = false;
   failCancel = false;
-  pending = new Map<string, { data: NativeAgendaData; at: string | null }>();
+  pending = new Map<
+    string,
+    { data: NativeAgendaData; at: string | null; kind?: ReminderNotificationKind }
+  >();
   presentations = 0;
   cancelled: string[] = [];
   async permission() {
@@ -56,10 +60,15 @@ class Native implements AgendaNotifications {
   async list() {
     return [...this.pending].map(([id, v]) => ({ id, data: v.data }));
   }
-  async schedule(id: string, at: string | null, data: NativeAgendaData) {
+  async schedule(
+    id: string,
+    at: string | null,
+    data: NativeAgendaData,
+    kind?: ReminderNotificationKind,
+  ) {
     if (this.failSchedule) throw new Error('schedule failed');
     if (at === null) this.presentations++;
-    this.pending.set(id, { data, at });
+    this.pending.set(id, { data, at, kind });
     if (at !== null) this.alarms.add(id);
     return id;
   }
@@ -125,6 +134,24 @@ async function setup(rules = [rule]) {
   };
 }
 describe('Push y respaldo local de agenda (lógica; aceptación Android aparte)', () => {
+  it.each(['signos', 'epro', 'medicacion'] as const)(
+    'selecciona el motivo %s desde la regla local validada para respaldo y push',
+    async (tipo) => {
+      const s = await setup([
+        { ...rule, tipo, titulo: 'Dato privado que no se muestra en notificaciones' },
+      ]);
+      await s.coordinator.reconcile();
+      expect([...s.native.pending.values()].every((v) => v.kind === tipo)).toBe(true);
+      s.setNow('2026-10-29T11:00:10Z');
+      expect(await s.coordinator.processPush(s.payload)).toBe('presented');
+      const shown = [...s.native.pending.values()].find((v) => v.at === null)!;
+      expect(shown.kind).toBe(tipo);
+      expect(JSON.stringify(shown.data)).not.toContain('Dato privado');
+      expect(notificationPayload(shown.data.payload)).toBe(true);
+      expect(Object.keys(shown.data.payload)).not.toContain('titulo');
+    },
+  );
+
   it('rearma al reabrir aunque Expo conserve los IDs de alarmas borradas por force-stop', async () => {
     const s = await setup();
     await s.coordinator.reconcile();
@@ -290,6 +317,19 @@ describe('Push y respaldo local de agenda (lógica; aceptación Android aparte)'
     expect(await s.coordinator.observe(data, 'opened')).toBe('/vitales/registrar');
     await s.coordinator.observe(data, 'opened');
     expect(await s.db.first('SELECT count(*) AS n FROM qc_gateway_outbox')).toEqual({ n: 2 });
+  });
+  it('abrir el aviso de un medicamento lleva a su registro sin confirmar ninguna toma', async () => {
+    const medicationId = 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa';
+    const s = await setup([{ ...rule, tipo: 'medicacion', medicamento_paciente_id: medicationId }]);
+    await s.coordinator.reconcile();
+    s.setNow('2026-10-29T11:02:01Z');
+    const data = [...s.native.pending.values()][0]!.data;
+    expect(await s.coordinator.observe(data, 'opened')).toBe(
+      '/medicamentos?medicamentoId=' + medicationId,
+    );
+    expect(await s.db.first('SELECT count(*) AS n FROM qc_medication_intake_log')).toEqual({
+      n: 0,
+    });
   });
   it('cerrar cancela únicamente trabajos persistidos de esta asociación', async () => {
     const s = await setup();

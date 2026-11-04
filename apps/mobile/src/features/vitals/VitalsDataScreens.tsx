@@ -53,6 +53,7 @@ const initialValues: VitalInput = {
   diastolic: '',
   pulse: '',
   saturation: '',
+  pain: '',
 };
 
 function RecordCard({ item }: { item: VitalWithSyncRecord }) {
@@ -191,6 +192,7 @@ export function RegisterVitalsDataScreen() {
   const diaRef = useRef<TextInput>(null);
   const pulseRef = useRef<TextInput>(null);
   const satRef = useRef<TextInput>(null);
+  const painRef = useRef<TextInput>(null);
 
   const styles = useStyles();
   const busy = submitting || saving;
@@ -200,7 +202,8 @@ export function RegisterVitalsDataScreen() {
     values.systolic.trim().length > 0 ||
     values.diastolic.trim().length > 0 ||
     values.pulse.trim().length > 0 ||
-    values.saturation.trim().length > 0;
+    values.saturation.trim().length > 0 ||
+    values.pain.trim().length > 0;
 
   const shouldPreventRemove = isDirty && !isClosing && !bypassPreventRemoveRef.current;
 
@@ -261,6 +264,7 @@ export function RegisterVitalsDataScreen() {
       else if (validation.errors.diastolic) diaRef.current?.focus();
       else if (validation.errors.pulse) pulseRef.current?.focus();
       else if (validation.errors.saturation) satRef.current?.focus();
+      else if (validation.errors.pain) painRef.current?.focus();
       return;
     }
 
@@ -292,7 +296,9 @@ export function RegisterVitalsDataScreen() {
   return (
     <Screen mascotPose="registro" title="Registrar signos vitales" bottomAction={bottomAction}>
       <SectionTitle>Anota lo que hayas medido.</SectionTitle>
-      <BodyText>Puedes dejar en blanco los datos que no te hayas tomado hoy.</BodyText>
+      <BodyText>
+        Registra tu dolor de 0 a 10. Puedes dejar en blanco las otras mediciones que no tengas.
+      </BodyText>
 
       {savedRecord ? (
         <FeedbackBanner
@@ -312,7 +318,8 @@ export function RegisterVitalsDataScreen() {
         onChangeText={(t) => handleChange('temperature', t)}
         keyboardType="decimal-pad"
         placeholder="Ej.: 36,8"
-        helperText="30,0 a 45,0 °C. Puedes usar coma o punto."
+        helperText="Entrada de 30,0 a 45,0 °C; máximo un decimal. No indica normalidad."
+        maxLength={6}
         errorText={fieldErrors.temperature}
         inputRef={tempRef}
         returnKeyType="next"
@@ -374,6 +381,18 @@ export function RegisterVitalsDataScreen() {
         />
       </PatientFieldRow>
 
+      <VisualField
+        label="Dolor ENA (0 a 10) *"
+        value={values.pain}
+        onChangeText={(text) => handleChange('pain', text)}
+        keyboardType="number-pad"
+        maxLength={3}
+        helperText="Obligatorio: 0 = sin dolor; 10 = máximo dolor imaginable."
+        errorText={fieldErrors.pain}
+        inputRef={painRef}
+        editableValueStyle
+      />
+
       {generalError ? (
         <Text accessibilityRole="alert" style={styles.generalError}>
           {generalError}
@@ -430,6 +449,10 @@ export function VitalDataDetailScreen() {
                       ? `Diastólica: ${record.presion_diastolica} mmHg`
                       : 'Sin registro'
               }
+            />
+            <DetailRow
+              label="Dolor ENA"
+              value={record.dolor_ena == null ? 'Sin dato histórico' : `${record.dolor_ena}/10`}
             />
             <DetailRow label="Pulso" value={formatVital(record.pulso, 'lpm')} />
             <DetailRow label="Saturación" value={formatVital(record.saturacion_o2, '%')} />

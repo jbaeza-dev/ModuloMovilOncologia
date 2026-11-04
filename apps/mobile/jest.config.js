@@ -1,5 +1,20 @@
 module.exports = {
   preset: 'jest-expo',
+  collectCoverageFrom: [
+    'src/**/*.{ts,tsx}',
+    '!src/**/*.test.{ts,tsx}',
+    '!src/**/__tests__/**',
+    '!src/**/testing/**',
+    '!src/features/preview/**',
+    '!src/**/*.d.ts',
+  ],
+  coverageDirectory: '<rootDir>/../../coverage/mobile-jest',
+  coverageReporters: [
+    'text-summary',
+    'json-summary',
+    'html',
+    ['lcovonly', { projectRoot: `${__dirname}/../..` }],
+  ],
   setupFiles: ['<rootDir>/jest.setup.ts'],
   moduleNameMapper: {
     '^@quimiocare/contracts/forms$': '<rootDir>/../../packages/contracts/src/forms.ts',

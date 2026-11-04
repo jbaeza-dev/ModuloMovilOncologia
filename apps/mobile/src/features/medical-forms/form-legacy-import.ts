@@ -46,11 +46,8 @@ export async function importLegacyDrafts(
     ? await adapter.directoryExists(baseDir)
     : await adapter.exists(baseDir);
 
-  if (!dirExists) {
-    return result;
-  }
-
-  const files = await adapter.listDirectory(baseDir);
+  // An absent legacy directory is an empty import, without creating it or reading files.
+  const files = dirExists ? await adapter.listDirectory(baseDir) : [];
   const normalizedBaseDir = baseDir.replace(/\\/g, '/');
   const sep = normalizedBaseDir.endsWith('/') ? '' : '/';
 

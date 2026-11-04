@@ -21,11 +21,21 @@
     "test:integration": "pnpm --filter @quimiocare/simulator run test:integration",
     "build:services": "pnpm --filter @quimiocare/contracts run build && pnpm --filter @quimiocare/simulator run build && pnpm --filter @quimiocare/gateway run build",
     "test:gateway": "pnpm --filter @quimiocare/gateway run test",
-    "test:gateway:integration": "pnpm --filter @quimiocare/gateway run test:integration"
+    "test:gateway:integration": "pnpm --filter @quimiocare/gateway run test:integration",
+    "test:local:coverage": "vitest run --coverage",
+    "test:ui:coverage": "pnpm --filter @modulo-movil-oncologia/mobile run test:ui:coverage",
+    "test:contracts:coverage": "pnpm --filter @quimiocare/contracts run test:coverage",
+    "test:simulator:coverage": "pnpm --filter @quimiocare/simulator run test:coverage",
+    "test:integration:coverage": "pnpm --filter @quimiocare/simulator run test:integration:coverage",
+    "test:gateway:coverage": "pnpm --filter @quimiocare/gateway run test:coverage",
+    "test:gateway:integration:coverage": "pnpm --filter @quimiocare/gateway run test:integration:coverage",
+    "test:coverage": "pnpm run build:services && pnpm run test:local:coverage && pnpm run test:ui:coverage && pnpm run test:contracts:coverage && pnpm run test:simulator:coverage && pnpm run test:gateway:coverage && pnpm run coverage:summary coverage/mobile-vitest coverage/mobile-jest coverage/contracts coverage/simulator coverage/gateway",
+    "coverage:summary": "node scripts/coverage-summary.mjs"
   },
   "devDependencies": {
     "@eslint/js": "10.0.1",
     "@types/node": "^22.20.4",
+    "@vitest/coverage-v8": "3.2.4",
     "eslint": "10.9.1",
     "eslint-config-prettier": "10.1.8",
     "globals": "17.11.0",

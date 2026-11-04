@@ -1,9 +1,20 @@
+/** Technical capture domains from RC3.2; never clinical urgency thresholds. */
+export const VITAL_DOMAINS = {
+  temperature: { min: 30, max: 45, integer: false },
+  systolic: { min: 40, max: 300, integer: true },
+  diastolic: { min: 30, max: 200, integer: true },
+  pulse: { min: 30, max: 250, integer: true },
+  saturation: { min: 50, max: 100, integer: true },
+  pain: { min: 0, max: 10, integer: true },
+} as const;
+
 export type VitalInput = {
   temperature: string;
   systolic: string;
   diastolic: string;
   pulse: string;
   saturation: string;
+  pain: string;
 };
 
 export type VitalValues = {
@@ -12,6 +23,8 @@ export type VitalValues = {
   presion_diastolica: number | null;
   pulso: number | null;
   saturacion_o2: number | null;
+  /** Missing/null is historical; required when recording a new capture. */
+  dolor_ena?: number | null;
 };
 
 export class InputError extends Error {
@@ -34,18 +47,16 @@ export function validateVitalInput(input: VitalInput): VitalValidationResult {
   const errors: Partial<Record<keyof VitalInput, string>> = {};
   let generalError: string | undefined;
 
-  function parseField(
-    raw: string,
-    key: keyof VitalInput,
-    label: string,
-    integer: boolean,
-    min: number,
-    max: number,
-  ): number | null {
+  function parseField(raw: string, key: keyof VitalInput, label: string): number | null {
+    const { min, max, integer } = VITAL_DOMAINS[key];
     const value = raw.trim();
     if (!value) return null;
     if (!/^\d+(?:[.,]\d+)?$/.test(value) || (integer && !/^\d+$/.test(value))) {
       errors[key] = `${label}: ingresa un número válido.`;
+      return null;
+    }
+    if (key === 'temperature' && /[.,]\d{2,}$/.test(value)) {
+      errors[key] = 'Temperatura: usa como máximo un decimal, sin redondear la lectura.';
       return null;
     }
     const parsed = Number(value.replace(',', '.'));
@@ -57,26 +68,15 @@ export function validateVitalInput(input: VitalInput): VitalValidationResult {
   }
 
   // Input limits come from SignoVitalRegistroInput (RC3.2), not triage thresholds.
-  const rawTemperature = parseField(input.temperature, 'temperature', 'Temperatura', false, 30, 45);
+  const rawTemperature = parseField(input.temperature, 'temperature', 'Temperatura');
   const temperatura = rawTemperature === null ? null : Number(rawTemperature.toFixed(1));
-  const presion_sistolica = parseField(
-    input.systolic,
-    'systolic',
-    'Presión sistólica',
-    true,
-    40,
-    300,
-  );
-  const presion_diastolica = parseField(
-    input.diastolic,
-    'diastolic',
-    'Presión diastólica',
-    true,
-    30,
-    200,
-  );
-  const pulso = parseField(input.pulse, 'pulse', 'Pulso', true, 30, 250);
-  const saturacion_o2 = parseField(input.saturation, 'saturation', 'Saturación', true, 50, 100);
+  const presion_sistolica = parseField(input.systolic, 'systolic', 'Presión sistólica');
+  const presion_diastolica = parseField(input.diastolic, 'diastolic', 'Presión diastólica');
+  const pulso = parseField(input.pulse, 'pulse', 'Pulso');
+  const saturacion_o2 = parseField(input.saturation, 'saturation', 'Saturación');
+
+  const dolor_ena = parseField(input.pain ?? '', 'pain', 'Dolor ENA');
+  if (!(input.pain ?? '').trim()) errors.pain = 'Ingresa tu dolor ENA de 0 a 10.';
 
   const hasSysRaw = input.systolic.trim().length > 0;
   const hasDiaRaw = input.diastolic.trim().length > 0;
@@ -94,7 +94,8 @@ export function validateVitalInput(input: VitalInput): VitalValidationResult {
     hasSysRaw ||
     hasDiaRaw ||
     input.pulse.trim().length > 0 ||
-    input.saturation.trim().length > 0;
+    input.saturation.trim().length > 0 ||
+    (input.pain ?? '').trim().length > 0;
 
   if (!hasAnyInput) {
     generalError = 'Ingresa al menos una medición.';
@@ -110,6 +111,7 @@ export function validateVitalInput(input: VitalInput): VitalValidationResult {
       presion_diastolica,
       pulso,
       saturacion_o2,
+      dolor_ena,
     },
     errors,
     generalError,
@@ -128,6 +130,7 @@ export function parseVitalInput(input: VitalInput): VitalValues {
       'diastolic',
       'pulse',
       'saturation',
+      'pain',
     ];
     for (const key of fieldOrder) {
       if (result.errors[key]) {
@@ -151,6 +154,7 @@ export function normalizeVitalValues(values: VitalValues): VitalValues {
     diastolic: text(values.presion_diastolica),
     pulse: text(values.pulso),
     saturation: text(values.saturacion_o2),
+    pain: text(values.dolor_ena ?? null),
   });
 }
 

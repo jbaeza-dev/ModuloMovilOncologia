@@ -24,7 +24,8 @@ jest.mock('../features/education/podcast-catalog', () => ({
 }));
 /// <reference types="jest" />
 
-import { fireEvent, render, screen, waitFor } from '@testing-library/react-native';
+import { act, fireEvent, render, screen, waitFor } from '@testing-library/react-native';
+import { BackHandler } from 'react-native';
 import React from 'react';
 
 // Mock expo-router
@@ -666,6 +667,32 @@ describe('Pruebas de interfaz (UI) para módulo de Educación', () => {
   });
 
   describe('Visor ampliado de infografías (InfographicViewerScreen)', () => {
+    it('Atrás cierra solo la lectura accesible y luego consume el retorno del visor', async () => {
+      mockUseLocalSearchParams.mockReturnValue({ recurso: 'edu-infografia-alimentacion' });
+      (router.canGoBack as jest.Mock).mockReturnValue(true);
+      let hardwareBack: Parameters<typeof BackHandler.addEventListener>[1] | undefined;
+      const listener = jest.spyOn(BackHandler, 'addEventListener').mockImplementation((_, cb) => {
+        hardwareBack = cb;
+        return { remove: jest.fn() };
+      });
+      try {
+        await render(<InfographicViewerScreen />);
+        await fireEvent.press(await screen.findByText('Texto accesible'));
+        expect(await screen.findByText('Texto alternativo accesible')).toBeTruthy();
+        await act(() => {
+          expect(hardwareBack?.({ type: 'hardwareBackPress', timeStamp: Date.now() })).toBe(true);
+        });
+        expect(screen.queryByText('Texto alternativo accesible')).toBeNull();
+        expect(router.back).not.toHaveBeenCalled();
+        await act(() => {
+          expect(hardwareBack?.({ type: 'hardwareBackPress', timeStamp: Date.now() })).toBe(true);
+        });
+        expect(router.back).toHaveBeenCalledTimes(1);
+      } finally {
+        listener.mockRestore();
+      }
+    });
+
     it('renderiza título, botón de cierre superpuesto, imagen a pantalla completa y controles de accesibilidad', async () => {
       mockUseLocalSearchParams.mockReturnValue({ recurso: 'edu-infografia-alimentacion' });
 

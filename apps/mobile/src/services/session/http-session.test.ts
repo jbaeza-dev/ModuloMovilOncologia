@@ -632,3 +632,85 @@ describe('Durable device revocation and environment settings', () => {
     ).toBeNull();
   });
 });
+
+describe('Actualización automática y concurrente de identidad', () => {
+  it('comparte una sola verificación entre varios disparadores y deja permisos confirmados', async () => {
+    const h = harness();
+    await login(h);
+    h.calls.splice(0);
+    await Promise.all([
+      h.session.refreshIdentity(),
+      h.session.refreshIdentity(),
+      h.session.refreshIdentity(),
+    ]);
+    expect(h.calls.filter((call) => call.path === '/api/v1/auth/me')).toHaveLength(1);
+    expect(h.session.getSnapshot().uploadAllowed).toBe(true);
+  });
+  it('el SDK recupera el perfil obsoleto al volver el servidor, sin pedir una actualización manual', async () => {
+    const h = harness();
+    await login(h);
+    h.setProfile(503);
+    await expect(h.session.refreshIdentity()).rejects.toMatchObject({ kind: 'unavailable' });
+    expect(h.session.getSnapshot().stale).toBe(true);
+    h.setProfile(200);
+    const credentials = await h.session.credentialsForSync();
+    expect(credentials.owner).toBe(owner);
+    expect(h.session.getSnapshot().uploadAllowed).toBe(true);
+    expect(h.session.getSnapshot().stale).toBe(false);
+  });
+  it('una actualización cancelada no reemplaza la nueva verificación del mismo contexto', async () => {
+    const h = harness();
+    await login(h);
+    const old = h.session.refreshIdentity();
+    const refused = expect(old).rejects.toMatchObject({ kind: 'changed' });
+    h.session.cancelRequests();
+    const current = h.session.refreshIdentity();
+    await refused;
+    await current;
+    expect(h.session.getSnapshot().user?.id).toBe(owner);
+    expect(h.session.getSnapshot().uploadAllowed).toBe(true);
+  });
+});
+
+describe('Verificación posterior al guardado de perfil', () => {
+  it('no usa una consulta anterior al guardado aunque la recuperación automática siga en curso', async () => {
+    const h = harness();
+    await login(h);
+    const profile = h.session.getSnapshot().identity!.profile;
+    const original = vi.mocked(h.fake).getMockImplementation()!;
+    let reads = 0,
+      saved = false;
+    let release!: () => void;
+    const pending = new Promise<void>((resolve) => {
+      release = resolve;
+    });
+    const response = (body: unknown) =>
+      new Response(JSON.stringify(body), {
+        status: 200,
+        headers: { 'content-type': 'application/json' },
+      });
+    vi.mocked(h.fake).mockImplementation(async (input, init) => {
+      const path = new URL(String(input)).pathname;
+      if (path === '/api/v1/auth/completar-perfil-paciente') {
+        saved = true;
+        return response({ ...profile, nombre: 'Nombre actualizado' });
+      }
+      if (path === '/api/v1/auth/me') {
+        reads++;
+        const name = saved ? 'Nombre actualizado' : 'Nombre anterior';
+        if (reads === 1) await pending;
+        return response({ ...profile, nombre: name });
+      }
+      return original(input, init);
+    });
+    const automatic = h.session.refreshIdentity();
+    await vi.waitFor(() => expect(reads).toBe(1));
+    const update = h.session.completeProfile({ rut: '11.111.111-1' });
+    await vi.waitFor(() => expect(saved).toBe(true));
+    release();
+    await Promise.all([automatic, update]);
+    expect(reads).toBe(2);
+    expect(h.session.getSnapshot().identity?.profile.nombre).toBe('Nombre actualizado');
+    expect(h.session.getSnapshot().uploadAllowed).toBe(true);
+  });
+});

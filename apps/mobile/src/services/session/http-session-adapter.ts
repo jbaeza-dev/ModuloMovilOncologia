@@ -45,6 +45,7 @@ export class HttpSessionAdapter implements SessionAdapter {
   private epoch = 0;
   private controller = new AbortController();
   private renew: Promise<Credentials> | null = null;
+  private identityRefresh: { epoch: number; promise: Promise<void> } | null = null;
   private listeners = new Set<() => void>();
   private writes: Promise<unknown> = Promise.resolve();
   private snapshot: SessionSnapshot = {
@@ -460,7 +461,31 @@ export class HttpSessionAdapter implements SessionAdapter {
       throw error;
     }
   }
-  async refreshIdentity(): Promise<void> {
+  refreshIdentity(afterMutation = false): Promise<void> {
+    const epoch = this.epoch;
+    if (afterMutation && this.identityRefresh?.epoch === epoch) {
+      const owner = this.current?.owner;
+      return this.identityRefresh.promise
+        .catch(() => undefined)
+        .then(() => {
+          this.assert(epoch, owner);
+          return this.refreshIdentity();
+        });
+    }
+    if (this.identityRefresh?.epoch === epoch) return this.identityRefresh.promise;
+    const promise = Promise.resolve().then(() => {
+      this.assert(epoch);
+      return this.readIdentity();
+    });
+    this.identityRefresh = { epoch, promise };
+    void promise
+      .finally(() => {
+        if (this.identityRefresh?.promise === promise) this.identityRefresh = null;
+      })
+      .catch(() => undefined);
+    return promise;
+  }
+  private async readIdentity(): Promise<void> {
     const epoch = this.epoch,
       owner = this.current?.owner;
     if (!owner) throw new SessionFailure('expired');
@@ -554,7 +579,8 @@ export class HttpSessionAdapter implements SessionAdapter {
     if (r.status !== 200)
       throw new SessionFailure(r.status === 409 ? 'conflict' : 'invalid', r.status);
     check.profile(r.body, this.current!.owner);
-    await this.refreshIdentity();
+    // A previous read must settle before checking the profile that was just saved.
+    await this.refreshIdentity(true);
   }
   async publicTerms() {
     const epoch = this.epoch;
@@ -657,7 +683,8 @@ export class HttpSessionAdapter implements SessionAdapter {
     const epoch = this.epoch,
       owner = this.current?.owner;
     if (!owner) throw new SessionFailure('expired');
-    await this.refreshConsent();
+    if (this.snapshot.stale || !this.snapshot.identity) await this.refreshIdentity();
+    else await this.refreshConsent();
     this.assert(epoch, owner);
     if (!this.snapshot.uploadAllowed) throw new SessionFailure('denied');
     const token = await this.accessToken();

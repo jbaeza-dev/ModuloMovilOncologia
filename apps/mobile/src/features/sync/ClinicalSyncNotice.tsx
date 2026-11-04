@@ -1,20 +1,26 @@
+import { isRecoverableSessionPause } from '../../data/sync/session-pause';
 import { useContext, useEffect, useState } from 'react';
 import { BodyText, InfoCard, VisualButton } from '../../components/Visual';
 import { QueryRevisionContext } from '../../providers/QueryRevision';
 import { useOptionalLocalData } from '../../providers/LocalDataProvider';
 
 export function useClinicalSyncSummary() {
-  const store = useOptionalLocalData()?.clinicalStore,
-    revision = useContext(QueryRevisionContext);
-  const [summary, setSummary] = useState<{
-    pending: number;
-    paused: number;
-    rejected: number;
-    runtimePaused: boolean;
+  const store = useOptionalLocalData()?.clinicalStore;
+  const revision = useContext(QueryRevisionContext);
+  const scopeKey = store ? `${store.scope.owner}|${store.scope.environment}` : '';
+  const [stored, setStored] = useState<{
+    key: string;
+    value: {
+      pending: number;
+      paused: number;
+      rejected: number;
+      runtimePaused: boolean;
+      pauseCode: string | null;
+    };
   } | null>(null);
   useEffect(() => {
     let active = true;
-    setSummary(null);
+    setStored(null);
     if (!store) return;
     void (async () => {
       const row = await store.connection.first<{
@@ -25,13 +31,17 @@ export function useClinicalSyncSummary() {
         `SELECT coalesce(sum(status='pendiente'),0) pending,coalesce(sum(status='pausado'),0) paused,coalesce(sum(status='rechazado'),0) rejected FROM qc_clinical_command WHERE owner=? AND environment=?`,
         [store.scope.owner, store.scope.environment],
       );
-      if (active && row) setSummary({ ...row, runtimePaused: !!store.pauseCode });
+      if (active && row)
+        setStored({
+          key: scopeKey,
+          value: { ...row, runtimePaused: !!store.pauseCode, pauseCode: store.pauseCode },
+        });
     })().catch(() => undefined);
     return () => {
       active = false;
     };
-  }, [store, revision]);
-  return { store, summary };
+  }, [store, revision, scopeKey]);
+  return { store, summary: stored?.key === scopeKey ? stored.value : null };
 }
 
 export function ClinicalSyncNotice() {
@@ -61,7 +71,7 @@ export function ClinicalSyncNotice() {
         </BodyText>
       ) : null}
       {error ? <BodyText>No se pudo reanudar. Revisa tu sesión y conexión.</BodyText> : null}
-      {summary.paused > 0 || summary.runtimePaused ? (
+      {isRecoverableSessionPause(summary.pauseCode) ? (
         <VisualButton
           label="Reintentar envíos"
           secondary
@@ -70,7 +80,7 @@ export function ClinicalSyncNotice() {
             setBusy(true);
             setError(false);
             void store
-              .resume(true)
+              .resume('session')
               .catch(() => setError(true))
               .finally(() => setBusy(false));
           }}

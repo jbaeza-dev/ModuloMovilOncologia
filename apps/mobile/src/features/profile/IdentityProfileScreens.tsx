@@ -120,6 +120,13 @@ export function ProfileScreen() {
       <PersonalFields />
       <NavigationCard title="Actualizar mis datos" icon="edit-2" href="/perfil/completar" compact />
       <NavigationCard
+        title="Mis registros y envíos"
+        description="Consulta lo guardado y lo pendiente de enviar"
+        icon="check-circle"
+        href="/perfil/estado-envios"
+        compact
+      />
+      <NavigationCard
         title="Tratamiento, equipo y medicamentos"
         description="Tu información de salud"
         icon="users"

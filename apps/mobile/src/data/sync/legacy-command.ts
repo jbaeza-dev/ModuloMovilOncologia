@@ -1,6 +1,11 @@
 import type { SqlConnection } from '../local/core/sql';
 import { object, isUuid } from '../../services/session/response-checks';
-import { enqueueClinicalCommand, canonical, type ClinicalScope } from './clinical-command';
+import {
+  enqueueClinicalCommand,
+  canonical,
+  payloadOf,
+  type ClinicalScope,
+} from './clinical-command';
 
 export type ClinicalCaptureHook = (tx: SqlConnection, queueId: string) => Promise<void>;
 interface LegacyQueue {
@@ -63,10 +68,12 @@ export async function transferLegacyCommand(
         'presion_diastolica',
         'pulso',
         'saturacion_o2',
+        'dolor_ena',
       ].some((k) => (history[k] ?? null) !== (record[k] ?? null))
     )
       return preserve('SNAPSHOT_LEGADO_INCOHERENTE');
     const payload = {
+      ...(record.dolor_ena != null ? { version_dolor: 1, dolor_ena: record.dolor_ena } : {}),
       id: record.id,
       fecha_registro: record.fecha_registro,
       temperatura: record.temperatura ?? null,
@@ -75,6 +82,17 @@ export async function transferLegacyCommand(
       pulso: record.pulso ?? null,
       saturacion_oxigeno: record.saturacion_o2 ?? null,
     };
+    try {
+      payloadOf({
+        id: String(record.id),
+        kind: 'signos',
+        captured_at: String(record.fecha_registro),
+        payload_json: canonical(payload),
+      });
+    } catch {
+      if (strict) throw new Error('La captura nueva contiene mediciones inválidas.');
+      return preserve('MEDICIONES_LEGADAS_FUERA_CONTRATO');
+    }
     await enqueueClinicalCommand(tx, scope, {
       kind: 'signos',
       payload,

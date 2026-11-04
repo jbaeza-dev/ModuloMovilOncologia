@@ -25,7 +25,9 @@ export default function P04AcceptanceScreen() {
     if (!store || !patientId || !params.run || !params.action) return;
     if (
       !/^[a-z0-9-]{1,64}$/.test(params.run) ||
-      !['snapshot', 'capture', 'draft', 'resume', 'education-crash'].includes(params.action)
+      !['snapshot', 'capture', 'draft', 'resume', 'education-crash', 'p07-reports'].includes(
+        params.action,
+      )
     )
       return;
     const run = params.run,
@@ -43,6 +45,12 @@ export default function P04AcceptanceScreen() {
       };
       const db = activeStore.connection;
       try {
+        if (action === 'p07-reports') {
+          const { runReportProbe } = await import('../p07/report-probe');
+          result.reportProbe = await runReportProbe(patientId, run);
+          if (!(result.reportProbe as { passed: boolean }).passed)
+            throw new Error('La prueba de reportes contiene fallos; revisar cada muestra.');
+        }
         if (action === 'education-crash')
           await runEducationalPromotionProbe(activeStore, patientId, run, params.phase);
         if (action === 'capture') {
@@ -83,6 +91,7 @@ export default function P04AcceptanceScreen() {
               () => capture.capturedAt,
               activeStore.captureHook,
             ).createVitals({
+              dolor_ena: 0, // Synthetic laboratory capture, never a patient default.
               temperatura: 36.6,
               pulso: 72,
               presion_sistolica: 120,

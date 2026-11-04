@@ -1,3 +1,4 @@
+import signsPainV1 from '../schemas/signs-pain-v1.schema.json' with { type: 'json' };
 import eproEditionV12 from '../schemas/epro-edition-v1_2.schema.json' with { type: 'json' };
 import { Ajv2020 } from 'ajv/dist/2020.js';
 import formatsPlugin from 'ajv-formats';
@@ -25,6 +26,7 @@ export interface RequestInput {
 
 const ajv = new Ajv2020({
   allErrors: true,
+  multipleOfPrecision: 8,
   strict: false,
   coerceTypes: false,
   useDefaults: false,
@@ -35,6 +37,7 @@ const ajv = new Ajv2020({
 for (const [service, document] of Object.entries(documents))
   ajv.addSchema({ ...document, $id: `urn:quimiocare:${service}` });
 ajv.addSchema(eproEditionV12);
+ajv.addSchema(signsPainV1);
 const cache = new Map<string, ValidateFunction>();
 function compile(service: Service, schema: Schema, key: string): ValidateFunction {
   const cached = cache.get(key);
@@ -77,6 +80,41 @@ function check(
 }
 function failure(location: string, keyword: string, message: string): ContractIssue {
   return { location, keyword, message };
+}
+
+/** Explicit extension; old queued captures keep their original RC3.2 body. */
+function painIssues(id: OperationId, body: unknown, response: boolean): ContractIssue[] {
+  if (id !== 'C-06' && id !== 'C-07') return [];
+  const isObject = (v: unknown): v is Record<string, unknown> =>
+    v !== null && typeof v === 'object' && !Array.isArray(v);
+  const entries: unknown[] =
+    id === 'C-06'
+      ? [body]
+      : isObject(body)
+        ? response
+          ? [
+              ...(Array.isArray(body.insertados) ? body.insertados : []),
+              ...(Array.isArray(body.ya_existentes) ? body.ya_existentes : []),
+            ]
+          : Array.isArray(body.registros)
+            ? body.registros
+            : []
+        : [];
+  return entries.flatMap((entry, index) => {
+    if (
+      !isObject(entry) ||
+      (!Object.hasOwn(entry, 'version_dolor') && !Object.hasOwn(entry, 'dolor_ena'))
+    )
+      return [];
+    const kind = response ? 'response' : 'input';
+    return check(
+      'clinical',
+      { $ref: 'urn:quimiocare:signs-pain:1#/$defs/' + kind },
+      'signs-pain-v1:' + kind,
+      entry,
+      (response ? 'response' : 'body') + (id === 'C-07' ? '/' + index : ''),
+    );
+  });
 }
 
 export function validateRequest(id: OperationId, input: RequestInput = {}): ContractResult {
@@ -123,6 +161,7 @@ export function validateRequest(id: OperationId, input: RequestInput = {}): Cont
     }
   } else if (input.body !== undefined)
     errors.push(failure('body', 'unexpectedBody', 'Operation does not declare a request body'));
+  errors.push(...painIssues(id, input.body, false));
   return { valid: errors.length === 0, errors };
 }
 
@@ -178,6 +217,7 @@ export function validateResponse(
     body,
     'response',
   );
+  if (status >= 200 && status < 300) errors.push(...painIssues(id, body, true));
   return { valid: errors.length === 0, errors };
 }
 

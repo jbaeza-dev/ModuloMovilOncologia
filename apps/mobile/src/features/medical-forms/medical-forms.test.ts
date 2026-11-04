@@ -1,7 +1,7 @@
 import { existsSync, mkdtempSync, rmSync, statSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import { afterEach, describe, expect, it } from 'vitest';
+import { afterEach, describe, expect, it, vi } from 'vitest';
 
 import { DatabaseSync } from 'node:sqlite';
 import type { FileStorageAdapter } from '../../data/local/files/file-storage-adapter';
@@ -807,6 +807,17 @@ describe('almacenamiento de borradores con adaptador y reemplazo seguro', () => 
 });
 
 describe('importación legacy de borradores y respuestas a SQLite', () => {
+  it('devuelve contadores vacíos sin leer ni crear un directorio legacy inexistente', async () => {
+    const missing = join(createTempDir(), 'ausente');
+    const adapter = new NodeFileStorageAdapter();
+    const list = vi.spyOn(adapter, 'listDirectory');
+    const db = createTestDb();
+    const result = await importLegacyDrafts(patientA, db, adapter, () => missing);
+    expect(result).toEqual({ imported: 0, cleaned: 0, pendingCleanups: 0, errors: 0 });
+    expect(list).not.toHaveBeenCalled();
+    expect(existsSync(missing)).toBe(false);
+  });
+
   it('importa borrador incompleto a borrador_formulario y limpia archivos físicos tras commit', async () => {
     const dir = createTempDir();
     const adapter = new NodeFileStorageAdapter();

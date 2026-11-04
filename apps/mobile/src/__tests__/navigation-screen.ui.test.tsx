@@ -1,3 +1,4 @@
+jest.mock('../features/sync/GlobalStatusNotice', () => ({ RecordsStatusCard: () => null }));
 /// <reference types="jest" />
 
 import { fireEvent, render, screen } from '@testing-library/react-native';
@@ -167,6 +168,7 @@ import {
 } from '../components/ConfirmLogoutButton';
 import { NavigationCard } from '../components/NavigationCard';
 import { Screen } from '../components/Screen';
+import { ScreenBottomInsetHandledContext } from '../components/ScreenInsets';
 import { SymptomDataScreen } from '../features/form/SymptomDataScreen';
 import { HomeScreen, resolveHomeGreeting } from '../features/home/HomeScreen';
 import { clearHomeScrollToTop, consumeHomeScrollToTop } from '../features/home/home-scroll-signal';
@@ -484,5 +486,27 @@ describe('Screen, NavigationCard, rutas de Inicio y reinicio dirigido (Bloque 1 
     });
     expect(dispatch).not.toHaveBeenCalled();
     expect(consumeHomeScrollToTop()).toBe(true);
+  });
+});
+
+describe('Área segura inferior de pantallas', () => {
+  it('protege los botones inferiores fuera de las pestañas con el inset del teléfono', async () => {
+    await render(
+      <Screen title="Pantalla de prueba" bottomAction={<Text>Guardar</Text>}>
+        <Text>Contenido</Text>
+      </Screen>,
+    );
+    expect(screen.getByTestId('screen-safe-area').props.edges.bottom).toBe('additive');
+    expect(screen.getByText('Guardar')).toBeTruthy();
+  });
+  it('evita duplicar el margen cuando las pestañas ya protegen el borde inferior', async () => {
+    await render(
+      <ScreenBottomInsetHandledContext.Provider value>
+        <Screen title="Pantalla de prueba">
+          <Text>Contenido</Text>
+        </Screen>
+      </ScreenBottomInsetHandledContext.Provider>,
+    );
+    expect(screen.getByTestId('screen-safe-area').props.edges.bottom).toBe('off');
   });
 });
