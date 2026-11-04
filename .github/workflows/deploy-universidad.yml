@@ -86,6 +86,7 @@ jobs:
       - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
           name: digest-${{ matrix.service }}
+          overwrite: true
           path: build/digests/*.json
           retention-days: 14
           if-no-files-found: error
@@ -94,21 +95,26 @@ jobs:
         uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
           name: security-${{ matrix.service }}-${{ github.sha }}
+          overwrite: true
           path: |
             trivy-*.json
             sbom-*.json
           retention-days: 14
           if-no-files-found: warn
 
-  deploy:
+  package:
     needs: images
     runs-on: ubuntu-latest
     timeout-minutes: 25
-    environment: universidad
+    outputs:
+      attempt: ${{ steps.identity.outputs.attempt }}
     permissions:
       contents: read
       packages: read
     steps:
+      - name: Record packaged attempt for deployment retries
+        id: identity
+        run: echo "attempt=$GITHUB_RUN_ATTEMPT" >> "$GITHUB_OUTPUT"
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           ref: ${{ github.sha }}
@@ -138,35 +144,65 @@ jobs:
             build/universidad-release.tar.gz
             build/universidad-release/manifest.json
           retention-days: 14
-      - name: Skip obsolete commits before opening an SSH connection
+  deploy:
+    needs: package
+    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+    runs-on: [self-hosted, linux, x64, quimiocare-deploy]
+    timeout-minutes: 25
+    environment: universidad
+    permissions:
+      contents: read
+      packages: read
+    outputs:
+      deployed: ${{ steps.latest.outputs.deploy }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: ${{ github.sha }}
+          persist-credentials: false
+      - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
+        with:
+          name: universidad-release-${{ github.sha }}-${{ needs.package.outputs.attempt }}
+          path: build/runner-release
+      - name: Skip obsolete commits before deploying locally
         id: latest
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
-          latest=$(gh api "repos/$GITHUB_REPOSITORY/git/ref/heads/main" --jq .object.sha)
+          latest=$(python3 - <<'PY'
+          import json, os, urllib.request
+          request = urllib.request.Request(
+              'https://api.github.com/repos/' + os.environ['GITHUB_REPOSITORY'] + '/git/ref/heads/main',
+              headers={'Authorization': 'Bearer ' + os.environ['GH_TOKEN'], 'Accept': 'application/vnd.github+json'},
+          )
+          with urllib.request.urlopen(request, timeout=20) as response:
+              print(json.load(response)['object']['sha'])
+          PY
+          )
           if [[ "$latest" == "$GITHUB_SHA" ]]; then echo 'deploy=true' >> "$GITHUB_OUTPUT"; else echo 'deploy=false' >> "$GITHUB_OUTPUT"; fi
-      - name: Diagnose SSH network without authentication
-        if: steps.latest.outputs.deploy == 'true'
-        continue-on-error: true
-        timeout-minutes: 2
-        env:
-          SSH_HOST: ${{ secrets.QC_SSH_HOST }}
-          SSH_PORT: ${{ secrets.QC_SSH_PORT }}
-          QC_PUBLIC_ORIGIN: ${{ vars.QC_PUBLIC_ORIGIN }}
-        run: python3 infra/universidad/scripts/diagnose-ssh.py
-      - name: Transfer and deploy over pinned SSH
+      - name: Deploy verified release on Parra
         if: steps.latest.outputs.deploy == 'true'
         env:
-          SSH_HOST: ${{ secrets.QC_SSH_HOST }}
-          SSH_USER: ${{ secrets.QC_SSH_USER }}
-          SSH_PORT: ${{ secrets.QC_SSH_PORT }}
-          SSH_KEY: ${{ secrets.QC_SSH_PRIVATE_KEY }}
-          SSH_KNOWN_HOSTS: ${{ secrets.QC_SSH_KNOWN_HOSTS }}
+          RELEASE_ATTEMPT: ${{ needs.package.outputs.attempt }}
           REGISTRY_TOKEN: ${{ github.token }}
           REGISTRY_USER: ${{ github.actor }}
-        run: bash scripts/ci-deploy-university.sh
+        run: bash scripts/ci-deploy-university-local.sh build/runner-release/universidad-release.tar.gz
+      - name: Deployment evidence
+        if: always()
+        run: |
+          echo "Source: $GITHUB_SHA" >> "$GITHUB_STEP_SUMMARY"
+          echo "Automatic database rollback is disabled. Check readiness logs and the retained manifest." >> "$GITHUB_STEP_SUMMARY"
+
+  verify_public:
+    needs: deploy
+    if: needs.deploy.outputs.deployed == 'true'
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    environment: universidad
+    permissions:
+      contents: read
+    steps:
       - name: Verify public TLS and PowerSync prefix from outside the host
-        if: steps.latest.outputs.deploy == 'true'
         env:
           QC_PUBLIC_ORIGIN: ${{ vars.QC_PUBLIC_ORIGIN }}
         run: |
@@ -174,8 +210,5 @@ jobs:
           curl --fail --silent --show-error --max-time 20 "$QC_PUBLIC_ORIGIN/quimiocare-backend/health" > /dev/null
           code=$(curl --silent --show-error --max-time 20 -X POST -H 'Content-Type: application/json' -d '{}' -o /dev/null -w '%{http_code}' "$QC_PUBLIC_ORIGIN/quimiocare-backend/sync/stream")
           test "$code" = 401
-      - name: Deployment evidence
-        if: always()
-        run: |
-          echo "Source: $GITHUB_SHA" >> "$GITHUB_STEP_SUMMARY"
-          echo "Automatic database rollback is disabled. Check readiness logs and the retained manifest." >> "$GITHUB_STEP_SUMMARY"
+          code=$(curl --silent --show-error --max-time 20 -o /dev/null -w '%{http_code}' "$QC_PUBLIC_ORIGIN/quimiocare-backend/write-checkpoint2.json?client_id=00000000-0000-4000-8000-000000000001")
+          test "$code" = 401
