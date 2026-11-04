@@ -2,6 +2,10 @@
 
 El despliegue de entregas verificadas en `main` utiliza un runner de usuario en Parra. Su instalación, requisitos y operación se describen en [RUNNER_DESPLIEGUE.md](RUNNER_DESPLIEGUE.md). Las imágenes y el APK se compilan en GitHub; solo la instalación se ejecuta en el servidor. El procedimiento histórico de instalación y recuperación se conserva también en `.agents/docs/despliegue-universidad-ci-cd.md` del equipo, excluido de Git. La aceptación con el teléfono corresponde al usuario.
 
+La consulta de claves de autenticación se exige antes de detener servicios y al
+final del despliegue. El alcance y la resolución de fallos se describen en
+[AUTENTICACION_SUPABASE.md](AUTENTICACION_SUPABASE.md).
+
 ## Arquitectura
 
 Podman rootless, Quadlet y red privada `qc-net`. Un PostgreSQL 17 con bases y propietarios distintos: `qc_demo`/`qc_admin`, `qc_gateway_demo`/`qc_gateway`, `qc_powersync`/`qc_storage`. `qc_replica` solo lee la fuente y replica. Clínica e IA sintética comparten imagen; gateway y worker comparten otra. No se implementa un segundo módulo médico.

@@ -9,7 +9,7 @@ const root = '/quimiocare/docs/preparacion/';
 const issuer = 'https://auth.example/auth/v1';
 const state = 's'.repeat(43);
 const verifier = 'v'.repeat(43);
-function harness(query = '', authorized = true) {
+function harness(query = '', authorized: boolean | number = true) {
   const nodes = Object.fromEntries(
     [
       'qc-login',
@@ -33,6 +33,7 @@ function harness(query = '', authorized = true) {
   const key = 'qc-preparation-pkce:' + root;
   const order: string[] = [];
   const fetch = vi.fn().mockImplementation(async (url: string) => {
+    const status = typeof authorized === 'number' ? authorized : authorized ? 200 : 403;
     order.push('fetch');
     return url.includes('/token?')
       ? {
@@ -44,8 +45,8 @@ function harness(query = '', authorized = true) {
           }),
         }
       : {
-          ok: authorized,
-          status: authorized ? 200 : 403,
+          ok: status === 200,
+          status,
           json: async () => ({ autorizado: true }),
         };
   });
@@ -92,6 +93,30 @@ function harness(query = '', authorized = true) {
   return { nodes, storage, ui, createUi, window, fetch, start, pending, order };
 }
 describe('Google access in the preparation browser page', () => {
+  it.each([
+    {
+      status: 503,
+      message: 'El servicio de acceso no está disponible temporalmente. Inténtalo más tarde.',
+    },
+    { status: 401, message: 'La sesión no es válida o venció. Vuelve a entrar con Google.' },
+    {
+      status: 403,
+      message:
+        'Tu cuenta Google no está autorizada como operador. Solicita su autorización local una sola vez.',
+    },
+  ])(
+    'distinguishes access failure $status without exposing the contract or persisting a token',
+    async ({ status, message }) => {
+      const h = harness('?code=x&qc_state=' + state, status);
+      h.pending();
+      await h.start();
+      expect(h.nodes['qc-access-status']!.textContent).toBe(message);
+      expect(h.nodes['qc-login-gate']!.hidden).toBe(false);
+      expect(h.nodes['qc-swagger-shell']!.hidden).toBe(true);
+      expect(h.createUi).not.toHaveBeenCalled();
+      expect(h.storage.size).toBe(0);
+    },
+  );
   it('shows only Google login without creating Swagger or fetching a contract', async () => {
     const h = harness();
     await h.start();

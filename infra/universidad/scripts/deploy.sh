@@ -42,6 +42,7 @@ for key in ("postgres","powersync","nginx"):
  print(v[key]["image"]+":"+v[key]["tag"]+"@"+v[key]["digest"])
 PY
 ); do podman pull "$image"; done
+bash "$SCRIPTS/check-auth-before-deploy.sh" "$ENV" "$SIMULATOR_IMAGE" "$GATEWAY_IMAGE"
 if podman container exists qc-clinical; then
  DATABASE_CONTAINER=qc-postgres DATABASE_USER=postgres CLINICAL_DATABASE=qc_demo GATEWAY_DATABASE=qc_gateway_demo MEDIA_ROOT="$ROOT/media" BACKUP_ROOT="$ROOT/backups" RESUME_WRITERS=false bash "$SCRIPTS/backup.sh"
 fi
