@@ -1,5 +1,5 @@
-import { useEffect, useMemo, useRef, useState } from 'react';
-import { Keyboard, Linking, View } from 'react-native';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { Alert, Keyboard, Linking, View } from 'react-native';
 import { router } from 'expo-router';
 import * as Crypto from 'expo-crypto';
 import { Screen } from '../../components/Screen';
@@ -15,7 +15,6 @@ import {
 import { validateVitalInput } from '../../data/local/validation';
 import { useLocalData } from '../../providers/LocalDataProvider';
 import { getCivilPartsInTimeZone } from '../../services/reminders/reminder-status';
-import { isDemoMode } from '../../utils/environment';
 import {
   proposal,
   questions,
@@ -27,9 +26,15 @@ import {
 import { evaluateOrientation, type OrientationInput, type ResponseOrigin } from './triage-engine';
 import { createOrientationRepository } from './triage-repository';
 
-export function syntheticReviewEnabled(): boolean {
-  return isDemoMode() && process.env.EXPO_PUBLIC_P07_SYNTHETIC_REVIEW === 'true';
-}
+import { syntheticReviewEnabled } from './triage-review';
+
+const outcomeTitles = {
+  A1: 'Ayuda inmediata',
+  A2: 'Valoración profesional urgente',
+  B: 'Contacto prioritario con tu equipo',
+  C: 'Seguimiento domiciliario condicionado',
+  D: 'Información insuficiente',
+} as const;
 type HistoryItem = {
   id: string;
   created_at: string;
@@ -61,6 +66,8 @@ export function TriageScreen() {
   const synthetic = syntheticReviewEnabled();
   const epoch = `${patientId}:${clinicalStore?.scope.environment ?? ''}`;
   const [formEpoch, setFormEpoch] = useState(epoch);
+  const [reviewStarted, setReviewStarted] = useState(false);
+  const [historyLoaded, setHistoryLoaded] = useState(false);
   const [answers, setAnswers] = useState<Partial<Record<QuestionId, Answer>>>({});
   const [origins, setOrigins] = useState<Partial<Record<QuestionId, ResponseOrigin>>>({});
   const [positiveSignals, setPositiveSignals] = useState<QuestionId[]>([]);
@@ -94,8 +101,9 @@ export function TriageScreen() {
   const savingEpoch = useRef<string | null>(null);
   const previous = useRef<string | null>(null);
   const activeEpoch = useRef(epoch);
-  useEffect(() => {
-    activeEpoch.current = epoch;
+  const resetEvaluation = useCallback(() => {
+    setReviewStarted(false);
+    setHistoryLoaded(false);
     setAnswers({});
     setOrigins({});
     setPositiveSignals([]);
@@ -124,11 +132,15 @@ export function TriageScreen() {
     previous.current = null;
     capturedAt.current = null;
     savingEpoch.current = null;
+  }, []);
+  useEffect(() => {
+    activeEpoch.current = epoch;
+    resetEvaluation();
     setFormEpoch(epoch);
     return () => {
       activeEpoch.current = 'closed';
     };
-  }, [epoch]);
+  }, [epoch, resetEvaluation]);
 
   const painNumber = /^\d{1,2}$/.test(pain.trim()) ? Number(pain.trim()) : null;
   const painValid = painNumber !== null && painNumber >= 0 && painNumber <= 10;
@@ -295,13 +307,36 @@ export function TriageScreen() {
     setBusy(true);
     try {
       const items = await repository.history('synthetic');
-      if (activeEpoch.current === capturedEpoch) setHistory(items);
+      if (activeEpoch.current === capturedEpoch) {
+        setHistory(items);
+        setHistoryLoaded(true);
+      }
     } catch {
       if (activeEpoch.current === capturedEpoch)
         setError('No se pudo consultar el historial. Se conservan las evaluaciones.');
     } finally {
       if (activeEpoch.current === capturedEpoch) setBusy(false);
     }
+  }
+  function startAnotherCase() {
+    if (saved) {
+      resetEvaluation();
+      return;
+    }
+    Alert.alert(
+      '¿Empezar otro caso?',
+      'Este caso aún no está guardado. Puedes volver para guardarlo o empezar otro descartando solo estas respuestas.',
+      [
+        { text: 'Volver', style: 'cancel' },
+        {
+          text: 'Empezar sin guardar',
+          style: 'destructive',
+          onPress: () => {
+            if (activeEpoch.current === epoch) resetEvaluation();
+          },
+        },
+      ],
+    );
   }
   const contacts = (
     <InfoCard>
@@ -333,6 +368,7 @@ export function TriageScreen() {
   const resultCard = result.outcome ? (
     <InfoCard>
       <SectionTitle>Resultado de simulación: {result.outcome}</SectionTitle>
+      <SectionTitle>{outcomeTitles[result.outcome]}</SectionTitle>
       <BodyText>{result.message}</BodyText>
       <BodyText>
         {result.complete
@@ -418,6 +454,12 @@ export function TriageScreen() {
         disabled={busy || saved || !repository}
         onPress={() => void save()}
       />
+      <VisualButton
+        label="Empezar otro caso de prueba"
+        secondary
+        disabled={busy || isClosing}
+        onPress={startAnotherCase}
+      />
     </InfoCard>
   ) : null;
   if (formEpoch !== epoch)
@@ -439,6 +481,35 @@ export function TriageScreen() {
             Para consultar sobre tus molestias, utiliza los canales que te indicó tu equipo
             tratante.
           </BodyText>
+        </InfoCard>
+        {contacts}
+        {error ? <BodyText>{error}</BodyText> : null}
+      </Screen>
+    );
+  if (!reviewStarted)
+    return (
+      <Screen title="Orientación de síntomas" mascotPose="resumen">
+        {warning}
+        <InfoCard>
+          <SectionTitle>Revisión del triaje oncológico</SectionTitle>
+          <BodyText>
+            Recorre un caso ficticio para revisar las preguntas, el mensaje de orientación y el
+            guardado local. Las señales urgentes muestran su resultado en cuanto se responden.
+          </BodyText>
+          <BodyText>
+            Esta evaluación tiene sus propias respuestas. El seguimiento diario y los signos vitales
+            se mantienen separados.
+          </BodyText>
+          <BodyText>
+            La propuesta permite revisar ayuda inmediata, valoración urgente, contacto prioritario,
+            seguimiento domiciliario e información insuficiente. La temperatura por sitio y la
+            aplicación de planes paliativos requieren todavía decisiones clínicas.
+          </BodyText>
+          <VisualButton
+            label="Iniciar revisión con un caso ficticio"
+            onPress={() => setReviewStarted(true)}
+            disabled={isClosing}
+          />
         </InfoCard>
         {contacts}
         {error ? <BodyText>{error}</BodyText> : null}
@@ -752,6 +823,9 @@ export function TriageScreen() {
         secondary
         onPress={() => void loadHistory()}
       />
+      {historyLoaded && history.length === 0 ? (
+        <BodyText>Aún no hay evaluaciones de prueba guardadas en esta cuenta.</BodyText>
+      ) : null}
       {history.map((item) => (
         <InfoCard key={item.id}>
           <BodyText>Evaluación de simulación del {item.created_at}</BodyText>

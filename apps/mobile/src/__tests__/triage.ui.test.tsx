@@ -1,11 +1,14 @@
 /// <reference types="jest" />
 import React from 'react';
-import { render, fireEvent, screen, waitFor, within } from '@testing-library/react-native';
+import { Alert } from 'react-native';
+import { act, render, fireEvent, screen, waitFor, within } from '@testing-library/react-native';
 const mockOriginalFlag = process.env.EXPO_PUBLIC_P07_SYNTHETIC_REVIEW;
+const mockOriginalProfile = process.env.EXPO_PUBLIC_APP_ENV;
 let mockDemo = false;
 let mockPatientId = 'patient-a';
 let mockHasDatabase = false;
 const mockSave = jest.fn();
+const mockHistory = jest.fn();
 jest.mock('expo-crypto', () => ({ randomUUID: () => 'synthetic-test-id' }));
 jest.mock('../utils/environment', () => ({ isDemoMode: () => mockDemo }));
 jest.mock('../providers/LocalDataProvider', () => ({
@@ -20,7 +23,7 @@ jest.mock('../providers/LocalDataProvider', () => ({
 jest.mock('../features/triage/triage-repository', () => ({
   createOrientationRepository: () => ({
     save: (...args: unknown[]) => mockSave(...args),
-    history: async () => [],
+    history: (...args: unknown[]) => mockHistory(...args),
   }),
 }));
 jest.mock('../components/Screen', () => ({
@@ -75,17 +78,29 @@ jest.mock('../providers/ThemeProvider', () => ({
 
 import { TriageScreen } from '../features/triage/TriageScreen';
 import { questions } from '../features/triage/triage-definition';
+async function beginReview() {
+  const rendered = await render(<TriageScreen />);
+  await fireEvent.press(
+    screen.getByRole('button', { name: 'Iniciar revisión con un caso ficticio' }),
+  );
+  return rendered;
+}
+
 describe('orientación v0.5: simulación aislada y cambio de cuenta', () => {
   beforeEach(() => {
     mockDemo = false;
     mockPatientId = 'patient-a';
     mockHasDatabase = false;
     mockSave.mockReset();
+    mockHistory.mockReset().mockResolvedValue([]);
+    delete process.env.EXPO_PUBLIC_APP_ENV;
     delete process.env.EXPO_PUBLIC_P07_SYNTHETIC_REVIEW;
   });
   afterAll(() => {
     if (mockOriginalFlag === undefined) delete process.env.EXPO_PUBLIC_P07_SYNTHETIC_REVIEW;
     else process.env.EXPO_PUBLIC_P07_SYNTHETIC_REVIEW = mockOriginalFlag;
+    if (mockOriginalProfile === undefined) delete process.env.EXPO_PUBLIC_APP_ENV;
+    else process.env.EXPO_PUBLIC_APP_ENV = mockOriginalProfile;
   });
   it('el uso normal no presenta puntuaciones ni preguntas propuestas aunque exista el flag de prueba', async () => {
     process.env.EXPO_PUBLIC_P07_SYNTHETIC_REVIEW = 'true';
@@ -102,7 +117,7 @@ describe('orientación v0.5: simulación aislada y cambio de cuenta', () => {
   it('una señal A1 de prueba se presenta sin exigir ENA ni completar las preguntas restantes', async () => {
     mockDemo = true;
     process.env.EXPO_PUBLIC_P07_SYNTHETIC_REVIEW = 'true';
-    await render(<TriageScreen />);
+    await beginReview();
     await fireEvent.press(screen.getAllByRole('button', { name: 'Sí' })[0]);
     expect(screen.getByText('Resultado de simulación: A1')).toBeTruthy();
     expect(screen.getByText(/Registro de prueba incompleto/)).toBeTruthy();
@@ -112,7 +127,7 @@ describe('orientación v0.5: simulación aislada y cambio de cuenta', () => {
     async (expected) => {
       mockDemo = true;
       process.env.EXPO_PUBLIC_P07_SYNTHETIC_REVIEW = 'true';
-      await render(<TriageScreen />);
+      await beginReview();
       await fireEvent.press(screen.getByRole('button', { name: 'Paciente' }));
       if (expected === 'C') {
         for (const question of questions) {
@@ -149,7 +164,7 @@ describe('orientación v0.5: simulación aislada y cambio de cuenta', () => {
   it('al cambiar de cuenta elimina las respuestas de pantalla de la cuenta anterior', async () => {
     mockDemo = true;
     process.env.EXPO_PUBLIC_P07_SYNTHETIC_REVIEW = 'true';
-    const rendered = await render(<TriageScreen />);
+    const rendered = await beginReview();
     await fireEvent.press(screen.getAllByRole('button', { name: 'Sí' })[0]);
     expect(screen.getByText('Resultado de simulación: A1')).toBeTruthy();
     mockPatientId = 'patient-b';
@@ -161,7 +176,7 @@ describe('orientación v0.5: simulación aislada y cambio de cuenta', () => {
     mockHasDatabase = true;
     process.env.EXPO_PUBLIC_P07_SYNTHETIC_REVIEW = 'true';
     mockSave.mockRejectedValueOnce(new Error('Fallo sintético')).mockResolvedValueOnce({});
-    await render(<TriageScreen />);
+    await beginReview();
     await fireEvent.press(screen.getAllByRole('button', { name: 'Sí' })[0]);
     await fireEvent.press(screen.getByRole('button', { name: 'Guardar evaluación de prueba' }));
     await waitFor(() =>
@@ -182,7 +197,7 @@ describe('orientación v0.5: simulación aislada y cambio de cuenta', () => {
   it('permite pedir ayuda sin terminar el recorrido y volver conserva el informante', async () => {
     mockDemo = true;
     process.env.EXPO_PUBLIC_P07_SYNTHETIC_REVIEW = 'true';
-    await render(<TriageScreen />);
+    await beginReview();
     await fireEvent.press(screen.getByRole('button', { name: 'Paciente' }));
     expect(screen.getByTestId('triage-fixed-help')).toContainElement(
       screen.getByRole('button', { name: 'Ver contactos de ayuda' }),
@@ -193,5 +208,129 @@ describe('orientación v0.5: simulación aislada y cambio de cuenta', () => {
       screen.getByRole('button', { name: 'Volver a mis respuestas de prueba' }),
     );
     expect(screen.getByRole('button', { name: 'Paciente', selected: true })).toBeTruthy();
+  });
+  it('el APK universitario abre una revisión explícita con las reglas todavía provisionales', async () => {
+    process.env.EXPO_PUBLIC_APP_ENV = 'universidad-demo';
+    process.env.EXPO_PUBLIC_P07_SYNTHETIC_REVIEW = 'true';
+    await render(<TriageScreen />);
+    expect(screen.getByText('Revisión del triaje oncológico')).toBeTruthy();
+    expect(screen.queryByLabelText(questions[0].text)).toBeNull();
+    expect(screen.getByText(/pendiente de revisión clínica/)).toBeTruthy();
+    await fireEvent.press(
+      screen.getByRole('button', { name: 'Iniciar revisión con un caso ficticio' }),
+    );
+    await fireEvent.press(
+      within(screen.getByLabelText(questions[0].text)).getByRole('button', { name: 'Sí' }),
+    );
+    expect(screen.getByText('Resultado de simulación: A1')).toBeTruthy();
+    expect(screen.getByText('Ayuda inmediata')).toBeTruthy();
+    expect(mockSave).not.toHaveBeenCalled();
+  });
+  it.each(['A2', 'B'] as const)(
+    'el revisor puede recorrer un caso %s y ver su mensaje',
+    async (expected) => {
+      mockDemo = true;
+      process.env.EXPO_PUBLIC_P07_SYNTHETIC_REVIEW = 'true';
+      await beginReview();
+      await fireEvent.press(screen.getByRole('button', { name: 'Paciente' }));
+      if (expected === 'A2') {
+        const question = questions.find((q) => q.group === 'A2')!;
+        await fireEvent.press(
+          within(screen.getByLabelText(question.text)).getByRole('button', { name: 'Sí' }),
+        );
+      } else {
+        for (const question of questions) {
+          await fireEvent.press(
+            within(screen.getByLabelText(question.text)).getByRole('button', {
+              name: question.id === 'B-SYMPTOMS' || question.group === 'C' ? 'Sí' : 'No',
+            }),
+          );
+        }
+        await fireEvent.changeText(screen.getByLabelText('Dolor ENA de prueba (0 a 10)'), '2');
+        await fireEvent.press(screen.getByRole('button', { name: 'Ver orientación de prueba' }));
+      }
+      expect(screen.getByText('Resultado de simulación: ' + expected)).toBeTruthy();
+      expect(screen.queryByLabelText(questions[0].text)).toBeNull();
+    },
+  );
+  it('un nuevo caso guardado empieza sin respuestas ni resultados anteriores y no reescribe el historial', async () => {
+    mockDemo = true;
+    mockHasDatabase = true;
+    mockSave.mockResolvedValue({});
+    process.env.EXPO_PUBLIC_P07_SYNTHETIC_REVIEW = 'true';
+    await beginReview();
+    await fireEvent.press(screen.getAllByRole('button', { name: 'Sí' })[0]);
+    await fireEvent.press(screen.getByRole('button', { name: 'Guardar evaluación de prueba' }));
+    await waitFor(() =>
+      expect(screen.getByRole('button', { name: 'Evaluación de prueba guardada' })).toBeTruthy(),
+    );
+    expect(mockSave.mock.calls[0][2]).toBe('synthetic');
+    await fireEvent.press(screen.getByRole('button', { name: 'Empezar otro caso de prueba' }));
+    expect(screen.getByText('Revisión del triaje oncológico')).toBeTruthy();
+    expect(screen.queryByText('Resultado de simulación: A1')).toBeNull();
+    await fireEvent.press(
+      screen.getByRole('button', { name: 'Iniciar revisión con un caso ficticio' }),
+    );
+    expect(screen.getByLabelText('Dolor ENA de prueba (0 a 10)')).toHaveProp('value', '');
+    expect(screen.getByRole('button', { name: 'Paciente', selected: false })).toBeTruthy();
+    expect(mockSave).toHaveBeenCalledTimes(1);
+  });
+  it('el historial vacío tiene una confirmación visible', async () => {
+    mockDemo = true;
+    mockHasDatabase = true;
+    process.env.EXPO_PUBLIC_P07_SYNTHETIC_REVIEW = 'true';
+    await beginReview();
+    await fireEvent.press(screen.getByRole('button', { name: 'Consultar historial de pruebas' }));
+    await waitFor(() =>
+      expect(
+        screen.getByText('Aún no hay evaluaciones de prueba guardadas en esta cuenta.'),
+      ).toBeTruthy(),
+    );
+    expect(mockHistory).toHaveBeenCalledWith('synthetic');
+  });
+  it('un caso sin guardar conserva sus respuestas hasta confirmar el descarte', async () => {
+    mockDemo = true;
+    process.env.EXPO_PUBLIC_P07_SYNTHETIC_REVIEW = 'true';
+    const alert = jest.spyOn(Alert, 'alert').mockImplementation(() => {});
+    try {
+      await beginReview();
+      await fireEvent.press(screen.getAllByRole('button', { name: 'Sí' })[0]);
+      await fireEvent.press(screen.getByRole('button', { name: 'Empezar otro caso de prueba' }));
+      expect(screen.getByText('Resultado de simulación: A1')).toBeTruthy();
+      const buttons = alert.mock.calls[0][2]!;
+      expect(buttons.find((button) => button.style === 'cancel')).toBeTruthy();
+      await act(async () =>
+        buttons.find((button) => button.text === 'Empezar sin guardar')?.onPress?.(),
+      );
+      expect(screen.getByText('Revisión del triaje oncológico')).toBeTruthy();
+      expect(screen.queryByText('Resultado de simulación: A1')).toBeNull();
+      expect(mockSave).not.toHaveBeenCalled();
+    } finally {
+      alert.mockRestore();
+    }
+  });
+  it('confirmar un descarte antiguo no elimina un caso de otra cuenta', async () => {
+    mockDemo = true;
+    process.env.EXPO_PUBLIC_P07_SYNTHETIC_REVIEW = 'true';
+    const alert = jest.spyOn(Alert, 'alert').mockImplementation(() => {});
+    try {
+      const rendered = await beginReview();
+      await fireEvent.press(screen.getAllByRole('button', { name: 'Sí' })[0]);
+      await fireEvent.press(screen.getByRole('button', { name: 'Empezar otro caso de prueba' }));
+      const discard = alert.mock.calls[0][2]!.find(
+        (button) => button.text === 'Empezar sin guardar',
+      )!.onPress!;
+      mockPatientId = 'patient-b';
+      await rendered.rerender(<TriageScreen />);
+      await fireEvent.press(
+        screen.getByRole('button', { name: 'Iniciar revisión con un caso ficticio' }),
+      );
+      await fireEvent.press(screen.getByRole('button', { name: 'Paciente' }));
+      await act(async () => discard());
+      expect(screen.getByRole('button', { name: 'Paciente', selected: true })).toBeTruthy();
+      expect(screen.queryByText('Resultado de simulación: A1')).toBeNull();
+    } finally {
+      alert.mockRestore();
+    }
   });
 });
