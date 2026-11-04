@@ -12,6 +12,7 @@ export async function packageRelease({
   attempt,
   namespace,
   digests,
+  jwksSnapshot,
 }) {
   if (
     !/^[a-f0-9]{40}$/.test(revision) ||
@@ -41,11 +42,17 @@ export async function packageRelease({
       const path = join(directory, entry.name);
       if (entry.isSymbolicLink()) throw new Error('Release source symlink rejected.');
       if (entry.isDirectory()) {
-        if (['quadlet', 'scripts', 'postgres', 'proxy', 'powersync'].includes(entry.name))
+        if (
+          ['quadlet', 'scripts', 'postgres', 'proxy', 'powersync', 'systemd'].includes(entry.name)
+        )
           await copy(path);
         continue;
       }
-      if (!/\.(sh|sql|py|mjs|container|volume|network|conf|yaml|json|md|example)$/.test(entry.name))
+      if (
+        !/\.(sh|sql|py|mjs|container|volume|network|conf|yaml|json|md|example|service|timer)$/.test(
+          entry.name,
+        )
+      )
         continue;
       const rel = relative(process.cwd(), path).replaceAll('\\', '/');
       if (entry.name.startsWith('.') || rel.includes('__pycache__')) continue;
@@ -58,6 +65,13 @@ export async function packageRelease({
     }
   }
   await copy(resolve('infra/universidad'));
+  if (jwksSnapshot) {
+    const rel = 'infra/universidad/jwks-snapshot.json';
+    await copyFile(jwksSnapshot, join(root, rel));
+    manifest.files[rel] = createHash('sha256')
+      .update(await readFile(join(root, rel)))
+      .digest('hex');
+  }
   await writeFile(join(root, 'manifest.json'), JSON.stringify(manifest, null, 2) + '\n');
   const checksums = [
     ...Object.entries(manifest.files).map(([file, sha]) => sha + '  ' + file),
@@ -86,6 +100,7 @@ if (process.argv[1] && resolve(process.argv[1]) === fileURLToPath(import.meta.ur
     runId: Number(process.env.GITHUB_RUN_ID),
     attempt: Number(process.env.GITHUB_RUN_ATTEMPT),
     namespace: process.env.IMAGE_NAMESPACE,
+    jwksSnapshot: process.env.JWKS_SNAPSHOT,
     digests,
   });
   execFileSync('tar', ['-czf', resolve(output) + '.tar.gz', '-C', resolve(output), '.'], {

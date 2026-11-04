@@ -129,10 +129,16 @@ jobs:
           pattern: digest-*
           path: build/digests
           merge-multiple: true
+      - name: Fetch short-lived public signing keys over verified HTTPS
+        env:
+          AUTH_EXPECTED_ISSUER: ${{ vars.QC_AUTH_ISSUER }}
+          AUTH_ALLOWED_ALGORITHM: ${{ vars.QC_AUTH_ALGORITHM || 'ES256' }}
+        run: node infra/universidad/scripts/jwks-snapshot.mjs fetch build/jwks/snapshot.json
       - name: Package configuration, scripts and digest manifest without dotenv
         env:
           OWNER: ${{ github.repository_owner }}
           RELEASE_OUTPUT: build/universidad-release
+          JWKS_SNAPSHOT: build/jwks/snapshot.json
         run: |
           export IMAGE_NAMESPACE="ghcr.io/${OWNER,,}"
           node scripts/package-university-release.mjs

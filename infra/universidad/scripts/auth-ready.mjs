@@ -60,7 +60,9 @@ export async function probeAuthAuthority(env = process.env, fetcher = fetch) {
   } catch {
     throw new Error('Falta una URL válida de claves públicas.');
   }
-  if (url.protocol !== 'https:' || url.username || url.password || url.hash)
+  const distributed =
+    env.AUTH_JWKS_MODE === 'distributed' && url.href === 'http://qc-jwks:3004/jwks.json';
+  if ((!distributed && url.protocol !== 'https:') || url.username || url.password || url.hash)
     throw new Error('La autoridad de claves debe utilizar HTTPS sin credenciales en la URL.');
   if (env.AUTH_ALLOWED_ALGORITHM && !['ES256', 'RS256'].includes(env.AUTH_ALLOWED_ALGORITHM))
     throw new Error('El algoritmo de autenticación configurado no está permitido.');

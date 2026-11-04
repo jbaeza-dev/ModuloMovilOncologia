@@ -10,6 +10,14 @@ const temp = await mkdtemp(join(tmpdir(), 'qc-proxy-test-'));
 const name = 'qc-proxy-test-' + randomUUID().slice(0, 8);
 let institution;
 const server = createServer((req, res) => {
+  if (req.url === '/internal/auth/check') {
+    if (req.headers.authorization === 'Bearer unavailable-authority') {
+      res.writeHead(503).end();
+      return;
+    }
+    res.writeHead(req.headers.authorization === 'Bearer synthetic-proxy-test' ? 204 : 401).end();
+    return;
+  }
   if (req.url === '/sync/stream') {
     if (req.headers.authorization !== 'Bearer synthetic-proxy-test') {
       res.writeHead(401).end();
@@ -213,6 +221,18 @@ try {
   ])
     assert.equal((await fetch(base + path)).status, 404, path);
   for (const base of [gateway, publicBase]) {
+    assert.equal(
+      (
+        await fetch(base + '/quimiocare-backend/sync/stream', {
+          method: 'POST',
+          headers: { Authorization: 'Bearer unavailable-authority' },
+          body: '{}',
+        })
+      ).status,
+      503,
+      'Authority failures must not masquerade as invalid identities',
+    );
+    assert.equal((await fetch(base + '/quimiocare-backend/write-checkpoint2.json')).status, 401);
     assert.equal(
       (await fetch(base + '/quimiocare-backend/sync/stream', { method: 'POST', body: '{}' }))
         .status,

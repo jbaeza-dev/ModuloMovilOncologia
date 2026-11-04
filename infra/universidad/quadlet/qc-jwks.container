@@ -1,0 +1,26 @@
+[Unit]
+Description=Claves publicas Supabase con caducidad
+
+[Container]
+Image=@@SIMULATOR_IMAGE@@
+ContainerName=qc-jwks
+Network=qc.network
+Pull=never
+NoNewPrivileges=true
+ReadOnly=true
+EnvironmentFile=%h/quimiocare/shared/env/jwks.env
+Exec=node /scripts/jwks-service.mjs
+Volume=%h/quimiocare/current/infra/universidad/scripts:/scripts:ro,z
+Volume=%h/quimiocare/shared/auth:/snapshots:ro,z
+HealthCmd=node -e "fetch('http://localhost:3004/ready').then(r=>process.exit(r.ok?0:1)).catch(()=>process.exit(1))"
+HealthInterval=15s
+HealthTimeout=5s
+HealthRetries=1
+
+[Service]
+Restart=on-failure
+RestartSec=5
+MemoryMax=96M
+
+[Install]
+WantedBy=default.target

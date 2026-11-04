@@ -16,6 +16,9 @@ IMAGE_NAMESPACE=ghcr.io/REEMPLAZAR_OWNER
 AUTH_EXPECTED_ISSUER=https://PROJECT_ID.supabase.co/auth/v1
 AUTH_PUBLIC_KEY=sb_publishable_REEMPLAZAR_CLAVE_PUBLICA
 AUTH_ALLOWED_ALGORITHM=ES256
+# direct: contact Supabase; distributed: short-lived keys delivered by trusted CI.
+# Read JWKS_DISTRIBUIDO.md before enabling distributed mode.
+AUTH_JWKS_MODE=direct
 
 # Enable only for authorized synthetic evaluation. Disabled by default.
 API_DOCS_ENABLED=false

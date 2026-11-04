@@ -1,0 +1,6 @@
+[Unit]
+Description=Rechazar claves Supabase vencidas y cerrar sincronizaciones
+[Service]
+Type=oneshot
+TimeoutStartSec=150s
+ExecStart=/bin/bash %h/quimiocare/current/infra/universidad/scripts/jwks-expiry.sh

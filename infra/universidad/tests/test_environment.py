@@ -16,6 +16,17 @@ def valid():
     return values
 
 class EnvironmentTests(unittest.TestCase):
+    def test_distributed_keys_preserve_identity_and_isolate_authority_environment(self):
+        raw=valid(); raw['AUTH_JWKS_MODE']='distributed'
+        result=environment.configuration(raw)
+        self.assertEqual(result['AUTH_EXPECTED_ISSUER'],raw['AUTH_EXPECTED_ISSUER'])
+        self.assertEqual(result['AUTH_JWKS_URL'],'http://qc-jwks:3004/jwks.json')
+        self.assertEqual(result['PS_JWKS_URI'],result['AUTH_JWKS_URL'])
+        self.assertEqual(environment.SERVICE_KEYS['jwks'],['AUTH_EXPECTED_ISSUER','AUTH_ALLOWED_ALGORITHM'])
+        self.assertTrue(environment.configuration(valid())['AUTH_JWKS_URL'].startswith('https://'))
+        raw['AUTH_JWKS_MODE']='untrusted'
+        with self.assertRaises(ValueError): environment.configuration(raw)
+
     def test_uri_encoding_and_public_prefix(self):
         raw=valid(); result=environment.configuration(raw)
         self.assertEqual(unquote(urlparse(result['DATABASE_URL']).password),raw['QC_ADMIN_PASSWORD'])

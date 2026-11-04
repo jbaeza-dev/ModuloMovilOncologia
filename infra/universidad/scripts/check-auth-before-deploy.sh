@@ -6,12 +6,20 @@ umask 077
 BASE_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 temporary=$(mktemp -d)
 cleanup() {
- for service in postgres clinical gateway powersync; do rm -f "$temporary/env/$service.env"; done
+ for service in postgres clinical gateway powersync jwks; do rm -f "$temporary/env/$service.env"; done
  if [[ -d "$temporary/env" ]]; then rmdir "$temporary/env"; fi
  rmdir "$temporary"
 }
 trap cleanup EXIT
 python3 "$BASE_DIR/scripts/environment.py" "$1" --output "$temporary/env"
+mode=$(python3 "$BASE_DIR/scripts/environment.py" "$1" --get AUTH_JWKS_MODE)
+if [[ "$mode" == distributed ]]; then
+ timeout 20s podman run --rm --pull=never --network none --memory 128m \
+  --env-file "$temporary/env/jwks.env" --volume "$BASE_DIR:/validation:ro,z" --entrypoint node "$2" \
+  /validation/scripts/jwks-snapshot.mjs validate /validation/jwks-snapshot.json
+ echo 'PASS: trusted snapshot validated before downtime.'
+ exit 0
+fi
 check() {
  timeout 20s podman run --rm -i --pull=never --network "$1" --memory 128m \
   --env-file "$temporary/env/$2.env" --entrypoint node "$3" --input-type=module \

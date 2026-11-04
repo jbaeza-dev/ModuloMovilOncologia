@@ -16,6 +16,7 @@ exec 9>"$ROOT/deploy.lock"
 flock -n 9 || { echo 'Another deployment holds the lock' >&2; exit 1; }
 bash "$SCRIPTS/preflight.sh"
 python3 "$SCRIPTS/environment.py" "$ENV"
+JWKS_MODE=$(python3 "$SCRIPTS/environment.py" "$ENV" --get AUTH_JWKS_MODE)
 NAMESPACE=$(python3 "$SCRIPTS/environment.py" "$ENV" --get IMAGE_NAMESPACE)
 python3 "$SCRIPTS/release.py" "$RELEASE" --namespace "$NAMESPACE"
 REVISION=$(python3 "$SCRIPTS/release.py" "$RELEASE" --namespace "$NAMESPACE" --get revision)
@@ -52,10 +53,22 @@ for unit in qc-worker qc-gateway qc-clinical qc-ai qc-powersync; do
 done
 python3 "$SCRIPTS/environment.py" "$ENV" --output "$ROOT/shared/env"
 python3 "$SCRIPTS/release.py" "$RELEASE" --namespace "$NAMESPACE" --render "$ROOT/shared/quadlet-next" --activate-root "$ROOT"
-mkdir -p "$HOME/.config/containers/systemd"
+mkdir -p "$HOME/.config/containers/systemd" "$HOME/.config/systemd/user"
 podman unshare mkdir -p "$ROOT/media/educacion" "$ROOT/media/temp"
 podman unshare chown -R 1000:1000 "$ROOT/media"
-cp "$ROOT/shared/quadlet-next/"* "$HOME/.config/containers/systemd/"
+for unit in "$ROOT/shared/quadlet-next/"*; do
+ if [[ "$(basename "$unit")" != qc-jwks.container || "$JWKS_MODE" == distributed ]]; then
+  cp "$unit" "$HOME/.config/containers/systemd/"
+ fi
+done
+if [[ "$JWKS_MODE" == distributed ]]; then
+ cp "$RELEASE/infra/universidad/systemd/"* "$HOME/.config/systemd/user/"
+ JWKS_INSTALL_DURING_DEPLOY=true bash "$SCRIPTS/install-jwks.sh" "$RELEASE/infra/universidad/jwks-snapshot.json" "$SIMULATOR_IMAGE"
+else
+ if systemctl --user cat qc-jwks-expiry.timer >/dev/null 2>&1; then systemctl --user disable --now qc-jwks-expiry.timer; fi
+ if systemctl --user cat qc-jwks.service >/dev/null 2>&1; then systemctl --user stop qc-jwks.service; fi
+ rm -f "$HOME/.config/containers/systemd/qc-jwks.container"
+fi
 systemctl --user daemon-reload
 systemctl --user start qc-postgres.service
 for attempt in {1..30}; do
@@ -76,8 +89,13 @@ podman exec -i qc-postgres psql -v ON_ERROR_STOP=1 -U postgres -d qc_demo < "$RE
 # Verify references before serving files. Run the host script inside the already-built Node image.
 podman run --rm --pull=never --network qc-net --env-file "$ROOT/shared/env/clinical.env" --volume "$ROOT/media:/var/lib/quimiocare:ro,Z" "$SIMULATOR_IMAGE" node apps/simulator/scripts/verify-education.mjs
 # The release verifier is also exercised in disposable CI. Never delete or rebuild active sync storage here.
+if [[ "$JWKS_MODE" == distributed ]]; then
+ systemctl --user restart qc-jwks.service
+ systemctl --user enable --now qc-jwks-expiry.timer
+fi
 systemctl --user start qc-ai.service qc-clinical.service qc-gateway.service qc-worker.service qc-powersync.service
 systemctl --user restart qc-proxy-backend.service qc-proxy-simulator.service
+rm -f "$ROOT/shared/auth/resume-sync" "$ROOT/shared/auth/restart-sync"
 PUBLIC_ORIGIN=$(python3 "$SCRIPTS/environment.py" "$ENV" --get PUBLIC_ORIGIN) bash "$SCRIPTS/smoke.sh"
 python3 - "$ROOT/shared/successful-deployment.json" "$SEQUENCE" "$REVISION" "$RELEASE_ID" <<'PY'
 import json,sys
