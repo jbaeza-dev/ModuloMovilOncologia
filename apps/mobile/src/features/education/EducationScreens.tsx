@@ -44,6 +44,7 @@ import {
 import { formatDate } from '../../data/local/repository';
 import { useFocusedList, useFocusedValue } from '../../hooks/use-local-query';
 import { useLocalData } from '../../providers/LocalDataProvider';
+import { EducationContentRevisionContext } from '../../providers/QueryRevision';
 import { useAppTheme } from '../../providers/ThemeProvider';
 import { theme } from '../../theme';
 import {
@@ -95,7 +96,16 @@ export function EducationScreen() {
       };
     });
   }, [catalogReader]);
-  const { items: categories, error, loading, refresh } = useFocusedList(load);
+  const { patientId } = useLocalData();
+  const {
+    items: categories,
+    error,
+    loading,
+    refresh,
+  } = useFocusedList(load, {
+    queryKey: `${patientId ?? 'default'}:education:categories`,
+    context: EducationContentRevisionContext,
+  });
   return (
     <Screen isRoot showHelp showProfile>
       <MascotHero
@@ -153,21 +163,42 @@ export function EducationScreen() {
               description="Prueba con otra palabra."
             />
           ) : null}
-          {searchResults.map((result) => (
-            <ActionCard
-              key={result.key}
-              title={result.title}
-              description={result.subtitle}
-              icon={result.type === 'podcast' || result.type === 'video' ? 'play' : 'book-open'}
-              onPress={() =>
-                router.push(
-                  result.type === 'podcast'
-                    ? '/educacion/podcasts?episodio=' + encodeURIComponent(result.id)
-                    : '/educacion/recurso?recurso=' + encodeURIComponent(result.id),
-                )
+          {searchResults.map((result) => {
+            const handlePress = () => {
+              if (result.type === 'podcast') {
+                router.push('/educacion/podcasts?episodio=' + encodeURIComponent(result.id));
+              } else if (result.type === 'video') {
+                const resource = currentResources.find((r) => r.id === result.id);
+                const videoId = resource?.youtubeVideoId;
+                if (videoId) {
+                  router.push({
+                    pathname: '/educacion/video-youtube',
+                    params: {
+                      videoId,
+                      resourceId: resource.id,
+                      version: resource.version,
+                      title: resource.title,
+                      description: resource.description,
+                    },
+                  });
+                } else {
+                  router.push('/educacion/recurso?recurso=' + encodeURIComponent(result.id));
+                }
+              } else {
+                router.push('/educacion/recurso?recurso=' + encodeURIComponent(result.id));
               }
-            />
-          ))}
+            };
+
+            return (
+              <ActionCard
+                key={result.key}
+                title={result.title}
+                description={result.subtitle}
+                icon={result.type === 'podcast' || result.type === 'video' ? 'play' : 'book-open'}
+                onPress={handlePress}
+              />
+            );
+          })}
           <VisualButton
             label="Limpiar búsqueda"
             secondary
@@ -270,12 +301,19 @@ export function EducationCategoryScreen() {
     resources: EducationalResource[];
     copies: EducationalLocalCopy[];
     interactions: EducationalInteraction[];
-  }>(loadData, {
-    currentCategory: undefined,
-    resources: [],
-    copies: [],
-    interactions: [],
-  });
+  }>(
+    loadData,
+    {
+      currentCategory: undefined,
+      resources: [],
+      copies: [],
+      interactions: [],
+    },
+    {
+      queryKey: `${patientId ?? 'default'}:education:category:${categoria}:${formatFilter}`,
+      context: EducationContentRevisionContext,
+    },
+  );
 
   const copyMap = new Map((value?.copies ?? []).map((c) => [c.contentId, c]));
   const interactionMap = new Map((value?.interactions ?? []).map((i) => [i.contentId, i]));

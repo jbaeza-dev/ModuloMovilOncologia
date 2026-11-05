@@ -1,7 +1,7 @@
 import { createContext, useContext, useEffect, useRef, useState, type ReactNode } from 'react';
 import { AppState } from 'react-native';
 import * as Network from 'expo-network';
-import { QueryRevisionContext } from '../../providers/QueryRevision';
+import { EducationContentRevisionContext } from '../../providers/QueryRevision';
 import { useLocalData } from '../../providers/LocalDataProvider';
 import { createAutomaticDownloadQueue } from './automatic-download-queue';
 import { runBulkInfographicDownload } from './bulk-download-coordinator';
@@ -12,7 +12,7 @@ export const useAutomaticEducationStatus = () => useContext(StatusContext);
 
 export function AutomaticEducationDownloads({ children }: { children: ReactNode }) {
   const { patientId, repository, database, isClosing, trackOperation } = useLocalData();
-  const revision = useContext(QueryRevisionContext);
+  const revision = useContext(EducationContentRevisionContext);
   const [state, setState] = useState<'working' | 'ready' | 'pending' | null>(null);
   const queue = useRef<ReturnType<typeof createAutomaticDownloadQueue> | null>(null);
   useEffect(() => {

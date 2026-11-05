@@ -80,94 +80,170 @@ export interface GeminiClientOptions {
 
 export class GeminiAssistantClient {
   private readonly ai: GoogleGenAI;
-  readonly timeoutMs: number;
+  readonly totalBudgetMs: number;
 
   constructor(options: GeminiClientOptions) {
     this.ai = new GoogleGenAI({ apiKey: options.apiKey });
-    this.timeoutMs = options.timeoutMs ?? 15000;
+    this.totalBudgetMs = options.timeoutMs ?? 22000;
   }
 
-  async ask(message: string, activarAlarmas = true, includeDebug = false): Promise<AiChatResponse> {
-    const controller = new AbortController();
-    const timer = setTimeout(() => controller.abort(), this.timeoutMs);
+  async ask(
+    message: string,
+    activarAlarmas = true,
+    includeDebug = false,
+    requestId?: string,
+  ): Promise<AiChatResponse> {
+    const startTime = Date.now();
+    const overallController = new AbortController();
+    const overallTimer = setTimeout(() => overallController.abort(), this.totalBudgetMs);
+
+    const is503Error = (error: unknown): boolean => {
+      if (!error) return false;
+      const str = error instanceof Error ? error.message : String(error);
+      const status = (error as { status?: number }).status;
+      return status === 503 || /503|UNAVAILABLE/i.test(str);
+    };
+
+    const sleepWithSignal = (ms: number, signal: AbortSignal): Promise<void> => {
+      return new Promise((resolve, reject) => {
+        if (signal.aborted) {
+          return reject(new Error('Petición cancelada antes del reintento.'));
+        }
+        const timer = setTimeout(() => {
+          signal.removeEventListener('abort', onAbort);
+          resolve();
+        }, ms);
+        const onAbort = () => {
+          clearTimeout(timer);
+          signal.removeEventListener('abort', onAbort);
+          reject(new Error('Petición cancelada durante el intervalo de espera.'));
+        };
+        signal.addEventListener('abort', onAbort);
+      });
+    };
 
     try {
-      const response = await this.ai.models.generateContent({
-        model: GEMINI_MODEL,
-        contents: message,
-        config: {
-          systemInstruction: ONCOLOGY_SYSTEM_PROMPT,
-          abortSignal: controller.signal,
-          httpOptions: { timeout: this.timeoutMs },
-          responseMimeType: 'application/json',
-          responseSchema: {
-            type: Type.OBJECT,
-            properties: {
-              respuesta: {
-                type: Type.STRING,
-                description: 'Respuesta empática, comprensible y orientativa para el paciente.',
-              },
-              requiere_urgencia: {
-                type: Type.BOOLEAN,
-                description:
-                  'true si el paciente describe síntomas de alarma (fiebre >= 38°C, sangrado, disnea, vómitos incoercibles), false en caso contrario.',
-              },
-              estado_respuesta: {
-                type: Type.STRING,
-                description:
-                  'Estado: respuesta (información clínica útil), sin_informacion (fuera de dominio), cortesia (saludo/despedida).',
+      let lastError: unknown = null;
+      for (let attempt = 1; attempt <= 2; attempt++) {
+        const elapsed = Date.now() - startTime;
+        const remainingBudget = this.totalBudgetMs - elapsed;
+        if (remainingBudget <= 0 || overallController.signal.aborted) {
+          const abortErr = new Error('The operation was aborted');
+          abortErr.name = 'AbortError';
+          throw abortErr;
+        }
+
+        const attemptController = new AbortController();
+        const onOverallAbort = () => attemptController.abort();
+        overallController.signal.addEventListener('abort', onOverallAbort);
+
+        const attemptTimeout = Math.max(1, Math.min(10000, remainingBudget));
+        const attemptTimer = setTimeout(() => attemptController.abort(), attemptTimeout);
+
+        try {
+          if (attempt > 1) {
+            console.log(
+              `[qc-ai] (solicitud_id: ${requestId ?? 'sin-id'}) Reintento 2 tras 503 UNAVAILABLE`,
+            );
+          }
+          const response = await this.ai.models.generateContent({
+            model: GEMINI_MODEL,
+            contents: message,
+            config: {
+              systemInstruction: ONCOLOGY_SYSTEM_PROMPT,
+              abortSignal: attemptController.signal,
+              httpOptions: { timeout: attemptTimeout },
+              responseMimeType: 'application/json',
+              responseSchema: {
+                type: Type.OBJECT,
+                properties: {
+                  respuesta: {
+                    type: Type.STRING,
+                    description: 'Respuesta empática, comprensible y orientativa para el paciente.',
+                  },
+                  requiere_urgencia: {
+                    type: Type.BOOLEAN,
+                    description:
+                      'true si el paciente describe síntomas de alarma (fiebre >= 38°C, sangrado, disnea, vómitos incoercibles), false en caso contrario.',
+                  },
+                  estado_respuesta: {
+                    type: Type.STRING,
+                    description:
+                      'Estado: respuesta (información clínica útil), sin_informacion (fuera de dominio), cortesia (saludo/despedida).',
+                  },
+                },
+                required: ['respuesta', 'requiere_urgencia', 'estado_respuesta'],
               },
             },
-            required: ['respuesta', 'requiere_urgencia', 'estado_respuesta'],
-          },
-        },
-      });
+          });
 
-      const text = response.text;
-      if (!text || !text.trim()) {
-        throw new Error('Gemini API devolvió una respuesta vacía.');
-      }
+          const text = response.text;
+          if (!text || !text.trim()) {
+            throw new Error('Gemini API devolvió una respuesta vacía.');
+          }
 
-      let rawParsed: unknown;
-      try {
-        rawParsed = JSON.parse(text);
-      } catch (parseError) {
-        throw new Error(
-          `Error al parsear JSON de Gemini: ${parseError instanceof Error ? parseError.message : String(parseError)}`,
-          { cause: parseError },
-        );
-      }
+          let rawParsed: unknown;
+          try {
+            rawParsed = JSON.parse(text);
+          } catch (parseError) {
+            throw new Error(
+              `Error al parsear JSON de Gemini: ${parseError instanceof Error ? parseError.message : String(parseError)}`,
+              { cause: parseError },
+            );
+          }
 
-      const validated = validateGeminiPayload(rawParsed);
-      const requiereUrgencia = activarAlarmas && validated.requiere_urgencia;
+          const validated = validateGeminiPayload(rawParsed);
+          const requiereUrgencia = activarAlarmas && validated.requiere_urgencia;
 
-      return {
-        respuesta: validated.respuesta,
-        fuentes: [],
-        requiere_urgencia: requiereUrgencia,
-        confianza_nivel:
-          requiereUrgencia || validated.estado_respuesta !== 'respuesta'
-            ? 'ninguna'
-            : 'no_verificada',
-        estado_respuesta: validated.estado_respuesta,
-        debug: includeDebug
-          ? {
-              origen: 'gemini-api',
-              modelo: GEMINI_MODEL,
-              confianza_score: 0,
-              confianza_razon: 'Generación directa vía prompt sin RAG documentado',
-              motivos_alarma: requiereUrgencia ? ['alerta_clinica_gemini'] : [],
-              keywords: [],
-              temas: [],
-              tokens_prompt: 0,
-              tokens_respuesta: 0,
-              ms_busqueda: 0,
-              ms_llm: 0,
+          return {
+            respuesta: validated.respuesta,
+            fuentes: [],
+            requiere_urgencia: requiereUrgencia,
+            confianza_nivel:
+              requiereUrgencia || validated.estado_respuesta !== 'respuesta'
+                ? 'ninguna'
+                : 'no_verificada',
+            estado_respuesta: validated.estado_respuesta,
+            debug: includeDebug
+              ? {
+                  origen: 'gemini-api',
+                  modelo: GEMINI_MODEL,
+                  confianza_score: 0,
+                  confianza_razon: 'Generación directa vía prompt sin RAG documentado',
+                  motivos_alarma: requiereUrgencia ? ['alerta_clinica_gemini'] : [],
+                  keywords: [],
+                  temas: [],
+                  tokens_prompt: response.usageMetadata?.promptTokenCount ?? 0,
+                  tokens_respuesta: response.usageMetadata?.candidatesTokenCount ?? 0,
+                  ms_busqueda: 0,
+                  ms_llm: Date.now() - startTime,
+                }
+              : null,
+          };
+        } catch (error) {
+          lastError = error;
+          if (overallController.signal.aborted || attemptController.signal.aborted) {
+            const abortErr = new Error('The operation was aborted');
+            abortErr.name = 'AbortError';
+            throw abortErr;
+          }
+          if (attempt === 1 && is503Error(error) && !overallController.signal.aborted) {
+            const jitter = Math.floor(Math.random() * 400) + 800; // 800ms - 1200ms
+            const remainingForSleep = this.totalBudgetMs - (Date.now() - startTime);
+            if (remainingForSleep > jitter) {
+              await sleepWithSignal(jitter, overallController.signal);
+              continue;
             }
-          : null,
-      };
+          }
+          throw error;
+        } finally {
+          clearTimeout(attemptTimer);
+          overallController.signal.removeEventListener('abort', onOverallAbort);
+        }
+      }
+      throw lastError ?? new Error('Fallo de invocación a Gemini.');
     } finally {
-      clearTimeout(timer);
+      clearTimeout(overallTimer);
     }
   }
 }

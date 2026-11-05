@@ -164,14 +164,25 @@ export async function openClinicalStore(
         store.pauseCode = 'SIN_CONFIGURACION';
         return;
       }
-      if (retryPaused === 'session') await retrySessionCommands(connection, scope);
-      else if (retryPaused)
+      if (retryPaused === 'session') {
+        const isAuthorized = session.getSnapshot().uploadAllowed;
+        if (isAuthorized) {
+          await retrySessionCommands(connection, scope);
+          store.pauseCode = null;
+          await connection.run("DELETE FROM qc_storage_control WHERE id='runtime:pause'");
+        }
+      } else if (retryPaused === true) {
         await connection.run(
           "UPDATE qc_clinical_command SET status='pendiente',error_json=NULL WHERE owner=? AND environment=? AND status='pausado'",
           [scope.owner, scope.environment],
         );
-      store.pauseCode = null;
-      await connection.run("DELETE FROM qc_storage_control WHERE id='runtime:pause'");
+        store.pauseCode = null;
+        await connection.run("DELETE FROM qc_storage_control WHERE id='runtime:pause'");
+      } else {
+        if (!store.pauseCode) {
+          await connection.run("DELETE FROM qc_storage_control WHERE id='runtime:pause'");
+        }
+      }
       if (store.closed || signal.aborted || session.getCurrentUser()?.id !== scope.owner) return;
       if (!started) {
         started = true;

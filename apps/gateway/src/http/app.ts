@@ -182,10 +182,14 @@ export function createApp(
           result = { status: 204 };
         } else if (operation.id === 'G-06') {
           const input = body as { mensaje: string; activar_alarmas?: boolean };
-          result = await dependencies.queryAi(principal.token, {
-            mensaje: input.mensaje,
-            activar_alarmas: input.activar_alarmas ?? true,
-          });
+          result = await dependencies.queryAi(
+            principal.token,
+            {
+              mensaje: input.mensaje,
+              activar_alarmas: input.activar_alarmas ?? true,
+            },
+            states.get(req)?.requestId,
+          );
         } else if (operation.id === 'G-07') {
           result = { status: 200, body: await agenda.list(principal.id, query.desde, query.hasta) };
         } else if (operation.id === 'G-08') {

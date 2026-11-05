@@ -387,6 +387,13 @@ export function HomeScreen() {
       <View style={styles.section}>
         <SectionTitle>Para hoy</SectionTitle>
         <NavigationCard
+          title="Orientación de síntomas · Demostración"
+          description="Orientación empática ante síntomas frecuentes con IA"
+          icon="message-circle"
+          href="/asistente"
+          navigationMethod="push"
+        />
+        <NavigationCard
           title="Cómo me siento hoy"
           description={
             loadingDailyStatus

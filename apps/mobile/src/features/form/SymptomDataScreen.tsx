@@ -14,16 +14,20 @@ import {
 } from '../../components/Visual';
 import { formatDate, type SymptomWithSyncRecord } from '../../data/local/repository';
 import { useFocusedList } from '../../hooks/use-local-query';
+import { ClinicalRevisionContext } from '../../providers/QueryRevision';
 import { useLocalData } from '../../providers/LocalDataProvider';
 import { theme } from '../../theme';
 
 export function SymptomDataScreen() {
-  const { repository } = useLocalData();
+  const { repository, patientId } = useLocalData();
   const load = useCallback(
     (offset: number) => (repository ? repository.symptoms(30, offset) : Promise.resolve([])),
     [repository],
   );
-  const list = useFocusedList(load);
+  const list = useFocusedList(load, {
+    queryKey: `${patientId ?? 'default'}:symptoms`,
+    context: ClinicalRevisionContext,
+  });
 
   return (
     <Screen mascotPose="resumen" title="Historial de síntomas libres" scroll={false}>

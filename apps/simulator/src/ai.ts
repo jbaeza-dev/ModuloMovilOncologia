@@ -66,6 +66,7 @@ export async function executeAiChat(
   message: string,
   activarAlarmas = true,
   includeDebug = false,
+  requestId?: string,
 ): Promise<AiChatResponse> {
   // Respect explicit test scenarios
   if (state.escenario === 'IA_NO_DISPONIBLE' || state.escenario === 'IA_URGENCIA') {
@@ -76,9 +77,14 @@ export async function executeAiChat(
   if (config.geminiApiKey) {
     try {
       const client = getGeminiClient(config.geminiApiKey);
-      return await client.ask(message, activarAlarmas, includeDebug);
+      return await (requestId !== undefined
+        ? client.ask(message, activarAlarmas, includeDebug, requestId)
+        : client.ask(message, activarAlarmas, includeDebug));
     } catch (error) {
-      console.warn('[qc-ai] Error invocando Gemini API, devolviendo no_disponible:', error);
+      console.warn(
+        `[qc-ai] (solicitud_id: ${requestId ?? 'sin-id'}) Error invocando Gemini API, devolviendo no_disponible:`,
+        error,
+      );
       return {
         respuesta:
           'En este momento no puedo responder. Por favor, inténtelo nuevamente en unos minutos o consulte con su equipo de salud.',

@@ -2,9 +2,11 @@ import { AppIcon as Feather } from '../../components/AppIcon';
 import { WeeklyVitalsChart } from './WeeklyVitalsChart';
 import { router, useLocalSearchParams, useNavigation } from 'expo-router';
 import { usePreventRemove } from 'expo-router/react-navigation';
-import { useCallback, useMemo, useRef, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
+  AccessibilityInfo,
   Alert,
+  Modal,
   Pressable,
   SectionList,
   StyleSheet,
@@ -35,6 +37,7 @@ import {
 } from '../../data/local/repository';
 import { validateVitalInput, type VitalInput } from '../../data/local/validation';
 import { useFocusedList, useFocusedValue } from '../../hooks/use-local-query';
+import { ClinicalRevisionContext } from '../../providers/QueryRevision';
 import { useLocalData } from '../../providers/LocalDataProvider';
 import { useAppTheme } from '../../providers/ThemeProvider';
 import { theme } from '../../theme';
@@ -83,7 +86,7 @@ function RecordCard({ item }: { item: VitalWithSyncRecord }) {
 }
 
 export function VitalsDataScreen() {
-  const { repository } = useLocalData();
+  const { repository, patientId } = useLocalData();
   const [days, setDays] = useState<7 | 30 | 90>(7);
   const styles = useStyles();
   const load = useCallback(
@@ -91,7 +94,10 @@ export function VitalsDataScreen() {
       repository ? repository.vitals(sinceDays(days), 30, offset) : Promise.resolve([]),
     [repository, days],
   );
-  const list = useFocusedList(load);
+  const list = useFocusedList(load, {
+    queryKey: `${patientId ?? 'default'}:vitals:${days}`,
+    context: ClinicalRevisionContext,
+  });
 
   const sections = useMemo(
     () => groupVitalsByDay(list.items, new Date().toISOString()),
@@ -183,6 +189,27 @@ export function RegisterVitalsDataScreen() {
   const [values, setValues] = useState<VitalInput>(initialValues);
   const [fieldErrors, setFieldErrors] = useState<Partial<Record<keyof VitalInput, string>>>({});
   const [generalError, setGeneralError] = useState<string | null>(null);
+  const [showSuccessPopup, setShowSuccessPopup] = useState(false);
+
+  useEffect(() => {
+    if (!showSuccessPopup) return;
+    let timer: ReturnType<typeof setTimeout> | undefined;
+    void AccessibilityInfo.isScreenReaderEnabled().then((screenReaderActive) => {
+      if (!screenReaderActive) {
+        timer = setTimeout(() => {
+          setShowSuccessPopup(false);
+          if (router.canGoBack()) {
+            router.back();
+          } else {
+            router.replace('/');
+          }
+        }, 1200);
+      }
+    });
+    return () => {
+      if (timer) clearTimeout(timer);
+    };
+  }, [showSuccessPopup]);
   const [savedRecord, setSavedRecord] = useState<{ id: string; summary: string } | null>(null);
   const [submitting, setSubmitting] = useState(false);
   const bypassPreventRemoveRef = useRef(false);
@@ -194,6 +221,7 @@ export function RegisterVitalsDataScreen() {
   const satRef = useRef<TextInput>(null);
   const painRef = useRef<TextInput>(null);
 
+  const { theme: appTheme } = useAppTheme();
   const styles = useStyles();
   const busy = submitting || saving;
 
@@ -276,6 +304,8 @@ export function RegisterVitalsDataScreen() {
       setValues(initialValues);
       setFieldErrors({});
       setGeneralError(null);
+      bypassPreventRemoveRef.current = true;
+      setShowSuccessPopup(true);
     } catch {
       setGeneralError('No se pudo guardar en este dispositivo. Intenta nuevamente.');
     } finally {
@@ -299,6 +329,33 @@ export function RegisterVitalsDataScreen() {
       <BodyText>
         Registra tu dolor de 0 a 10. Puedes dejar en blanco las otras mediciones que no tengas.
       </BodyText>
+
+      <Modal
+        visible={showSuccessPopup}
+        transparent
+        animationType="fade"
+        onRequestClose={() => {
+          setShowSuccessPopup(false);
+          if (router.canGoBack()) router.back();
+          else router.replace('/');
+        }}
+      >
+        <View style={styles.modalOverlay}>
+          <View style={styles.popupCard} accessibilityViewIsModal accessibilityLiveRegion="polite">
+            <Feather name="check-circle" size={44} color={appTheme.colors.success} />
+            <Text style={styles.popupTitle}>Guardado en este dispositivo</Text>
+            <Text style={styles.popupMessage}>Los datos fueron almacenados en tu dispositivo.</Text>
+            <VisualButton
+              label="Cerrar"
+              onPress={() => {
+                setShowSuccessPopup(false);
+                if (router.canGoBack()) router.back();
+                else router.replace('/');
+              }}
+            />
+          </View>
+        </View>
+      </Modal>
 
       {savedRecord ? (
         <FeedbackBanner
@@ -471,6 +528,39 @@ export function VitalDataDetailScreen() {
 function useStyles() {
   const { theme: appTheme } = useAppTheme();
   return StyleSheet.create({
+    modalOverlay: {
+      flex: 1,
+      backgroundColor: 'rgba(0, 0, 0, 0.5)',
+      justifyContent: 'center',
+      alignItems: 'center',
+      padding: 24,
+    },
+    popupCard: {
+      width: '100%',
+      maxWidth: 360,
+      backgroundColor: appTheme.colors.surface,
+      borderRadius: 16,
+      padding: 24,
+      alignItems: 'center',
+      gap: 12,
+      shadowColor: '#000',
+      shadowOffset: { width: 0, height: 4 },
+      shadowOpacity: 0.15,
+      shadowRadius: 12,
+      elevation: 5,
+    },
+    popupTitle: {
+      fontSize: 18,
+      fontWeight: 'bold',
+      color: appTheme.colors.text,
+      textAlign: 'center',
+    },
+    popupMessage: {
+      fontSize: 14,
+      color: appTheme.colors.secondary,
+      textAlign: 'center',
+      marginBottom: 8,
+    },
     list: { flexGrow: 1, gap: theme.spacing.md, paddingBottom: theme.spacing.xl },
     stack: { gap: theme.spacing.md },
     headerButtons: { gap: theme.spacing.sm },

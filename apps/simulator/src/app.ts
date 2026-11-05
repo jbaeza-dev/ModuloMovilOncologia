@@ -583,6 +583,10 @@ export function createSimulator(config: SimulatorConfig, db: Database) {
               'La consulta no admite historial ni campos adicionales.',
             );
           }
+          const incomingRequestId =
+            typeof req.headers['x-request-id'] === 'string'
+              ? req.headers['x-request-id']
+              : undefined;
           result = {
             status: 200,
             body: await executeAiChat(
@@ -591,6 +595,7 @@ export function createSimulator(config: SimulatorConfig, db: Database) {
               String(input.mensaje),
               input.activar_alarmas !== false,
               query.debug === true,
+              incomingRequestId,
             ),
           };
           break;

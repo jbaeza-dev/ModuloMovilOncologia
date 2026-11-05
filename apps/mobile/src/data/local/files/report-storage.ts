@@ -793,6 +793,36 @@ export async function deletePatientReport(
   });
 }
 
+export async function clearAllPatientReports(
+  pacienteId: string,
+  adapter: BinaryReportStorageAdapter = defaultAdapter,
+): Promise<{ deleted: number; freedBytes: number }> {
+  assertSafeId(pacienteId, 'pacienteId');
+  return withPatientReportLock(pacienteId, async () => {
+    const list = await getPatientReportList(pacienteId, adapter);
+    let deleted = 0;
+    let freedBytes = 0;
+    for (const report of list) {
+      try {
+        await adapter.deleteFile(report.uri);
+        deleted++;
+        freedBytes += report.sizeBytes || 0;
+        const companionA11y = `${report.uri}.a11y.json`;
+        if (await adapter.fileExists(companionA11y)) {
+          try {
+            await adapter.deleteFile(companionA11y);
+          } catch {
+            /* safe non-blocking cleanup */
+          }
+        }
+      } catch {
+        /* continue on individual failure */
+      }
+    }
+    return { deleted, freedBytes };
+  });
+}
+
 export async function readPatientReportA11ySnapshot<T = unknown>(
   pacienteId: string,
   fileName: string,

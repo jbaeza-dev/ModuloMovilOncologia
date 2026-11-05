@@ -166,6 +166,13 @@ export function GlobalEproHubScreen() {
         </InfoCard>
       ))}
       <NavigationCard
+        title="Orientación de síntomas · Demostración"
+        description="Consulta interactiva para evaluar tus síntomas con IA"
+        icon="message-circle"
+        href="/asistente"
+        compact
+      />
+      <NavigationCard
         title="Historial de evaluaciones"
         icon="clipboard"
         href="/formulario/historial"

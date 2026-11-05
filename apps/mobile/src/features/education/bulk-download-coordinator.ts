@@ -6,7 +6,11 @@ import {
   getEducationalCatalogReader,
   type EducationalCatalogReader,
 } from './educational-catalog-service';
-import { downloadAndSaveInfographic, verifiedLocalImageCopy } from './infographic-storage-service';
+import {
+  downloadAndSaveInfographic,
+  verifiedLocalImageCopy,
+  enforceEducationStorageQuota,
+} from './infographic-storage-service';
 
 export interface BulkDownloadProgress {
   current: number;
@@ -257,6 +261,11 @@ async function executeBulkDownload(options: RunBulkDownloadOptions): Promise<Bul
         ? await verifiedLocalImageCopy(copy, patientId)
         : copy;
     const versionLocal = copy?.metadataLocal?.versionOrigen;
+    if (copy?.metadataLocal?.expulsado_cuota) {
+      alreadyPresentCount++;
+      continue;
+    }
+
     const isUpToDate =
       physicallyPresent &&
       verified?.estado !== 'error' &&
@@ -381,6 +390,12 @@ async function executeBulkDownload(options: RunBulkDownloadOptions): Promise<Bul
           ? `Descarga cancelada. Se conservaron ${downloadedCount} infografía${downloadedCount === 1 ? '' : 's'} completada${downloadedCount === 1 ? '' : 's'}.`
           : 'Descarga cancelada.',
     };
+  }
+
+  try {
+    await enforceEducationStorageQuota({ patientId, repository, database });
+  } catch (err) {
+    console.warn('[runBulkInfographicDownload] Falló regulación de cuota:', err);
   }
 
   let message: string;

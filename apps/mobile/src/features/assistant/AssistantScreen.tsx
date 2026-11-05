@@ -4,6 +4,8 @@ import * as Crypto from 'expo-crypto';
 import { router, useFocusEffect } from 'expo-router';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
+  AccessibilityInfo,
+  Animated,
   type NativeScrollEvent,
   type NativeSyntheticEvent,
   Pressable,
@@ -28,6 +30,98 @@ import { useAppTheme } from '../../providers/ThemeProvider';
 import { AssistantController } from '../../services/assistant/assistant-controller';
 import { UnconfiguredAssistantAdapter } from '../../services/assistant/unconfigured-assistant-adapter';
 import { theme } from '../../theme';
+
+function TypingDots() {
+  const { theme: appTheme } = useAppTheme();
+  const [reduceMotion, setReduceMotion] = useState(false);
+  const anim1 = useRef(new Animated.Value(0.3)).current;
+  const anim2 = useRef(new Animated.Value(0.3)).current;
+  const anim3 = useRef(new Animated.Value(0.3)).current;
+
+  useEffect(() => {
+    let active = true;
+    void AccessibilityInfo.isReduceMotionEnabled().then((enabled) => {
+      if (active) setReduceMotion(enabled);
+    });
+    return () => {
+      active = false;
+    };
+  }, []);
+
+  useEffect(() => {
+    if (reduceMotion) {
+      anim1.setValue(1);
+      anim2.setValue(1);
+      anim3.setValue(1);
+      return;
+    }
+    const createPulse = (anim: Animated.Value, delay: number) => {
+      return Animated.loop(
+        Animated.sequence([
+          Animated.delay(delay),
+          Animated.timing(anim, {
+            toValue: 1,
+            duration: 400,
+            useNativeDriver: true,
+          }),
+          Animated.timing(anim, {
+            toValue: 0.3,
+            duration: 400,
+            useNativeDriver: true,
+          }),
+          Animated.delay(Math.max(0, 400 - delay)),
+        ]),
+      );
+    };
+
+    const loop1 = createPulse(anim1, 0);
+    const loop2 = createPulse(anim2, 180);
+    const loop3 = createPulse(anim3, 360);
+
+    loop1.start();
+    loop2.start();
+    loop3.start();
+
+    return () => {
+      loop1.stop();
+      loop2.stop();
+      loop3.stop();
+    };
+  }, [reduceMotion, anim1, anim2, anim3]);
+
+  return (
+    <View
+      style={typingStyles.container}
+      accessibilityRole="progressbar"
+      accessibilityLabel="El asistente está escribiendo una respuesta"
+    >
+      <Animated.View
+        style={[typingStyles.dot, { backgroundColor: appTheme.colors.text, opacity: anim1 }]}
+      />
+      <Animated.View
+        style={[typingStyles.dot, { backgroundColor: appTheme.colors.text, opacity: anim2 }]}
+      />
+      <Animated.View
+        style={[typingStyles.dot, { backgroundColor: appTheme.colors.text, opacity: anim3 }]}
+      />
+    </View>
+  );
+}
+
+const typingStyles = StyleSheet.create({
+  container: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+    paddingVertical: 6,
+    paddingHorizontal: 4,
+  },
+  dot: {
+    width: 8,
+    height: 8,
+    borderRadius: 4,
+  },
+});
 
 export function AssistantScreen() {
   const { theme: appTheme } = useAppTheme();
@@ -170,14 +264,6 @@ export function AssistantScreen() {
     void controller.send(textToSend);
   };
 
-  const handleCancel = () => {
-    const lastText = controller.getLastSubmittedText();
-    controller.abort();
-    if (lastText) {
-      setInput(lastText);
-    }
-  };
-
   const handleRetry = () => {
     const lastText = controller.getLastSubmittedText();
     if (lastText) {
@@ -259,7 +345,7 @@ export function AssistantScreen() {
     >
       <DemoBadge />
 
-      {messages.length === 0 ? (
+      {messages.length === 0 && !isSending ? (
         <EmptyState
           icon="message-circle"
           title="Consulta al asistente"
@@ -313,6 +399,18 @@ export function AssistantScreen() {
               </View>
             );
           })}
+          {isSending ? (
+            <View
+              style={[styles.bubbleWrapper, styles.assistantWrapper]}
+              accessibilityLiveRegion="polite"
+              accessibilityLabel="El asistente está escribiendo una respuesta"
+            >
+              <MascotAvatar pose="explicacion" size="sm" framed={false} />
+              <View style={[styles.assistantBubble, styles.typingBubble]}>
+                <TypingDots />
+              </View>
+            </View>
+          ) : null}
         </View>
       )}
 
@@ -322,18 +420,7 @@ export function AssistantScreen() {
         </View>
       ) : null}
 
-      {isSending ? (
-        <InfoCard>
-          <View
-            accessibilityLiveRegion="polite"
-            accessibilityLabel="Procesando consulta"
-            style={styles.sendingRow}
-          >
-            <Text style={styles.sendingText}>Procesando consulta…</Text>
-            <VisualButton label="Cancelar" secondary onPress={handleCancel} />
-          </View>
-        </InfoCard>
-      ) : state === 'offline' ? (
+      {state === 'offline' ? (
         <InfoCard>
           <SectionTitle>Sin conexión</SectionTitle>
           <BodyText>
@@ -423,6 +510,12 @@ function createStyles(colors: ReturnType<typeof useAppTheme>['theme']['colors'])
     },
     assistantWrapper: {
       alignItems: 'flex-start',
+    },
+    typingBubble: {
+      paddingVertical: 10,
+      paddingHorizontal: 14,
+      minHeight: 38,
+      justifyContent: 'center',
     },
     assistantBubble: {
       maxWidth: '85%',
