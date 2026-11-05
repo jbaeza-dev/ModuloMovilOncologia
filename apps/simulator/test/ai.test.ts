@@ -1,7 +1,11 @@
 import { describe, expect, it, vi } from 'vitest';
 import { readConfig } from '../src/config.js';
 import { aiResponse, executeAiChat } from '../src/ai.js';
-import { GeminiAssistantClient } from '../src/gemini-client.js';
+import {
+  GeminiAssistantClient,
+  validateGeminiPayload,
+  type ValidatedGeminiPayload,
+} from '../src/gemini-client.js';
 
 const config = readConfig({
   APP_ENV: 'demo',
@@ -20,6 +24,74 @@ const defaultState = {
   ack_signos_usado: false,
   ack_epro_usado: false,
 };
+
+describe('validateGeminiPayload runtime assertions', () => {
+  it('acepta un payload estrictamente válido y recorta espacios de la respuesta', () => {
+    const raw = {
+      respuesta: '   Bebe agua en sorbos pequeños.   ',
+      requiere_urgencia: false,
+      estado_respuesta: 'respuesta',
+    };
+    const valid = validateGeminiPayload(raw);
+    expect(valid).toEqual<ValidatedGeminiPayload>({
+      respuesta: 'Bebe agua en sorbos pequeños.',
+      requiere_urgencia: false,
+      estado_respuesta: 'respuesta',
+    });
+  });
+
+  it('rechaza si la respuesta no es un objeto o es un arreglo', () => {
+    expect(() => validateGeminiPayload(null)).toThrow(/no es un objeto JSON válido/);
+    expect(() => validateGeminiPayload('cadena')).toThrow(/no es un objeto JSON válido/);
+    expect(() => validateGeminiPayload([])).toThrow(/no es un objeto JSON válido/);
+  });
+
+  it('rechaza respuestas vacías o compuestas únicamente por espacios', () => {
+    expect(() =>
+      validateGeminiPayload({
+        respuesta: '   ',
+        requiere_urgencia: false,
+        estado_respuesta: 'respuesta',
+      }),
+    ).toThrow(/no puede estar vacío/);
+
+    expect(() =>
+      validateGeminiPayload({
+        respuesta: 12345,
+        requiere_urgencia: false,
+        estado_respuesta: 'respuesta',
+      }),
+    ).toThrow(/debe ser una cadena de texto/);
+  });
+
+  it('rechaza si requiere_urgencia no es un booleano estricto (rechaza "false", 0, etc.)', () => {
+    expect(() =>
+      validateGeminiPayload({
+        respuesta: 'Alimentación suave',
+        requiere_urgencia: 'false',
+        estado_respuesta: 'respuesta',
+      }),
+    ).toThrow(/debe ser un booleano estricto/);
+
+    expect(() =>
+      validateGeminiPayload({
+        respuesta: 'Alimentación suave',
+        requiere_urgencia: 0,
+        estado_respuesta: 'respuesta',
+      }),
+    ).toThrow(/debe ser un booleano estricto/);
+  });
+
+  it('rechaza si estado_respuesta contiene un valor desconocido o no permitido', () => {
+    expect(() =>
+      validateGeminiPayload({
+        respuesta: 'Alimentación suave',
+        requiere_urgencia: false,
+        estado_respuesta: 'exitoso',
+      }),
+    ).toThrow(/valor no permitido/);
+  });
+});
 
 describe('aiResponse deterministic stub', () => {
   it('detecta cortesías y responde con estado cortesia sin depuración por defecto', () => {
@@ -51,22 +123,58 @@ describe('aiResponse deterministic stub', () => {
 });
 
 describe('GeminiAssistantClient abortSignal and cancellation', () => {
-  it('cancela la petición mediante abortSignal cuando se supera el tiempo límite', async () => {
-    const client = new GeminiAssistantClient({ apiKey: 'mock-key', timeoutMs: 20 });
-    // Mock generateContent para simular una petición que tarda más que timeoutMs
+  it('cancela efectivamente mediante abortSignal cuando expira el tiempo límite', async () => {
+    const client = new GeminiAssistantClient({ apiKey: 'mock-key', timeoutMs: 30 });
+
+    let capturedSignal: AbortSignal | undefined;
+
+    // Mock que inspecciona el abortSignal recibido en config
     // @ts-expect-error accessing private ai for testing cancellation
     vi.spyOn(client.ai.models, 'generateContent').mockImplementation(
-      () =>
-        new Promise((_resolve, reject) => {
-          setTimeout(() => {
+      (params: { config?: { abortSignal?: AbortSignal } }) => {
+        capturedSignal = params?.config?.abortSignal;
+
+        if (!capturedSignal) {
+          // Si no se proveyó abortSignal, la llamada quedaría colgada indefinidamente
+          return new Promise(() => {});
+        }
+
+        return new Promise((_resolve, reject) => {
+          if (capturedSignal?.aborted) {
+            const err = new Error('The operation was aborted');
+            err.name = 'AbortError';
+            return reject(err);
+          }
+          capturedSignal?.addEventListener('abort', () => {
             const err = new Error('The operation was aborted');
             err.name = 'AbortError';
             reject(err);
-          }, 50);
-        }),
+          });
+        });
+      },
     );
 
-    await expect(client.ask('consulta lenta')).rejects.toThrow();
+    await expect(client.ask('consulta lenta')).rejects.toThrow(/aborted/i);
+    expect(capturedSignal).toBeDefined();
+    expect(capturedSignal?.aborted).toBe(true);
+  });
+
+  it('completa exitosamente si la respuesta llega antes del tiempo límite', async () => {
+    const client = new GeminiAssistantClient({ apiKey: 'mock-key', timeoutMs: 500 });
+
+    // @ts-expect-error accessing private ai for testing fast response
+    vi.spyOn(client.ai.models, 'generateContent').mockResolvedValueOnce({
+      text: JSON.stringify({
+        respuesta: 'Respuesta rápida de prueba.',
+        requiere_urgencia: false,
+        estado_respuesta: 'respuesta',
+      }),
+    });
+
+    const res = await client.ask('consulta rápida');
+    expect(res.respuesta).toBe('Respuesta rápida de prueba.');
+    expect(res.estado_respuesta).toBe('respuesta');
+    expect(res.requiere_urgencia).toBe(false);
   });
 });
 
@@ -122,6 +230,33 @@ describe('executeAiChat integration and failure handling', () => {
     expect(res.debug).toBeNull(); // No expone mensajes internos del proveedor al paciente
   });
 
+  it('no genera falsas alarmas de urgencia en el manejo de indisponibilidad', async () => {
+    const configWithGemini = { ...config, geminiApiKey: 'mock-key' };
+    vi.spyOn(GeminiAssistantClient.prototype, 'ask').mockRejectedValue(
+      new Error('Proveedor no responde'),
+    );
+
+    const res1 = await executeAiChat(
+      configWithGemini,
+      defaultState,
+      '¿Cómo se mide la temperatura?',
+      true,
+      false,
+    );
+    expect(res1.estado_respuesta).toBe('no_disponible');
+    expect(res1.requiere_urgencia).toBe(false);
+
+    const res2 = await executeAiChat(
+      configWithGemini,
+      defaultState,
+      'No tengo fiebre ni sangrado',
+      true,
+      false,
+    );
+    expect(res2.estado_respuesta).toBe('no_disponible');
+    expect(res2.requiere_urgencia).toBe(false);
+  });
+
   it('incluye debug con error solo si debug=true ante fallo de Gemini', async () => {
     const configWithGemini = { ...config, geminiApiKey: 'mock-key' };
     vi.spyOn(GeminiAssistantClient.prototype, 'ask').mockRejectedValueOnce(
@@ -139,24 +274,5 @@ describe('executeAiChat integration and failure handling', () => {
     expect(res.debug).not.toBeNull();
     expect(res.debug?.origen).toBe('gemini-error');
     expect(res.debug?.confianza_razon).toContain('Network timeout');
-  });
-
-  it('preserva detección de urgencia médica ante fallo de Gemini si el mensaje contiene síntomas de alarma', async () => {
-    const configWithGemini = { ...config, geminiApiKey: 'mock-key' };
-    vi.spyOn(GeminiAssistantClient.prototype, 'ask').mockRejectedValueOnce(
-      new Error('Connection reset'),
-    );
-
-    const res = await executeAiChat(
-      configWithGemini,
-      defaultState,
-      'Tengo 38.8 de fiebre y me siento muy mal',
-      true,
-      false,
-    );
-    expect(res.estado_respuesta).toBe('no_disponible');
-    expect(res.requiere_urgencia).toBe(true);
-    expect(res.respuesta).toContain('evaluación médica');
-    expect(res.debug).toBeNull();
   });
 });

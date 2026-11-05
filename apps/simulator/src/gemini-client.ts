@@ -30,6 +30,49 @@ Tus pautas de comunicación son:
    - Si el mensaje es un saludo o agradecimiento ("hola", "gracias"), responde con una frase breve, amigable y discreta, con 'estado_respuesta: "cortesia"' y 'requiere_urgencia: false'.
 `;
 
+export interface ValidatedGeminiPayload {
+  respuesta: string;
+  requiere_urgencia: boolean;
+  estado_respuesta: 'respuesta' | 'sin_informacion' | 'cortesia';
+}
+
+export function validateGeminiPayload(raw: unknown): ValidatedGeminiPayload {
+  if (!raw || typeof raw !== 'object' || Array.isArray(raw)) {
+    throw new Error('La respuesta de Gemini no es un objeto JSON válido.');
+  }
+  const candidate = raw as Record<string, unknown>;
+
+  // 1. Exigir texto no vacío
+  if (typeof candidate.respuesta !== 'string') {
+    throw new Error('El campo "respuesta" debe ser una cadena de texto.');
+  }
+  const respuesta = candidate.respuesta.trim();
+  if (!respuesta) {
+    throw new Error('El campo "respuesta" no puede estar vacío.');
+  }
+
+  // 2. Exigir booleano real estricto (rechazar cadenas "false" o números)
+  if (typeof candidate.requiere_urgencia !== 'boolean') {
+    throw new Error('El campo "requiere_urgencia" debe ser un booleano estricto.');
+  }
+
+  // 3. Exigir estado estrictamente permitido
+  if (
+    typeof candidate.estado_respuesta !== 'string' ||
+    !['respuesta', 'sin_informacion', 'cortesia'].includes(candidate.estado_respuesta)
+  ) {
+    throw new Error(
+      `El campo "estado_respuesta" contiene un valor no permitido: "${String(candidate.estado_respuesta)}".`,
+    );
+  }
+
+  return {
+    respuesta,
+    requiere_urgencia: candidate.requiere_urgencia,
+    estado_respuesta: candidate.estado_respuesta as 'respuesta' | 'sin_informacion' | 'cortesia',
+  };
+}
+
 export interface GeminiClientOptions {
   apiKey: string;
   timeoutMs?: number;
@@ -81,34 +124,32 @@ export class GeminiAssistantClient {
       });
 
       const text = response.text;
-      if (!text) {
+      if (!text || !text.trim()) {
         throw new Error('Gemini API devolvió una respuesta vacía.');
       }
 
-      const parsed = JSON.parse(text) as {
-        respuesta?: string;
-        requiere_urgencia?: boolean;
-        estado_respuesta?: string;
-      };
+      let rawParsed: unknown;
+      try {
+        rawParsed = JSON.parse(text);
+      } catch (parseError) {
+        throw new Error(
+          `Error al parsear JSON de Gemini: ${parseError instanceof Error ? parseError.message : String(parseError)}`,
+          { cause: parseError },
+        );
+      }
 
-      const requiereUrgencia = activarAlarmas && Boolean(parsed.requiere_urgencia);
-      const estadoRespuesta = (
-        ['respuesta', 'sin_informacion', 'cortesia'].includes(parsed.estado_respuesta ?? '')
-          ? parsed.estado_respuesta
-          : 'respuesta'
-      ) as AiChatResponse['estado_respuesta'];
-
-      const respuestaTexto =
-        String(parsed.respuesta ?? '').trim() ||
-        'No fue posible obtener una orientación en este momento.';
+      const validated = validateGeminiPayload(rawParsed);
+      const requiereUrgencia = activarAlarmas && validated.requiere_urgencia;
 
       return {
-        respuesta: respuestaTexto,
+        respuesta: validated.respuesta,
         fuentes: [],
         requiere_urgencia: requiereUrgencia,
         confianza_nivel:
-          requiereUrgencia || estadoRespuesta !== 'respuesta' ? 'ninguna' : 'no_verificada',
-        estado_respuesta: estadoRespuesta,
+          requiereUrgencia || validated.estado_respuesta !== 'respuesta'
+            ? 'ninguna'
+            : 'no_verificada',
+        estado_respuesta: validated.estado_respuesta,
         debug: includeDebug
           ? {
               origen: 'gemini-api',

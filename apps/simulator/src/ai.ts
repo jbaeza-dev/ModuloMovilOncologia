@@ -79,17 +79,11 @@ export async function executeAiChat(
       return await client.ask(message, activarAlarmas, includeDebug);
     } catch (error) {
       console.warn('[qc-ai] Error invocando Gemini API, devolviendo no_disponible:', error);
-      const isUrgent =
-        activarAlarmas &&
-        /(?:fiebre|temperatura|3[89]\.|sangrad|dificultad para respirar|falta de aire|asfixi)/iu.test(
-          message,
-        );
       return {
-        respuesta: isUrgent
-          ? 'Se han identificado señales que requieren evaluación médica. Por favor acuda a un servicio de urgencias o contacte a su equipo de salud.'
-          : 'En este momento no puedo responder. Por favor, inténtelo nuevamente en unos minutos o consulte con su equipo de salud.',
+        respuesta:
+          'En este momento no puedo responder. Por favor, inténtelo nuevamente en unos minutos o consulte con su equipo de salud.',
         fuentes: [],
-        requiere_urgencia: isUrgent,
+        requiere_urgencia: false,
         confianza_nivel: 'ninguna',
         estado_respuesta: 'no_disponible',
         debug: includeDebug
@@ -100,7 +94,7 @@ export async function executeAiChat(
               confianza_razon: `Indisponibilidad tras error en proveedor: ${
                 error instanceof Error ? error.message : String(error)
               }`,
-              motivos_alarma: isUrgent ? ['alerta_clinica_fallback'] : [],
+              motivos_alarma: [],
               keywords: [],
               temas: [],
               tokens_prompt: 0,
