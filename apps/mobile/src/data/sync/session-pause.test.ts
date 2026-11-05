@@ -3,7 +3,7 @@ import type { PowerSyncBackendConnector } from '@powersync/common';
 import type { HttpSessionAdapter } from '../../services/session/http-session-adapter';
 import { createSqliteTestHarness } from '../local/testing/sqlite-test-harness';
 import { retrySessionCommands, storedSessionPause } from './session-pause';
-import { createClinicalResume } from './clinical-resume';
+import { createClinicalConnectionController, createClinicalResume } from './clinical-resume';
 
 const harness = createSqliteTestHarness();
 afterEach(() => harness.cleanup());
@@ -112,7 +112,7 @@ describe('Control de pausa y reconexión en runtime', () => {
     ]);
 
     const connectSpy = vi.fn().mockResolvedValue(undefined);
-    const mockDatabase = { connect: connectSpy };
+    const mockDatabase = { connect: connectSpy, disconnect: vi.fn().mockResolvedValue(undefined) };
     let uploadAllowed = false;
     const mockSession: Pick<HttpSessionAdapter, 'getCurrentUser' | 'getSnapshot'> = {
       getCurrentUser: () => ({ id: 'user-1' }) as ReturnType<HttpSessionAdapter['getCurrentUser']>,
@@ -161,5 +161,192 @@ describe('Control de pausa y reconexión en runtime', () => {
       "SELECT value_json FROM qc_storage_control WHERE id='runtime:pause'",
     );
     expect(pauseRow).toBeNull();
+  });
+});
+
+describe('Ciclo completo de conexión y desconexión unificada (ClinicalConnectionController)', () => {
+  it('ciclo completo: primera reanudación autorizada conecta, paso a segundo plano desconecta, y regreso a primer plano reconecta', async () => {
+    const db = harness.open();
+    await db.exec('CREATE TABLE qc_storage_control(id TEXT PRIMARY KEY, value_json TEXT)');
+    await db.exec(
+      'CREATE TABLE qc_clinical_command(id TEXT PRIMARY KEY,owner TEXT,environment TEXT,status TEXT,error_json TEXT,payload_json TEXT,captured_at TEXT)',
+    );
+    const connectSpy = vi.fn().mockResolvedValue(undefined);
+    const disconnectSpy = vi.fn().mockResolvedValue(undefined);
+    const mockDatabase = { connect: connectSpy, disconnect: disconnectSpy };
+
+    const store = { closed: false, pauseCode: null as string | null };
+    const controller = createClinicalConnectionController({
+      store,
+      scope: { owner: 'user-1', localPatientId: 'pac-1', environment: 'env-test' },
+      endpoint: 'https://sync.example.com',
+      session: {
+        getCurrentUser: () =>
+          ({ id: 'user-1' }) as ReturnType<HttpSessionAdapter['getCurrentUser']>,
+        getSnapshot: () =>
+          ({ uploadAllowed: true }) as ReturnType<HttpSessionAdapter['getSnapshot']>,
+      },
+      connection: db,
+      getConnector: () => ({}) as unknown as PowerSyncBackendConnector,
+      signal: new AbortController().signal,
+      database: mockDatabase,
+    });
+
+    // 1. Primera reanudación autorizada -> Una llamada a connect()
+    await controller.resume(false);
+    expect(connectSpy).toHaveBeenCalledTimes(1);
+    expect(disconnectSpy).toHaveBeenCalledTimes(0);
+    expect(controller.isConnected()).toBe(true);
+
+    // 2. Paso a segundo plano -> Una llamada a disconnect()
+    await controller.disconnect();
+    expect(disconnectSpy).toHaveBeenCalledTimes(1);
+    expect(controller.isConnected()).toBe(false);
+
+    // 3. Regreso a primer plano -> Segunda llamada a connect()
+    await controller.resume(false);
+    expect(connectSpy).toHaveBeenCalledTimes(2);
+    expect(disconnectSpy).toHaveBeenCalledTimes(1);
+    expect(controller.isConnected()).toBe(true);
+  });
+
+  it('coordina varias reanudaciones simultáneas sin conexiones duplicadas', async () => {
+    const db = harness.open();
+    await db.exec('CREATE TABLE qc_storage_control(id TEXT PRIMARY KEY, value_json TEXT)');
+    await db.exec(
+      'CREATE TABLE qc_clinical_command(id TEXT PRIMARY KEY,owner TEXT,environment TEXT,status TEXT,error_json TEXT,payload_json TEXT,captured_at TEXT)',
+    );
+    let resolveConnect: () => void = () => undefined;
+    const connectPromise = new Promise<void>((resolve) => {
+      resolveConnect = resolve;
+    });
+    const connectSpy = vi.fn().mockImplementation(() => connectPromise);
+    const disconnectSpy = vi.fn().mockResolvedValue(undefined);
+    const mockDatabase = { connect: connectSpy, disconnect: disconnectSpy };
+
+    const store = { closed: false, pauseCode: null as string | null };
+    const controller = createClinicalConnectionController({
+      store,
+      scope: { owner: 'user-1', localPatientId: 'pac-1', environment: 'env-test' },
+      endpoint: 'https://sync.example.com',
+      session: {
+        getCurrentUser: () =>
+          ({ id: 'user-1' }) as ReturnType<HttpSessionAdapter['getCurrentUser']>,
+        getSnapshot: () =>
+          ({ uploadAllowed: true }) as ReturnType<HttpSessionAdapter['getSnapshot']>,
+      },
+      connection: db,
+      getConnector: () => ({}) as unknown as PowerSyncBackendConnector,
+      signal: new AbortController().signal,
+      database: mockDatabase,
+    });
+
+    // Disparar tres llamadas concurrentes a resume
+    const p1 = controller.resume(false);
+    const p2 = controller.resume(false);
+    const p3 = controller.resume(false);
+
+    await Promise.resolve();
+    await Promise.resolve();
+    expect(connectSpy).toHaveBeenCalledTimes(1);
+
+    resolveConnect();
+    await Promise.all([p1, p2, p3]);
+
+    expect(connectSpy).toHaveBeenCalledTimes(1);
+    expect(controller.isConnected()).toBe(true);
+  });
+
+  it('aborta la conexión si ocurre una pausa o revocación durante la transición de connect', async () => {
+    const db = harness.open();
+    await db.exec('CREATE TABLE qc_storage_control(id TEXT PRIMARY KEY, value_json TEXT)');
+    await db.exec(
+      'CREATE TABLE qc_clinical_command(id TEXT PRIMARY KEY,owner TEXT,environment TEXT,status TEXT,error_json TEXT,payload_json TEXT,captured_at TEXT)',
+    );
+    let resolveConnect: () => void = () => undefined;
+    const connectPromise = new Promise<void>((resolve) => {
+      resolveConnect = resolve;
+    });
+    const connectSpy = vi.fn().mockImplementation(() => connectPromise);
+    const disconnectSpy = vi.fn().mockResolvedValue(undefined);
+    const mockDatabase = { connect: connectSpy, disconnect: disconnectSpy };
+
+    const store = { closed: false, pauseCode: null as string | null };
+    const controller = createClinicalConnectionController({
+      store,
+      scope: { owner: 'user-1', localPatientId: 'pac-1', environment: 'env-test' },
+      endpoint: 'https://sync.example.com',
+      session: {
+        getCurrentUser: () =>
+          ({ id: 'user-1' }) as ReturnType<HttpSessionAdapter['getCurrentUser']>,
+        getSnapshot: () =>
+          ({ uploadAllowed: true }) as ReturnType<HttpSessionAdapter['getSnapshot']>,
+      },
+      connection: db,
+      getConnector: () => ({}) as unknown as PowerSyncBackendConnector,
+      signal: new AbortController().signal,
+      database: mockDatabase,
+    });
+
+    const resumePromise = controller.resume(false);
+    await Promise.resolve();
+    await Promise.resolve();
+    expect(connectSpy).toHaveBeenCalledTimes(1);
+
+    // Ocurre una pausa durante la transición asíncrona
+    store.pauseCode = 'SESION_EXPIRED';
+
+    resolveConnect();
+    await resumePromise;
+
+    // Debe haberse ejecutado disconnect() inmediatamente y no quedar conectado
+    expect(disconnectSpy).toHaveBeenCalledTimes(1);
+    expect(controller.isConnected()).toBe(false);
+  });
+
+  it('aborta y desconecta limpiamente si se solicita disconnect() o se cierra el almacén durante la transición', async () => {
+    const db = harness.open();
+    await db.exec('CREATE TABLE qc_storage_control(id TEXT PRIMARY KEY, value_json TEXT)');
+    await db.exec(
+      'CREATE TABLE qc_clinical_command(id TEXT PRIMARY KEY,owner TEXT,environment TEXT,status TEXT,error_json TEXT,payload_json TEXT,captured_at TEXT)',
+    );
+    let resolveConnect: () => void = () => undefined;
+    const connectPromise = new Promise<void>((resolve) => {
+      resolveConnect = resolve;
+    });
+    const connectSpy = vi.fn().mockImplementation(() => connectPromise);
+    const disconnectSpy = vi.fn().mockResolvedValue(undefined);
+    const mockDatabase = { connect: connectSpy, disconnect: disconnectSpy };
+
+    const store = { closed: false, pauseCode: null as string | null };
+    const controller = createClinicalConnectionController({
+      store,
+      scope: { owner: 'user-1', localPatientId: 'pac-1', environment: 'env-test' },
+      endpoint: 'https://sync.example.com',
+      session: {
+        getCurrentUser: () =>
+          ({ id: 'user-1' }) as ReturnType<HttpSessionAdapter['getCurrentUser']>,
+        getSnapshot: () =>
+          ({ uploadAllowed: true }) as ReturnType<HttpSessionAdapter['getSnapshot']>,
+      },
+      connection: db,
+      getConnector: () => ({}) as unknown as PowerSyncBackendConnector,
+      signal: new AbortController().signal,
+      database: mockDatabase,
+    });
+
+    const resumePromise = controller.resume(false);
+    await Promise.resolve();
+    await Promise.resolve();
+    expect(connectSpy).toHaveBeenCalledTimes(1);
+
+    // Se solicita desconexión mientras connect está en vuelo
+    const disconnectPromise = controller.disconnect();
+
+    resolveConnect();
+    await Promise.all([resumePromise, disconnectPromise]);
+
+    expect(disconnectSpy).toHaveBeenCalledTimes(1);
+    expect(controller.isConnected()).toBe(false);
   });
 });

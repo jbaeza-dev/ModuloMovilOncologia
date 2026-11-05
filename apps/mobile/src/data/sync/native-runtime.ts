@@ -63,8 +63,20 @@ export function configuredSyncEndpoint(demo: boolean) {
   return url.href.replace(/\/$/, '');
 }
 
-import { createClinicalResume, type ClinicalResumeOptions } from './clinical-resume';
-export { createClinicalResume, type ClinicalResumeOptions };
+import {
+  createClinicalConnectionController,
+  createClinicalResume,
+  type ClinicalConnectionController,
+  type ClinicalConnectionControllerOptions,
+  type ClinicalResumeOptions,
+} from './clinical-resume';
+export {
+  createClinicalConnectionController,
+  createClinicalResume,
+  type ClinicalConnectionController,
+  type ClinicalConnectionControllerOptions,
+  type ClinicalResumeOptions,
+};
 
 export async function openClinicalStore(
   session: HttpSessionAdapter,
@@ -127,12 +139,10 @@ export async function openClinicalStore(
     unregisterSession: () => void = () => undefined,
     unregisterStatus: () => void = () => undefined;
   let projection: Promise<void> = Promise.resolve(),
-    lastCheckpoint = 0,
-    started = false;
+    lastCheckpoint = 0;
   let pauseTimer: ReturnType<typeof setTimeout> | undefined;
-  let disconnecting: Promise<void> | null = null;
   let connectorInstance: ClinicalConnector | null = null;
-  const resumeInternal = createClinicalResume({
+  const connectionController = createClinicalConnectionController({
     store: {
       get closed() {
         return store.closed;
@@ -154,7 +164,6 @@ export async function openClinicalStore(
     getConnector: () => connectorInstance!,
     signal,
     database,
-    getDisconnecting: () => disconnecting,
     clearPauseTimer: () => {
       if (pauseTimer) {
         clearTimeout(pauseTimer);
@@ -173,20 +182,8 @@ export async function openClinicalStore(
     async settleCatalog() {
       await projection;
     },
-    async disconnect() {
-      if (disconnecting) return disconnecting;
-      if (started) {
-        started = false;
-        const pending = database.disconnect();
-        disconnecting = pending;
-        try {
-          await pending;
-        } finally {
-          if (disconnecting === pending) disconnecting = null;
-        }
-      }
-    },
-    resume: (...args) => resumeInternal(...args),
+    disconnect: () => connectionController.disconnect(),
+    resume: (...args) => connectionController.resume(...args),
     async close() {
       if (store.closed) return;
       store.closed = true;
