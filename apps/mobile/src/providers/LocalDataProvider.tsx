@@ -139,7 +139,7 @@ const DataContext = createContext<DataContextValue | null>(null);
 export function LocalDataProvider({ children }: { children: ReactNode }) {
   const [storage, setStorage] = useState<{ store: ClinicalStore; epoch: number } | null>(null);
   const [sessionRestored, setSessionRestored] = useState(false);
-  const [queryRevision, setQueryRevision] = useState(0);
+  const [queryRevision] = useState(0);
   const [clinicalRevision, setClinicalRevision] = useState(0);
   const [educationContentRevision, setEducationContentRevision] = useState(0);
   const [educationStatusRevision, setEducationStatusRevision] = useState(0);
@@ -352,7 +352,6 @@ export function LocalDataProvider({ children }: { children: ReactNode }) {
               onChange: () => {
                 if (active) {
                   setClinicalRevision((n) => n + 1);
-                  setQueryRevision((n) => n + 1);
                 }
               },
             },
@@ -366,7 +365,6 @@ export function LocalDataProvider({ children }: { children: ReactNode }) {
               onChange: () => {
                 if (active) {
                   setEducationContentRevision((n) => n + 1);
-                  setQueryRevision((n) => n + 1);
                 }
               },
             },
@@ -380,7 +378,6 @@ export function LocalDataProvider({ children }: { children: ReactNode }) {
               onChange: () => {
                 if (active) {
                   setEducationStatusRevision((n) => n + 1);
-                  setQueryRevision((n) => n + 1);
                 }
               },
             },
@@ -394,7 +391,6 @@ export function LocalDataProvider({ children }: { children: ReactNode }) {
               onChange: () => {
                 if (active) {
                   setFormsRevision((n) => n + 1);
-                  setQueryRevision((n) => n + 1);
                 }
               },
             },

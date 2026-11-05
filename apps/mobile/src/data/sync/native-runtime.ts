@@ -170,6 +170,8 @@ export async function openClinicalStore(
           await retrySessionCommands(connection, scope);
           store.pauseCode = null;
           await connection.run("DELETE FROM qc_storage_control WHERE id='runtime:pause'");
+        } else {
+          return;
         }
       } else if (retryPaused === true) {
         await connection.run(
@@ -182,6 +184,9 @@ export async function openClinicalStore(
         if (!store.pauseCode) {
           await connection.run("DELETE FROM qc_storage_control WHERE id='runtime:pause'");
         }
+      }
+      if (store.pauseCode) {
+        return;
       }
       if (store.closed || signal.aborted || session.getCurrentUser()?.id !== scope.owner) return;
       if (!started) {
@@ -226,6 +231,19 @@ export async function openClinicalStore(
     await database.waitForReady();
     await assertEncryptedDatabase(connection);
     await migrateDatabase(connection);
+    const persistedPause = await connection.first<{ value_json: string }>(
+      "SELECT value_json FROM qc_storage_control WHERE id='runtime:pause'",
+    );
+    if (persistedPause?.value_json) {
+      try {
+        const parsed = JSON.parse(persistedPause.value_json) as { code?: string };
+        if (parsed?.code) {
+          store.pauseCode = parsed.code;
+        }
+      } catch {
+        // Ignorar JSON no parseable
+      }
+    }
     await useLegacyArchive(
       sourceEnvironment,
       demo,

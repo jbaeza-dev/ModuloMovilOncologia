@@ -178,6 +178,79 @@ describe('GeminiAssistantClient abortSignal and cancellation', () => {
   });
 });
 
+describe('GeminiAssistantClient 503 retry and jitter', () => {
+  it('reintenta automáticamente ante un 503 UNAVAILABLE si el presupuesto lo permite y responde con éxito en el segundo intento', async () => {
+    vi.useFakeTimers();
+    try {
+      const client = new GeminiAssistantClient({ apiKey: 'mock-key', timeoutMs: 15000 });
+      let callCount = 0;
+      // @ts-expect-error accessing private ai
+      vi.spyOn(client.ai.models, 'generateContent').mockImplementation(async () => {
+        callCount++;
+        if (callCount === 1) {
+          const err = new Error('The service is temporarily unavailable. 503 UNAVAILABLE');
+          (err as { status?: number }).status = 503;
+          throw err;
+        }
+        return {
+          text: JSON.stringify({
+            respuesta: 'Respuesta recuperada tras reintento 503.',
+            requiere_urgencia: false,
+            estado_respuesta: 'respuesta',
+          }),
+        };
+      });
+
+      const askPromise = client.ask('pregunta con 503 inicial', true, false, 'req-503-test');
+      await vi.advanceTimersByTimeAsync(1500);
+
+      const res = await askPromise;
+      expect(callCount).toBe(2);
+      expect(res.respuesta).toBe('Respuesta recuperada tras reintento 503.');
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it('no reintenta si el error no es 503 (por ejemplo 400 Bad Request o 429)', async () => {
+    const client = new GeminiAssistantClient({ apiKey: 'mock-key', timeoutMs: 5000 });
+    let callCount = 0;
+    // @ts-expect-error accessing private ai
+    vi.spyOn(client.ai.models, 'generateContent').mockImplementation(async () => {
+      callCount++;
+      const err = new Error('429 Too Many Requests');
+      (err as { status?: number }).status = 429;
+      throw err;
+    });
+
+    await expect(client.ask('pregunta 429')).rejects.toThrow(/429/);
+    expect(callCount).toBe(1);
+  });
+
+  it('falla limpiamente si el segundo intento tras 503 también falla', async () => {
+    vi.useFakeTimers();
+    try {
+      const client = new GeminiAssistantClient({ apiKey: 'mock-key', timeoutMs: 15000 });
+      let callCount = 0;
+      // @ts-expect-error accessing private ai
+      vi.spyOn(client.ai.models, 'generateContent').mockImplementation(async () => {
+        callCount++;
+        const err = new Error('503 Service Unavailable');
+        (err as { status?: number }).status = 503;
+        throw err;
+      });
+
+      const askPromise = client.ask('pregunta con doble 503');
+      const rejectAssertion = expect(askPromise).rejects.toThrow(/503/);
+      await vi.advanceTimersByTimeAsync(1500);
+      await rejectAssertion;
+      expect(callCount).toBe(2);
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+});
+
 describe('executeAiChat integration and failure handling', () => {
   it('aplica stub de demostración si config.geminiApiKey no está configurada', async () => {
     const res = await executeAiChat(config, defaultState, 'Hola');

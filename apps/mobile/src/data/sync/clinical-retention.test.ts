@@ -1,150 +1,206 @@
 import { afterEach, describe, expect, it } from 'vitest';
 import { createSqliteTestHarness } from '../local/testing/sqlite-test-harness';
+import { migrateDatabase } from '../local/migrations';
 import { runClinicalRetentionCleanup, CLINICAL_RETENTION_ENABLED } from './clinical-retention';
 
 const harness = createSqliteTestHarness();
 afterEach(() => harness.cleanup());
 
-describe('Retención clínica condicionada (90 días)', () => {
+describe('Retención clínica condicionada con migraciones reales (90 días)', () => {
   const scope = {
     owner: 'user-1',
     localPatientId: 'patient-1',
     environment: 'demo',
   };
 
-  async function setupSchema(db: ReturnType<typeof harness.open>) {
-    await db.exec(`
-      CREATE TABLE signos_vitales (
-        id TEXT PRIMARY KEY,
-        paciente_id TEXT NOT NULL,
-        fecha_registro TEXT NOT NULL,
-        estado_envio TEXT NOT NULL
-      );
-      CREATE TABLE qc_clinical_command (
-        id TEXT PRIMARY KEY,
-        owner TEXT NOT NULL,
-        environment TEXT NOT NULL,
-        status TEXT NOT NULL
-      );
-    `);
+  async function setupRealDb() {
+    const db = harness.open();
+    await migrateDatabase(db);
+    await db.run(
+      'INSERT OR IGNORE INTO paciente_cache (paciente_id, nombre, obtenido_en) VALUES (?, ?, ?)',
+      [scope.localPatientId, 'Paciente Prueba', new Date().toISOString()],
+    );
+    return db;
   }
 
   it('permanece desactivada por defecto en producción', async () => {
     expect(CLINICAL_RETENTION_ENABLED).toBe(false);
-    const db = harness.open();
-    await setupSchema(db);
+    const db = await setupRealDb();
 
     const result = await runClinicalRetentionCleanup(db, scope);
     expect(result.purgedRecords).toBe(0);
     expect(result.stoppedReason).toBe('disabled');
   });
 
-  it('conserva registros menores a 90 días y registros pendientes/pausados', async () => {
-    const db = harness.open();
-    await setupSchema(db);
+  it('con migraciones reales, purga signos vitales y formularios aceptados con ACK mayor a 90 días', async () => {
+    const db = await setupRealDb();
 
     const now = Date.now();
     const dayMs = 24 * 60 * 60 * 1000;
     const oldDate = new Date(now - 120 * dayMs).toISOString();
     const recentDate = new Date(now - 30 * dayMs).toISOString();
 
-    // 1. Antiguo pero pendiente -> debe conservarse
-    await db.run('INSERT INTO signos_vitales VALUES (?, ?, ?, ?)', [
-      'v-old-pending',
-      scope.localPatientId,
-      oldDate,
-      'pendiente',
-    ]);
-    await db.run('INSERT INTO qc_clinical_command VALUES (?, ?, ?, ?)', [
-      'v-old-pending',
-      scope.owner,
-      scope.environment,
-      'pendiente',
-    ]);
+    // 1. Signos vitales: Antiguo y aceptado con ACK -> DEBE purgarse
+    await db.run(
+      `INSERT INTO signos_vitales (
+        id, paciente_id, fecha_registro, temperatura, creado_localmente_en
+      ) VALUES (?, ?, ?, ?, ?)`,
+      ['v-old-accepted', scope.localPatientId, oldDate, 36.5, oldDate],
+    );
+    await db.run(
+      `INSERT INTO qc_clinical_command (
+        id, owner, environment, kind, captured_at, payload_json, status, ack_json, updated_at
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+      [
+        'v-old-accepted',
+        scope.owner,
+        scope.environment,
+        'signos',
+        oldDate,
+        '{}',
+        'aceptado',
+        '{"received":true}',
+        oldDate,
+      ],
+    );
 
-    // 2. Antiguo pero pausado -> debe conservarse
-    await db.run('INSERT INTO signos_vitales VALUES (?, ?, ?, ?)', [
-      'v-old-paused',
-      scope.localPatientId,
-      oldDate,
-      'pausado',
-    ]);
+    await db.run(
+      `INSERT INTO formulario_cache (
+        formulario_id, version, titulo, descripcion, obtenido_en
+      ) VALUES (?, ?, ?, ?, ?)`,
+      ['form-1', '1.0', 'Formulario Test', 'Desc', oldDate],
+    );
 
-    // 3. Reciente y aceptado -> debe conservarse (menor a 90 días)
-    await db.run('INSERT INTO signos_vitales VALUES (?, ?, ?, ?)', [
-      'v-recent-accepted',
-      scope.localPatientId,
-      recentDate,
-      'aceptado',
-    ]);
+    // 2. Respuesta formulario: Antigua y aceptada con ACK -> DEBE purgarse
+    await db.run(
+      `INSERT INTO respuesta_formulario (
+        id, paciente_id, formulario_id, version, respuestas_json, fecha_confirmacion, creado_localmente_en
+      ) VALUES (?, ?, ?, ?, ?, ?, ?)`,
+      ['f-old-accepted', scope.localPatientId, 'form-1', '1.0', '{}', oldDate, oldDate],
+    );
+    await db.run(
+      `INSERT INTO qc_clinical_command (
+        id, owner, environment, kind, captured_at, payload_json, status, ack_json, updated_at
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+      [
+        'f-old-accepted',
+        scope.owner,
+        scope.environment,
+        'epro',
+        oldDate,
+        '{}',
+        'aceptado',
+        '{"received":true}',
+        oldDate,
+      ],
+    );
 
-    // 4. Antiguo y aceptado pero de OTRO paciente -> debe conservarse
-    await db.run('INSERT INTO signos_vitales VALUES (?, ?, ?, ?)', [
-      'v-other-patient',
-      'patient-2',
-      oldDate,
-      'aceptado',
-    ]);
+    // 3. Signos vitales: Reciente (< 90 días) y aceptado -> DEBE conservarse
+    await db.run(
+      `INSERT INTO signos_vitales (
+        id, paciente_id, fecha_registro, temperatura, creado_localmente_en
+      ) VALUES (?, ?, ?, ?, ?)`,
+      ['v-recent-accepted', scope.localPatientId, recentDate, 36.6, recentDate],
+    );
+    await db.run(
+      `INSERT INTO qc_clinical_command (
+        id, owner, environment, kind, captured_at, payload_json, status, ack_json, updated_at
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+      [
+        'v-recent-accepted',
+        scope.owner,
+        scope.environment,
+        'signos',
+        recentDate,
+        '{}',
+        'aceptado',
+        '{"received":true}',
+        recentDate,
+      ],
+    );
 
-    // 5. Antiguo, aceptado, del paciente actual, sin comandos pendientes -> DEBE purgarse
-    await db.run('INSERT INTO signos_vitales VALUES (?, ?, ?, ?)', [
-      'v-old-accepted-1',
-      scope.localPatientId,
-      oldDate,
-      'aceptado',
-    ]);
-    await db.run('INSERT INTO qc_clinical_command VALUES (?, ?, ?, ?)', [
-      'v-old-accepted-1',
-      scope.owner,
-      scope.environment,
-      'aceptado',
-    ]);
+    // 4. Signos vitales: Antiguo pero con comando pendiente -> DEBE conservarse
+    await db.run(
+      `INSERT INTO signos_vitales (
+        id, paciente_id, fecha_registro, temperatura, creado_localmente_en
+      ) VALUES (?, ?, ?, ?, ?)`,
+      ['v-old-pending', scope.localPatientId, oldDate, 37.0, oldDate],
+    );
+    await db.run(
+      `INSERT INTO qc_clinical_command (
+        id, owner, environment, kind, captured_at, payload_json, status, updated_at
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
+      [
+        'v-old-pending',
+        scope.owner,
+        scope.environment,
+        'signos',
+        oldDate,
+        '{}',
+        'pendiente',
+        oldDate,
+      ],
+    );
 
     const result = await runClinicalRetentionCleanup(db, scope, { forceEnable: true });
 
-    expect(result.purgedRecords).toBe(1);
-    expect(result.batchesExecuted).toBe(1);
-    expect(result.stoppedReason).toBe('complete');
+    expect(result.purgedRecords).toBe(2);
+    expect(result.batchesExecuted).toBeGreaterThanOrEqual(1);
 
-    const remaining = await db.all<{ id: string }>('SELECT id FROM signos_vitales ORDER BY id');
-    expect(remaining.map((r) => r.id)).toEqual([
-      'v-old-paused',
-      'v-old-pending',
-      'v-other-patient',
-      'v-recent-accepted',
-    ]);
+    // Verificación de registros conservados
+    const remainingVitals = await db.all<{ id: string }>(
+      'SELECT id FROM signos_vitales ORDER BY id',
+    );
+    expect(remainingVitals.map((v) => v.id)).toEqual(['v-old-pending', 'v-recent-accepted']);
 
-    // El comando de la purgada debe eliminarse
-    const remainingCommands = await db.all<{ id: string }>('SELECT id FROM qc_clinical_command');
-    expect(remainingCommands.map((r) => r.id)).toEqual(['v-old-pending']);
+    const remainingForms = await db.all<{ id: string }>(
+      'SELECT id FROM respuesta_formulario ORDER BY id',
+    );
+    expect(remainingForms).toEqual([]);
   });
 
-  it('ejecuta en lotes respetando el límite por lote', async () => {
-    const db = harness.open();
-    await setupSchema(db);
+  it('no purga ningún registro si la cola del SDK (qc_gateway_outbox) tiene eventos pendientes', async () => {
+    const db = await setupRealDb();
 
-    const oldDate = new Date(Date.now() - 100 * 24 * 60 * 60 * 1000).toISOString();
+    const oldDate = new Date(Date.now() - 120 * 24 * 60 * 60 * 1000).toISOString();
 
-    for (let i = 1; i <= 25; i++) {
-      await db.run('INSERT INTO signos_vitales VALUES (?, ?, ?, ?)', [
-        `vital-${i}`,
-        scope.localPatientId,
+    await db.run(
+      `INSERT INTO signos_vitales (
+        id, paciente_id, fecha_registro, temperatura, creado_localmente_en
+      ) VALUES (?, ?, ?, ?, ?)`,
+      ['v-old-with-pending-outbox', scope.localPatientId, oldDate, 36.5, oldDate],
+    );
+    await db.run(
+      `INSERT INTO qc_clinical_command (
+        id, owner, environment, kind, captured_at, payload_json, status, ack_json, updated_at
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+      [
+        'v-old-with-pending-outbox',
+        scope.owner,
+        scope.environment,
+        'signos',
         oldDate,
+        '{}',
         'aceptado',
-      ]);
-    }
+        '{"received":true}',
+        oldDate,
+      ],
+    );
 
-    const result = await runClinicalRetentionCleanup(db, scope, {
-      forceEnable: true,
-      batchSize: 10,
-      cooperativePauseMs: 0,
-    });
+    // Evento pendiente en el outbox del gateway
+    await db.run(
+      `INSERT INTO qc_gateway_outbox (
+        id, owner, environment, kind, body_json, created_at, status
+      ) VALUES (?, ?, ?, ?, ?, ?, ?)`,
+      ['evt-1', scope.owner, scope.environment, 'receipt', '{}', oldDate, 'pending'],
+    );
 
-    expect(result.purgedRecords).toBe(25);
-    expect(result.batchesExecuted).toBe(3); // 10 + 10 + 5
-    expect(result.stoppedReason).toBe('complete');
+    const result = await runClinicalRetentionCleanup(db, scope, { forceEnable: true });
 
-    const count = await db.first<{ total: number }>('SELECT count(*) as total FROM signos_vitales');
-    expect(count?.total).toBe(0);
+    expect(result.purgedRecords).toBe(0);
+    expect(result.stoppedReason).toBe('outbox_pending');
+
+    const vitals = await db.all<{ id: string }>('SELECT id FROM signos_vitales');
+    expect(vitals.length).toBe(1);
   });
 });

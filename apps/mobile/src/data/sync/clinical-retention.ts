@@ -2,15 +2,16 @@ import type { SqlConnection } from '../local/core/sql';
 import type { ClinicalScope } from './clinical-command';
 
 /**
- * Feature flag for 90-day clinical retention cleanup.
- * Kept disabled in production flow until explicitly activated after tests pass.
+ * Feature flag de retención clínica (ventana de 90 días).
+ * Implementación preliminar mantenida desactivada por defecto
+ * hasta su formalización y pruebas de aceptación en hardware.
  */
 export const CLINICAL_RETENTION_ENABLED = false;
 
 export interface RetentionCleanupResult {
   purgedRecords: number;
   batchesExecuted: number;
-  stoppedReason?: 'budget_exhausted' | 'complete' | 'disabled' | 'error';
+  stoppedReason?: 'budget_exhausted' | 'complete' | 'disabled' | 'outbox_pending' | 'error';
 }
 
 export interface RetentionCleanupOptions {
@@ -21,14 +22,6 @@ export interface RetentionCleanupOptions {
   forceEnable?: boolean;
 }
 
-/**
- * Multi-batch clinical retention cleanup.
- * Safely purges vital signs and symptom records older than retentionDays
- * only if:
- * 1. Matching active owner and environment
- * 2. Already accepted remotely by the server (status = 'aceptado')
- * 3. Outbox / queue has finished and has no pending commands for the record
- */
 export async function runClinicalRetentionCleanup(
   db: SqlConnection,
   scope: ClinicalScope,
@@ -37,7 +30,7 @@ export async function runClinicalRetentionCleanup(
   const {
     batchSize = 100,
     cooperativePauseMs = 50,
-    maxDurationMs = 5000,
+    maxDurationMs = 2000,
     retentionDays = 90,
     forceEnable = false,
   } = options;
@@ -47,6 +40,17 @@ export async function runClinicalRetentionCleanup(
       purgedRecords: 0,
       batchesExecuted: 0,
       stoppedReason: 'disabled',
+    };
+  }
+
+  const outboxCheck = await db.first<{ pending: number }>(
+    "SELECT count(*) as pending FROM qc_gateway_outbox WHERE status = 'pending'",
+  );
+  if (outboxCheck && outboxCheck.pending > 0) {
+    return {
+      purgedRecords: 0,
+      batchesExecuted: 0,
+      stoppedReason: 'outbox_pending',
     };
   }
 
@@ -64,42 +68,103 @@ export async function runClinicalRetentionCleanup(
       };
     }
 
-    const candidates = await db.all<{ id: string }>(
+    const vitalCandidates = await db.all<{ id: string }>(
       `SELECT s.id FROM signos_vitales s
        WHERE s.paciente_id = ?
          AND s.fecha_registro < ?
-         AND s.estado_envio = 'aceptado'
+         AND (
+           EXISTS (
+             SELECT 1 FROM qc_clinical_command c
+             WHERE c.id = s.id
+               AND c.owner = ?
+               AND c.environment = ?
+               AND c.status = 'aceptado'
+               AND c.ack_json IS NOT NULL
+           )
+           OR (s.fecha_subida IS NOT NULL AND NOT EXISTS (
+             SELECT 1 FROM qc_clinical_command c WHERE c.id = s.id
+           ))
+         )
          AND NOT EXISTS (
            SELECT 1 FROM qc_clinical_command c
            WHERE c.id = s.id
-             AND c.owner = ?
-             AND c.environment = ?
-             AND c.status IN ('pendiente', 'enviando', 'pausado', 'error_reintentable')
+             AND c.status IN ('pendiente', 'pausado', 'rechazado')
+         )
+         AND NOT EXISTS (
+           SELECT 1 FROM cola_envio q
+           WHERE q.registro_id = s.id
+             AND q.estado <> 'enviado'
          )
        LIMIT ?`,
       [scope.localPatientId, cutoffDate, scope.owner, scope.environment, batchSize],
     );
 
-    if (candidates.length === 0) {
+    const remainingQuota = batchSize - vitalCandidates.length;
+    const formCandidates =
+      remainingQuota > 0
+        ? await db.all<{ id: string }>(
+            `SELECT r.id FROM respuesta_formulario r
+             WHERE r.paciente_id = ?
+               AND r.fecha_confirmacion < ?
+               AND EXISTS (
+                 SELECT 1 FROM qc_clinical_command c
+                 WHERE c.id = r.id
+                   AND c.owner = ?
+                   AND c.environment = ?
+                   AND c.status = 'aceptado'
+                   AND c.ack_json IS NOT NULL
+               )
+               AND NOT EXISTS (
+                 SELECT 1 FROM qc_clinical_command c
+                 WHERE c.id = r.id
+                   AND c.status IN ('pendiente', 'pausado', 'rechazado')
+               )
+               AND NOT EXISTS (
+                 SELECT 1 FROM cola_envio q
+                 WHERE q.registro_id = r.id
+                   AND q.estado <> 'enviado'
+               )
+             LIMIT ?`,
+            [scope.localPatientId, cutoffDate, scope.owner, scope.environment, remainingQuota],
+          )
+        : [];
+
+    if (vitalCandidates.length === 0 && formCandidates.length === 0) {
       break;
     }
 
-    const ids = candidates.map((c) => c.id);
-    const placeholders = ids.map(() => '?').join(',');
-
     await db.transaction(async (tx) => {
-      await tx.run(`DELETE FROM signos_vitales WHERE id IN (${placeholders})`, ids);
-      await tx.run(
-        `DELETE FROM qc_clinical_command
-         WHERE id IN (${placeholders})
-           AND owner = ?
-           AND environment = ?
-           AND status = 'aceptado'`,
-        [...ids, scope.owner, scope.environment],
-      );
+      if (vitalCandidates.length > 0) {
+        const vIds = vitalCandidates.map((v) => v.id);
+        const vPlaceholders = vIds.map(() => '?').join(',');
+        await tx.run(`DELETE FROM signos_vitales WHERE id IN (${vPlaceholders})`, vIds);
+        await tx.run(
+          `DELETE FROM qc_clinical_command
+           WHERE id IN (${vPlaceholders})
+             AND owner = ?
+             AND environment = ?
+             AND status = 'aceptado'`,
+          [...vIds, scope.owner, scope.environment],
+        );
+        purgedTotal += vIds.length;
+      }
+
+      if (formCandidates.length > 0) {
+        const fIds = formCandidates.map((f) => f.id);
+        const fPlaceholders = fIds.map(() => '?').join(',');
+        await tx.run(`DELETE FROM respuesta_formulario WHERE id IN (${fPlaceholders})`, fIds);
+        await tx.run(
+          `DELETE FROM qc_clinical_command
+           WHERE id IN (${fPlaceholders})
+             AND owner = ?
+             AND environment = ?
+             AND status = 'aceptado'`,
+          [...fIds, scope.owner, scope.environment],
+        );
+        purgedTotal += fIds.length;
+      }
     });
 
-    purgedTotal += ids.length;
     batchesCount++;
 
     if (cooperativePauseMs > 0) {

@@ -67,7 +67,13 @@
         "expo",
         "expo-network",
         "expo-router",
-        "expo-sharing"
+        "expo-sharing",
+        "expo-asset",
+        "expo-constants",
+        "expo-dev-client",
+        "expo-notifications",
+        "expo-splash-screen",
+        "expo-task-manager"
       ]
     },
     "autolinking": {

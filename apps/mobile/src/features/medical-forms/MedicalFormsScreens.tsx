@@ -1,4 +1,4 @@
-import { QueryRevisionContext } from '../../providers/QueryRevision';
+import { FormsRevisionContext } from '../../providers/QueryRevision';
 import { clinicalStatusLabel } from '../../data/sync/visible-status';
 import { AppIcon as Feather } from '../../components/AppIcon';
 import * as Crypto from 'expo-crypto';
@@ -652,7 +652,7 @@ export function MedicalFormDetailScreen() {
 }
 
 export function MedicalFormSubmissionsScreen() {
-  const dataRevision = useContext(QueryRevisionContext);
+  const dataRevision = useContext(FormsRevisionContext);
   const { theme: appTheme } = useAppTheme();
   const styles = createStyles(appTheme.colors);
   const { repository, patientId } = useLocalData();
@@ -799,7 +799,7 @@ export function MedicalFormSubmissionsScreen() {
 }
 
 export function MedicalFormSubmissionDetailScreen() {
-  const dataRevision = useContext(QueryRevisionContext);
+  const dataRevision = useContext(FormsRevisionContext);
   const { theme: appTheme } = useAppTheme();
   const styles = createStyles(appTheme.colors);
   const { repository, patientId } = useLocalData();

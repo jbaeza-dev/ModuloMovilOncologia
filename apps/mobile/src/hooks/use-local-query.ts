@@ -5,6 +5,7 @@ import { useCallback, useContext, useRef, useState, type Context } from 'react';
 export interface LocalQueryOptions {
   queryKey?: string;
   context?: Context<number>;
+  extraRevision?: number;
 }
 
 export function useFocusedValue<T>(
@@ -14,6 +15,8 @@ export function useFocusedValue<T>(
 ) {
   const revisionContext = options?.context ?? QueryRevisionContext;
   const dataRevision = useContext(revisionContext);
+  const extraRevision = options?.extraRevision ?? 0;
+  const effectiveRevision = dataRevision + extraRevision;
   const queryKey = options?.queryKey;
 
   const [value, setValue] = useState<T>(initial);
@@ -58,7 +61,7 @@ export function useFocusedValue<T>(
       return () => {
         generation.current++;
       };
-    }, [load, revision, dataRevision, queryKey]),
+    }, [load, revision, effectiveRevision, queryKey]),
   );
 
   return { value, loading, error, refresh: () => setRevision((n) => n + 1) };
@@ -70,6 +73,8 @@ export function useFocusedList<T>(
 ) {
   const revisionContext = options?.context ?? QueryRevisionContext;
   const dataRevision = useContext(revisionContext);
+  const extraRevision = options?.extraRevision ?? 0;
+  const effectiveRevision = dataRevision + extraRevision;
   const queryKey = options?.queryKey;
 
   const [items, setItems] = useState<T[]>([]);
@@ -120,7 +125,7 @@ export function useFocusedList<T>(
       return () => {
         generation.current++;
       };
-    }, [load, revision, dataRevision, queryKey]),
+    }, [load, revision, effectiveRevision, queryKey]),
   );
 
   const loadMore = useCallback(async () => {

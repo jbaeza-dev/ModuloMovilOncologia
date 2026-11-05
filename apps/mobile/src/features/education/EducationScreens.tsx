@@ -1,7 +1,7 @@
 import { AppIcon as Feather } from '../../components/AppIcon';
 import * as Network from 'expo-network';
 import { router, useLocalSearchParams } from 'expo-router';
-import { useCallback, useEffect, useRef, useState } from 'react';
+import { useCallback, useContext, useEffect, useRef, useState } from 'react';
 import { searchEducationalContent, type EducationSearchFilter } from './education-search';
 import {
   ActivityIndicator,
@@ -44,7 +44,10 @@ import {
 import { formatDate } from '../../data/local/repository';
 import { useFocusedList, useFocusedValue } from '../../hooks/use-local-query';
 import { useLocalData } from '../../providers/LocalDataProvider';
-import { EducationContentRevisionContext } from '../../providers/QueryRevision';
+import {
+  EducationContentRevisionContext,
+  EducationStatusRevisionContext,
+} from '../../providers/QueryRevision';
 import { useAppTheme } from '../../providers/ThemeProvider';
 import { theme } from '../../theme';
 import {
@@ -75,7 +78,11 @@ export function EducationScreen() {
     async () => ({ source: catalogReader, resources: await catalogReader.getAllResources() }),
     [catalogReader],
   );
-  const searchCatalog = useFocusedValue(loadResources, null);
+  const { patientId: screenPatientId } = useLocalData();
+  const searchCatalog = useFocusedValue(loadResources, null, {
+    queryKey: `${screenPatientId ?? 'default'}:education:search-catalog`,
+    context: EducationContentRevisionContext,
+  });
   const currentResources =
     searchCatalog.value?.source === catalogReader ? searchCatalog.value.resources : [];
   const searching = query.trim().length > 0 || searchFilter !== 'all';
@@ -184,6 +191,8 @@ export function EducationScreen() {
                 } else {
                   router.push('/educacion/recurso?recurso=' + encodeURIComponent(result.id));
                 }
+              } else if (result.type === 'infografia') {
+                router.push('/visor-infografia?recurso=' + encodeURIComponent(result.id));
               } else {
                 router.push('/educacion/recurso?recurso=' + encodeURIComponent(result.id));
               }
@@ -291,6 +300,7 @@ export function EducationCategoryScreen() {
     return { currentCategory: selectedCategory, resources, copies: verifiedCopies, interactions };
   }, [categoria, formatFilter, repository, patientId, catalogReader]);
 
+  const statusRevision = useContext(EducationStatusRevisionContext);
   const {
     value,
     loading: loadingData,
@@ -312,6 +322,7 @@ export function EducationCategoryScreen() {
     {
       queryKey: `${patientId ?? 'default'}:education:category:${categoria}:${formatFilter}`,
       context: EducationContentRevisionContext,
+      extraRevision: statusRevision,
     },
   );
 
@@ -808,7 +819,10 @@ export function EducationResourceScreen() {
     return catalogReader.getResourceById(recurso);
   }, [recurso, catalogReader]);
 
-  const { value: resource, loading: loadingResource } = useFocusedValue(loadResourceData, null);
+  const { value: resource, loading: loadingResource } = useFocusedValue(loadResourceData, null, {
+    queryKey: `${patientId ?? 'default'}:education:resource:${recurso ?? 'none'}`,
+    context: EducationContentRevisionContext,
+  });
 
   const loadStatus = useCallback(async () => {
     if (!repository || !patientId || !recurso) {
@@ -825,10 +839,17 @@ export function EducationResourceScreen() {
     return { copy: copy ? await verifiedLocalImageCopy(copy, patientId) : null, interaction };
   }, [repository, patientId, recurso]);
 
-  const { value: statusData, refresh: refreshStatus } = useFocusedValue(loadStatus, {
-    copy: null as EducationalLocalCopy | null,
-    interaction: null as EducationalInteraction | null,
-  });
+  const { value: statusData, refresh: refreshStatus } = useFocusedValue(
+    loadStatus,
+    {
+      copy: null as EducationalLocalCopy | null,
+      interaction: null as EducationalInteraction | null,
+    },
+    {
+      queryKey: `${patientId ?? 'default'}:education:status:${recurso ?? 'none'}`,
+      context: EducationStatusRevisionContext,
+    },
+  );
 
   const [readingContent, setReadingContent] = useState<string | null>(null);
   const [opError, setOpError] = useState<string | null>(null);
