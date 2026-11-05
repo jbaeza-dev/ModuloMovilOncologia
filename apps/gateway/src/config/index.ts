@@ -98,8 +98,12 @@ export function readConfig(env: NodeJS.ProcessEnv = process.env): GatewayConfig 
   const authIssuer = required('AUTH_EXPECTED_ISSUER');
   if (appEnv === 'production' && authIssuer.toLowerCase().includes('demo'))
     throw new ConfigurationError('AUTH_EXPECTED_ISSUER');
+  if (appEnv === 'universidad-demo' && !authIssuer.startsWith('https://'))
+    throw new ConfigurationError('AUTH_EXPECTED_ISSUER');
   const authAlgorithm = required('AUTH_ALLOWED_ALGORITHM');
   if (!['HS256', 'RS256', 'ES256'].includes(authAlgorithm))
+    throw new ConfigurationError('AUTH_ALLOWED_ALGORITHM');
+  if (appEnv === 'universidad-demo' && authAlgorithm === 'HS256')
     throw new ConfigurationError('AUTH_ALLOWED_ALGORITHM');
   const authVerifyKey = authAlgorithm === 'HS256' ? required('AUTH_VERIFY_KEY') : '';
   if (authAlgorithm === 'HS256' && (Buffer.byteLength(authVerifyKey) < 32 || env.AUTH_JWKS_URL))

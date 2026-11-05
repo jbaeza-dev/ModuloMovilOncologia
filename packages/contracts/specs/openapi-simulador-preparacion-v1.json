@@ -107,6 +107,9 @@
               }
             }
           },
+          "410": {
+            "description": "Código vencido: solicitar uno nuevo desde la app."
+          },
           "422": {
             "description": "Error de validación en parámetros de entrada.",
             "content": {
@@ -116,9 +119,6 @@
                 }
               }
             }
-          },
-          "410": {
-            "description": "Código vencido: solicitar uno nuevo desde la app."
           }
         },
         "tags": [
@@ -1219,7 +1219,7 @@
                 "perfil_clinico": {
                   "actividad_fisica": "moderado",
                   "alergias": [],
-                  "altura": 175.0,
+                  "altura": 175,
                   "antecedentes_familiares": [],
                   "condiciones": [],
                   "consumo_alcohol": false,
@@ -3641,6 +3641,182 @@
           }
         }
       }
+    },
+    "/admin/api/v1/preparacion/sincronizacion/signos-vitales": {
+      "get": {
+        "tags": [
+          "8. Supervisión de sincronización"
+        ],
+        "summary": "Consultar signos vitales sincronizados por el paciente",
+        "description": "Permite al operador clínico y evaluador verificar en tiempo real los signos vitales que el paciente ha enviado y sincronizado exitosamente al servidor.",
+        "security": [
+          {
+            "OperadorBearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "paciente_id",
+            "in": "query",
+            "required": true,
+            "description": "UUID del paciente a consultar.",
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          },
+          {
+            "name": "limite",
+            "in": "query",
+            "required": false,
+            "description": "Límite máximo de registros a retornar (por defecto 20, máximo 100).",
+            "schema": {
+              "type": "integer",
+              "default": 20,
+              "minimum": 1,
+              "maximum": 100
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Lista de signos vitales sincronizados por el paciente.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "required": [
+                    "paciente_id",
+                    "total",
+                    "registros"
+                  ],
+                  "properties": {
+                    "paciente_id": {
+                      "type": "string",
+                      "format": "uuid"
+                    },
+                    "operador_id": {
+                      "type": "string",
+                      "format": "uuid"
+                    },
+                    "total": {
+                      "type": "integer"
+                    },
+                    "registros": {
+                      "type": "array",
+                      "items": {
+                        "type": "object"
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "No autorizado."
+          },
+          "403": {
+            "description": "Operador no autorizado."
+          },
+          "422": {
+            "description": "Parámetro inválido."
+          }
+        }
+      }
+    },
+    "/admin/api/v1/preparacion/sincronizacion/formularios-respuestas": {
+      "get": {
+        "tags": [
+          "8. Supervisión de sincronización"
+        ],
+        "summary": "Consultar respuestas de formularios (EPRO) sincronizadas por el paciente",
+        "description": "Permite al operador clínico y evaluador verificar en tiempo real las respuestas de formularios domiciliarios recibidas y persistidas en el servidor.",
+        "security": [
+          {
+            "OperadorBearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "paciente_id",
+            "in": "query",
+            "required": true,
+            "description": "UUID del paciente a consultar.",
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          },
+          {
+            "name": "formulario_id",
+            "in": "query",
+            "required": false,
+            "description": "UUID opcional del formulario para filtrar respuestas.",
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          },
+          {
+            "name": "limite",
+            "in": "query",
+            "required": false,
+            "description": "Límite máximo de respuestas a retornar (por defecto 20, máximo 100).",
+            "schema": {
+              "type": "integer",
+              "default": 20,
+              "minimum": 1,
+              "maximum": 100
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Lista de respuestas a formularios sincronizadas por el paciente.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "required": [
+                    "paciente_id",
+                    "total",
+                    "respuestas"
+                  ],
+                  "properties": {
+                    "paciente_id": {
+                      "type": "string",
+                      "format": "uuid"
+                    },
+                    "operador_id": {
+                      "type": "string",
+                      "format": "uuid"
+                    },
+                    "total": {
+                      "type": "integer"
+                    },
+                    "respuestas": {
+                      "type": "array",
+                      "items": {
+                        "type": "object"
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "No autorizado."
+          },
+          "403": {
+            "description": "Operador no autorizado."
+          },
+          "422": {
+            "description": "Parámetro inválido."
+          }
+        }
+      }
     }
   },
   "components": {
@@ -4590,7 +4766,7 @@
         "example": {
           "actividad_fisica": "moderado",
           "alergias": [],
-          "altura": 175.0,
+          "altura": 175,
           "antecedentes_familiares": [],
           "condiciones": [],
           "consumo_alcohol": false,
@@ -5054,8 +5230,8 @@
           "temperatura": {
             "anyOf": [
               {
-                "maximum": 45.0,
-                "minimum": 30.0,
+                "maximum": 45,
+                "minimum": 30,
                 "type": "number"
               },
               {

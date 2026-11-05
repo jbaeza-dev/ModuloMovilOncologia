@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import { readConfig } from '../src/config/index.js';
 import { environment, testConfig } from './fixtures.js';
+
 describe('Validated gateway configuration', () => {
   it('requires every mandatory setting and never includes its value in errors', () => {
     for (const key of Object.keys(environment)) {
@@ -13,6 +14,7 @@ describe('Validated gateway configuration', () => {
       testConfig({ GATEWAY_DATABASE_URL: 'postgresql://user:private-password@host/wrong' }),
     ).not.toThrow(/private-password/);
   });
+
   it.each([
     { APP_ENV: 'dev' },
     { GATEWAY_PORT: '0' },
@@ -30,6 +32,7 @@ describe('Validated gateway configuration', () => {
   ])('rejects invalid operational settings %#', (env) => {
     expect(() => testConfig(env)).toThrow();
   });
+
   it('has explicit safe defaults and keeps demo separate', () => {
     expect(testConfig()).toMatchObject({
       appEnv: 'demo',
@@ -39,6 +42,7 @@ describe('Validated gateway configuration', () => {
       agendaMaxReminders: 100,
     });
   });
+
   it('requires HTTPS, verified database TLS and a non-demo issuer in production', () => {
     const production = {
       APP_ENV: 'production',
@@ -56,5 +60,48 @@ describe('Validated gateway configuration', () => {
         GATEWAY_DATABASE_URL: 'postgresql://u:p@db/qc_gateway_real?sslmode=disable',
       }),
     ).toThrow();
+  });
+
+  it('enforces hardened security rules in universidad-demo mode', () => {
+    const universidadDemo = {
+      APP_ENV: 'universidad-demo',
+      GATEWAY_DATABASE_URL: 'postgresql://u:p@db/qc_gateway_demo_uni',
+      AUTH_EXPECTED_ISSUER: 'https://quimiocare.supabase.co/auth/v1',
+      AUTH_ALLOWED_ALGORITHM: 'ES256',
+      AUTH_JWKS_URL: 'https://quimiocare.supabase.co/auth/v1/.well-known/jwks.json',
+      AUTH_VERIFY_KEY: undefined,
+      GATEWAY_CURSOR_KEY: 'synthetic-cursor-key-minimum-32-chars-long',
+    };
+    expect(testConfig(universidadDemo).appEnv).toBe('universidad-demo');
+
+    expect(() =>
+      testConfig({
+        ...universidadDemo,
+        AUTH_ALLOWED_ALGORITHM: 'HS256',
+        AUTH_VERIFY_KEY: 'synthetic-key-32-bytes-long-for-test',
+      }),
+    ).toThrow('AUTH_ALLOWED_ALGORITHM');
+
+    expect(() =>
+      testConfig({
+        ...universidadDemo,
+        AUTH_EXPECTED_ISSUER: 'http://insecure-issuer.test',
+      }),
+    ).toThrow('AUTH_EXPECTED_ISSUER');
+
+    expect(() =>
+      testConfig({
+        ...universidadDemo,
+        AUTH_JWKS_URL: 'http://arbitrary-insecure-jwks.test/jwks.json',
+      }),
+    ).toThrow('AUTH_JWKS_URL');
+
+    expect(
+      testConfig({
+        ...universidadDemo,
+        AUTH_JWKS_MODE: 'distributed',
+        AUTH_JWKS_URL: 'http://qc-jwks:3004/jwks.json',
+      }).authJwksUrl,
+    ).toBe('http://qc-jwks:3004/jwks.json');
   });
 });

@@ -11,6 +11,7 @@ import type { HttpSessionAdapter } from '../../services/session/http-session-ada
 import { SessionFailure } from '../../services/session/http-session-types';
 import { canonical, payloadOf, type ClinicalCommand, type ClinicalScope } from './clinical-command';
 import { coherentAck, classifyClinicalError } from './ack';
+import { pruneSynchronizedRecords } from './local-retention';
 
 export class ClinicalUploadPaused extends Error {
   constructor(readonly code: string) {
@@ -189,11 +190,14 @@ export class ClinicalConnector implements PowerSyncBackendConnector {
             `UPDATE cola_envio SET estado = 'enviado', enviado_en = ?, actualizado_en = ?, ultimo_error_codigo = NULL WHERE id = ? AND paciente_id = ?`,
             [this.now(), this.now(), command.legacy_queue_id, this.scope.localPatientId],
           );
+
         if (kind === 'signos')
           await tx.run(
             'UPDATE signos_vitales SET fecha_subida = ? WHERE id = ? AND paciente_id = ?',
             [this.now(), command.id, this.scope.localPatientId],
           );
+
+        await pruneSynchronizedRecords(tx, this.scope.localPatientId, this.scope.owner, kind);
       });
       return;
     }
