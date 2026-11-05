@@ -716,50 +716,55 @@ export async function listPatientReports(
  * ordenados de más reciente a más antiguo, omitiendo de forma tolerante archivos ajenos.
  * Propaga errores reales de acceso y lectura del directorio.
  */
+async function listPatientReportsInternal(
+  pacienteId: string,
+  adapter: BinaryReportStorageAdapter,
+): Promise<PatientReportItem[]> {
+  await cleanOrphanedTempReportsInternal(pacienteId, adapter);
+  await flushPendingReportCleanups(adapter, pacienteId);
+  const dir = getPatientReportDirectory(pacienteId);
+  if (!(await adapter.directoryExists(dir.uri))) return [];
+  const entries = await adapter.listDirectory(dir.uri);
+  const reports: PatientReportItem[] = [];
+  for (const entry of entries) {
+    if (entry.isFile && entry.name) {
+      const filename = entry.name;
+      const match = filename.match(/^reporte_(\d+)d_(\d+)\.(pdf|xlsx)$/);
+      if (!match) continue; // Omitir individualmente archivos con nombres no coincidentes
+      const periodDays = Number(match[1]);
+      if (periodDays !== 7 && periodDays !== 30 && periodDays !== 90 && periodDays !== 365)
+        continue; // Omitir períodos inválidos
+
+      const timestampMs = Number(match[2]);
+      if (!Number.isFinite(timestampMs)) continue;
+      const date = new Date(timestampMs);
+      if (Number.isNaN(date.getTime())) continue; // Omitir timestamps no convertibles a fecha
+
+      const format = match[3] as ReportFileFormat;
+      reports.push({
+        uri: entry.uri,
+        filename,
+        format,
+        periodDays,
+        generatedAt: date.toISOString(),
+        sizeBytes: entry.size,
+      });
+    }
+  }
+  reports.sort((a, b) => {
+    const timeA = a.generatedAt ? Date.parse(a.generatedAt) : 0;
+    const timeB = b.generatedAt ? Date.parse(b.generatedAt) : 0;
+    return timeB - timeA;
+  });
+  return reports;
+}
+
 export async function getPatientReportList(
   pacienteId: string,
   adapter: BinaryReportStorageAdapter = defaultAdapter,
 ): Promise<PatientReportItem[]> {
   assertSafeId(pacienteId, 'pacienteId');
-  return withPatientReportLock(pacienteId, async () => {
-    await cleanOrphanedTempReportsInternal(pacienteId, adapter);
-    await flushPendingReportCleanups(adapter, pacienteId);
-    const dir = getPatientReportDirectory(pacienteId);
-    if (!(await adapter.directoryExists(dir.uri))) return [];
-    const entries = await adapter.listDirectory(dir.uri);
-    const reports: PatientReportItem[] = [];
-    for (const entry of entries) {
-      if (entry.isFile && entry.name) {
-        const filename = entry.name;
-        const match = filename.match(/^reporte_(\d+)d_(\d+)\.(pdf|xlsx)$/);
-        if (!match) continue; // Omitir individualmente archivos con nombres no coincidentes
-        const periodDays = Number(match[1]);
-        if (periodDays !== 7 && periodDays !== 30 && periodDays !== 90 && periodDays !== 365)
-          continue; // Omitir períodos inválidos
-
-        const timestampMs = Number(match[2]);
-        if (!Number.isFinite(timestampMs)) continue;
-        const date = new Date(timestampMs);
-        if (Number.isNaN(date.getTime())) continue; // Omitir timestamps no convertibles a fecha
-
-        const format = match[3] as ReportFileFormat;
-        reports.push({
-          uri: entry.uri,
-          filename,
-          format,
-          periodDays,
-          generatedAt: date.toISOString(),
-          sizeBytes: entry.size,
-        });
-      }
-    }
-    reports.sort((a, b) => {
-      const timeA = a.generatedAt ? Date.parse(a.generatedAt) : 0;
-      const timeB = b.generatedAt ? Date.parse(b.generatedAt) : 0;
-      return timeB - timeA;
-    });
-    return reports;
-  });
+  return withPatientReportLock(pacienteId, () => listPatientReportsInternal(pacienteId, adapter));
 }
 
 /**
@@ -790,6 +795,36 @@ export async function deletePatientReport(
     } catch {
       return false;
     }
+  });
+}
+
+export async function clearAllPatientReports(
+  pacienteId: string,
+  adapter: BinaryReportStorageAdapter = defaultAdapter,
+): Promise<{ deleted: number; freedBytes: number }> {
+  assertSafeId(pacienteId, 'pacienteId');
+  return withPatientReportLock(pacienteId, async () => {
+    const list = await listPatientReportsInternal(pacienteId, adapter);
+    let deleted = 0;
+    let freedBytes = 0;
+    for (const report of list) {
+      try {
+        await adapter.deleteFile(report.uri);
+        deleted++;
+        freedBytes += report.sizeBytes || 0;
+        const companionA11y = `${report.uri}.a11y.json`;
+        if (await adapter.fileExists(companionA11y)) {
+          try {
+            await adapter.deleteFile(companionA11y);
+          } catch {
+            /* safe non-blocking cleanup */
+          }
+        }
+      } catch {
+        /* continue on individual failure */
+      }
+    }
+    return { deleted, freedBytes };
   });
 }
 

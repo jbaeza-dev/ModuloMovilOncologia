@@ -425,7 +425,7 @@ export function SpreadsheetReportViewer() {
             </View>
           ) : null}
 
-          {/* Cuadrícula de datos con scroll bidireccional */}
+          {/* Cuadrícula de datos con scroll bidireccional y gutter # optimizado */}
           <ScrollView
             horizontal
             nestedScrollEnabled
@@ -439,8 +439,15 @@ export function SpreadsheetReportViewer() {
             >
               {/* Fila de cabecera fija */}
               <View style={styles.tableHeaderRow}>
-                <View style={[styles.cell, { width: 52 }]}>
-                  <Text style={styles.headerCellText}>Fila</Text>
+                <View
+                  style={[
+                    styles.cell,
+                    { width: 36, justifyContent: 'center', alignItems: 'center' },
+                  ]}
+                >
+                  <Text style={[styles.headerCellText, { color: appTheme.colors.secondary }]}>
+                    #
+                  </Text>
                 </View>
                 {columns.map((column, cIdx) => (
                   <View
@@ -464,8 +471,20 @@ export function SpreadsheetReportViewer() {
                       key={absoluteRowIndex}
                       style={[styles.tableDataRow, isEven && styles.tableDataRowEven]}
                     >
-                      <View style={[styles.cell, { width: 52 }]}>
-                        <Text style={styles.pageIndicator}>{absoluteRowIndex + 1}</Text>
+                      <View
+                        style={[
+                          styles.cell,
+                          { width: 36, justifyContent: 'center', alignItems: 'center' },
+                        ]}
+                      >
+                        <Text
+                          style={[
+                            styles.pageIndicator,
+                            { fontSize: 11, color: appTheme.colors.secondary },
+                          ]}
+                        >
+                          {absoluteRowIndex + 1}
+                        </Text>
                       </View>
                       {columns.map((column, cIdx) => {
                         const val = row[cIdx];
@@ -771,6 +790,29 @@ function createStyles(colors: ReturnType<typeof useAppTheme>['theme']['colors'])
       fontFamily: 'NunitoSans-Regular',
       fontSize: 13,
       color: colors.text,
+    },
+    summaryContainer: {
+      flex: 1,
+      padding: 16,
+    },
+    summaryContent: {
+      paddingBottom: 32,
+    },
+    summaryRow: {
+      paddingVertical: 10,
+      borderBottomWidth: 1,
+      borderBottomColor: colors.border,
+      gap: 4,
+    },
+    summaryLabel: {
+      fontSize: 13,
+      fontWeight: '600',
+      color: colors.secondary,
+    },
+    summaryValue: {
+      fontSize: 15,
+      color: colors.text,
+      fontWeight: '500',
     },
     emptyRow: {
       padding: theme.spacing.xl,

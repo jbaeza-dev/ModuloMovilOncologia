@@ -823,7 +823,7 @@ describe('Incremento 6: UI de Acceso, Navegación Raíz, Sesión y Asistente', (
         screen.getByText('Orientación educativa. No reemplaza a tu equipo de salud.'),
       ).toBeOnTheScreen();
     });
-    it('al cancelar la consulta en curso, restaura el texto previo en el campo de entrada', async () => {
+    it('muestra indicador animado accesible de escritura mientras procesa la respuesta sin botón cancelar', async () => {
       let contextRef = {} as LocalDataContext;
 
       await render(
@@ -843,14 +843,10 @@ describe('Incremento 6: UI de Acceso, Navegación Raíz, Sesión y Asistente', (
       const sendBtn = screen.getByText('Enviar consulta');
       await fireEvent.press(sendBtn);
 
-      expect(await screen.findByText('Procesando consulta…')).toBeTruthy();
-      const cancelBtn = screen.getByText('Cancelar');
-
-      await fireEvent.press(cancelBtn);
-
-      // El campo de texto DEBE haber recuperado la consulta
-      expect(input.props.value).toBe('¿Cuáles son las recomendaciones generales?');
-      expect(await screen.findByText('Consulta cancelada')).toBeTruthy();
+      expect(
+        await screen.findAllByLabelText('El asistente está escribiendo una respuesta'),
+      ).toBeTruthy();
+      expect(screen.queryByText('Cancelar')).toBeNull();
     });
 
     it('desmontar la pantalla mientras hay una solicitud en curso aborta el intento', async () => {

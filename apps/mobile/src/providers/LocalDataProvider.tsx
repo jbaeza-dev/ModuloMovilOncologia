@@ -3,7 +3,14 @@ import { AppLoadingScreen } from '../components/AppLoadingScreen';
 import { AutomaticEducationDownloads } from '../features/education/AutomaticEducationDownloads';
 import type { ClinicalStore } from '../data/sync/native-runtime';
 import { openClinicalStore } from '../data/sync/native-runtime';
-import { QueryRevisionContext } from './QueryRevision';
+import {
+  QueryRevisionContext,
+  ClinicalRevisionContext,
+  EducationContentRevisionContext,
+  EducationStatusRevisionContext,
+  FormsRevisionContext,
+  RemindersRevisionContext,
+} from './QueryRevision';
 import * as Crypto from 'expo-crypto';
 import {
   createContext,
@@ -132,7 +139,11 @@ const DataContext = createContext<DataContextValue | null>(null);
 export function LocalDataProvider({ children }: { children: ReactNode }) {
   const [storage, setStorage] = useState<{ store: ClinicalStore; epoch: number } | null>(null);
   const [sessionRestored, setSessionRestored] = useState(false);
-  const [queryRevision, setQueryRevision] = useState(0);
+  const [queryRevision] = useState(0);
+  const [clinicalRevision, setClinicalRevision] = useState(0);
+  const [educationContentRevision, setEducationContentRevision] = useState(0);
+  const [educationStatusRevision, setEducationStatusRevision] = useState(0);
+  const [formsRevision, setFormsRevision] = useState(0);
   const openJobs = useRef<Promise<void>>(Promise.resolve());
   const restoreStarted = useRef(false);
   const networkConnectedRef = useRef(false);
@@ -336,27 +347,64 @@ export function LocalDataProvider({ children }: { children: ReactNode }) {
             return;
           }
           const store = current;
-          unwatch = store.database.onChange(
+          const unwatchClinical = store.database.onChange(
             {
               onChange: () => {
-                if (active) setQueryRevision((n) => n + 1);
+                if (active) {
+                  setClinicalRevision((n) => n + 1);
+                }
               },
             },
             {
-              tables: [
-                'qc_clinical_command',
-                'qc_storage_control',
-                'qc_catalog_status',
-                'qc_definition_snapshot',
-                'descarga',
-                'interaccion_educativa_local',
-                'signos_vitales',
-                'respuesta_formulario',
-                'qc_gateway_outbox',
-              ],
+              tables: ['signos_vitales', 'qc_clinical_command', 'qc_gateway_outbox'],
               throttleMs: 150,
             },
           );
+          const unwatchEducationContent = store.database.onChange(
+            {
+              onChange: () => {
+                if (active) {
+                  setEducationContentRevision((n) => n + 1);
+                }
+              },
+            },
+            {
+              tables: ['qc_storage_control'],
+              throttleMs: 150,
+            },
+          );
+          const unwatchEducationStatus = store.database.onChange(
+            {
+              onChange: () => {
+                if (active) {
+                  setEducationStatusRevision((n) => n + 1);
+                }
+              },
+            },
+            {
+              tables: ['descarga', 'interaccion_educativa_local', 'qc_catalog_status'],
+              throttleMs: 150,
+            },
+          );
+          const unwatchForms = store.database.onChange(
+            {
+              onChange: () => {
+                if (active) {
+                  setFormsRevision((n) => n + 1);
+                }
+              },
+            },
+            {
+              tables: ['qc_definition_snapshot', 'respuesta_formulario', 'qc_clinical_command'],
+              throttleMs: 150,
+            },
+          );
+          unwatch = () => {
+            unwatchClinical();
+            unwatchEducationContent();
+            unwatchEducationStatus();
+            unwatchForms();
+          };
           setStorage({ store, epoch: contextEpoch });
         } catch (failure) {
           if (active)
@@ -711,9 +759,34 @@ export function LocalDataProvider({ children }: { children: ReactNode }) {
   }, [database, repository, manager, agendaCoordinator]);
 
   useEffect(() => {
+    if (!database || !patientId) return;
+    const store = storage?.store;
+    if (!store || store.closed) return;
+    const sub = AppState.addEventListener('change', (state) => {
+      if (store.closed) return;
+      if (state === 'active') {
+        if (typeof store.resume === 'function') {
+          void store.resume(false).catch((err) => {
+            console.warn('Error al reanudar sincronización al volver a primer plano:', err);
+          });
+        }
+      } else if (state === 'background' || state === 'inactive') {
+        if (typeof store.disconnect === 'function') {
+          void store.disconnect().catch((err) => {
+            console.warn('Error al suspender sincronización en segundo plano:', err);
+          });
+        }
+      }
+    });
+    return () => {
+      sub.remove();
+    };
+  }, [database, patientId, storage]);
+
+  useEffect(() => {
     if (!sharedAgenda || !agendaCoordinator) return;
     void reconcileReminders().catch(() => undefined);
-  }, [queryRevision, sharedAgenda, agendaCoordinator, reconcileReminders]);
+  }, [sharedAgenda, agendaCoordinator, reconcileReminders]);
 
   const runSave = useCallback(
     async <T,>(work: () => Promise<T>): Promise<T> => {
@@ -724,14 +797,18 @@ export function LocalDataProvider({ children }: { children: ReactNode }) {
         savingRef.current = true;
         setSaving(true);
         try {
-          return await work();
+          const res = await work();
+          if (sharedAgenda && agendaCoordinator) {
+            void reconcileReminders().catch(() => undefined);
+          }
+          return res;
         } finally {
           savingRef.current = false;
           setSaving(false);
         }
       });
     },
-    [manager],
+    [manager, sharedAgenda, agendaCoordinator, reconcileReminders],
   );
 
   const retryPendingNotification = useCallback(async (): Promise<NotificationOpenResult> => {
@@ -833,9 +910,19 @@ export function LocalDataProvider({ children }: { children: ReactNode }) {
 
   return (
     <QueryRevisionContext.Provider value={queryRevision}>
-      <DataContext.Provider value={context}>
-        <AutomaticEducationDownloads>{children}</AutomaticEducationDownloads>
-      </DataContext.Provider>
+      <ClinicalRevisionContext.Provider value={clinicalRevision}>
+        <EducationContentRevisionContext.Provider value={educationContentRevision}>
+          <EducationStatusRevisionContext.Provider value={educationStatusRevision}>
+            <FormsRevisionContext.Provider value={formsRevision}>
+              <RemindersRevisionContext.Provider value={remindersRevision}>
+                <DataContext.Provider value={context}>
+                  <AutomaticEducationDownloads>{children}</AutomaticEducationDownloads>
+                </DataContext.Provider>
+              </RemindersRevisionContext.Provider>
+            </FormsRevisionContext.Provider>
+          </EducationStatusRevisionContext.Provider>
+        </EducationContentRevisionContext.Provider>
+      </ClinicalRevisionContext.Provider>
     </QueryRevisionContext.Provider>
   );
 }

@@ -20,6 +20,7 @@ import type {
 } from '../../data/local/reminders/reminder-types';
 import { useFocusedList, useFocusedValue } from '../../hooks/use-local-query';
 import { useLocalData } from '../../providers/LocalDataProvider';
+import { RemindersRevisionContext } from '../../providers/QueryRevision';
 import { useAppTheme } from '../../providers/ThemeProvider';
 import { ExpoNotificationAdapter } from '../../services/notifications/expo-notification-adapter';
 import type { NotificationPermissionState } from '../../services/notifications/notification-adapter';
@@ -100,10 +101,17 @@ function LegacyRemindersListScreen() {
     return repository.reminders.getPreferences();
   }, [repository]);
 
-  const { value: prefs, refresh: refreshPrefs } = useFocusedValue(loadPreferences, {
-    enabled: false,
-    updatedAt: null,
-  });
+  const { value: prefs, refresh: refreshPrefs } = useFocusedValue(
+    loadPreferences,
+    {
+      enabled: false,
+      updatedAt: null,
+    },
+    {
+      queryKey: `${patientId ?? 'default'}:reminders:prefs`,
+      context: RemindersRevisionContext,
+    },
+  );
 
   // Cargar lista de reglas activas
   const loadRules = useCallback(async () => {
@@ -115,7 +123,10 @@ function LegacyRemindersListScreen() {
     items: rules,
     loading: loadingRules,
     refresh: refreshRules,
-  } = useFocusedList<ReminderRule>(loadRules);
+  } = useFocusedList<ReminderRule>(loadRules, {
+    queryKey: `${patientId ?? 'default'}:reminders:rules`,
+    context: RemindersRevisionContext,
+  });
 
   // Cargar medicamentos activos diferenciando catálogo vacío de error de lectura SQL
   const loadMedications = useCallback(async (): Promise<ActiveMedicationRecord[]> => {
@@ -128,7 +139,10 @@ function LegacyRemindersListScreen() {
     loading: loadingMedications,
     error: medicationsError,
     refresh: refreshMedications,
-  } = useFocusedList<ActiveMedicationRecord>(loadMedications);
+  } = useFocusedList<ActiveMedicationRecord>(loadMedications, {
+    queryKey: `${patientId ?? 'default'}:reminders:medications`,
+    context: RemindersRevisionContext,
+  });
 
   const [reminderSnapshot, setReminderSnapshot] = useState<ReminderStatusSnapshot | null>(null);
 

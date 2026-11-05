@@ -18,6 +18,7 @@ import { formatDate } from '../../data/local/repository';
 import { useFocusedList } from '../../hooks/use-local-query';
 import { useLocalData } from '../../providers/LocalDataProvider';
 import { useAppTheme } from '../../providers/ThemeProvider';
+import { EducationStatusRevisionContext } from '../../providers/QueryRevision';
 import { theme } from '../../theme';
 
 export function EducationCopiesScreen() {
@@ -33,7 +34,15 @@ export function EducationCopiesScreen() {
     return repository.education.listLocalCopies();
   }, [repository, patientId]);
 
-  const { items: copies, loading, error, refresh } = useFocusedList(loadCopies);
+  const {
+    items: copies,
+    loading,
+    error,
+    refresh,
+  } = useFocusedList(loadCopies, {
+    queryKey: `${patientId ?? 'default'}:education:copies`,
+    context: EducationStatusRevisionContext,
+  });
 
   const filteredCopies = copies.filter((copy) => {
     if (filterFormat === 'all') return true;

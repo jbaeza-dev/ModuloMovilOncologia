@@ -18,6 +18,7 @@ import {
 import { formatDate } from '../../data/local/repository';
 import { useFocusedValue } from '../../hooks/use-local-query';
 import { useLocalData } from '../../providers/LocalDataProvider';
+import { FormsRevisionContext } from '../../providers/QueryRevision';
 import { useAppTheme } from '../../providers/ThemeProvider';
 import {
   type AssignedFormSummary,
@@ -110,12 +111,19 @@ export function DailyFollowUpScreen() {
     };
   }, [repository, patientId, formStorageReady]);
 
-  const { value, refresh } = useFocusedValue(loadData, {
-    assigned: [] as AssignedFormSummary[],
-    dailyStatus: null as DailyFormStatus | null,
-    mainForm: null as FullFormDefinition | null,
-    isIncompatible: false,
-  });
+  const { value, refresh } = useFocusedValue(
+    loadData,
+    {
+      assigned: [] as AssignedFormSummary[],
+      dailyStatus: null as DailyFormStatus | null,
+      mainForm: null as FullFormDefinition | null,
+      isIncompatible: false,
+    },
+    {
+      queryKey: `${patientId ?? 'default'}:forms:daily-follow-up`,
+      context: FormsRevisionContext,
+    },
+  );
 
   const { assigned, dailyStatus, mainForm, isIncompatible } = value;
 

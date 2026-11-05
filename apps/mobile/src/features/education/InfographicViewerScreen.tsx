@@ -22,6 +22,10 @@ import type { EducationalResource } from '../../data/local/education/education-t
 import { resourceFileExists } from '../../data/local/files/resource-storage';
 import { useFocusedValue } from '../../hooks/use-local-query';
 import { useLocalData } from '../../providers/LocalDataProvider';
+import {
+  EducationContentRevisionContext,
+  EducationStatusRevisionContext,
+} from '../../providers/QueryRevision';
 import { useAppTheme } from '../../providers/ThemeProvider';
 import { theme } from '../../theme';
 import { useEducationalCatalog } from './use-educational-catalog';
@@ -89,6 +93,10 @@ export function InfographicViewerScreen() {
   const { value: catalogResource, loading: loadingCatalog } = useFocusedValue(
     loadResourceData,
     null,
+    {
+      queryKey: `${patientId ?? 'default'}:education:infographic-catalog:${recurso ?? 'none'}`,
+      context: EducationContentRevisionContext,
+    },
   );
 
   const loadLocalCopy = useCallback(async () => {
@@ -97,7 +105,10 @@ export function InfographicViewerScreen() {
     return copy ? verifiedLocalImageCopy(copy, patientId) : null;
   }, [repository, patientId, recurso]);
 
-  const { value: localCopy, loading: loadingCopy } = useFocusedValue(loadLocalCopy, null);
+  const { value: localCopy, loading: loadingCopy } = useFocusedValue(loadLocalCopy, null, {
+    queryKey: `${patientId ?? 'default'}:education:infographic-copy:${recurso ?? 'none'}`,
+    context: EducationStatusRevisionContext,
+  });
 
   const hasOlderCopy = Boolean(
     localCopy &&

@@ -144,6 +144,12 @@ export function ProfileScreen() {
         icon="settings"
         href="/perfil/preferencias"
       />
+      <NavigationCard
+        title="Almacenamiento y memoria"
+        description="Espacio ocupado por reportes y guías educativas"
+        icon="database"
+        href="/perfil/almacenamiento"
+      />
       <ConfirmLogoutButton />
     </Screen>
   );

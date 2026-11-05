@@ -879,7 +879,7 @@ describe('Pruebas de interfaz (UI) para módulo de Educación', () => {
         }),
       );
       expect(router.push).toHaveBeenCalledWith(
-        '/educacion/recurso?recurso=edu-infografia-alimentacion',
+        '/visor-infografia?recurso=edu-infografia-alimentacion',
       );
       await fireEvent.changeText(screen.getByLabelText('Buscar contenido'), 'cancer');
       await fireEvent.press(await screen.findByRole('button', { name: 'El Cáncer' }));

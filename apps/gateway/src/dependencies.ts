@@ -11,6 +11,7 @@ export function dependencyClients(config: GatewayConfig, log: Logger) {
     token: string,
     operation: OperationId,
     body?: unknown,
+    requestId?: string,
   ) {
     if (
       !validateRequest(operation, {
@@ -36,6 +37,7 @@ export function dependencyClients(config: GatewayConfig, log: Logger) {
           authorization: `Bearer ${token}`,
           accept: 'application/json',
           ...(body === undefined ? {} : { 'content-type': 'application/json' }),
+          ...(requestId ? { 'x-request-id': requestId } : {}),
         },
         ...(body === undefined ? {} : { body: JSON.stringify(body) }),
       });
@@ -91,10 +93,10 @@ export function dependencyClients(config: GatewayConfig, log: Logger) {
     getProfile: (token: string) => request('clinical', '/api/v1/auth/me', 'GET', token, 'C-01'),
     getClinicalProfile: (token: string) =>
       request('clinical', '/api/v1/pacientes/me/perfil-clinico', 'GET', token, 'C-03'),
-    queryAi: (token: string, body: unknown) => {
+    queryAi: (token: string, body: unknown, requestId?: string) => {
       if (!validateRequest('G-06', { body }).valid)
         return Promise.reject(new GatewayError(422, 'DATOS_INVALIDOS'));
-      return request('ai', '/api/v1/chat?debug=false', 'POST', token, 'IA-01', body);
+      return request('ai', '/api/v1/chat?debug=false', 'POST', token, 'IA-01', body, requestId);
     },
   };
 }

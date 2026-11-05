@@ -4,6 +4,7 @@ import { beforeEach, afterEach, describe, expect, it, vi } from 'vitest';
 import {
   assertSafeReportFileName,
   cleanOrphanedTempReports,
+  clearAllPatientReports,
   clearPendingReportCleanups,
   deletePatientReport,
   flushPendingReportCleanups,
@@ -830,6 +831,36 @@ describe('staging en dos fases de PDF y archivo compañero de accesibilidad (.pd
     const tempOrphans = files.filter((f) => f.name && f.name.includes('.tmp'));
     expect(tempOrphans.length).toBe(0);
     expect(writeCount).toBeGreaterThan(0);
+  });
+});
+
+describe('clearAllPatientReports (prevencion de interbloqueos y limpieza completa)', () => {
+  it('elimina todos los reportes y acompanantes a11y sin bloquear operaciones subsiguientes', async () => {
+    const { File, Paths } = await import('expo-file-system');
+    const dummyPdf = new File(Paths.cache, 'dummy-clear.pdf');
+    await dummyPdf.write(new Uint8Array([1, 2, 3, 4]));
+
+    const persisted = await persistReportPdf(patientA, dummyPdf.uri, 30, undefined, {
+      resumen: 'a11y',
+    });
+    expect(persisted.persistentUri).toBeTruthy();
+
+    const listBefore = await getPatientReportList(patientA);
+    expect(listBefore.length).toBeGreaterThan(0);
+
+    const result = await clearAllPatientReports(patientA);
+    expect(result.deleted).toBeGreaterThan(0);
+
+    const listAfter = await getPatientReportList(patientA);
+    expect(listAfter.length).toBe(0);
+
+    // Comprobar que no queda bloqueado y permite generar un nuevo reporte de inmediato
+    const nextPdfSource = new File(Paths.cache, 'dummy-clear-2.pdf');
+    await nextPdfSource.write(new Uint8Array([5, 6, 7, 8]));
+    const nextPdf = await persistReportPdf(patientA, nextPdfSource.uri, 7);
+    expect(nextPdf.persistentUri).toBeTruthy();
+    const listFinal = await getPatientReportList(patientA);
+    expect(listFinal.length).toBe(1);
   });
 });
 

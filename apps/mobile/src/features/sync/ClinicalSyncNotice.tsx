@@ -1,12 +1,12 @@
 import { isRecoverableSessionPause } from '../../data/sync/session-pause';
 import { useContext, useEffect, useState } from 'react';
 import { BodyText, InfoCard, VisualButton } from '../../components/Visual';
-import { QueryRevisionContext } from '../../providers/QueryRevision';
+import { ClinicalRevisionContext } from '../../providers/QueryRevision';
 import { useOptionalLocalData } from '../../providers/LocalDataProvider';
 
 export function useClinicalSyncSummary() {
   const store = useOptionalLocalData()?.clinicalStore;
-  const revision = useContext(QueryRevisionContext);
+  const revision = useContext(ClinicalRevisionContext);
   const scopeKey = store ? `${store.scope.owner}|${store.scope.environment}` : '';
   const [stored, setStored] = useState<{
     key: string;

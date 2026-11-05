@@ -220,3 +220,96 @@ export async function verifiedLocalImageCopies(copies: EducationalLocalCopy[], p
   for (const copy of copies) result.push(await verifiedLocalImageCopy(copy, patientId));
   return result;
 }
+
+export interface QuotaEnforcementResult {
+  evictedCount: number;
+  freedBytes: number;
+  evictedIds: string[];
+}
+
+export async function enforceEducationStorageQuota({
+  patientId,
+  repository,
+  database,
+  maxCopies = 15,
+  maxBytes = 50 * 1024 * 1024,
+}: {
+  patientId: string;
+  repository: PatientRepository;
+  database?: SqlConnection;
+  maxCopies?: number;
+  maxBytes?: number;
+}): Promise<QuotaEnforcementResult> {
+  const allCopies = await repository.education.listLocalCopies();
+  const downloadedCopies = allCopies.filter(
+    (c) => c.estado === 'descargado' && !c.retiradoEn && c.rutaRelativa,
+  );
+
+  let totalBytes = downloadedCopies.reduce((sum, c) => sum + (c.tamanoBytes || 0), 0);
+  let totalCount = downloadedCopies.length;
+
+  if (totalCount <= maxCopies && totalBytes <= maxBytes) {
+    return { evictedCount: 0, freedBytes: 0, evictedIds: [] };
+  }
+
+  // LRU candidates: exclude user-pinned copies (conservar_offline)
+  const candidates = downloadedCopies.filter((c) => !c.metadataLocal?.conservar_offline);
+
+  candidates.sort((a, b) => {
+    const timeA =
+      (a.metadataLocal?.ultimo_acceso_en as string) ||
+      a.visualizadoEn ||
+      a.descargadoEn ||
+      '1970-01-01';
+    const timeB =
+      (b.metadataLocal?.ultimo_acceso_en as string) ||
+      b.visualizadoEn ||
+      b.descargadoEn ||
+      '1970-01-01';
+    return timeA.localeCompare(timeB);
+  });
+
+  const evictedIds: string[] = [];
+  let freedBytes = 0;
+
+  for (const candidate of candidates) {
+    if (totalCount <= maxCopies && totalBytes <= maxBytes) {
+      break;
+    }
+
+    try {
+      if (candidate.rutaRelativa) {
+        await deleteResourceFile(patientId, candidate.contentId, candidate.rutaRelativa);
+      }
+      const updatedMetadata = {
+        ...(candidate.metadataLocal || {}),
+        expulsado_cuota: true,
+        fecha_expulsion_cuota: new Date().toISOString(),
+      };
+      if (database) {
+        await database.run(
+          'UPDATE descarga SET estado = ?, ruta_local = NULL, metadata_local_json = ? WHERE paciente_id = ? AND contenido_id = ?',
+          ['pendiente', JSON.stringify(updatedMetadata), patientId, candidate.contentId],
+        );
+      } else {
+        await repository.education.removeLocalCopy(candidate.contentId);
+      }
+
+      evictedIds.push(candidate.contentId);
+      freedBytes += candidate.tamanoBytes || 0;
+      totalBytes -= candidate.tamanoBytes || 0;
+      totalCount -= 1;
+    } catch (err) {
+      console.warn(
+        `[enforceEducationStorageQuota] No se pudo evictar ${candidate.contentId}:`,
+        err,
+      );
+    }
+  }
+
+  return {
+    evictedCount: evictedIds.length,
+    freedBytes,
+    evictedIds,
+  };
+}

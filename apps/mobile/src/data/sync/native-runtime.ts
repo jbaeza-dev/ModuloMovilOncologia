@@ -1,4 +1,4 @@
-import { isRecoverableSessionPause, retrySessionCommands } from './session-pause';
+import { isRecoverableSessionPause } from './session-pause';
 import { scopeEducationalCopies } from './native-education-files';
 import { cleanupRetiredEducationalCopies } from '../local/education/retired-copy-cleanup';
 import * as Crypto from 'expo-crypto';
@@ -63,6 +63,21 @@ export function configuredSyncEndpoint(demo: boolean) {
   return url.href.replace(/\/$/, '');
 }
 
+import {
+  createClinicalConnectionController,
+  createClinicalResume,
+  type ClinicalConnectionController,
+  type ClinicalConnectionControllerOptions,
+  type ClinicalResumeOptions,
+} from './clinical-resume';
+export {
+  createClinicalConnectionController,
+  createClinicalResume,
+  type ClinicalConnectionController,
+  type ClinicalConnectionControllerOptions,
+  type ClinicalResumeOptions,
+};
+
 export async function openClinicalStore(
   session: HttpSessionAdapter,
   localPatientId: string,
@@ -124,10 +139,38 @@ export async function openClinicalStore(
     unregisterSession: () => void = () => undefined,
     unregisterStatus: () => void = () => undefined;
   let projection: Promise<void> = Promise.resolve(),
-    lastCheckpoint = 0,
-    started = false;
+    lastCheckpoint = 0;
   let pauseTimer: ReturnType<typeof setTimeout> | undefined;
-  let disconnecting: Promise<void> | null = null;
+  let connectorInstance: ClinicalConnector | null = null;
+  const connectionController = createClinicalConnectionController({
+    store: {
+      get closed() {
+        return store.closed;
+      },
+      set closed(v) {
+        store.closed = v;
+      },
+      get pauseCode() {
+        return store.pauseCode;
+      },
+      set pauseCode(v) {
+        store.pauseCode = v;
+      },
+    },
+    scope,
+    endpoint,
+    session,
+    connection,
+    getConnector: () => connectorInstance!,
+    signal,
+    database,
+    clearPauseTimer: () => {
+      if (pauseTimer) {
+        clearTimeout(pauseTimer);
+        pauseTimer = undefined;
+      }
+    },
+  });
   const store: ClinicalStore = {
     database,
     connection,
@@ -139,50 +182,8 @@ export async function openClinicalStore(
     async settleCatalog() {
       await projection;
     },
-    async disconnect() {
-      if (disconnecting) return disconnecting;
-      if (started) {
-        started = false;
-        const pending = database.disconnect();
-        disconnecting = pending;
-        try {
-          await pending;
-        } finally {
-          if (disconnecting === pending) disconnecting = null;
-        }
-      }
-    },
-    async resume(retryPaused = true) {
-      if (store.closed || signal.aborted || session.getCurrentUser()?.id !== scope.owner) return;
-      if (pauseTimer) {
-        clearTimeout(pauseTimer);
-        pauseTimer = undefined;
-      }
-      if (disconnecting) await disconnecting;
-      if (store.closed || signal.aborted || session.getCurrentUser()?.id !== scope.owner) return;
-      if (!endpoint) {
-        store.pauseCode = 'SIN_CONFIGURACION';
-        return;
-      }
-      if (retryPaused === 'session') await retrySessionCommands(connection, scope);
-      else if (retryPaused)
-        await connection.run(
-          "UPDATE qc_clinical_command SET status='pendiente',error_json=NULL WHERE owner=? AND environment=? AND status='pausado'",
-          [scope.owner, scope.environment],
-        );
-      store.pauseCode = null;
-      await connection.run("DELETE FROM qc_storage_control WHERE id='runtime:pause'");
-      if (store.closed || signal.aborted || session.getCurrentUser()?.id !== scope.owner) return;
-      if (!started) {
-        started = true;
-        try {
-          await database.connect(connector);
-        } catch (error) {
-          started = false;
-          throw error;
-        }
-      }
-    },
+    disconnect: () => connectionController.disconnect(),
+    resume: (...args) => connectionController.resume(...args),
     async close() {
       if (store.closed) return;
       store.closed = true;
@@ -211,10 +212,24 @@ export async function openClinicalStore(
         void store.disconnect().catch(() => undefined);
       }, 0);
   });
+  connectorInstance = connector;
   try {
     await database.waitForReady();
     await assertEncryptedDatabase(connection);
     await migrateDatabase(connection);
+    const persistedPause = await connection.first<{ value_json: string }>(
+      "SELECT value_json FROM qc_storage_control WHERE id='runtime:pause'",
+    );
+    if (persistedPause?.value_json) {
+      try {
+        const parsed = JSON.parse(persistedPause.value_json) as { code?: string };
+        if (parsed?.code) {
+          store.pauseCode = parsed.code;
+        }
+      } catch {
+        // Ignorar JSON no parseable
+      }
+    }
     await useLegacyArchive(
       sourceEnvironment,
       demo,

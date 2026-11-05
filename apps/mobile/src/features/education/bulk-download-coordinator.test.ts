@@ -11,19 +11,19 @@ import {
 import * as storageService from './infographic-storage-service';
 import * as resourceStorage from '../../data/local/files/resource-storage';
 
+function createMockRepo(copies: EducationalLocalCopy[] = []): PatientRepository {
+  return {
+    education: {
+      listLocalCopies: vi.fn().mockResolvedValue(copies),
+      getLocalCopy: vi.fn().mockResolvedValue(null),
+      removeLocalCopy: vi.fn().mockResolvedValue({ removed: true }),
+      declareCopyReviewed: vi.fn().mockResolvedValue({ updated: true }),
+    },
+  } as unknown as PatientRepository;
+}
+
 describe('Coordinador de descargas masivas de infografías (bulk-download-coordinator)', () => {
   const mockDatabase = {} as SqlConnection;
-
-  function createMockRepo(copies: EducationalLocalCopy[] = []): PatientRepository {
-    return {
-      education: {
-        listLocalCopies: vi.fn().mockResolvedValue(copies),
-        getLocalCopy: vi.fn().mockResolvedValue(null),
-        removeLocalCopy: vi.fn().mockResolvedValue({ removed: true }),
-        declareCopyReviewed: vi.fn().mockResolvedValue({ updated: true }),
-      },
-    } as unknown as PatientRepository;
-  }
 
   it('excluye videos y guías, descargando únicamente infografías', async () => {
     const catalog = new InMemoryEducationalCatalogReader([
@@ -613,5 +613,122 @@ describe('Coordinador de descargas masivas de infografías (bulk-download-coordi
     } finally {
       process.off('unhandledRejection', handleUnhandled);
     }
+  });
+});
+
+describe('Regulación de cuota de almacenamiento educativo (enforceEducationStorageQuota)', () => {
+  it('no expulsa copias si el total de archivos y bytes está dentro de la cuota', async () => {
+    const copies = [
+      {
+        contentId: 'info-1',
+        estado: 'descargado',
+        rutaRelativa: 'files/info-1.png',
+        tamanoBytes: 1024,
+        descargadoEn: '2026-11-01T10:00:00Z',
+      },
+      {
+        contentId: 'info-2',
+        estado: 'descargado',
+        rutaRelativa: 'files/info-2.png',
+        tamanoBytes: 2048,
+        descargadoEn: '2026-11-02T10:00:00Z',
+      },
+    ];
+    const repo = createMockRepo(copies as unknown as EducationalLocalCopy[]);
+    const res = await storageService.enforceEducationStorageQuota({
+      patientId: 'pac-1',
+      repository: repo,
+      maxCopies: 5,
+      maxBytes: 10000,
+    });
+    expect(res.evictedCount).toBe(0);
+    expect(res.freedBytes).toBe(0);
+    expect(res.evictedIds).toEqual([]);
+  });
+
+  it('expulsa según política LRU cuando se excede maxCopies, respetando copias fijadas (conservar_offline)', async () => {
+    const copies = [
+      {
+        contentId: 'info-antigua-fijada',
+        estado: 'descargado',
+        rutaRelativa: 'files/info-pin.png',
+        tamanoBytes: 1000,
+        descargadoEn: '2026-10-01T10:00:00Z',
+        metadataLocal: { conservar_offline: true, ultimo_acceso_en: '2026-10-01T10:00:00Z' },
+      },
+      {
+        contentId: 'info-mas-antigua',
+        estado: 'descargado',
+        rutaRelativa: 'files/info-old.png',
+        tamanoBytes: 1000,
+        descargadoEn: '2026-10-05T10:00:00Z',
+        metadataLocal: { ultimo_acceso_en: '2026-10-05T10:00:00Z' },
+      },
+      {
+        contentId: 'info-reciente',
+        estado: 'descargado',
+        rutaRelativa: 'files/info-new.png',
+        tamanoBytes: 1000,
+        descargadoEn: '2026-11-01T10:00:00Z',
+        metadataLocal: { ultimo_acceso_en: '2026-11-01T10:00:00Z' },
+      },
+    ];
+    const deleteFileSpy = vi.spyOn(resourceStorage, 'deleteResourceFile').mockResolvedValue(true);
+    const dbRunSpy = vi.fn().mockResolvedValue({ changes: 1 });
+    const mockDb = { run: dbRunSpy } as unknown as SqlConnection;
+    const repo = createMockRepo(copies as unknown as EducationalLocalCopy[]);
+    const res = await storageService.enforceEducationStorageQuota({
+      patientId: 'pac-1',
+      repository: repo,
+      database: mockDb,
+      maxCopies: 2,
+      maxBytes: 100000,
+    });
+    expect(res.evictedCount).toBe(1);
+    expect(res.evictedIds).toEqual(['info-mas-antigua']);
+    expect(res.freedBytes).toBe(1000);
+    expect(deleteFileSpy).toHaveBeenCalledWith('pac-1', 'info-mas-antigua', 'files/info-old.png');
+    expect(dbRunSpy).toHaveBeenCalledWith(
+      'UPDATE descarga SET estado = ?, ruta_local = NULL, metadata_local_json = ? WHERE paciente_id = ? AND contenido_id = ?',
+      ['pendiente', expect.stringContaining('"expulsado_cuota":true'), 'pac-1', 'info-mas-antigua'],
+    );
+  });
+
+  it('expulsa copias adicionales cuando el tamaño en bytes excede maxBytes', async () => {
+    const copies = [
+      {
+        contentId: 'info-pesada-1',
+        estado: 'descargado',
+        rutaRelativa: 'files/pesada-1.png',
+        tamanoBytes: 5000,
+        descargadoEn: '2026-10-10T10:00:00Z',
+      },
+      {
+        contentId: 'info-pesada-2',
+        estado: 'descargado',
+        rutaRelativa: 'files/pesada-2.png',
+        tamanoBytes: 6000,
+        descargadoEn: '2026-10-11T10:00:00Z',
+      },
+    ];
+    vi.spyOn(resourceStorage, 'deleteResourceFile').mockResolvedValue(true);
+    const removeCopySpy = vi.fn().mockResolvedValue({ removed: true });
+    const repo = {
+      ...createMockRepo(copies as unknown as EducationalLocalCopy[]),
+      education: {
+        listLocalCopies: vi.fn().mockResolvedValue(copies),
+        removeLocalCopy: removeCopySpy,
+      },
+    } as unknown as PatientRepository;
+    const res = await storageService.enforceEducationStorageQuota({
+      patientId: 'pac-1',
+      repository: repo,
+      maxCopies: 10,
+      maxBytes: 7000,
+    });
+    expect(res.evictedCount).toBe(1);
+    expect(res.evictedIds).toEqual(['info-pesada-1']);
+    expect(res.freedBytes).toBe(5000);
+    expect(removeCopySpy).toHaveBeenCalledWith('info-pesada-1');
   });
 });
