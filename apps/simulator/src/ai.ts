@@ -1,7 +1,7 @@
 import type { ScenarioState } from './types.js';
 import type { SimulatorConfig } from './config.js';
 import type { AiChatResponse } from '@quimiocare/contracts';
-import { GeminiAssistantClient } from './gemini-client.js';
+import { GeminiAssistantClient, GEMINI_MODEL } from './gemini-client.js';
 
 let geminiClientInstance: GeminiAssistantClient | null = null;
 
@@ -12,8 +12,12 @@ function getGeminiClient(apiKey: string): GeminiAssistantClient {
   return geminiClientInstance;
 }
 
-/** Deterministic single-message stub. It never stores the message or manufactures clinical advice. */
-export function aiResponse(state: ScenarioState, message: string): AiChatResponse {
+/** Deterministic single-message stub for explicit demo scenarios. */
+export function aiResponse(
+  state: ScenarioState,
+  message: string,
+  includeDebug = false,
+): AiChatResponse {
   const unavailable = state.escenario === 'IA_NO_DISPONIBLE';
   const urgent = state.escenario === 'IA_URGENCIA';
   const courtesy = /^(hola|gracias|adiós|adios)[.!\s]*$/iu.test(message.trim());
@@ -37,48 +41,78 @@ export function aiResponse(state: ScenarioState, message: string): AiChatRespons
           : noInformation
             ? 'sin_informacion'
             : 'respuesta',
-    debug: null,
-  };
-}
-
-/** Real execution via Gemini API (gemini-3.5-flash-lite) with graceful fallback to synthetic stub. */
-export async function executeAiChat(
-  config: SimulatorConfig,
-  state: ScenarioState,
-  message: string,
-  activarAlarmas = true,
-): Promise<AiChatResponse> {
-  if (state.escenario === 'IA_NO_DISPONIBLE' || state.escenario === 'IA_URGENCIA') {
-    return aiResponse(state, message);
-  }
-
-  if (config.geminiApiKey) {
-    try {
-      const client = getGeminiClient(config.geminiApiKey);
-      return await client.ask(message, activarAlarmas);
-    } catch (error) {
-      console.warn('[qc-ai] Error invocando Gemini API, aplicando fallback determinista:', error);
-      const fallback = aiResponse(state, message);
-      return {
-        ...fallback,
-        debug: {
-          origen: 'gemini-fallback',
-          modelo: 'gemini-3.5-flash-lite',
+    debug: includeDebug
+      ? {
+          origen: 'simulator-stub',
+          modelo: 'synthetic-stub-v1',
           confianza_score: 0.1,
-          confianza_razon: `Fallback aplicado tras error en Gemini: ${
-            error instanceof Error ? error.message : String(error)
-          }`,
-          motivos_alarma: [],
+          confianza_razon: 'Respuesta sintética predeterminada del simulador',
+          motivos_alarma: urgent ? ['simulador_urgencia'] : [],
           keywords: [],
           temas: [],
           tokens_prompt: 0,
           tokens_respuesta: 0,
           ms_busqueda: 0,
           ms_llm: 0,
-        },
+        }
+      : null,
+  };
+}
+
+/** Real execution via Gemini API with controlled unavailability on failure. */
+export async function executeAiChat(
+  config: SimulatorConfig,
+  state: ScenarioState,
+  message: string,
+  activarAlarmas = true,
+  includeDebug = false,
+): Promise<AiChatResponse> {
+  // Respect explicit test scenarios
+  if (state.escenario === 'IA_NO_DISPONIBLE' || state.escenario === 'IA_URGENCIA') {
+    return aiResponse(state, message, includeDebug);
+  }
+
+  // If Gemini API Key is configured, use real provider
+  if (config.geminiApiKey) {
+    try {
+      const client = getGeminiClient(config.geminiApiKey);
+      return await client.ask(message, activarAlarmas, includeDebug);
+    } catch (error) {
+      console.warn('[qc-ai] Error invocando Gemini API, devolviendo no_disponible:', error);
+      const isUrgent =
+        activarAlarmas &&
+        /(?:fiebre|temperatura|3[89]\.|sangrad|dificultad para respirar|falta de aire|asfixi)/iu.test(
+          message,
+        );
+      return {
+        respuesta: isUrgent
+          ? 'Se han identificado señales que requieren evaluación médica. Por favor acuda a un servicio de urgencias o contacte a su equipo de salud.'
+          : 'En este momento no puedo responder. Por favor, inténtelo nuevamente en unos minutos o consulte con su equipo de salud.',
+        fuentes: [],
+        requiere_urgencia: isUrgent,
+        confianza_nivel: 'ninguna',
+        estado_respuesta: 'no_disponible',
+        debug: includeDebug
+          ? {
+              origen: 'gemini-error',
+              modelo: GEMINI_MODEL,
+              confianza_score: 0,
+              confianza_razon: `Indisponibilidad tras error en proveedor: ${
+                error instanceof Error ? error.message : String(error)
+              }`,
+              motivos_alarma: isUrgent ? ['alerta_clinica_fallback'] : [],
+              keywords: [],
+              temas: [],
+              tokens_prompt: 0,
+              tokens_respuesta: 0,
+              ms_busqueda: 0,
+              ms_llm: 0,
+            }
+          : null,
       };
     }
   }
 
-  return aiResponse(state, message);
+  // Demo fallback when no Gemini key is provided
+  return aiResponse(state, message, includeDebug);
 }

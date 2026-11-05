@@ -590,6 +590,7 @@ export function createSimulator(config: SimulatorConfig, db: Database) {
               state!,
               String(input.mensaje),
               input.activar_alarmas !== false,
+              query.debug === true,
             ),
           };
           break;

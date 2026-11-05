@@ -1,5 +1,5 @@
 import { GoogleGenAI, Type } from '@google/genai';
-import type { AiChatResponse, AiFuenteItem } from '@quimiocare/contracts';
+import type { AiChatResponse } from '@quimiocare/contracts';
 
 export const GEMINI_MODEL = 'gemini-3.5-flash-lite';
 
@@ -12,7 +12,7 @@ Tus pautas de comunicación son:
 
 2. DELIMITACIÓN Y MARGEN DEL CONTEXTO:
    - Mantén tus respuestas estrictamente dentro del ámbito de la educación oncológica, autocuidado, alivio de síntomas comunes y bienestar durante la quimioterapia.
-   - No formules diagnósticos, no prescribas fármacos ni modifiques dosis médicas. Si te consultan por temas ajenos al tratamiento, responde de forma breve y cortés que está fuera del alcance de la guía.
+   - No formules diagnósticos, no prescribas fármacos ni modifiques dosis médicas. Si te consultan por temas ajenos al tratamiento, responde de forma breve y cortés que está fuera del alcance de la guía y marca 'estado_respuesta: "sin_informacion"'.
 
 3. CALMA Y DISCRECIÓN (NO ASUSTAR AL PACIENTE):
    - Usa un tono sereno, prudente y tranquilo. Nunca alarmes, dramatices ni utilices expresiones que causen angustia (evita signos de exclamación alarmistas o advertencias fatales).
@@ -26,10 +26,7 @@ Tus pautas de comunicación son:
    - Evita lenguaje de apego o dependencia emocional (no uses frases como "yo siempre estaré aquí para cuidarte" ni asumas roles de confidente íntimo).
    - Fomenta siempre la confianza y la comunicación del paciente con su oncólogo, equipo de enfermería y su red de apoyo familiar.
 
-5. FUENTES SUGERIDAS:
-   - En el campo 'fuentes', lista brevemente los temas educativos relacionados (ej. Alimentación, Náuseas, Cuidado bucal, Hidratación).
-
-6. CORTESÍAS Y SALUDOS:
+5. CORTESÍAS Y SALUDOS:
    - Si el mensaje es un saludo o agradecimiento ("hola", "gracias"), responde con una frase breve, amigable y discreta, con 'estado_respuesta: "cortesia"' y 'requiere_urgencia: false'.
 `;
 
@@ -40,14 +37,14 @@ export interface GeminiClientOptions {
 
 export class GeminiAssistantClient {
   private readonly ai: GoogleGenAI;
-  private readonly timeoutMs: number;
+  readonly timeoutMs: number;
 
   constructor(options: GeminiClientOptions) {
     this.ai = new GoogleGenAI({ apiKey: options.apiKey });
     this.timeoutMs = options.timeoutMs ?? 15000;
   }
 
-  async ask(message: string, activarAlarmas = true): Promise<AiChatResponse> {
+  async ask(message: string, activarAlarmas = true, includeDebug = false): Promise<AiChatResponse> {
     const controller = new AbortController();
     const timer = setTimeout(() => controller.abort(), this.timeoutMs);
 
@@ -57,6 +54,8 @@ export class GeminiAssistantClient {
         contents: message,
         config: {
           systemInstruction: ONCOLOGY_SYSTEM_PROMPT,
+          abortSignal: controller.signal,
+          httpOptions: { timeout: this.timeoutMs },
           responseMimeType: 'application/json',
           responseSchema: {
             type: Type.OBJECT,
@@ -65,41 +64,18 @@ export class GeminiAssistantClient {
                 type: Type.STRING,
                 description: 'Respuesta empática, comprensible y orientativa para el paciente.',
               },
-              fuentes: {
-                type: Type.ARRAY,
-                items: {
-                  type: Type.OBJECT,
-                  properties: {
-                    tema_id: { type: Type.STRING },
-                    guia: { type: Type.INTEGER },
-                    tema: { type: Type.STRING },
-                  },
-                  required: ['tema_id', 'guia', 'tema'],
-                },
-                description: 'Temas o guías educativas sugeridas de acuerdo con la consulta.',
-              },
               requiere_urgencia: {
                 type: Type.BOOLEAN,
                 description:
                   'true si el paciente describe síntomas de alarma (fiebre >= 38°C, sangrado, disnea, vómitos incoercibles), false en caso contrario.',
               },
-              confianza_nivel: {
-                type: Type.STRING,
-                description: 'Nivel de confianza: alta, media, baja o ninguna.',
-              },
               estado_respuesta: {
                 type: Type.STRING,
                 description:
-                  'Estado: respuesta (información clínica útil), sin_informacion (fuera de dominio), cortesia (saludo/despedida), no_disponible (falla o restricción).',
+                  'Estado: respuesta (información clínica útil), sin_informacion (fuera de dominio), cortesia (saludo/despedida).',
               },
             },
-            required: [
-              'respuesta',
-              'fuentes',
-              'requiere_urgencia',
-              'confianza_nivel',
-              'estado_respuesta',
-            ],
+            required: ['respuesta', 'requiere_urgencia', 'estado_respuesta'],
           },
         },
       });
@@ -111,42 +87,43 @@ export class GeminiAssistantClient {
 
       const parsed = JSON.parse(text) as {
         respuesta?: string;
-        fuentes?: AiFuenteItem[];
         requiere_urgencia?: boolean;
-        confianza_nivel?: string;
         estado_respuesta?: string;
       };
 
       const requiereUrgencia = activarAlarmas && Boolean(parsed.requiere_urgencia);
       const estadoRespuesta = (
-        ['respuesta', 'sin_informacion', 'cortesia', 'no_disponible'].includes(
-          parsed.estado_respuesta ?? '',
-        )
+        ['respuesta', 'sin_informacion', 'cortesia'].includes(parsed.estado_respuesta ?? '')
           ? parsed.estado_respuesta
           : 'respuesta'
       ) as AiChatResponse['estado_respuesta'];
 
+      const respuestaTexto =
+        String(parsed.respuesta ?? '').trim() ||
+        'No fue posible obtener una orientación en este momento.';
+
       return {
-        respuesta: String(parsed.respuesta ?? '').trim() || 'No se pudo generar una respuesta.',
-        fuentes: Array.isArray(parsed.fuentes) ? parsed.fuentes : [],
+        respuesta: respuestaTexto,
+        fuentes: [],
         requiere_urgencia: requiereUrgencia,
-        confianza_nivel: String(parsed.confianza_nivel ?? 'media'),
+        confianza_nivel:
+          requiereUrgencia || estadoRespuesta !== 'respuesta' ? 'ninguna' : 'no_verificada',
         estado_respuesta: estadoRespuesta,
-        debug: {
-          origen: 'gemini-api',
-          modelo: GEMINI_MODEL,
-          confianza_score: requiereUrgencia ? 0.99 : 0.85,
-          confianza_razon: requiereUrgencia
-            ? 'Síntoma de alarma detectado por Gemini'
-            : 'Orientación oncológica generada con éxito',
-          motivos_alarma: requiereUrgencia ? ['alerta_clinica_gemini'] : [],
-          keywords: [],
-          temas: (parsed.fuentes ?? []).map((f) => f.tema),
-          tokens_prompt: 0,
-          tokens_respuesta: 0,
-          ms_busqueda: 0,
-          ms_llm: 0,
-        },
+        debug: includeDebug
+          ? {
+              origen: 'gemini-api',
+              modelo: GEMINI_MODEL,
+              confianza_score: 0,
+              confianza_razon: 'Generación directa vía prompt sin RAG documentado',
+              motivos_alarma: requiereUrgencia ? ['alerta_clinica_gemini'] : [],
+              keywords: [],
+              temas: [],
+              tokens_prompt: 0,
+              tokens_respuesta: 0,
+              ms_busqueda: 0,
+              ms_llm: 0,
+            }
+          : null,
       };
     } finally {
       clearTimeout(timer);
