@@ -1,4 +1,4 @@
-import { prepare, requireOperator } from './preparation.js';
+import { prepare, requireOperator, getSyncedSigns, getSyncedEpro } from './preparation.js';
 import { createServer } from 'node:http';
 import type { IncomingMessage, ServerResponse } from 'node:http';
 import { readFile } from 'node:fs/promises';
@@ -44,7 +44,7 @@ import {
   handlePublishEducation,
   setMaintenanceActive,
 } from './education-publish.js';
-import { aiResponse } from './ai.js';
+import { executeAiChat } from './ai.js';
 
 interface Result {
   status: number;
@@ -213,6 +213,40 @@ export function createSimulator(config: SimulatorConfig, db: Database) {
         const principal = await operatorFromHeader(config, req.headers.authorization);
         const id = await requireOperator(db, config, principal);
         send(res, 200, { autorizado: true, operador_id: id });
+        return;
+      }
+      if (
+        preparationPath === '/admin/api/v1/preparacion/sincronizacion/signos-vitales' &&
+        req.method === 'GET'
+      ) {
+        if (!config.preparationEnabled || config.service !== 'clinical')
+          throw new ApiError(404, 'RECURSO_NO_ENCONTRADO', 'Preparacion deshabilitada.');
+        const principal = await operatorFromHeader(config, req.headers.authorization);
+        const pacienteId = url.searchParams.get('paciente_id');
+        if (!pacienteId)
+          throw new ApiError(422, 'ERROR_VALIDACION', 'Falta el parámetro paciente_id.');
+        const limiteParam = url.searchParams.get('limite');
+        const limite = limiteParam ? Number(limiteParam) : 20;
+        const result = await getSyncedSigns(db, config, principal, pacienteId, limite);
+        send(res, result.status, result.body);
+        return;
+      }
+      if (
+        preparationPath === '/admin/api/v1/preparacion/sincronizacion/formularios-respuestas' &&
+        req.method === 'GET'
+      ) {
+        if (!config.preparationEnabled || config.service !== 'clinical')
+          throw new ApiError(404, 'RECURSO_NO_ENCONTRADO', 'Preparacion deshabilitada.');
+        const principal = await operatorFromHeader(config, req.headers.authorization);
+        const pacienteId = url.searchParams.get('paciente_id');
+        if (!pacienteId)
+          throw new ApiError(422, 'ERROR_VALIDACION', 'Falta el parámetro paciente_id.');
+        const formularioId = url.searchParams.get('formulario_id') ?? undefined;
+        const limiteParam = url.searchParams.get('limite');
+        const limite = limiteParam ? Number(limiteParam) : 20;
+        const result = await getSyncedEpro(db, config, principal, pacienteId, formularioId, limite);
+        send(res, result.status, result.body);
+        return;
         return;
       }
       if (preparationPath.startsWith('/admin/api/v1/preparacion/')) {
@@ -549,7 +583,16 @@ export function createSimulator(config: SimulatorConfig, db: Database) {
               'La consulta no admite historial ni campos adicionales.',
             );
           }
-          result = { status: 200, body: aiResponse(state!, String(input.mensaje)) };
+          result = {
+            status: 200,
+            body: await executeAiChat(
+              config,
+              state!,
+              String(input.mensaje),
+              input.activar_alarmas !== false,
+              query.debug === true,
+            ),
+          };
           break;
         }
         default:

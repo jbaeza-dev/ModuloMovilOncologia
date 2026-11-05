@@ -28,3 +28,5 @@ INITIALIZE_SYNTHETIC_DATABASE=false
 # Invitations only; these emails do NOT become operators.
 EVALUATION_PATIENT_EMAILS=plataformaoncologica@gmail.com
 EXPO_ACCESS_TOKEN=
+# Optional Google Gemini API key for real oncology AI chatbot (gemini-3.5-flash-lite)
+GEMINI_API_KEY=

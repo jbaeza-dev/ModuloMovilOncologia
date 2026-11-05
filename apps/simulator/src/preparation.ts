@@ -470,3 +470,86 @@ export async function assignClinicalContext(
     ])
   ).rows[0];
 }
+
+export async function getSyncedSigns(
+  db: Database,
+  config: SimulatorConfig,
+  principal: Principal,
+  patientId: string,
+  limit = 20,
+) {
+  const operatorId = await requireOperator(db, config, principal);
+  const patient = requireUuid(patientId);
+  const maxRows = Math.min(Math.max(1, Number.isInteger(limit) ? limit : 20), 100);
+  const result = await db.query<{
+    id: string;
+    paciente_id: string;
+    request: unknown;
+    respuesta: unknown;
+    fecha_subida: string;
+  }>(
+    'SELECT id, paciente_id, request, respuesta, fecha_subida FROM qc_demo_signo WHERE paciente_id = $1 ORDER BY fecha_subida DESC LIMIT $2',
+    [patient, maxRows],
+  );
+  return {
+    status: 200,
+    body: {
+      paciente_id: patient,
+      operador_id: operatorId,
+      total: result.rows.length,
+      registros: result.rows.map((row) => ({
+        id: row.id,
+        ...(typeof row.respuesta === 'object' && row.respuesta !== null
+          ? (row.respuesta as Record<string, unknown>)
+          : {}),
+        fecha_subida: row.fecha_subida,
+      })),
+    },
+  };
+}
+
+export async function getSyncedEpro(
+  db: Database,
+  config: SimulatorConfig,
+  principal: Principal,
+  patientId: string,
+  formId?: string,
+  limit = 20,
+) {
+  const operatorId = await requireOperator(db, config, principal);
+  const patient = requireUuid(patientId);
+  const maxRows = Math.min(Math.max(1, Number.isInteger(limit) ? limit : 20), 100);
+  const query = formId
+    ? {
+        text: 'SELECT id, paciente_id, formulario_id, request, respuesta, fecha_subida FROM qc_demo_epro WHERE paciente_id = $1 AND formulario_id = $2 ORDER BY fecha_subida DESC LIMIT $3',
+        params: [patient, requireUuid(formId), maxRows],
+      }
+    : {
+        text: 'SELECT id, paciente_id, formulario_id, request, respuesta, fecha_subida FROM qc_demo_epro WHERE paciente_id = $1 ORDER BY fecha_subida DESC LIMIT $2',
+        params: [patient, maxRows],
+      };
+  const result = await db.query<{
+    id: string;
+    paciente_id: string;
+    formulario_id: string;
+    request: unknown;
+    respuesta: unknown;
+    fecha_subida: string;
+  }>(query.text, query.params);
+  return {
+    status: 200,
+    body: {
+      paciente_id: patient,
+      operador_id: operatorId,
+      total: result.rows.length,
+      respuestas: result.rows.map((row) => ({
+        id: row.id,
+        formulario_id: row.formulario_id,
+        ...(typeof row.respuesta === 'object' && row.respuesta !== null
+          ? (row.respuesta as Record<string, unknown>)
+          : {}),
+        fecha_subida: row.fecha_subida,
+      })),
+    },
+  };
+}

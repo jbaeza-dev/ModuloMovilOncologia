@@ -153,7 +153,14 @@ describe('Preparation HTTP with real PostgreSQL', () => {
       200,
     );
     const spec = await call('/quimiocare/docs/preparacion/openapi.json');
-    expect(Object.keys(spec.body.paths)).toHaveLength(15);
+    expect(Object.keys(spec.body.paths)).toHaveLength(17);
+    expect(
+      spec.body.paths['/admin/api/v1/preparacion/sincronizacion/signos-vitales'].get.security,
+    ).toEqual([{ OperadorBearer: [] }]);
+    expect(
+      spec.body.paths['/admin/api/v1/preparacion/sincronizacion/formularios-respuestas'].get
+        .security,
+    ).toEqual([{ OperadorBearer: [] }]);
     expect(
       spec.body.paths['/admin/api/v1/preparacion/terminos'].post.requestBody.content[
         'application/json'

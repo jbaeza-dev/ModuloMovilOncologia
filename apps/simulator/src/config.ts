@@ -20,9 +20,25 @@ export interface SimulatorConfig {
   educationMediaRoot: string;
   educationTempDir: string;
   aiServiceUrl: string;
+  geminiApiKey?: string | undefined;
 }
 
 export function readConfig(env: NodeJS.ProcessEnv = process.env): SimulatorConfig {
+  if (!env.GEMINI_API_KEY && typeof process.loadEnvFile === 'function') {
+    for (const envPath of [
+      '.env.local',
+      '.env',
+      'apps/mobile/.env.local',
+      '../../.env.local',
+      '../.env.local',
+    ]) {
+      try {
+        process.loadEnvFile(envPath);
+      } catch {
+        // Archivo ausente o no legible
+      }
+    }
+  }
   const appEnv = (env.APP_ENV ?? 'demo') as 'demo' | 'universidad-demo';
   if (appEnv !== 'demo' && appEnv !== 'universidad-demo') {
     throw new Error('El simulador exige APP_ENV=demo o APP_ENV=universidad-demo.');
@@ -132,6 +148,7 @@ export function readConfig(env: NodeJS.ProcessEnv = process.env): SimulatorConfi
     educationMediaRoot,
     educationTempDir,
     aiServiceUrl,
+    geminiApiKey: env.GEMINI_API_KEY || undefined,
     ...(authProvider === 'supabase' ? { authAlgorithm: authAlgorithm as 'ES256' | 'RS256' } : {}),
   };
 }
