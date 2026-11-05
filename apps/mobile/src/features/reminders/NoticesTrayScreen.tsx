@@ -21,6 +21,7 @@ import type {
 import { formatDate } from '../../data/local/repository';
 import { useFocusedValue } from '../../hooks/use-local-query';
 import { useLocalData } from '../../providers/LocalDataProvider';
+import { RemindersRevisionContext } from '../../providers/QueryRevision';
 import { useAppTheme } from '../../providers/ThemeProvider';
 import {
   classifyReminderStatus,
@@ -44,7 +45,7 @@ interface UpcomingItem {
 export function NoticesTrayScreen() {
   const { theme: appTheme } = useAppTheme();
   const styles = useStyles();
-  const { repository, notificationAdapter } = useLocalData();
+  const { repository, notificationAdapter, patientId } = useLocalData();
 
   const [activeTab, setActiveTab] = useState<TrayTab>('proximos');
   const [limit, setLimit] = useState(25);
@@ -108,11 +109,18 @@ export function NoticesTrayScreen() {
     loading: loadingUpcoming,
     error: errorUpcoming,
     refresh: refreshUpcoming,
-  } = useFocusedValue(loadUpcoming, {
-    items: [] as UpcomingItem[],
-    snapshot: null as ReminderStatusSnapshot | null,
-    deviceAvailability: 'available' as ReminderDeviceAvailability,
-  });
+  } = useFocusedValue(
+    loadUpcoming,
+    {
+      items: [] as UpcomingItem[],
+      snapshot: null as ReminderStatusSnapshot | null,
+      deviceAvailability: 'available' as ReminderDeviceAvailability,
+    },
+    {
+      queryKey: `${patientId ?? 'default'}:reminders:upcoming`,
+      context: RemindersRevisionContext,
+    },
+  );
 
   // 2. Cargar Actividad ordenada por COALESCE(abierta_en, recibida_observada_en) DESC
   const loadActivity = useCallback(async (): Promise<NotificationItem[]> => {
@@ -129,7 +137,10 @@ export function NoticesTrayScreen() {
     loading: loadingActivity,
     error: errorActivity,
     refresh: refreshActivity,
-  } = useFocusedValue(loadActivity, [] as NotificationItem[]);
+  } = useFocusedValue(loadActivity, [] as NotificationItem[], {
+    queryKey: `${patientId ?? 'default'}:reminders:activity:${limit}`,
+    context: RemindersRevisionContext,
+  });
 
   // 3. Cargar avisos técnicos / cancelaciones para la sección secundaria
   const loadCancellations = useCallback(async (): Promise<NotificationItem[]> => {
@@ -140,7 +151,10 @@ export function NoticesTrayScreen() {
     });
   }, [repository, showTechDetails]);
 
-  const { value: cancelledItems } = useFocusedValue(loadCancellations, [] as NotificationItem[]);
+  const { value: cancelledItems } = useFocusedValue(loadCancellations, [] as NotificationItem[], {
+    queryKey: `${patientId ?? 'default'}:reminders:cancellations`,
+    context: RemindersRevisionContext,
+  });
 
   const getActivityBadge = (item: NotificationItem) => {
     if (item.abiertaEn) {

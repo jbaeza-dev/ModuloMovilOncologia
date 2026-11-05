@@ -10,6 +10,7 @@ import {
 } from '../../data/local/files/report-storage';
 import { useFocusedValue } from '../../hooks/use-local-query';
 import { useLocalData } from '../../providers/LocalDataProvider';
+import { EducationStatusRevisionContext } from '../../providers/QueryRevision';
 
 function formatBytes(bytes: number): string {
   if (bytes === 0) return '0 B';
@@ -47,12 +48,19 @@ export function StorageManagementScreen() {
     };
   }, [patientId, repository]);
 
-  const { value: storageInfo, refresh } = useFocusedValue(loadStorageInfo, {
-    reportsCount: 0,
-    reportsBytes: 0,
-    copiesCount: 0,
-    copiesBytes: 0,
-  });
+  const { value: storageInfo, refresh } = useFocusedValue(
+    loadStorageInfo,
+    {
+      reportsCount: 0,
+      reportsBytes: 0,
+      copiesCount: 0,
+      copiesBytes: 0,
+    },
+    {
+      queryKey: `${patientId ?? 'default'}:storage:info`,
+      context: EducationStatusRevisionContext,
+    },
+  );
 
   const handleClearReports = () => {
     if (!patientId) return;

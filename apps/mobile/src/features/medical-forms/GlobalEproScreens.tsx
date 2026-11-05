@@ -24,6 +24,7 @@ import {
 } from '../../components/Visual';
 import { useFocusedValue } from '../../hooks/use-local-query';
 import { useLocalData } from '../../providers/LocalDataProvider';
+import { FormsRevisionContext } from '../../providers/QueryRevision';
 import { formatDate } from '../../data/local/repository';
 import { contractForm, formSections } from '../../data/sync/contract-form';
 import type { EproDraft } from '../../data/sync/epro-repository';
@@ -55,7 +56,11 @@ export function GlobalEproHubScreen() {
     const hub = await repo.hub();
     return { source: repo, hub };
   }, [repo]);
-  const { value, loading, error, refresh } = useFocusedValue(load, null);
+  const { patientId } = useLocalData();
+  const { value, loading, error, refresh } = useFocusedValue(load, null, {
+    queryKey: `${patientId ?? 'default'}:epro:hub`,
+    context: FormsRevisionContext,
+  });
   const data = value?.source === repo ? value : null;
   const today = createDailyFormContext().fechaSeguimiento;
   const continuation = data?.hub.drafts.find(
@@ -486,7 +491,11 @@ export function EproSubmissionRoute() {
     async () => ({ source: repo, capture: repo && id ? await repo.capture(id) : null }),
     [repo, id],
   );
-  const { value, loading, error } = useFocusedValue(load, null);
+  const { patientId: subPatientId } = useLocalData();
+  const { value, loading, error } = useFocusedValue(load, null, {
+    queryKey: `${subPatientId ?? 'default'}:epro:submission:${id ?? 'none'}`,
+    context: FormsRevisionContext,
+  });
   if (loading || value?.source !== repo)
     return (
       <Screen title="Detalle de evaluación">

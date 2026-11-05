@@ -80,6 +80,10 @@ export function MedicalFormsHubScreen() {
   const { value: assignedForms, loading } = useFocusedValue(
     loadAssigned,
     [] as AssignedFormSummary[],
+    {
+      queryKey: `${patientId ?? 'default'}:forms:assigned`,
+      context: FormsRevisionContext,
+    },
   );
 
   return (

@@ -32,6 +32,7 @@ import type { ReportData } from '../../data/local/reports/report-types';
 import { formatDate } from '../../data/local/repository';
 import { useFocusedValue } from '../../hooks/use-local-query';
 import { useLocalData } from '../../providers/LocalDataProvider';
+import { ClinicalRevisionContext } from '../../providers/QueryRevision';
 import { useAppTheme } from '../../providers/ThemeProvider';
 import { theme } from '../../theme';
 import { generateAndPersistReportPdf } from './report-pdf';
@@ -159,7 +160,10 @@ export function ReportsScreen() {
     loading: loadingData,
     error,
     refresh: refreshData,
-  } = useFocusedValue(loadData, null as ReportData | null);
+  } = useFocusedValue(loadData, null as ReportData | null, {
+    queryKey: `${patientId ?? 'default'}:reports:data:${days}`,
+    context: ClinicalRevisionContext,
+  });
 
   const loadExistingReports = useCallback(async () => {
     if (!patientId) return [];

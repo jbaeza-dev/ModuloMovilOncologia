@@ -16,6 +16,7 @@ import type { PatientProfileRecord } from '../../data/local/repository';
 import { useFocusedValue } from '../../hooks/use-local-query';
 import { useReminderStatus } from '../../hooks/use-reminder-status';
 import { DEMO_PATIENTS, useLocalData } from '../../providers/LocalDataProvider';
+import { FormsRevisionContext } from '../../providers/QueryRevision';
 import { useAppTheme } from '../../providers/ThemeProvider';
 
 import {
@@ -79,6 +80,9 @@ export function HomeScreen() {
   const { value: profile, loading: loadingProfile } = useFocusedValue(
     loadProfile,
     null as PatientProfileRecord | null,
+    {
+      queryKey: `${patientId ?? 'default'}:home:profile`,
+    },
   );
 
   const loadDailyStatus = useCallback(() => epro?.hub() ?? Promise.resolve(null), [epro]);
@@ -91,6 +95,10 @@ export function HomeScreen() {
   } = useFocusedValue(
     loadDailyStatus,
     null as Awaited<ReturnType<NonNullable<typeof epro>['hub']>> | null,
+    {
+      queryKey: `${patientId ?? 'default'}:home:daily-status`,
+      context: FormsRevisionContext,
+    },
   );
 
   useEffect(() => {

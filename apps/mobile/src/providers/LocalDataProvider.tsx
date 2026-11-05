@@ -395,7 +395,7 @@ export function LocalDataProvider({ children }: { children: ReactNode }) {
               },
             },
             {
-              tables: ['qc_definition_snapshot', 'respuesta_formulario'],
+              tables: ['qc_definition_snapshot', 'respuesta_formulario', 'qc_clinical_command'],
               throttleMs: 150,
             },
           );

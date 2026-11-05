@@ -2,6 +2,7 @@ import { useCallback, useMemo } from 'react';
 import { BodyText } from '../../components/Visual';
 import { useFocusedValue } from '../../hooks/use-local-query';
 import { useLocalData } from '../../providers/LocalDataProvider';
+import { EducationStatusRevisionContext } from '../../providers/QueryRevision';
 import { createReplicatedEducationReader } from './replicated-education-reader';
 import { InMemoryEducationalCatalogReader } from './educational-catalog-service';
 import { useAutomaticEducationStatus } from './AutomaticEducationDownloads';
@@ -22,7 +23,9 @@ export function CatalogStatusNotice() {
     () => repository?.replicatedCatalog.status() ?? Promise.resolve(null),
     [repository],
   );
-  const { value, loading, error } = useFocusedValue(load, null);
+  const { value, loading, error } = useFocusedValue(load, null, {
+    context: EducationStatusRevisionContext,
+  });
   return (
     <BodyText>
       {automatic === 'working'

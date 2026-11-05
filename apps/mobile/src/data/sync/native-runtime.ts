@@ -1,4 +1,4 @@
-import { isRecoverableSessionPause, retrySessionCommands } from './session-pause';
+import { isRecoverableSessionPause } from './session-pause';
 import { scopeEducationalCopies } from './native-education-files';
 import { cleanupRetiredEducationalCopies } from '../local/education/retired-copy-cleanup';
 import * as Crypto from 'expo-crypto';
@@ -62,6 +62,9 @@ export function configuredSyncEndpoint(demo: boolean) {
     throw new Error('Configura una dirección segura para la sincronización.');
   return url.href.replace(/\/$/, '');
 }
+
+import { createClinicalResume, type ClinicalResumeOptions } from './clinical-resume';
+export { createClinicalResume, type ClinicalResumeOptions };
 
 export async function openClinicalStore(
   session: HttpSessionAdapter,
@@ -128,6 +131,37 @@ export async function openClinicalStore(
     started = false;
   let pauseTimer: ReturnType<typeof setTimeout> | undefined;
   let disconnecting: Promise<void> | null = null;
+  let connectorInstance: ClinicalConnector | null = null;
+  const resumeInternal = createClinicalResume({
+    store: {
+      get closed() {
+        return store.closed;
+      },
+      set closed(v) {
+        store.closed = v;
+      },
+      get pauseCode() {
+        return store.pauseCode;
+      },
+      set pauseCode(v) {
+        store.pauseCode = v;
+      },
+    },
+    scope,
+    endpoint,
+    session,
+    connection,
+    getConnector: () => connectorInstance!,
+    signal,
+    database,
+    getDisconnecting: () => disconnecting,
+    clearPauseTimer: () => {
+      if (pauseTimer) {
+        clearTimeout(pauseTimer);
+        pauseTimer = undefined;
+      }
+    },
+  });
   const store: ClinicalStore = {
     database,
     connection,
@@ -152,53 +186,7 @@ export async function openClinicalStore(
         }
       }
     },
-    async resume(retryPaused = true) {
-      if (store.closed || signal.aborted || session.getCurrentUser()?.id !== scope.owner) return;
-      if (pauseTimer) {
-        clearTimeout(pauseTimer);
-        pauseTimer = undefined;
-      }
-      if (disconnecting) await disconnecting;
-      if (store.closed || signal.aborted || session.getCurrentUser()?.id !== scope.owner) return;
-      if (!endpoint) {
-        store.pauseCode = 'SIN_CONFIGURACION';
-        return;
-      }
-      if (retryPaused === 'session') {
-        const isAuthorized = session.getSnapshot().uploadAllowed;
-        if (isAuthorized) {
-          await retrySessionCommands(connection, scope);
-          store.pauseCode = null;
-          await connection.run("DELETE FROM qc_storage_control WHERE id='runtime:pause'");
-        } else {
-          return;
-        }
-      } else if (retryPaused === true) {
-        await connection.run(
-          "UPDATE qc_clinical_command SET status='pendiente',error_json=NULL WHERE owner=? AND environment=? AND status='pausado'",
-          [scope.owner, scope.environment],
-        );
-        store.pauseCode = null;
-        await connection.run("DELETE FROM qc_storage_control WHERE id='runtime:pause'");
-      } else {
-        if (!store.pauseCode) {
-          await connection.run("DELETE FROM qc_storage_control WHERE id='runtime:pause'");
-        }
-      }
-      if (store.pauseCode) {
-        return;
-      }
-      if (store.closed || signal.aborted || session.getCurrentUser()?.id !== scope.owner) return;
-      if (!started) {
-        started = true;
-        try {
-          await database.connect(connector);
-        } catch (error) {
-          started = false;
-          throw error;
-        }
-      }
-    },
+    resume: (...args) => resumeInternal(...args),
     async close() {
       if (store.closed) return;
       store.closed = true;
@@ -227,6 +215,7 @@ export async function openClinicalStore(
         void store.disconnect().catch(() => undefined);
       }, 0);
   });
+  connectorInstance = connector;
   try {
     await database.waitForReady();
     await assertEncryptedDatabase(connection);

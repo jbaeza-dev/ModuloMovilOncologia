@@ -466,12 +466,16 @@ export function VitalDataDetailScreen() {
     () => (repository && id ? repository.vital(id) : Promise.resolve(null)),
     [repository, id],
   );
+  const { patientId } = useLocalData();
   const {
     value: record,
     loading,
     error,
     refresh,
-  } = useFocusedValue(load, null as VitalWithSyncRecord | null);
+  } = useFocusedValue(load, null as VitalWithSyncRecord | null, {
+    queryKey: `${patientId ?? 'default'}:vitals:${id ?? 'none'}`,
+    context: ClinicalRevisionContext,
+  });
 
   const syncLabel = record ? getSyncStatusLabel(record) : 'Guardado en este dispositivo';
 
