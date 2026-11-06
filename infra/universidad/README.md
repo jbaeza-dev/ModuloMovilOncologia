@@ -1,6 +1,6 @@
 # Entrega universitaria de QuimioCare
 
-El despliegue de entregas verificadas en `main` utiliza un runner de usuario en Parra. Su instalación, requisitos y operación se describen en [RUNNER_DESPLIEGUE.md](RUNNER_DESPLIEGUE.md). Las imágenes y el APK se compilan en GitHub; solo la instalación se ejecuta en el servidor. El procedimiento histórico de instalación y recuperación se conserva también en `.agents/docs/despliegue-universidad-ci-cd.md` del equipo, excluido de Git. La aceptación con el teléfono corresponde al usuario.
+El despliegue de entregas verificadas en `main` utiliza un runner de usuario en Parra. Su instalación, requisitos y operación se describen en [RUNNER_DESPLIEGUE.md](RUNNER_DESPLIEGUE.md). Las imágenes y el APK se compilan en GitHub; solo la instalación se ejecuta en el servidor. El procedimiento de instalación y recuperación se documenta en las guías operativas locales del equipo. La aceptación con el teléfono corresponde al usuario.
 
 La consulta de claves de autenticación se exige antes de detener servicios y al
 final del despliegue. El alcance y la resolución de fallos se describen en
@@ -45,6 +45,8 @@ La prueba HTTP en Parra del 01-11-2026 confirmó que el proxy institucional term
 
 El SDK recibe como base `https://DOMINIO/quimiocare-backend` y añade `/sync/stream`. Parra entrega `/sync/stream` a Nginx y este conserva esa ruta hacia PowerSync, sin buffering. Las rutas con prefijo también se conservan para diagnóstico directo. Nginx restaura `/quimiocare` internamente para las páginas Swagger y su callback, de modo que sus assets, retornos y redirecciones sigan utilizando URLs públicas. No se publica el API administrativo de PowerSync, `/internal/ready` ni los controles destructivos `__demo`. Solo los proxies publican puertos del host: `127.0.0.1:8018` y `127.0.0.1:8019`.
 
+Adicionalmente, la configuración del proxy Nginx (`gateway.conf`) normaliza el encabezado de autenticación de PowerSync soportando tanto `Token` como `token` (`$http_token`), garantizando interoperabilidad con clientes nativos Android y web sin depender de la capitalización del cliente HTTP.
+
 ## Archivos y persistencia
 
 ```text
@@ -60,6 +62,8 @@ $HOME/quimiocare/
 ```
 
 El bootstrap de PostgreSQL actúa solo en un volumen nuevo. No rota contraseñas al actualizar. Los medios y volúmenes no forman parte de las imágenes ni se eliminan durante una entrega.
+
+Las entregas inmutables son validadas estrictamente con `infra/universidad/scripts/release.py` verificando los hashes SHA-256 de los archivos contra `manifest.json`. Si se actualizan archivos de configuración en el host, su checksum debe sincronizarse en el manifiesto para que tareas automáticas como `renew-university-jwks.sh` ejecuten con éxito.
 
 `versions.json`, Containerfiles y Quadlets fijan versiones y digests. Las imágenes de aplicación se construyen, escanean y publican por CI; el instalador solo acepta manifiesto schema 2, editor esperado y referencias `@sha256`. Los paquetes antiguos generados por `scripts/build-local-release.ps1` son artefactos locales de diagnóstico, **no entradas del instalador CI actual**.
 

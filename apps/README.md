@@ -1,9 +1,9 @@
 # Aplicaciones
 
-Este directorio agrupará las aplicaciones desplegables del monorrepositorio:
+Este directorio agrupa las aplicaciones del monorrepositorio QuimioCare:
 
-- `mobile/`: aplicación Android con React Native, Expo, TypeScript y Expo Router. Incluye navegación, prototipo visual y persistencia SQLite de registros sintéticos.
-- `gateway/`: pasarela para chatbot y funciones asociadas al dispositivo.
-- `central-api-simulator/`: simulador local de la API clínica con datos ficticios.
+- `mobile/`: aplicación móvil Android con React Native, Expo, TypeScript y Expo Router. Incluye seguimiento de quimioterapia, registro de signos vitales y síntomas ePRO, catálogo educativo offline con descargas verificadas, recordatorios y agenda compartida, exportación clínica local (PDF/XLSX) y sincronización reactiva PowerSync.
+- `gateway/`: pasarela operativa para autenticación de dispositivos, gestión de tokens push, agenda compartida y coordinación con servicios de backend.
+- `simulator/`: simulador de servicios clínicos e IA con persistencia real en PostgreSQL, soporte de protocolos oncológicos demostrativos (mFOLFOX6), gestión de pacientes, material educativo y documentación OpenAPI / Swagger interactiva.
 
-La pasarela y el simulador están previstos para entregas posteriores. El contrato v0 y la integración de envío REST continúan pendientes de aprobación.
+Los servicios de gateway y simulador se encuentran plenamente integrados y operativos tanto en entorno de desarrollo local como en el despliegue de demostración académica.

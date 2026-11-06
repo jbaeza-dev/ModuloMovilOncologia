@@ -4,9 +4,9 @@ Aplicación Android de acompañamiento durante quimioterapia, organizada como mo
 
 ## Estado de esta entrega
 
-La app conserva registros, borradores, historial y archivos clínicos cifrados y separados por cuenta y entorno. Utiliza el SDK PowerSync como único emisor clínico, sesiones renovables, aceptación de términos por edición y un gateway propio. Los flujos incluyen signos vitales, seguimiento ePRO global, perfil, vinculación y biblioteca de imágenes/YouTube.
+La app conserva registros, borradores, historial y archivos clínicos cifrados y separados por cuenta y entorno. Utiliza el SDK PowerSync como único emisor clínico, sesiones renovables, aceptación de términos por edición y un gateway propio. Los flujos incluyen signos vitales, seguimiento ePRO global, perfil con protocolo formal mFOLFOX6 (cáncer de colon eviQ 637) y fármacos activos, vinculación inmediata con refresco reactivo de formularios e infografías, registro automático de notificaciones push de dispositivo (UUIDv4 estable), rediseño visual de selección de días en recordatorios y agenda compartida, y biblioteca multimedia de imágenes y videos de YouTube.
 
-Los diagnósticos nativos se habilitan solo en builds sintéticas explícitas. La documentación técnica, los resultados y las capturas se conservan en el contexto local del equipo. Agenda compartida, asistente, árbol clínico, evaluación integral y despliegue tienen sus propias comprobaciones de aceptación. Las conexiones con el sistema externo están simuladas; las cuentas de demostración no admiten datos de pacientes reales.
+El flujo de bienvenida guía automáticamente al usuario nuevo al inicio tras aceptar los consentimientos, y la pantalla de inicio permite habilitar avisos pendientes en tiempo real. En el simulador, la interfaz Swagger (/quimiocare/docs/preparacion/) se encuentra organizada en categorías temáticas para facilitar la inspección formal. Los diagnósticos nativos se habilitan solo en builds sintéticas explícitas. Las cuentas de demostración no admiten datos de pacientes reales.
 
 ## Estructura
 
@@ -65,6 +65,6 @@ Consultar el [paquete de contratos](packages/contracts/README.md) y el [simulado
 
 CI verifica calidad móvil, contratos y HTTP con PostgreSQL. Cada capacidad se acepta con evidencia de su entorno real; pruebas unitarias, compilación y aceptación nativa son resultados distintos.
 
-Las guías operativas y los informes del equipo se conservan localmente en `.agents/docs/`, fuera del repositorio. Allí se describe la configuración de CI/CD, el `.env` privado del host y la evidencia de validación; las pruebas locales no acreditan por sí solas el servidor universitario.
+Las guías operativas y los informes de validación del equipo se conservan localmente fuera del repositorio. En ellos se describe la configuración de CI/CD, el `.env` privado del host y la evidencia de validación; las pruebas locales no acreditan por sí solas el servidor universitario.
 
 Cada cambio se entrega para revisión de Javier y requiere su visto bueno y mensaje exacto antes del commit. La publicación e integración de una rama necesitan su autorización aplicable.

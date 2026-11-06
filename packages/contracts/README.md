@@ -24,6 +24,8 @@ La ampliación propia 1.1 de PDF educativo (schema `education-document-v1_1.sche
 
 `quimiocare-terminos-v3_0.json` contiene una edición propia de términos, privacidad y consentimiento aprobada por el responsable del proyecto. Es distinta de las muestras 1.0/2.0 y no declara aprobación institucional. La aceptación debe apuntar al UUID de la definición efectivamente presentada; una edición nueva no reescribe actos anteriores.
 
+La especificación OpenAPI de preparación (`openapi-simulador-preparacion-v1.json`) organiza los endpoints en categorías temáticas para Swagger UI (Autenticación, Pacientes, Tratamientos, Educación y ePRO) y refleja el esquema clínico del protocolo formal de quimioterapia mFOLFOX6 (cáncer de colon eviQ 637) con fármacos activos sin datos sintéticos de prueba.
+
 ## Comandos
 
 - pnpm --filter @quimiocare/contracts generate: genera aliases TypeScript desde components.schemas.
