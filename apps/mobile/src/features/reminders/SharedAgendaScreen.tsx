@@ -1,8 +1,7 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
-import { Linking, Text } from 'react-native';
+import { Linking, Pressable, StyleSheet, Switch, Text, View } from 'react-native';
 import { router, useFocusEffect } from 'expo-router';
 import type { GatewayRecordatorio } from '@quimiocare/contracts';
-import { useProfileIdentity } from '../profile/IdentityProfileScreens';
 import { normalizedReminder } from '@quimiocare/contracts/agenda';
 import { Screen } from '../../components/Screen';
 import { DetailsDisclosure } from '../../components/DetailsDisclosure';
@@ -26,8 +25,6 @@ export function SharedAgendaScreen() {
       remindersRevision = 0,
     } = useLocalData(),
     { theme } = useAppTheme();
-  const { identity } = useProfileIdentity();
-  const medications = identity?.clinicalProfile?.medicamentos ?? [];
   const [rules, setRules] = useState<GatewayRecordatorio[]>([]),
     [pending, setPending] = useState<AgendaIntent[]>([]),
     [coverage, setCoverage] = useState<AgendaCoverage | null>(null),
@@ -122,45 +119,99 @@ export function SharedAgendaScreen() {
         onPress={() => router.push('/recordatorios/editar')}
       />
       {!rules.length && <BodyText>No tienes horarios confirmados.</BodyText>}
-      {rules.map((rule) => (
-        <InfoCard key={rule.id}>
-          <SectionTitle>{rule.titulo}</SectionTitle>
-          {rule.tipo === 'medicacion' ? (
-            <BodyText>
-              {rule.medicamento_paciente_id
-                ? 'Medicamento: ' +
-                  (medications.find((m) => m.id === rule.medicamento_paciente_id)?.nombre ??
-                    'No disponible en la lista actual')
-                : 'Aviso general sin medicamento asociado. Edítalo y elige uno de tu lista para confirmar tomas.'}
-            </BodyText>
-          ) : null}
-          <BodyText>
-            {kinds[rule.tipo]} · {rule.activo ? 'Activo' : 'Pausado'}
-          </BodyText>
-          <BodyText>
-            {rule.horas.join(', ')} · {rule.dias_semana.map((d) => days[d]).join(', ')} · hora de
-            Chile (Santiago)
-          </BodyText>
-          <BodyText>
-            Desde {rule.fecha_inicio}
-            {rule.fecha_fin ? ' hasta ' + rule.fecha_fin : '. Sin fecha de término.'}
-          </BodyText>
-          <VisualButton
-            label={'Editar ' + rule.titulo}
-            secondary
-            disabled={busy}
+      {rules.map((rule) => {
+        const isPaused = !rule.activo;
+        const mainTime = rule.horas.length > 0 ? rule.horas.join('  ·  ') : '--:--';
+        return (
+          <Pressable
+            key={rule.id}
+            accessibilityRole="button"
+            accessibilityLabel={`Aviso ${rule.titulo}, a las ${mainTime}. ${rule.activo ? 'Activo' : 'Pausado'}. Toca para editar.`}
             onPress={() =>
               router.push({ pathname: '/recordatorios/editar', params: { id: rule.id } })
             }
-          />
-          <VisualButton
-            label={rule.activo ? 'Pausar ' + rule.titulo : 'Activar ' + rule.titulo}
-            secondary
-            disabled={busy || pending.some((v) => v.id === rule.id)}
-            onPress={() => void change(rule)}
-          />
-        </InfoCard>
-      ))}
+            style={[
+              alarmStyles.card,
+              {
+                backgroundColor: theme.colors.surface,
+                borderColor: rule.activo ? theme.colors.primary : theme.colors.border,
+                opacity: isPaused ? 0.65 : 1,
+              },
+            ]}
+          >
+            <View style={alarmStyles.topRow}>
+              <View style={{ flex: 1 }}>
+                <Text
+                  style={[
+                    alarmStyles.timeText,
+                    { color: isPaused ? theme.colors.secondary : theme.colors.text },
+                  ]}
+                >
+                  {mainTime}
+                </Text>
+                <Text style={[alarmStyles.titleText, { color: theme.colors.text }]}>
+                  {rule.titulo}
+                </Text>
+                <Text style={[alarmStyles.typeText, { color: theme.colors.secondary }]}>
+                  {kinds[rule.tipo]} · {rule.activo ? 'Activo' : 'Pausado'}
+                </Text>
+              </View>
+              <Pressable
+                accessibilityRole="button"
+                accessibilityLabel={
+                  rule.activo ? `Pausar ${rule.titulo}` : `Activar ${rule.titulo}`
+                }
+                disabled={busy || pending.some((v) => v.id === rule.id)}
+                onPress={() => void change(rule)}
+              >
+                <Switch
+                  value={rule.activo}
+                  disabled={busy || pending.some((v) => v.id === rule.id)}
+                  onValueChange={() => void change(rule)}
+                  trackColor={{ false: theme.colors.border, true: theme.colors.primary }}
+                  thumbColor="#FFFFFF"
+                />
+              </Pressable>
+            </View>
+
+            {/* Días activos estilo alarma */}
+            <View style={alarmStyles.daysRow}>
+              {[1, 2, 3, 4, 5, 6, 7].map((d) => {
+                const isActiveDay = rule.dias_semana.includes(d);
+                return (
+                  <View
+                    key={d}
+                    style={[
+                      alarmStyles.dayPill,
+                      {
+                        backgroundColor:
+                          isActiveDay && rule.activo
+                            ? theme.colors.primaryContainer
+                            : (theme.colors.mutedSurface ?? '#F1F5F9'),
+                      },
+                    ]}
+                  >
+                    <Text
+                      style={[
+                        alarmStyles.dayPillText,
+                        {
+                          color:
+                            isActiveDay && rule.activo
+                              ? theme.colors.primary
+                              : theme.colors.secondary,
+                          fontWeight: isActiveDay ? '700' : '500',
+                        },
+                      ]}
+                    >
+                      {days[d]}
+                    </Text>
+                  </View>
+                );
+              })}
+            </View>
+          </Pressable>
+        );
+      })}
       {pending.map((intent) => (
         <InfoCard key={intent.id}>
           <SectionTitle>
@@ -258,3 +309,46 @@ export function SharedAgendaScreen() {
     </Screen>
   );
 }
+
+const alarmStyles = StyleSheet.create({
+  card: {
+    padding: 16,
+    borderRadius: 16,
+    borderWidth: 1.5,
+    gap: 10,
+    marginVertical: 4,
+  },
+  topRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    gap: 12,
+  },
+  timeText: {
+    fontSize: 32,
+    fontWeight: '700',
+    letterSpacing: -0.5,
+  },
+  titleText: {
+    fontSize: 16,
+    fontWeight: '600',
+    marginTop: 2,
+  },
+  typeText: {
+    fontSize: 13,
+    marginTop: 1,
+  },
+  daysRow: {
+    flexDirection: 'row',
+    gap: 6,
+    marginTop: 4,
+  },
+  dayPill: {
+    paddingHorizontal: 8,
+    paddingVertical: 3,
+    borderRadius: 6,
+  },
+  dayPillText: {
+    fontSize: 12,
+  },
+});

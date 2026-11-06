@@ -172,11 +172,11 @@ describe('reportes locales y generación de contenido para PDF', () => {
     });
 
     expect(html).toContain('QuimioCare');
-    expect(html).not.toContain('Paciente A de Prueba');
-    expect(html).not.toContain('12.345.678-9');
+    expect(html).toContain('Paciente A de Prueba');
+    expect(html).toContain('12.345.678-9');
     expect(html).toContain('Esquema de quimioterapia de prueba');
     expect(html).toContain('Últimos 30 días');
-    expect(html).toContain('Se omiten los campos de nombre, RUT, correo y código');
+    expect(html).toContain('Aviso clínico:');
     expect(html).toContain('36,8 °C');
     expect(html).toContain('120/80 mmHg');
     expect(html).toContain('72 lpm');

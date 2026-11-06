@@ -75,10 +75,10 @@ export type ScopedCoordinatorState = {
 
 try {
   Notifications.setNotificationHandler({
-    handleNotification: async (notification) => ({
-      shouldShowBanner: !notificationPayload(notification.request.content.data),
-      shouldShowList: !notificationPayload(notification.request.content.data),
-      shouldPlaySound: !notificationPayload(notification.request.content.data),
+    handleNotification: async () => ({
+      shouldShowBanner: true,
+      shouldShowList: true,
+      shouldPlaySound: true,
       shouldSetBadge: false,
     }),
   });
@@ -196,6 +196,11 @@ export function LocalDataProvider({ children }: { children: ReactNode }) {
       router: routerAdapter,
       newId: () => Crypto.randomUUID(),
       onStateChange: () => setVersion((v) => v + 1),
+      cancelNotifications: async () => {
+        if (typeof Notifications?.cancelAllScheduledNotificationsAsync === 'function') {
+          await Notifications.cancelAllScheduledNotificationsAsync().catch(() => undefined);
+        }
+      },
     });
   }, [sessionAdapter, assistantAdapter, routerAdapter]);
 

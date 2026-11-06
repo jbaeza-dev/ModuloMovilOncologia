@@ -6,6 +6,7 @@ import { one, transaction } from './db.js';
 import { ApiError } from './errors.js';
 import { PATIENTS } from './types.js';
 import type { FormDefinition, ObjectValue } from './types.js';
+import { folfoxDemo } from './folfox-demo.js';
 
 interface MobileFixtures {
   operaciones: Record<string, { response: ObjectValue }>;
@@ -54,6 +55,7 @@ async function seedInto(client: SqlClient, publicBaseUrl: string): Promise<void>
   // Sembrar plantillas clínicas sintéticas aprobadas
   const clinicalA = structuredClone(operations['API-03']!.response);
   const treatmentA = structuredClone(operations['API-04']!.response);
+  const folfox = folfoxDemo(clinicalA, treatmentA);
   const clinicalB = structuredClone(operations['API-03']!.response);
   clinicalB.id = 'dba7e9f7-46ed-5b29-8e51-fb5a81212342';
   clinicalB.diagnostico = 'Carcinoma ductal infiltrante de mama estadio II';
@@ -64,14 +66,14 @@ async function seedInto(client: SqlClient, publicBaseUrl: string): Promise<void>
   await client.query(
     `INSERT INTO qc_demo_plantilla_sintetica(id, nombre, descripcion, version, perfil_clinico_template, tratamiento_template, activo)
      VALUES($1, $2, $3, $4, $5, $6, true)
-     ON CONFLICT(id) DO UPDATE SET perfil_clinico_template=excluded.perfil_clinico_template, tratamiento_template=excluded.tratamiento_template`,
+     ON CONFLICT(id) DO UPDATE SET nombre=excluded.nombre, descripcion=excluded.descripcion, perfil_clinico_template=excluded.perfil_clinico_template, tratamiento_template=excluded.tratamiento_template`,
     [
       'DEMO-FOLFOX-v1',
-      'Esquema FOLFOX Sintético (Cáncer Colorrectal)',
+      'mFOLFOX6 — tratamiento adyuvante del cáncer de colon',
       'Plantilla demostrativa basada en el protocolo estándar mFOLFOX6 para evaluación académica.',
       1,
-      clinicalA,
-      treatmentA,
+      folfox.clinical,
+      folfox.treatment,
     ],
   );
 

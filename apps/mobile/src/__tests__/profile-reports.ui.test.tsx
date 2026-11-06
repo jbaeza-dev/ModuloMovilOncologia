@@ -110,6 +110,7 @@ const mockSavedReports = [
 
 const mockRepository = {
   profile: jest.fn().mockResolvedValue(mockPatientProfile),
+  saveProfile: jest.fn().mockResolvedValue(undefined),
   activeMedications: jest.fn().mockResolvedValue(mockActiveMedications),
   assignedMedicalTeam: jest.fn().mockResolvedValue([]),
   reports: {
@@ -177,6 +178,7 @@ const mockLocalDataContext = {
 
 jest.mock('../providers/LocalDataProvider', () => ({
   useLocalData: () => mockLocalDataContext,
+  useOptionalLocalData: () => mockLocalDataContext,
 }));
 
 import { MedicationScreen } from '../features/profile/MedicationScreen';
@@ -250,9 +252,6 @@ describe('Profile y Reports UI (Bloque 5)', () => {
       // Fechas civiles en formato DD/MM/AAAA
       expect(screen.getByText('01/10/2026')).toBeTruthy();
       expect(screen.getByText('20/10/2026')).toBeTruthy();
-      expect(screen.queryByText(/Última consulta:/)).toBeNull();
-      await fireEvent.press(screen.getByRole('button', { name: 'Estado de mi información' }));
-      expect(screen.getByText(/Última consulta:/)).toBeTruthy();
 
       const configButton = screen.getByText('Configurar aviso');
       expect(configButton).toBeTruthy();

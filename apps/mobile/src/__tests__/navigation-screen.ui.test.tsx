@@ -98,7 +98,7 @@ const mockCloseActiveContext = jest.fn().mockResolvedValue({
 const defaultSnapshot = {
   patientId: 'paciente-demo-001',
   nowIso: '2026-10-16T12:00:00.000Z',
-  preferences: { enabled: false, updatedAt: null },
+  preferences: { enabled: true, updatedAt: null },
   rules: [],
   futureNotifications: [],
   medications: [],

@@ -1,3 +1,4 @@
+import type { FormQuestion } from '@quimiocare/contracts/forms';
 import type { SqlConnection } from '../core/sql';
 import type {
   PatientProfileRecord,
@@ -175,7 +176,50 @@ export function createReportRepository(
            ORDER BY r.fecha_confirmacion ASC,r.id ASC`,
           [patientId, periodStart, now],
         );
-        epro = rows.map(reportEpro);
+        const questionsMap = new Map<string, FormQuestion[]>();
+        for (const row of rows) {
+          if (!row.snapshot_json) {
+            const key = `${row.formulario_id}:${row.version}`;
+            if (!questionsMap.has(key)) {
+              const cached = await tx.all<{
+                pregunta_id: string;
+                texto: string;
+                tipo: string;
+                configuracion_json: string | null;
+                orden: number;
+              }>(
+                `SELECT pregunta_id, texto, tipo, configuracion_json, orden
+                 FROM pregunta_cache
+                 WHERE formulario_id = ? AND version = ? AND retirado = 0
+                 ORDER BY orden ASC`,
+                [row.formulario_id, row.version],
+              );
+              questionsMap.set(
+                key,
+                cached.map((p) => {
+                  let opciones: Array<{ codigo: string; etiqueta: string }> | undefined;
+                  try {
+                    if (p.configuracion_json) {
+                      const cfg = JSON.parse(p.configuracion_json);
+                      if (Array.isArray(cfg.opciones)) opciones = cfg.opciones;
+                    }
+                  } catch {
+                    // Ignora error de parseo
+                  }
+                  return {
+                    id: p.pregunta_id,
+                    codigo: p.pregunta_id,
+                    titulo: p.texto,
+                    tipo: p.tipo as FormQuestion['tipo'],
+                    orden: p.orden,
+                    opciones,
+                  };
+                }),
+              );
+            }
+          }
+        }
+        epro = rows.map((r) => reportEpro(r, questionsMap.get(`${r.formulario_id}:${r.version}`)));
       });
 
       // 3. CÁLCULO ESTADÍSTICO TRAS LIBERAR LA TRANSACCIÓN
@@ -253,6 +297,8 @@ function computeReportSummary(vitals: VitalRecord[], symptomsCount: number): Rep
     diaCount = 0;
   let satSum = 0,
     satCount = 0;
+  let painSum = 0,
+    painCount = 0;
   let minTemp: number | null = null,
     maxTemp: number | null = null;
   let minPulse: number | null = null,
@@ -283,6 +329,10 @@ function computeReportSummary(vitals: VitalRecord[], symptomsCount: number): Rep
       satSum += v.saturacion_o2;
       satCount++;
     }
+    if (v.dolor_ena !== null && v.dolor_ena !== undefined) {
+      painSum += v.dolor_ena;
+      painCount++;
+    }
   }
 
   const round1 = (val: number) => Math.round(val * 10) / 10;
@@ -300,5 +350,6 @@ function computeReportSummary(vitals: VitalRecord[], symptomsCount: number): Rep
     maxTemperature: maxTemp,
     minPulse,
     maxPulse,
+    avgPain: painCount > 0 ? round1(painSum / painCount) : null,
   };
 }

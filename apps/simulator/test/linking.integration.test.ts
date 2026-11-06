@@ -123,6 +123,15 @@ describe('PostgreSQL individual linking', () => {
     expect(results.every((x) => x.status === 200)).toBe(true);
     expect(new Set(results.map((x) => x.body.relacion_id)).size).toBe(1);
     expect(
+      (await db.query('SELECT origen FROM qc_demo_profesional WHERE operador_id=$1', [operator]))
+        .rows[0]?.origen,
+    ).toBe('simulacion');
+    const medications = (
+      await db.query('SELECT perfil_clinico FROM qc_demo_paciente WHERE id=$1', [id])
+    ).rows[0].perfil_clinico.medicamentos;
+    expect(medications).toHaveLength(3);
+    expect(medications.every((m: { activo: boolean }) => !m.activo)).toBe(true);
+    expect(
       (await db.query('SELECT * FROM qc_demo_auditoria_vinculacion WHERE paciente_id=$1', [id]))
         .rowCount,
     ).toBe(1);

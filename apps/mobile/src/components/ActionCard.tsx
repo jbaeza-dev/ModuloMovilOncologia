@@ -1,5 +1,5 @@
 import { AppIcon as Feather } from './AppIcon';
-import type { ComponentProps, ReactNode } from 'react';
+import React, { type ComponentProps, type ReactNode } from 'react';
 import { Pressable, StyleSheet, Text, useWindowDimensions, View } from 'react-native';
 import { useAppTheme } from '../providers/ThemeProvider';
 import { theme } from '../theme';
@@ -83,7 +83,7 @@ export function ActionCard({
       >
         <Feather name={icon} size={tile ? 28 : compact ? 22 : 26} color={textColor} />
       </View>
-      <View style={styles.copy}>
+      <View style={[styles.copy, tile && styles.tileCopy]}>
         <Text style={[styles.title, compact && styles.compactTitle, { color: textColor }]}>
           {title}
         </Text>
@@ -105,12 +105,12 @@ export function ActionCard({
   );
 }
 
-export function ActionCardGrid({ children }: { children: ReactNode[] }) {
+export function ActionCardGrid({ children }: { children: ReactNode }) {
   const { width, fontScale } = useWindowDimensions();
   const stacked = width < 360 || fontScale >= 1.3;
   return (
     <View style={[styles.grid, stacked && styles.stacked]}>
-      {children.map((child, index) => (
+      {React.Children.toArray(children).map((child, index) => (
         <View key={index} style={styles.cell}>
           {child}
         </View>
@@ -120,9 +120,9 @@ export function ActionCardGrid({ children }: { children: ReactNode[] }) {
 }
 
 const styles = StyleSheet.create({
-  grid: { flexDirection: 'row', alignItems: 'stretch', gap: 12 },
+  grid: { flexDirection: 'row', flexWrap: 'wrap', alignItems: 'stretch', gap: 12 },
   stacked: { flexDirection: 'column' },
-  cell: { flex: 1, minWidth: 0 },
+  cell: { flex: 1, minWidth: '45%' },
   card: {
     flexDirection: 'row',
     alignItems: 'center',
@@ -132,8 +132,9 @@ const styles = StyleSheet.create({
     borderWidth: 2,
     borderRadius: 20,
   },
+  tileCopy: { flex: 0, flexGrow: 0, alignSelf: 'stretch' },
   tile: {
-    flex: 1,
+    width: '100%',
     flexDirection: 'column',
     alignItems: 'flex-start',
     gap: 10,

@@ -3,8 +3,8 @@ import { clinicalStatusLabel } from '../../data/sync/visible-status';
 import { AppIcon as Feather } from '../../components/AppIcon';
 import * as Crypto from 'expo-crypto';
 import { router, useLocalSearchParams } from 'expo-router';
-import { useCallback, useContext, useEffect, useMemo, useState } from 'react';
-import { StyleSheet, Text, TextInput, View } from 'react-native';
+import { useCallback, useContext, useEffect, useMemo, useRef, useState } from 'react';
+import { Animated, Modal, StyleSheet, Text, TextInput, View } from 'react-native';
 
 import { NavigationCard } from '../../components/NavigationCard';
 import { Screen } from '../../components/Screen';
@@ -152,16 +152,21 @@ export function MedicalFormsHubScreen() {
         return (
           <InfoCard key={`${form.formulario_id}:${form.version}`}>
             <View style={styles.cardHeader}>
-              <Feather name="clipboard" size={24} color={appTheme.colors.primary} />
+              <View
+                style={[styles.cardIconBox, { backgroundColor: appTheme.colors.primaryContainer }]}
+              >
+                <Feather name="clipboard" size={26} color={appTheme.colors.primary} />
+              </View>
               <View style={styles.cardHeaderCopy}>
                 <Text style={styles.cardTitle}>{form.titulo}</Text>
-                <BodyText>
-                  Versión {form.version} · {form.duracion_estimada_min} min aprox.
-                </BodyText>
+                <BodyText>{form.duracion_estimada_min} min aprox.</BodyText>
               </View>
             </View>
 
-            <BodyText>{form.descripcion}</BodyText>
+            <BodyText>
+              Completa unas breves preguntas sobre cómo te has sentido en las últimas 24 horas para
+              que tu equipo esté informado.
+            </BodyText>
 
             <View style={styles.pillRow}>
               <StatusPill>
@@ -246,6 +251,8 @@ export function MedicalFormDetailScreen() {
   const [stableDeliveryId, setStableDeliveryId] = useState<string>(() => Crypto.randomUUID());
   const [feedback, setFeedback] = useState<string | null>(null);
   const [validationErrors, setValidationErrors] = useState<Record<string, string>>({});
+  const [showSuccessPopup, setShowSuccessPopup] = useState(false);
+  const popupAnim = useRef(new Animated.Value(0)).current;
   const [isReviewing, setIsReviewing] = useState(false);
   const [isConfirmed, setIsConfirmed] = useState(false);
   const [busy, setBusy] = useState(false);
@@ -454,7 +461,7 @@ export function MedicalFormDetailScreen() {
     }
   }
 
-  function handleReview() {
+  async function handleDirectSubmit() {
     const validation = validateFormAnswers(medicalForm, answers);
     if (!validation.isValid) {
       setValidationErrors(validation.errors);
@@ -462,7 +469,39 @@ export function MedicalFormDetailScreen() {
       return;
     }
     setValidationErrors({});
-    setIsReviewing(true);
+    if (!repository || !patientId || !formDef || busy || !formStorageReady || loadingDetail) return;
+    setBusy(true);
+    setFeedback(null);
+    try {
+      const savedStatus = await runSave(async () => {
+        const submissionId = await repository.confirmSubmission(
+          formDef.formulario_id,
+          formDef.version,
+          answers,
+          stableDeliveryId,
+        );
+        return (await repository.getSubmission(submissionId))?.estado_envio ?? null;
+      });
+      setIsConfirmed(true);
+      setFeedback(clinicalStatusLabel(savedStatus));
+      setShowSuccessPopup(true);
+      popupAnim.setValue(0);
+      Animated.spring(popupAnim, {
+        toValue: 1,
+        useNativeDriver: true,
+        friction: 6,
+      }).start();
+      setTimeout(() => {
+        setShowSuccessPopup(false);
+        router.replace('/formulario');
+      }, 1400);
+    } catch (err) {
+      setFeedback(
+        err instanceof Error ? err.message : 'No se pudo confirmar que el registro se guardó.',
+      );
+    } finally {
+      setBusy(false);
+    }
   }
 
   async function handleConfirmSubmission() {
@@ -634,9 +673,9 @@ export function MedicalFormDetailScreen() {
 
       <View style={styles.actions}>
         <VisualButton
-          label="Revisar y completar"
+          label="Enviar cuestionario"
           disabled={busy || !formStorageReady}
-          onPress={handleReview}
+          onPress={handleDirectSubmit}
         />
         <VisualButton
           label="Guardar borrador"
@@ -651,6 +690,42 @@ export function MedicalFormDetailScreen() {
           onPress={handleDiscard}
         />
       </View>
+      <Modal
+        visible={showSuccessPopup}
+        transparent
+        animationType="fade"
+        onRequestClose={() => {
+          setShowSuccessPopup(false);
+          router.replace('/formulario');
+        }}
+      >
+        <View style={styles.modalOverlay}>
+          <Animated.View
+            style={[
+              styles.popupCard,
+              {
+                opacity: popupAnim,
+                transform: [
+                  {
+                    scale: popupAnim.interpolate({
+                      inputRange: [0, 1],
+                      outputRange: [0.85, 1],
+                    }),
+                  },
+                ],
+              },
+            ]}
+            accessibilityViewIsModal
+            accessibilityLiveRegion="polite"
+          >
+            <Feather name="check-circle" size={48} color={appTheme.colors.success} />
+            <Text style={styles.popupTitle}>¡Cuestionario guardado!</Text>
+            <Text style={styles.popupMessage}>
+              Tus respuestas quedaron registradas en este teléfono y se enviarán al servidor.
+            </Text>
+          </Animated.View>
+        </View>
+      </Modal>
     </Screen>
   );
 }
@@ -681,7 +756,7 @@ export function MedicalFormSubmissionsScreen() {
   const fetchBatch = useCallback(
     async (offset: number) => {
       if (!repository || !patientId) return [];
-      return repository.listSubmissions(undefined, 30, offset);
+      return repository.listSubmissions(undefined, 10, offset);
     },
     [repository, patientId],
   );
@@ -694,7 +769,7 @@ export function MedicalFormSubmissionsScreen() {
       .then((items) => {
         if (!mounted) return;
         setSubmissions(items);
-        setHasMore(items.length === 30);
+        setHasMore(items.length === 10);
       })
       .catch((err) => {
         if (!mounted) return;
@@ -716,7 +791,7 @@ export function MedicalFormSubmissionsScreen() {
     try {
       const nextBatch = await fetchBatch(submissions.length);
       setSubmissions((prev) => [...prev, ...nextBatch]);
-      setHasMore(nextBatch.length === 30);
+      setHasMore(nextBatch.length === 10);
     } catch (err) {
       setHistoryError(
         err instanceof Error ? err.message : 'Error al cargar más evaluaciones del historial.',
@@ -1056,6 +1131,48 @@ function renderQuestionInput(
 
 function createStyles(colors: ReturnType<typeof useAppTheme>['theme']['colors']) {
   return StyleSheet.create({
+    cardIconBox: {
+      width: 44,
+      height: 44,
+      borderRadius: 22,
+      justifyContent: 'center',
+      alignItems: 'center',
+    },
+    modalOverlay: {
+      flex: 1,
+      backgroundColor: 'rgba(0, 0, 0, 0.5)',
+      justifyContent: 'center',
+      alignItems: 'center',
+      padding: 24,
+    },
+    popupCard: {
+      width: '100%',
+      maxWidth: 340,
+      backgroundColor: colors.surface,
+      borderRadius: theme.radius.md,
+      padding: 28,
+      alignItems: 'center',
+      gap: 14,
+      borderWidth: 1,
+      borderColor: colors.border,
+      shadowColor: '#000',
+      shadowOffset: { width: 0, height: 4 },
+      shadowOpacity: 0.15,
+      shadowRadius: 12,
+      elevation: 8,
+    },
+    popupTitle: {
+      fontSize: 19,
+      fontWeight: '700',
+      color: colors.text,
+      textAlign: 'center',
+    },
+    popupMessage: {
+      fontSize: 14,
+      lineHeight: 20,
+      color: colors.secondary,
+      textAlign: 'center',
+    },
     cardHeader: {
       flexDirection: 'row',
       alignItems: 'center',

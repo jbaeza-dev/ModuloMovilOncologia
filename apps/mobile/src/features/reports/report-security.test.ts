@@ -91,8 +91,8 @@ describe('seguridad y sanitización de reportes locales', () => {
     expect(html).not.toContain('<b onmouseover');
     expect(html).not.toContain('<iframe');
     // Las entidades escapadas deben estar presentes
-    expect(html).not.toContain('Paciente XSS');
-    expect(html).not.toContain('12.345.678-9');
+    expect(html).toContain('&lt;b onmouseover=&quot;alert(1)&quot;&gt;Paciente XSS&lt;/b&gt;');
+    expect(html).toContain('12.345.678-9&lt;script&gt;');
     expect(html).toContain('&lt;iframe src=&quot;evil.com&quot;&gt;');
   });
 });
@@ -130,6 +130,12 @@ describe('validación de nombres de archivo y formatos de reporte', () => {
   it('extrae correctamente el formato de archivo desde el nombre', () => {
     expect(parseFormatFromReportFilename('reporte_7d_1728256000000.pdf')).toBe('pdf');
     expect(parseFormatFromReportFilename('reporte_30d_1728256000000.xlsx')).toBe('xlsx');
+    expect(
+      parseFormatFromReportFilename('reporte_30d_juan_perez_2026-11-06_1728256000000.pdf'),
+    ).toBe('pdf');
+    expect(
+      parseFormatFromReportFilename('reporte_30d_juan_perez_2026-11-06_1728256000000.xlsx'),
+    ).toBe('xlsx');
     expect(parseFormatFromReportFilename('archivo_invalido.pdf')).toBeNull();
   });
 
@@ -137,6 +143,9 @@ describe('validación de nombres de archivo y formatos de reporte', () => {
     expect(parsePeriodFromReportFilename('reporte_7d_1728256000000.pdf')).toBe(7);
     expect(parsePeriodFromReportFilename('reporte_30d_1728256000000.xlsx')).toBe(30);
     expect(parsePeriodFromReportFilename('reporte_90d_1728256000000.pdf')).toBe(90);
+    expect(
+      parsePeriodFromReportFilename('reporte_30d_juan_perez_2026-11-06_1728256000000.pdf'),
+    ).toBe(30);
     expect(parsePeriodFromReportFilename('archivo_invalido.xlsx')).toBeNull();
     expect(parsePeriodFromReportFilename('')).toBeNull();
   });
@@ -147,6 +156,12 @@ describe('validación de nombres de archivo y formatos de reporte', () => {
 
     expect(parseTimestampFromReportFilename(`reporte_30d_${timestampMs}.pdf`)).toBe(expectedDate);
     expect(parseTimestampFromReportFilename(`reporte_30d_${timestampMs}.xlsx`)).toBe(expectedDate);
+    expect(
+      parseTimestampFromReportFilename(`reporte_30d_juan_perez_2026-11-06_${timestampMs}.pdf`),
+    ).toBe(expectedDate);
+    expect(
+      parseTimestampFromReportFilename(`reporte_30d_juan_perez_2026-11-06_${timestampMs}.xlsx`),
+    ).toBe(expectedDate);
     expect(parseTimestampFromReportFilename('archivo_invalido.pdf')).toBeNull();
     expect(parseTimestampFromReportFilename('reporte_30d_invalido.xlsx')).toBeNull();
   });

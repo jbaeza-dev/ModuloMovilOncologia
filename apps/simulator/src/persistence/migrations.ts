@@ -10,6 +10,10 @@ export const SIMULATOR_MIGRATIONS = [
   '004-preparacion.sql',
   '005-selecciones-iniciales.sql',
   '006-podcasts.sql',
+  '007-equipo-demostracion.sql',
+  '008-medicamentos-plantilla-folfox.sql',
+  '009-profesional-activo.sql',
+  '010-gestion-evaluacion.sql',
 ] as const;
 
 export async function migrateSimulator(

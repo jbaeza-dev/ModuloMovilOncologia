@@ -4,7 +4,7 @@ import type { ClinicalMedicamentoResponse } from '@quimiocare/contracts';
 import { cacheMedicationForReminder } from '../../data/local/clinical-context/medication-cache';
 import { formatCivilDateDisplay } from '../../services/reminders/reminder-status';
 import { useState, useSyncExternalStore } from 'react';
-import { Text } from 'react-native';
+import { Text, View } from 'react-native';
 import { Screen } from '../../components/Screen';
 import { MascotHero } from '../../components/MascotAvatar';
 import { DetailsDisclosure } from '../../components/DetailsDisclosure';
@@ -158,6 +158,13 @@ export function PersonalDataScreen() {
   return (
     <Screen mascotPose="resumen" title="Datos personales">
       <PersonalFields />
+      <View style={{ marginVertical: 12 }}>
+        <VisualButton
+          label="Actualizar mis datos"
+          secondary
+          onPress={() => router.push('/perfil/completar')}
+        />
+      </View>
       <SourceNotice />
     </Screen>
   );
@@ -168,8 +175,10 @@ export function ClinicalProfileScreen() {
     clinical = identity?.clinicalProfile;
   return (
     <Screen mascotPose="reposo" title="Perfil clínico">
-      <SectionTitle>Tratamiento</SectionTitle>
-      <SourceNotice section="treatment" />
+      <NavigationCard title="Mis medicamentos" icon="paperclip" href="/perfil/medicacion" />
+      <NavigationCard title="Mi equipo de salud" icon="users" href="/perfil/equipo" />
+
+      <SectionTitle>Información de tratamiento</SectionTitle>
       {treatment ? (
         <InfoCard>
           <DetailRow
@@ -201,9 +210,13 @@ export function ClinicalProfileScreen() {
             ) : null,
           )}
         </InfoCard>
-      ) : null}
+      ) : (
+        <InfoCard>
+          <BodyText>No hay información de tratamiento registrada.</BodyText>
+        </InfoCard>
+      )}
+
       <SectionTitle>Perfil clínico</SectionTitle>
-      <SourceNotice section="clinical" />
       {clinical ? (
         <InfoCard>
           <DetailRow
@@ -220,9 +233,14 @@ export function ClinicalProfileScreen() {
             value={clinical.altura == null ? 'Sin registro' : `${clinical.altura} cm`}
           />
         </InfoCard>
-      ) : null}
-      <NavigationCard title="Mis medicamentos" icon="paperclip" href="/perfil/medicacion" />
-      <NavigationCard title="Mi equipo de salud" icon="users" href="/perfil/equipo" />
+      ) : (
+        <InfoCard>
+          <BodyText>No hay información de perfil clínico registrada.</BodyText>
+        </InfoCard>
+      )}
+
+      <SectionTitle>Términos y sesión</SectionTitle>
+      <SourceNotice />
     </Screen>
   );
 }
@@ -260,7 +278,6 @@ export function MedicationScreen() {
   const medications = clinical?.medicamentos;
   return (
     <Screen mascotPose="recordatorio" title="Mis medicamentos">
-      <SourceNotice section="clinical" />
       <BodyText>
         Consulta la indicación recibida. No cambies ni suspendas medicamentos sin indicación de tu
         equipo de salud.

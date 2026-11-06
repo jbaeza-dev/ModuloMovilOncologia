@@ -8,6 +8,8 @@ import { currentTermsId } from './consent.js';
 import { enterMutation } from './mutation-gate.js';
 import type { ObjectValue, Principal, FormDefinition } from './types.js';
 import type { SimulatorConfig } from './config.js';
+import { clinicalCrud } from './preparation-clinical-crud.js';
+import { ensureOperatorAccess } from './operator-access.js';
 
 const uuid = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
 export function requireUuid(value: unknown): string {
@@ -33,6 +35,7 @@ export async function requireOperator(
   config: SimulatorConfig,
   principal: Principal,
 ) {
+  await ensureOperatorAccess(db, config, principal);
   const row = await one<{ id: string }>(
     db,
     'SELECT id FROM qc_demo_operador WHERE auth_issuer=$1 AND auth_subject=$2 AND activo=true',
@@ -59,7 +62,7 @@ export async function categoryName(client: SqlClient, value: unknown) {
   const name = text(value);
   const row = await one<{ nombre: string }>(
     client,
-    'SELECT nombre FROM qc_preparacion_categoria WHERE clave=$1',
+    'SELECT nombre FROM qc_preparacion_categoria WHERE clave=$1 AND activo=true',
     [name.toLowerCase()],
   );
   if (!row)
@@ -102,7 +105,10 @@ export async function prepare(
                         action === 'contenido-educativo/podcasts'
                       ? ['titulo', 'descripcion', 'categoria', 'url']
                       : [];
-    if (Object.keys(input).some((key) => key !== 'operacion_id' && !allowed.includes(key)))
+    if (
+      !action.startsWith('gestion/') &&
+      Object.keys(input).some((key) => key !== 'operacion_id' && !allowed.includes(key))
+    )
       throw new ApiError(422, 'ERROR_VALIDACION', 'Campo de preparación no permitido.');
     const digest = createHash('sha256').update(canonical({ action, input })).digest('hex');
     return await transaction(db, async (client) => {
@@ -144,7 +150,13 @@ export async function prepare(
       let patient: string | null = null;
       let definition: string | null = null;
       const parts = action.split('/');
-      if (action === 'categorias') {
+      if (action.startsWith('gestion/')) {
+        const [, method, ...path] = parts;
+        const result = await clinicalCrud(client, method!, path.join('/'), input);
+        body = result.body;
+        status = result.status;
+        if (path[0] === 'pacientes') patient = requireUuid(path[1]);
+      } else if (action === 'categorias') {
         const name = text(input.nombre);
         const existed = await one(
           client,

@@ -432,17 +432,13 @@ export function SpreadsheetReportViewer() {
             style={styles.horizontalScroll}
             contentContainerStyle={{ width: tableWidth, alignItems: 'stretch' }}
           >
-            <ScrollView
-              nestedScrollEnabled
-              style={[styles.verticalScroll, { width: tableWidth }]}
-              stickyHeaderIndices={[0]}
-            >
+            <ScrollView nestedScrollEnabled style={[styles.verticalScroll, { width: tableWidth }]}>
               {/* Fila de cabecera fija */}
               <View style={styles.tableHeaderRow}>
                 <View
                   style={[
                     styles.cell,
-                    { width: 36, justifyContent: 'center', alignItems: 'center' },
+                    { width: 44, justifyContent: 'center', alignItems: 'center' },
                   ]}
                 >
                   <Text style={[styles.headerCellText, { color: appTheme.colors.secondary }]}>
@@ -474,7 +470,7 @@ export function SpreadsheetReportViewer() {
                       <View
                         style={[
                           styles.cell,
-                          { width: 36, justifyContent: 'center', alignItems: 'center' },
+                          { width: 44, justifyContent: 'center', alignItems: 'center' },
                         ]}
                       >
                         <Text

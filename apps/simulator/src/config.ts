@@ -17,6 +17,7 @@ export interface SimulatorConfig {
   authPublicKey?: string | undefined;
   apiDocsEnabled: boolean;
   preparationEnabled?: boolean;
+  operatorAllowedEmails?: string[];
   educationMediaRoot: string;
   educationTempDir: string;
   aiServiceUrl: string;
@@ -119,6 +120,18 @@ export function readConfig(env: NodeJS.ProcessEnv = process.env): SimulatorConfi
       throw new Error('AUTH_PUBLIC_KEY debe ser una clave publicable o anon, nunca un secreto.');
   }
   const apiDocsEnabled = env.API_DOCS_ENABLED === 'true';
+  const operatorAllowedEmails =
+    env.OPERATOR_ALLOWED_EMAILS === undefined
+      ? undefined
+      : [
+          ...new Set(
+            env.OPERATOR_ALLOWED_EMAILS.split(',')
+              .map((s) => s.trim().toLowerCase())
+              .filter(Boolean),
+          ),
+        ];
+  if (operatorAllowedEmails?.some((email) => !/^\S+@[^\s@]+\.[^\s@]+$/.test(email)))
+    throw new Error('OPERATOR_ALLOWED_EMAILS inválido.');
   const educationMediaRoot =
     env.EDUCATION_MEDIA_ROOT || resolve(process.cwd(), '.local_storage/media/educacion');
   const educationTempDir =
@@ -144,6 +157,7 @@ export function readConfig(env: NodeJS.ProcessEnv = process.env): SimulatorConfi
     authJwksUrl,
     authPublicKey,
     apiDocsEnabled,
+    ...(operatorAllowedEmails === undefined ? {} : { operatorAllowedEmails }),
     preparationEnabled: env.PREPARATION_ENABLED === 'true',
     educationMediaRoot,
     educationTempDir,

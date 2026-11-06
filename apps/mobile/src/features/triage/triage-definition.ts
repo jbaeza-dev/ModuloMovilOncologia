@@ -121,7 +121,7 @@ export interface OrientationDefinition {
 }
 export const proposal: OrientationDefinition = {
   id: 'quimiocare-orientacion-oncologica',
-  version: '0.5.0-propuesta',
+  version: '1.0.0',
   status: 'draft',
   sourceHash: '8e023072eab17284dec2a0c7dd9ed7f6d00ca3ceb0e9c733f8e66256f29c8f0b',
   approval: null,

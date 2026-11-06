@@ -17,6 +17,7 @@ import {
   View,
 } from 'react-native';
 import { WebView } from 'react-native-webview';
+import { SafeAreaView } from 'react-native-safe-area-context';
 
 import { Screen } from '../../components/Screen';
 import {
@@ -94,7 +95,24 @@ export function buildYouTubeEmbedHtml(
       if (window.ReactNativeWebView) {
         window.ReactNativeWebView.postMessage(JSON.stringify({ type: 'YT_READY' }));
       }
+      checkAspectRatio();
     }
+
+    function checkAspectRatio() {
+      try {
+        var video = document.querySelector('video');
+        if (video && video.videoWidth && video.videoHeight) {
+          var isVertical = video.videoHeight > video.videoWidth;
+          if (window.ReactNativeWebView) {
+            window.ReactNativeWebView.postMessage(JSON.stringify({
+              type: 'YT_ASPECT_RATIO',
+              isVertical: isVertical
+            }));
+          }
+        }
+      } catch (e) {}
+    }
+    setInterval(checkAspectRatio, 400);
 
     function onPlayerStateChange(event) {
       if (window.ReactNativeWebView) {
@@ -142,7 +160,12 @@ export function YouTubePlayerScreen() {
     }
   }, [podcastPlayback]);
 
+  const rawId = videoId || youtubeVideoId || '';
+  const parsedVideoId = parseYouTubeVideoId(rawId);
+
   const [isFullscreen, setIsFullscreen] = useState(false);
+  // Por defecto en CUIDAQUIMIO los videos educativos son verticales (Shorts formato móvil)
+  const [isVerticalVideo, setIsVerticalVideo] = useState(true);
   const [isOffline, setIsOffline] = useState(false);
   const [checkingNetwork, setCheckingNetwork] = useState(true);
 
@@ -160,11 +183,19 @@ export function YouTubePlayerScreen() {
   const handleWebViewMessage = (event: { nativeEvent: { data: string } }) => {
     try {
       const data = JSON.parse(event.nativeEvent.data);
-      if (data.type === 'YT_READY') {
+      if (data.type === 'YT_ASPECT_RATIO') {
+        if (typeof data.isVertical === 'boolean') {
+          setIsVerticalVideo(data.isVertical);
+        }
+      } else if (data.type === 'YT_READY') {
         setPlaybackStatus((prev) => (prev === 'opening' ? 'buffering' : prev));
       } else if (data.type === 'YT_STATE') {
         if (data.state === 1) {
           setPlaybackStatus('playing');
+          const targetId = resourceId || parsedVideoId;
+          if (repository && targetId) {
+            void repository.education.markCopyViewed(targetId).catch(() => {});
+          }
         } else if (data.state === 2) {
           setPlaybackStatus('paused');
         } else if (data.state === 3) {
@@ -182,9 +213,6 @@ export function YouTubePlayerScreen() {
       // Ignorar mensajes no conformes
     }
   };
-
-  const rawId = videoId || youtubeVideoId || '';
-  const parsedVideoId = parseYouTubeVideoId(rawId);
 
   // Comprobación de conectividad a internet en montaje
   useEffect(() => {
@@ -209,10 +237,45 @@ export function YouTubePlayerScreen() {
     };
   }, []);
 
+  // Detectar automáticamente si el video es vertical (Shorts / 9:16) mediante URL canónica
+  useEffect(() => {
+    if (!parsedVideoId) return;
+    let active = true;
+    fetch(`https://www.youtube.com/watch?v=${parsedVideoId}`)
+      .then((res) => (res.ok ? res.text() : ''))
+      .then((html) => {
+        if (!active || !html) return;
+        const isShort =
+          html.includes(`https://www.youtube.com/shorts/${parsedVideoId}`) ||
+          html.includes('/shorts/') ||
+          html.includes('"isShorts":true');
+        const isStandardWatch = html.includes(
+          `<link rel="canonical" href="https://www.youtube.com/watch?v=${parsedVideoId}"`,
+        );
+        if (isShort) {
+          setIsVerticalVideo(true);
+        } else if (isStandardWatch) {
+          setIsVerticalVideo(false);
+        }
+      })
+      .catch(() => {});
+    return () => {
+      active = false;
+    };
+  }, [parsedVideoId]);
+
   // Manejo de orientación de pantalla al entrar o salir de pantalla completa
   useEffect(() => {
     if (isFullscreen) {
-      void ScreenOrientation.lockAsync(ScreenOrientation.OrientationLock.LANDSCAPE).catch(() => {});
+      if (isVerticalVideo) {
+        void ScreenOrientation.lockAsync(ScreenOrientation.OrientationLock.PORTRAIT_UP).catch(
+          () => {},
+        );
+      } else {
+        void ScreenOrientation.lockAsync(ScreenOrientation.OrientationLock.LANDSCAPE).catch(
+          () => {},
+        );
+      }
     } else {
       void ScreenOrientation.lockAsync(ScreenOrientation.OrientationLock.PORTRAIT_UP).catch(
         () => {},
@@ -223,7 +286,7 @@ export function YouTubePlayerScreen() {
         () => {},
       );
     };
-  }, [isFullscreen]);
+  }, [isFullscreen, isVerticalVideo]);
 
   // Manejo de botón Atrás en Android para salir de pantalla completa
   useEffect(() => {
@@ -312,8 +375,11 @@ export function YouTubePlayerScreen() {
 
   // Estado: Modo Normal y Pantalla Completa con instancia única de WebView
   return (
-    <Screen isRoot={false} scroll={false}>
-      <View style={styles.container}>
+    <SafeAreaView
+      edges={isFullscreen ? [] : ['top', 'bottom', 'left', 'right']}
+      style={isFullscreen ? styles.fullscreenSafe : styles.safeArea}
+    >
+      <View style={isFullscreen ? styles.fullscreenRoot : styles.container}>
         {/* Barra superior con navegación y pantalla completa */}
         {!isFullscreen ? (
           <View style={styles.topNav}>
@@ -344,24 +410,57 @@ export function YouTubePlayerScreen() {
         ) : null}
 
         {/* Reproductor de Video con instancia única de WebView que se expande a pantalla completa */}
-        <View style={isFullscreen ? styles.fullscreenOverlay : styles.videoContainer}>
+        <View
+          style={
+            isFullscreen
+              ? styles.fullscreenOverlay
+              : isVerticalVideo
+                ? styles.verticalVideoContainer
+                : styles.videoContainer
+          }
+        >
           {isFullscreen ? <StatusBar hidden /> : null}
           {isFullscreen ? (
             <View style={styles.fullscreenHeader}>
               <Text style={styles.fullscreenTitle} numberOfLines={1}>
                 {videoTitle}
               </Text>
-              <Pressable
-                accessibilityRole="button"
-                accessibilityLabel={MULTIMEDIA_AND_EDUCATION_COPY.youtubeExitFullscreen}
-                onPress={toggleFullscreen}
-                style={({ pressed }) => [styles.exitFullscreenBtn, pressed && styles.pressed]}
-              >
-                <Feather name="minimize-2" size={18} color="#FFFFFF" />
-                <Text style={styles.exitFullscreenText}>
-                  {MULTIMEDIA_AND_EDUCATION_COPY.youtubeExitFullscreen}
-                </Text>
-              </Pressable>
+              <View style={{ flexDirection: 'row', alignItems: 'center' }}>
+                <Pressable
+                  accessibilityRole="button"
+                  accessibilityLabel={isVerticalVideo ? 'Girar a horizontal' : 'Mantener vertical'}
+                  onPress={() => {
+                    const nextVertical = !isVerticalVideo;
+                    setIsVerticalVideo(nextVertical);
+                    void ScreenOrientation.lockAsync(
+                      nextVertical
+                        ? ScreenOrientation.OrientationLock.PORTRAIT_UP
+                        : ScreenOrientation.OrientationLock.LANDSCAPE,
+                    ).catch(() => {});
+                  }}
+                  style={({ pressed }) => [
+                    styles.exitFullscreenBtn,
+                    { marginRight: 8 },
+                    pressed && styles.pressed,
+                  ]}
+                >
+                  <Feather name="rotate-cw" size={18} color="#FFFFFF" />
+                  <Text style={styles.exitFullscreenText}>
+                    {isVerticalVideo ? 'Horizontal' : 'Vertical'}
+                  </Text>
+                </Pressable>
+                <Pressable
+                  accessibilityRole="button"
+                  accessibilityLabel={MULTIMEDIA_AND_EDUCATION_COPY.youtubeExitFullscreen}
+                  onPress={toggleFullscreen}
+                  style={({ pressed }) => [styles.exitFullscreenBtn, pressed && styles.pressed]}
+                >
+                  <Feather name="minimize-2" size={18} color="#FFFFFF" />
+                  <Text style={styles.exitFullscreenText}>
+                    {MULTIMEDIA_AND_EDUCATION_COPY.youtubeExitFullscreen}
+                  </Text>
+                </Pressable>
+              </View>
             </View>
           ) : null}
 
@@ -508,7 +607,7 @@ export function YouTubePlayerScreen() {
           </ScrollView>
         ) : null}
       </View>
-    </Screen>
+    </SafeAreaView>
   );
 }
 
@@ -565,6 +664,15 @@ function createStyles(colors: ReturnType<typeof useAppTheme>['theme']['colors'])
     videoContainer: {
       width: '100%',
       aspectRatio: 16 / 9,
+      backgroundColor: '#000000',
+      borderRadius: theme.radius.sm,
+      overflow: 'hidden',
+    },
+    verticalVideoContainer: {
+      width: '100%',
+      aspectRatio: 9 / 16,
+      maxHeight: 460,
+      alignSelf: 'center',
       backgroundColor: '#000000',
       borderRadius: theme.radius.sm,
       overflow: 'hidden',
@@ -648,13 +756,18 @@ function createStyles(colors: ReturnType<typeof useAppTheme>['theme']['colors'])
       fontSize: 13.5,
       lineHeight: 19,
     },
+    safeArea: {
+      flex: 1,
+      backgroundColor: colors.background,
+    },
+    fullscreenSafe: {
+      flex: 1,
+      backgroundColor: '#000000',
+    },
     fullscreenOverlay: {
-      position: 'absolute',
-      top: 0,
-      left: 0,
-      right: 0,
-      bottom: 0,
-      zIndex: 9999,
+      flex: 1,
+      width: '100%',
+      height: '100%',
       backgroundColor: '#000000',
     },
     fullscreenRoot: {

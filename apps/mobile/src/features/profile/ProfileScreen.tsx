@@ -1,3 +1,4 @@
+import * as Notifications from 'expo-notifications';
 import { AppIcon as Feather } from '../../components/AppIcon';
 import { useCallback } from 'react';
 import { Pressable, StyleSheet, Text, View } from 'react-native';
@@ -48,6 +49,11 @@ export function PreferencesScreen() {
     await trackOperation(async () => {
       await repository.reminders.setPreferences(nextVal);
       bumpRemindersRevision?.();
+      if (!nextVal) {
+        if (typeof Notifications?.cancelAllScheduledNotificationsAsync === 'function') {
+          await Notifications.cancelAllScheduledNotificationsAsync().catch(() => undefined);
+        }
+      }
       if (patientId) {
         if (reconcileReminders) {
           await reconcileReminders(patientId);

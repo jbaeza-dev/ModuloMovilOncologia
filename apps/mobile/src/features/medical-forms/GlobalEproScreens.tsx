@@ -9,7 +9,8 @@ import {
 import { router, useLocalSearchParams, useNavigation } from 'expo-router';
 import { usePreventRemove } from 'expo-router/react-navigation';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { AccessibilityInfo, AppState, Text } from 'react-native';
+import { AccessibilityInfo, Animated, AppState, Modal, StyleSheet, Text, View } from 'react-native';
+import { AppIcon as Feather } from '../../components/AppIcon';
 import { Screen } from '../../components/Screen';
 import { MascotHero } from '../../components/MascotAvatar';
 import { NavigationCard } from '../../components/NavigationCard';
@@ -102,7 +103,7 @@ export function GlobalEproHubScreen() {
         description="A tu ritmo. Puedes pausar y continuar después."
         compact
       />
-      <BodyText>Se guarda en este teléfono. Los envíos pendientes requieren conexión.</BodyText>
+
       {loading || !repo ? <BodyText>Buscando tu cuestionario…</BodyText> : null}
       {error ? (
         <InfoCard>
@@ -112,12 +113,7 @@ export function GlobalEproHubScreen() {
           <VisualButton label="Reintentar" onPress={refresh} />
         </InfoCard>
       ) : null}
-      {data?.hub.status?.completed_at ? (
-        <BodyText>
-          Cuestionario recibido: {formatDate(data.hub.status.completed_at)}.
-          {data.hub.status.error_code ? ' No se pudo actualizar. Se conserva la última copia.' : ''}
-        </BodyText>
-      ) : null}
+
       {data?.hub.current || continuation ? (
         <InfoCard>
           <SectionTitle>
@@ -154,27 +150,12 @@ export function GlobalEproHubScreen() {
         </InfoCard>
       ) : null}
       {feedback ? <Text accessibilityRole="alert">{feedback}</Text> : null}
-      {data?.hub.captures.slice(0, 10).map((capture) => (
-        <InfoCard key={capture.id}>
-          <SectionTitle>Seguimiento del {capture.context.fechaSeguimiento}</SectionTitle>
-          <BodyText>
-            Confirmado el {formatDate(capture.submittedAt)} · edición{' '}
-            {String(capture.definition.form.version)}
-          </BodyText>
-          <VisualButton
-            label="Ver captura"
-            secondary
-            onPress={() =>
-              router.push({ pathname: '/formulario/entrega', params: { id: capture.id } })
-            }
-          />
-        </InfoCard>
-      ))}
+
       <NavigationCard
-        title="Orientación de síntomas · Demostración"
-        description="Consulta interactiva para evaluar tus síntomas con IA"
-        icon="message-circle"
-        href="/asistente"
+        title="Orientación de Síntomas"
+        description="Consulta interactiva para evaluar tus síntomas y alertas"
+        icon="help-circle"
+        href="/orientacion"
         compact
       />
       <NavigationCard
@@ -209,6 +190,8 @@ export function ContractEproEditor({ draftId }: { draftId: string }) {
     [busy, setBusy] = useState(false),
     [review, setReview] = useState(false);
   const [showErrors, setShowErrors] = useState(false);
+  const [showSuccessPopup, setShowSuccessPopup] = useState(false);
+  const popupAnim = useRef(new Animated.Value(0)).current;
   const [pendingAction, setPendingAction] = useState<
     Parameters<typeof navigation.dispatch>[0] | null
   >(null);
@@ -347,9 +330,25 @@ export function ContractEproEditor({ draftId }: { draftId: string }) {
           ),
         );
         AccessibilityInfo.announceForAccessibility(issues[0].message);
-      } else setReview(true);
-    } catch {
-      /* The durable save error remains visible. */
+      } else if (repo && draft) {
+        await queue.current;
+        await trackOperation(() => repo.submit(draft.id));
+        setShowSuccessPopup(true);
+        popupAnim.setValue(0);
+        Animated.spring(popupAnim, {
+          toValue: 1,
+          useNativeDriver: true,
+          friction: 6,
+        }).start();
+        setTimeout(() => {
+          if (mounted.current) {
+            setShowSuccessPopup(false);
+            router.replace('/formulario');
+          }
+        }, 1400);
+      }
+    } catch (e) {
+      setSaveError(e instanceof Error ? e.message : 'No se pudo enviar el cuestionario.');
     } finally {
       setBusy(false);
     }
@@ -446,7 +445,7 @@ export function ContractEproEditor({ draftId }: { draftId: string }) {
             />
           ))}
           <VisualButton
-            label={currentIndex === sections.length - 1 ? 'Revisar respuestas' : 'Continuar'}
+            label={currentIndex === sections.length - 1 ? 'Enviar Cuestionario' : 'Continuar'}
             disabled={busy || isClosing}
             onPress={() => void next()}
           />
@@ -481,6 +480,42 @@ export function ContractEproEditor({ draftId }: { draftId: string }) {
           />
         </>
       )}
+      <Modal
+        visible={showSuccessPopup}
+        transparent
+        animationType="fade"
+        onRequestClose={() => {
+          setShowSuccessPopup(false);
+          router.replace('/formulario');
+        }}
+      >
+        <View style={modalStyles.overlay}>
+          <Animated.View
+            style={[
+              modalStyles.card,
+              {
+                opacity: popupAnim,
+                transform: [
+                  {
+                    scale: popupAnim.interpolate({
+                      inputRange: [0, 1],
+                      outputRange: [0.85, 1],
+                    }),
+                  },
+                ],
+              },
+            ]}
+            accessibilityViewIsModal
+            accessibilityLiveRegion="polite"
+          >
+            <Feather name="check-circle" size={48} color="#2e7d32" />
+            <Text style={modalStyles.title}>¡Cuestionario enviado!</Text>
+            <Text style={modalStyles.message}>
+              Tus respuestas fueron registradas y guardadas exitosamente.
+            </Text>
+          </Animated.View>
+        </View>
+      </Modal>
     </Screen>
   );
 }
@@ -543,3 +578,39 @@ export function EproSubmissionRoute() {
     </Screen>
   );
 }
+
+const modalStyles = StyleSheet.create({
+  overlay: {
+    flex: 1,
+    backgroundColor: 'rgba(0, 0, 0, 0.45)',
+    justifyContent: 'center',
+    alignItems: 'center',
+    padding: 24,
+  },
+  card: {
+    width: '100%',
+    maxWidth: 360,
+    backgroundColor: '#ffffff',
+    borderRadius: 24,
+    padding: 28,
+    alignItems: 'center',
+    gap: 12,
+    elevation: 8,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.15,
+    shadowRadius: 12,
+  },
+  title: {
+    fontSize: 22,
+    fontWeight: '700',
+    color: '#1a1a1a',
+    textAlign: 'center',
+  },
+  message: {
+    fontSize: 15,
+    color: '#666666',
+    textAlign: 'center',
+    lineHeight: 22,
+  },
+});

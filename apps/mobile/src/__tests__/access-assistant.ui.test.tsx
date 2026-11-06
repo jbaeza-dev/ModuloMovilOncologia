@@ -315,6 +315,9 @@ jest.mock('expo-notifications', () => ({
   cancelScheduledNotificationAsync: jest.fn(async (id: string) => {
     mockScheduledNotifications.delete(id);
   }),
+  cancelAllScheduledNotificationsAsync: jest.fn(async () => {
+    mockScheduledNotifications.clear();
+  }),
   addNotificationResponseReceivedListener: jest.fn((listener) => {
     mockNotificationResponseListeners.push(listener);
     return {

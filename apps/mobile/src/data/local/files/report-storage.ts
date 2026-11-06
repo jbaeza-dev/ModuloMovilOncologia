@@ -13,18 +13,20 @@ import { assertSafeId } from './resource-storage';
 
 export type ReportFileFormat = 'pdf' | 'xlsx';
 
+const REPORT_FILENAME_REGEX = /^reporte_(\d+)d(?:_([a-zA-Z0-9_-]+))?_(\d+)\.(pdf|xlsx)$/i;
+
 export function assertSafeReportFileName(fileName: string): void {
-  if (!fileName || !/^reporte_\d+d_\d+\.(pdf|xlsx)$/.test(fileName)) {
+  if (!fileName || !REPORT_FILENAME_REGEX.test(fileName)) {
     throw new Error(
-      `Nombre de archivo de reporte inválido o no seguro: "${fileName}". Formato esperado: reporte_{dias}d_{timestamp}.(pdf|xlsx)`,
+      `Nombre de archivo de reporte inválido o no seguro: "${fileName}". Formato esperado: reporte_{dias}d_{timestamp}.(pdf|xlsx) o reporte_{dias}d_{nombre}_{timestamp}.(pdf|xlsx)`,
     );
   }
 }
 
 export function parseTimestampFromReportFilename(fileName: string): string | null {
-  const match = fileName.match(/^reporte_\d+d_(\d+)\.(pdf|xlsx)$/);
+  const match = fileName.match(REPORT_FILENAME_REGEX);
   if (!match) return null;
-  const ms = Number(match[1]);
+  const ms = Number(match[3]);
   if (!Number.isFinite(ms)) return null;
   const d = new Date(ms);
   if (Number.isNaN(d.getTime())) return null;
@@ -32,7 +34,7 @@ export function parseTimestampFromReportFilename(fileName: string): string | nul
 }
 
 export function parsePeriodFromReportFilename(fileName: string): number | null {
-  const match = fileName.match(/^reporte_(\d+)d_\d+\.(pdf|xlsx)$/);
+  const match = fileName.match(REPORT_FILENAME_REGEX);
   if (!match) return null;
   const days = Number(match[1]);
   if (days !== 7 && days !== 30 && days !== 90 && days !== 365) return null;
@@ -40,9 +42,9 @@ export function parsePeriodFromReportFilename(fileName: string): number | null {
 }
 
 export function parseFormatFromReportFilename(fileName: string): ReportFileFormat | null {
-  const match = fileName.match(/^reporte_\d+d_\d+\.(pdf|xlsx)$/);
+  const match = fileName.match(REPORT_FILENAME_REGEX);
   if (!match) return null;
-  return (match[1] as ReportFileFormat) ?? null;
+  return (match[4].toLowerCase() as ReportFileFormat) ?? null;
 }
 
 export function getPatientReportDirectory(pacienteId: string): Directory {
@@ -381,6 +383,7 @@ export async function persistReportFile(
   format: ReportFileFormat,
   adapter: BinaryReportStorageAdapter = defaultAdapter,
   a11ySnapshot?: unknown,
+  patientName?: string,
 ): Promise<{ persistentUri: string; filename: string }> {
   assertSafeId(pacienteId, 'pacienteId');
   if (periodDays !== 7 && periodDays !== 30 && periodDays !== 90 && periodDays !== 365) {
@@ -467,14 +470,27 @@ export async function persistReportFile(
       }
 
       // Selección de nombre de destino final exclusivo dentro del bloqueo
+      let sanitizedName = '';
+      if (typeof patientName === 'string' && patientName.trim()) {
+        sanitizedName = patientName
+          .trim()
+          .toLowerCase()
+          .normalize('NFD')
+          .replace(/[\u0300-\u036f]/g, '')
+          .replace(/[^a-z0-9_-]+/g, '_')
+          .replace(/^_+|_+$/g, '')
+          .slice(0, 30);
+      }
+      const dateIso = new Date().toISOString().slice(0, 10);
+      const namePart = sanitizedName ? `_${sanitizedName}_${dateIso}` : '';
       let timestamp = Date.now();
-      let filename = `reporte_${periodDays}d_${timestamp}.${format}`;
+      let filename = `reporte_${periodDays}d${namePart}_${timestamp}.${format}`;
       let targetFileUri = `${dir.uri}/${filename}`;
 
       let attempts = 0;
       while ((await adapter.fileExists(targetFileUri)) && attempts < 1000) {
         timestamp++;
-        filename = `reporte_${periodDays}d_${timestamp}.${format}`;
+        filename = `reporte_${periodDays}d${namePart}_${timestamp}.${format}`;
         targetFileUri = `${dir.uri}/${filename}`;
         attempts++;
       }
@@ -611,6 +627,7 @@ export async function persistReportPdf(
   periodDays: number,
   adapter: BinaryReportStorageAdapter = defaultAdapter,
   a11ySnapshot?: unknown,
+  patientName?: string,
 ): Promise<{ persistentUri: string; filename: string }> {
   return persistReportFile(
     pacienteId,
@@ -619,6 +636,7 @@ export async function persistReportPdf(
     'pdf',
     adapter,
     a11ySnapshot,
+    patientName,
   );
 }
 
@@ -627,8 +645,17 @@ export async function persistReportXlsx(
   bytes: Uint8Array,
   periodDays: number,
   adapter: BinaryReportStorageAdapter = defaultAdapter,
+  patientName?: string,
 ): Promise<{ persistentUri: string; filename: string }> {
-  return persistReportFile(pacienteId, { type: 'bytes', bytes }, periodDays, 'xlsx', adapter);
+  return persistReportFile(
+    pacienteId,
+    { type: 'bytes', bytes },
+    periodDays,
+    'xlsx',
+    adapter,
+    undefined,
+    patientName,
+  );
 }
 
 export type ShareReportResult = 'shared_sheet_opened' | 'sharing_unavailable';
@@ -706,7 +733,7 @@ export async function listPatientReports(
     if (!(await adapter.directoryExists(dir.uri))) return [];
     const entries = await adapter.listDirectory(dir.uri);
     return entries
-      .filter((entry) => entry.isFile && /^reporte_\d+d_\d+\.(pdf|xlsx)$/.test(entry.name))
+      .filter((entry) => entry.isFile && REPORT_FILENAME_REGEX.test(entry.name))
       .map((entry) => entry.uri);
   });
 }
@@ -729,18 +756,18 @@ async function listPatientReportsInternal(
   for (const entry of entries) {
     if (entry.isFile && entry.name) {
       const filename = entry.name;
-      const match = filename.match(/^reporte_(\d+)d_(\d+)\.(pdf|xlsx)$/);
+      const match = filename.match(REPORT_FILENAME_REGEX);
       if (!match) continue; // Omitir individualmente archivos con nombres no coincidentes
       const periodDays = Number(match[1]);
       if (periodDays !== 7 && periodDays !== 30 && periodDays !== 90 && periodDays !== 365)
         continue; // Omitir períodos inválidos
 
-      const timestampMs = Number(match[2]);
+      const timestampMs = Number(match[3]);
       if (!Number.isFinite(timestampMs)) continue;
       const date = new Date(timestampMs);
       if (Number.isNaN(date.getTime())) continue; // Omitir timestamps no convertibles a fecha
 
-      const format = match[3] as ReportFileFormat;
+      const format = match[4].toLowerCase() as ReportFileFormat;
       reports.push({
         uri: entry.uri,
         filename,

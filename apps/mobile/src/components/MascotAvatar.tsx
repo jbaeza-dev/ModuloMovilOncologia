@@ -58,11 +58,11 @@ export const BRAND_SYMBOL_DARK: ImageSourcePropType = require('../../assets/masc
 /* eslint-enable @typescript-eslint/no-require-imports */
 
 const SIZE_MAP: Record<MascotSize, number> = {
-  xs: 40,
-  sm: 56,
-  md: 72,
-  lg: 92,
-  hero: 108,
+  xs: 48,
+  sm: 64,
+  md: 88,
+  lg: 116,
+  hero: 140,
 };
 
 export interface MascotAvatarProps {

@@ -8,7 +8,7 @@ export function clinicalStatusLabel(status: string | null): string {
     case 'requiere_sesion':
       return 'Envío pausado · Conservado en este dispositivo';
     case 'aceptado':
-      return 'Aceptado por el servidor';
+      return 'Enviado al Médico';
     case 'rechazado':
     case 'conflicto':
       return 'Rechazado · Registro conservado';

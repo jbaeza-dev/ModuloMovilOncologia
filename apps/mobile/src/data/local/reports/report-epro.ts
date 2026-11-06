@@ -24,7 +24,10 @@ function label(q: FormQuestion | undefined, value: unknown): string {
     q?.opciones?.find((o) => o.codigo === String(v))?.etiqueta ?? String(v);
   return Array.isArray(value) ? value.map(option).join('; ') : option(value);
 }
-export function reportEpro(row: ReportEproRow): ReportEproCapture {
+export function reportEpro(
+  row: ReportEproRow,
+  fallbackQuestions?: readonly FormQuestion[],
+): ReportEproCapture {
   const answers: unknown = JSON.parse(row.respuestas_json);
   if (!object(answers)) throw new Error('Respuesta histórica inválida para el reporte.');
   let questions: FormQuestion[] = [],
@@ -51,6 +54,8 @@ export function reportEpro(row: ReportEproRow): ReportEproCapture {
     questions = contractForm(definition).preguntas;
     title = String(definition.form.titulo);
     source = 'snapshot';
+  } else if (fallbackQuestions && fallbackQuestions.length) {
+    questions = [...fallbackQuestions];
   }
   if (
     Object.values(answers).some(

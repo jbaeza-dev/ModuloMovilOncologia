@@ -1,6 +1,6 @@
 import { useProfileIdentity } from '../profile/IdentityProfileScreens';
+import { registerNativePush } from '../../services/session/native-session';
 import { MedicationDaySection } from './MedicationDaySection';
-import { RecordsStatusCard } from '../sync/GlobalStatusNotice';
 import { router, useFocusEffect } from 'expo-router';
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { AppState, Linking, ScrollView, StyleSheet, Text, View } from 'react-native';
@@ -25,7 +25,6 @@ import {
 } from '../../services/reminders/reminder-status';
 import { theme } from '../../theme';
 import { isDemoMode } from '../../utils/environment';
-import { syntheticReviewEnabled } from '../triage/triage-review';
 import { consumeHomeScrollToTop, subscribeHomeScrollToTop } from './home-scroll-signal';
 
 export function resolveHomeGreeting(options: {
@@ -71,6 +70,7 @@ export function HomeScreen() {
     reconcileReminders,
     bumpRemindersRevision,
     notificationAdapter,
+    devices,
   } = useLocalData();
 
   const loadProfile = useCallback(
@@ -160,6 +160,7 @@ export function HomeScreen() {
         }
         await repository.reminders.setPreferences(true);
         bumpRemindersRevision?.();
+        if (devices) await registerNativePush(devices).catch(() => undefined);
         if (reconcileReminders) {
           await reconcileReminders(targetPatientId);
         }
@@ -177,6 +178,7 @@ export function HomeScreen() {
     setResumingNotices(true);
     try {
       await notificationAdapter.requestPermission();
+      if (devices) await registerNativePush(devices).catch(() => undefined);
       if (
         (manager?.getPatientId?.() ?? patientId) !== targetPatientId ||
         (manager?.getContextEpoch?.() ?? 0) !== targetEpoch
@@ -395,13 +397,6 @@ export function HomeScreen() {
       <View style={styles.section}>
         <SectionTitle>Para hoy</SectionTitle>
         <NavigationCard
-          title="Orientación de síntomas · Demostración"
-          description="Orientación empática ante síntomas frecuentes con IA"
-          icon="message-circle"
-          href="/asistente"
-          navigationMethod="push"
-        />
-        <NavigationCard
           title="Cómo me siento hoy"
           description={
             loadingDailyStatus
@@ -422,69 +417,65 @@ export function HomeScreen() {
           href="/vitales/registrar"
           navigationMethod="push"
         />
+        <NavigationCard
+          title="Orientación de síntomas"
+          description="Evaluación guiada de síntomas según protocolo de triaje"
+          icon="help-circle"
+          href="/orientacion"
+          navigationMethod="push"
+        />
 
-        <MedicationDaySection />
-        <InfoCard>
-          <Text style={styles.cardTitle}>Tu próxima medición</Text>
-          {renderReminderCardContent()}
-        </InfoCard>
+        {snapshot?.preferences?.enabled !== false &&
+        evaluation.status !== 'preferences_disabled' ? (
+          <>
+            <MedicationDaySection />
+            <InfoCard>
+              <Text style={styles.cardTitle}>Tu próxima medición</Text>
+              {renderReminderCardContent()}
+            </InfoCard>
+          </>
+        ) : null}
       </View>
       <View style={styles.section}>
         <SectionTitle>Para acompañarte</SectionTitle>
         <ActionCardGrid>
-          {[
-            <NavigationCard
-              key="assistant"
-              title="Asistente QuimioCare"
-              description="Orientación educativa"
-              icon="message-circle"
-              href="/asistente"
-              layout="tile"
-              tone="tinted"
-            />,
-            <NavigationCard
-              key="reminders"
-              title="Mis recordatorios"
-              description="Horarios y tomas"
-              icon="clock"
-              href="/recordatorios"
-              layout="tile"
-            />,
-          ]}
+          <NavigationCard
+            key="assistant"
+            title="Asistente QuimioCare"
+            description="Orientación educativa"
+            icon="message-circle"
+            href="/asistente"
+            layout="tile"
+            tone="tinted"
+          />
+          <NavigationCard
+            key="reminders"
+            title="Mis recordatorios"
+            description="Horarios y tomas"
+            icon="clock"
+            href="/recordatorios"
+            layout="tile"
+            tone="tinted"
+          />
         </ActionCardGrid>
         <ActionCardGrid>
-          {[
-            <NavigationCard
-              key="medication"
-              title="Mis medicamentos"
-              description="Indicaciones de tu equipo"
-              icon="paperclip"
-              href="/perfil/medicacion"
-              layout="tile"
-            />,
-            <NavigationCard
-              key="reports"
-              title="Mis reportes"
-              description="Ver y compartir"
-              icon="file-text"
-              href="/vitales/reportes"
-              layout="tile"
-            />,
-          ]}
+          <NavigationCard
+            key="medication"
+            title="Mis medicamentos"
+            description="Indicaciones de tu equipo"
+            icon="paperclip"
+            href="/perfil/medicacion"
+            layout="tile"
+          />
+          <NavigationCard
+            key="reports"
+            title="Mis reportes"
+            description="Ver y compartir"
+            icon="file-text"
+            href="/vitales/reportes"
+            layout="tile"
+          />
         </ActionCardGrid>
-        <NavigationCard
-          title="Orientación de síntomas"
-          description={
-            syntheticReviewEnabled()
-              ? 'Revisa el triaje con un caso ficticio.'
-              : 'Consulta los contactos de ayuda.'
-          }
-          icon="help-circle"
-          href="/orientacion"
-          navigationMethod="push"
-          compact
-        />
-        <RecordsStatusCard />
         <NavigationCard title="Bandeja de avisos" icon="bell" href="/avisos" compact />
         {__DEV__ ? (
           <NavigationCard

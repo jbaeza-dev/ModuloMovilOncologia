@@ -79,8 +79,10 @@ async function setup() {
   ]);
   let validContext = true,
     clock = '2026-10-27T12:00:00Z';
+  let idSeq = 0;
   const options = {
-    newId: () => capture,
+    newId: () =>
+      idSeq++ === 0 ? capture : `4be97c17-cef7-4f4b-9483-${String(idSeq).padStart(12, '0')}`,
     now: () => clock,
     assertContext: () => {
       if (!validContext) throw new Error('changed');
@@ -212,12 +214,13 @@ describe('global ePRO draft and durable snapshot', () => {
       await s.db.first('SELECT id FROM qc_storage_control WHERE id=?', ['epro:draft:' + draft.id]),
     ).not.toBeNull();
   });
-  it('does not start a retired edition or duplicate a completed daily instrument', async () => {
+  it('allows starting a new daily submission after completing one and does not start a retired edition', async () => {
     const s = await setup(),
       draft = await s.repo.start(String(s.snapshot.form.id));
     await s.repo.save(draft.id, answersFor(s.snapshot), draft.section);
     await s.repo.submit(draft.id);
-    await expect(s.repo.start(String(s.snapshot.form.id))).rejects.toThrow('completaste');
+    const nextDraft = await s.repo.start(String(s.snapshot.form.id));
+    expect(nextDraft.id).not.toBe(draft.id);
     await s.db.run('UPDATE qc_definition_snapshot SET retired=1');
     await expect(s.repo.start(String(s.snapshot.form.id))).rejects.toThrow('retirada');
   });

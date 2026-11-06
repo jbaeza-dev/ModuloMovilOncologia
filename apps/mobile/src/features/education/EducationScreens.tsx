@@ -58,7 +58,6 @@ import { useEducationalCatalog, CatalogStatusNotice } from './use-educational-ca
 import {
   downloadAndSaveInfographic,
   verifiedLocalImageCopy,
-  verifiedLocalImageCopies,
   removeLocalInfographicCopy,
 } from './infographic-storage-service';
 import { executeYouTubeLaunch } from './youtube-launcher';
@@ -293,11 +292,10 @@ export function EducationCategoryScreen() {
     ]);
 
     if (repository && patientId) {
-      await reconcileResourceCopies(patientId, repository).catch(() => undefined);
+      void reconcileResourceCopies(patientId, repository).catch(() => undefined);
     }
 
-    const verifiedCopies = patientId ? await verifiedLocalImageCopies(copies, patientId) : [];
-    return { currentCategory: selectedCategory, resources, copies: verifiedCopies, interactions };
+    return { currentCategory: selectedCategory, resources, copies, interactions };
   }, [categoria, formatFilter, repository, patientId, catalogReader]);
 
   const statusRevision = useContext(EducationStatusRevisionContext);
@@ -1079,6 +1077,12 @@ export function EducationResourceScreen() {
       const text = await readResourceFile(patientId, effectiveResource.id, localCopy?.rutaRelativa);
       if (text) {
         setReadingContent(text);
+        if (repository) {
+          void repository.education
+            .markCopyViewed(effectiveResource.id)
+            .then(() => refreshStatus())
+            .catch(() => {});
+        }
       } else {
         setOpError('No se pudo leer el archivo de la guía en el disco.');
       }

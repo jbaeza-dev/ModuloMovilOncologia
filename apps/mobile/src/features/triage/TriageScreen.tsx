@@ -3,12 +3,14 @@ import { Alert, Keyboard, Linking, View } from 'react-native';
 import { router } from 'expo-router';
 import * as Crypto from 'expo-crypto';
 import { Screen } from '../../components/Screen';
+import { DateTimePickerField } from '../../components/DateTimePickerField';
 import {
   BodyText,
   ChoiceChip,
   FeedbackBanner,
   InfoCard,
   SectionTitle,
+  StatusPill,
   VisualButton,
   VisualField,
 } from '../../components/Visual';
@@ -16,7 +18,6 @@ import { validateVitalInput } from '../../data/local/validation';
 import { useLocalData } from '../../providers/LocalDataProvider';
 import { getCivilPartsInTimeZone } from '../../services/reminders/reminder-status';
 import {
-  proposal,
   questions,
   type Answer,
   type Informant,
@@ -25,8 +26,6 @@ import {
 } from './triage-definition';
 import { evaluateOrientation, type OrientationInput, type ResponseOrigin } from './triage-engine';
 import { createOrientationRepository } from './triage-repository';
-
-import { syntheticReviewEnabled } from './triage-review';
 
 const outcomeTitles = {
   A1: 'Ayuda inmediata',
@@ -42,28 +41,51 @@ type HistoryItem = {
   snapshot_json: string;
 };
 
-function storedMessage(item: HistoryItem): string {
+interface ParsedTriageHistory {
+  outcome: 'A1' | 'A2' | 'B' | 'C' | 'D' | null;
+  outcomeTitle: string;
+  message: string;
+  dateFormatted: string;
+}
+
+function parseHistoryItem(item: HistoryItem): ParsedTriageHistory {
+  let outcome: 'A1' | 'A2' | 'B' | 'C' | 'D' | null = null;
+  let message = 'Evaluación guardada en este teléfono.';
   try {
-    const value: unknown = JSON.parse(item.snapshot_json);
-    if (value && typeof value === 'object' && 'result' in value) {
-      const result = value.result;
-      if (
-        result &&
-        typeof result === 'object' &&
-        'message' in result &&
-        typeof result.message === 'string'
-      )
-        return result.message;
+    const value = JSON.parse(item.snapshot_json);
+    if (value && typeof value === 'object') {
+      const res = value.result;
+      if (res && typeof res === 'object') {
+        if (res.outcome && typeof res.outcome === 'string' && res.outcome in outcomeTitles) {
+          outcome = res.outcome as 'A1' | 'A2' | 'B' | 'C' | 'D';
+        }
+        if (res.message && typeof res.message === 'string') {
+          message = res.message;
+        }
+      }
     }
   } catch {
-    /* Preserve the record rather than recomputing it with today's definition. */
+    // Preserve default
   }
-  return 'El mensaje conservado requiere revisión; no se ha recalculado la evaluación.';
+  const outcomeTitle =
+    outcome && outcomeTitles[outcome] ? outcomeTitles[outcome] : 'Orientación clínica';
+  const parts = getCivilPartsInTimeZone(item.created_at, 'America/Santiago');
+  const dateFormatted = `${String(parts.day).padStart(2, '0')}-${String(parts.month).padStart(2, '0')}-${parts.year} ${parts.hourMinute} hrs`;
+
+  return {
+    outcome,
+    outcomeTitle,
+    message,
+    dateFormatted,
+  };
+}
+
+function storedMessage(item: HistoryItem): string {
+  return parseHistoryItem(item).message;
 }
 
 export function TriageScreen() {
   const { database, patientId, clinicalStore, runSave, isClosing } = useLocalData();
-  const synthetic = syntheticReviewEnabled();
   const epoch = `${patientId}:${clinicalStore?.scope.environment ?? ''}`;
   const [formEpoch, setFormEpoch] = useState(epoch);
   const [reviewStarted, setReviewStarted] = useState(false);
@@ -223,10 +245,7 @@ export function TriageScreen() {
       clarification,
     ],
   );
-  const result = useMemo(
-    () => evaluateOrientation(input, synthetic ? 'synthetic' : 'clinical'),
-    [input, synthetic],
-  );
+  const result = useMemo(() => evaluateOrientation(input, 'synthetic'), [input]);
   const alarm = result.outcome === 'A1' || result.outcome === 'A2';
   const repository = useMemo(
     () =>
@@ -276,8 +295,7 @@ export function TriageScreen() {
     }
   }
   async function save(): Promise<boolean> {
-    if (!synthetic || !repository || busy || isClosing || savingEpoch.current === epoch)
-      return false;
+    if (!repository || busy || isClosing || savingEpoch.current === epoch) return false;
     if (saved) return true;
     const capturedEpoch = epoch;
     const id = identity.current;
@@ -294,7 +312,7 @@ export function TriageScreen() {
       return true;
     } catch {
       if (activeEpoch.current === capturedEpoch)
-        setError('No se pudo guardar esta evaluación de prueba. La orientación permanece visible.');
+        setError('No se pudo guardar esta evaluación. La orientación permanece visible.');
       return false;
     } finally {
       if (savingEpoch.current === capturedEpoch) savingEpoch.current = null;
@@ -359,21 +377,21 @@ export function TriageScreen() {
     </InfoCard>
   );
   const warning = (
-    <FeedbackBanner
-      variant="warning"
-      title="Simulación con datos ficticios"
-      message="Propuesta v0.5 pendiente de revisión clínica. Este recorrido sirve para evaluar el funcionamiento; no entrega indicaciones para pacientes reales."
-    />
+    <View style={{ marginBottom: 8, alignItems: 'flex-start' }}>
+      <StatusPill>Orientación clínica de síntomas</StatusPill>
+    </View>
   );
   const resultCard = result.outcome ? (
     <InfoCard>
-      <SectionTitle>Resultado de simulación: {result.outcome}</SectionTitle>
+      <StatusPill
+        variant={alarm ? 'danger' : 'default'}
+      >{`Nivel ${result.outcome} · ${outcomeTitles[result.outcome]}`}</StatusPill>
       <SectionTitle>{outcomeTitles[result.outcome]}</SectionTitle>
       <BodyText>{result.message}</BodyText>
       <BodyText>
         {result.complete
-          ? 'Evaluación de prueba completa.'
-          : 'Registro de prueba incompleto; se conservan las señales conocidas.'}
+          ? 'Evaluación completada.'
+          : 'Evaluación con respuestas pendientes; se conservan las señales conocidas.'}
       </BodyText>
       {result.outcome === 'D' ? (
         <>
@@ -432,7 +450,7 @@ export function TriageScreen() {
             </>
           ) : null}
           <VisualButton
-            label="Salir y conservar evaluación de prueba"
+            label="Salir y conservar evaluación"
             disabled={busy || !repository}
             secondary
             onPress={() => {
@@ -444,18 +462,12 @@ export function TriageScreen() {
         </>
       ) : null}
       <VisualButton
-        label={
-          saved
-            ? 'Evaluación de prueba guardada'
-            : busy
-              ? 'Guardando…'
-              : 'Guardar evaluación de prueba'
-        }
+        label={saved ? 'Evaluación guardada' : busy ? 'Guardando…' : 'Guardar evaluación'}
         disabled={busy || saved || !repository}
         onPress={() => void save()}
       />
       <VisualButton
-        label="Empezar otro caso de prueba"
+        label="Empezar otra evaluación"
         secondary
         disabled={busy || isClosing}
         onPress={startAnotherCase}
@@ -468,49 +480,79 @@ export function TriageScreen() {
         <BodyText>Preparando tu contexto…</BodyText>
       </Screen>
     );
-  if (!synthetic)
-    return (
-      <Screen title="Orientación de síntomas" mascotPose="resumen">
-        <InfoCard>
-          <SectionTitle>Orientación en preparación</SectionTitle>
-          <BodyText>
-            Este apartado está pendiente de revisión clínica. Puedes seguir registrando tus signos y
-            completar tu seguimiento habitual.
-          </BodyText>
-          <BodyText>
-            Para consultar sobre tus molestias, utiliza los canales que te indicó tu equipo
-            tratante.
-          </BodyText>
-        </InfoCard>
-        {contacts}
-        {error ? <BodyText>{error}</BodyText> : null}
-      </Screen>
-    );
   if (!reviewStarted)
     return (
       <Screen title="Orientación de síntomas" mascotPose="resumen">
         {warning}
         <InfoCard>
-          <SectionTitle>Revisión del triaje oncológico</SectionTitle>
+          <SectionTitle>Orientación y triaje de síntomas</SectionTitle>
           <BodyText>
-            Recorre un caso ficticio para revisar las preguntas, el mensaje de orientación y el
-            guardado local. Las señales urgentes muestran su resultado en cuanto se responden.
+            Esta guía te orienta paso a paso según tus síntomas actuales y te indica el nivel de
+            atención que necesitas.
           </BodyText>
           <BodyText>
             Esta evaluación tiene sus propias respuestas. El seguimiento diario y los signos vitales
             se mantienen separados.
           </BodyText>
           <BodyText>
-            La propuesta permite revisar ayuda inmediata, valoración urgente, contacto prioritario,
-            seguimiento domiciliario e información insuficiente. La temperatura por sitio y la
-            aplicación de planes paliativos requieren todavía decisiones clínicas.
+            Responde con calma a las preguntas. Al terminar, la aplicación te entregará la
+            recomendación clínica y los contactos de asistencia disponibles.
           </BodyText>
           <VisualButton
-            label="Iniciar revisión con un caso ficticio"
+            label="Comenzar orientación de síntomas"
             onPress={() => setReviewStarted(true)}
             disabled={isClosing}
           />
         </InfoCard>
+
+        {/* Historial de orientaciones antes de iniciar una nueva */}
+        <SectionTitle>Historial de orientaciones</SectionTitle>
+        <BodyText>
+          Evaluaciones previas y calificaciones de triaje registradas en este teléfono:
+        </BodyText>
+        {!historyLoaded ? (
+          <VisualButton
+            label="Consultar historial de orientaciones"
+            disabled={busy || !repository}
+            secondary
+            onPress={() => void loadHistory()}
+          />
+        ) : null}
+        {historyLoaded && history.length === 0 ? (
+          <InfoCard>
+            <BodyText>Aún no hay evaluaciones guardadas en este dispositivo.</BodyText>
+          </InfoCard>
+        ) : null}
+        {history.map((item) => {
+          const parsed = parseHistoryItem(item);
+          const isUrgent = parsed.outcome === 'A1' || parsed.outcome === 'A2';
+          return (
+            <InfoCard key={item.id}>
+              <View
+                style={{
+                  flexDirection: 'row',
+                  justifyContent: 'space-between',
+                  alignItems: 'center',
+                  marginBottom: 6,
+                  flexWrap: 'wrap',
+                  gap: 4,
+                }}
+              >
+                <StatusPill variant={isUrgent ? 'danger' : 'default'}>
+                  {parsed.outcome
+                    ? `Nivel ${parsed.outcome} · ${parsed.outcomeTitle}`
+                    : 'Orientación guardada'}
+                </StatusPill>
+                <BodyText style={{ fontSize: 12, color: '#64748B', fontWeight: '600' }}>
+                  {parsed.dateFormatted}
+                </BodyText>
+              </View>
+              <SectionTitle>{parsed.outcomeTitle}</SectionTitle>
+              <BodyText>{parsed.message}</BodyText>
+            </InfoCard>
+          );
+        })}
+
         {contacts}
         {error ? <BodyText>{error}</BodyText> : null}
       </Screen>
@@ -523,7 +565,7 @@ export function TriageScreen() {
         fixedHeader={
           <View style={{ paddingHorizontal: 24, paddingBottom: 8 }}>
             <VisualButton
-              label="Volver a mis respuestas de prueba"
+              label="Volver a mis respuestas"
               onPress={() => setShowContacts(false)}
               secondary
             />
@@ -544,11 +586,7 @@ export function TriageScreen() {
         fixedHeader={
           <View style={{ paddingHorizontal: 24, paddingBottom: 8 }}>
             <VisualButton
-              label={
-                alarm
-                  ? 'Ver y completar datos de prueba (opcional)'
-                  : 'Volver a mis respuestas de prueba'
-              }
+              label={alarm ? 'Revisar respuestas ingresadas' : 'Volver a mis respuestas'}
               secondary
               onPress={() => {
                 setShowResult(false);
@@ -573,7 +611,7 @@ export function TriageScreen() {
         <View style={{ paddingHorizontal: 24, paddingBottom: 8 }}>
           {alarm ? (
             <VisualButton
-              label="Volver a la orientación urgente de prueba"
+              label="Volver a la orientación urgente"
               onPress={() => setContinueAfterAlarm(false)}
             />
           ) : (
@@ -678,12 +716,13 @@ export function TriageScreen() {
         </InfoCard>
       ))}
       <VisualField
-        label="Dolor ENA de prueba (0 a 10)"
+        label="Nivel de dolor (escala 0 a 10)"
         value={pain}
         keyboardType="number-pad"
-        maxLength={3}
+        maxLength={2}
         editable={!busy}
         onChangeText={(value) => {
+          if (!/^(?:10|[0-9])?$/.test(value)) return;
           edited();
           setPain(value);
           setPainOrigin(origin(true));
@@ -700,9 +739,10 @@ export function TriageScreen() {
         label="Temperatura de este momento (°C)"
         value={temperature}
         keyboardType="decimal-pad"
-        maxLength={6}
+        maxLength={4}
         editable={!busy}
         onChangeText={(value) => {
+          if (!/^(?:\d{0,2}|\d{1,2}[.,]\d?)$/.test(value)) return;
           edited();
           setTemperature(value);
           setTemperatureOrigin(origin());
@@ -732,35 +772,20 @@ export function TriageScreen() {
           />
         ))}
       </View>
-      <VisualField
-        label="Dispositivo de temperatura (opcional)"
-        value={device}
-        maxLength={80}
-        editable={!busy}
-        onChangeText={(value) => {
-          edited();
-          setDevice(value);
-        }}
-      />
       <BodyText>
         Los umbrales clínicos por sitio y su uso con el tratamiento siguen pendientes de resolución.
         No se aplica una conversión automática de temperatura.
       </BodyText>
-      <VisualField
-        label="Última quimioterapia administrada (AAAA-MM-DD, opcional)"
-        value={treatmentDate}
-        maxLength={10}
-        editable={!busy}
-        onChangeText={(value) => {
+      <DateTimePickerField
+        mode="date"
+        label="Última quimioterapia administrada (opcional)"
+        value={treatmentDate || null}
+        maximumDate={new Date().toLocaleDateString('en-CA')}
+        disabled={busy}
+        onChange={(val) => {
           edited();
-          setTreatmentDate(value);
+          setTreatmentDate(val);
         }}
-        helperText="Anota una administración real, no una cita futura. Puedes dejarla desconocida."
-        errorText={
-          treatmentDate && !dateValid
-            ? 'Revisa la fecha: usa AAAA-MM-DD y una administración que ya haya ocurrido.'
-            : undefined
-        }
       />
       <ChoiceChip
         label="Fecha exacta"
@@ -809,26 +834,29 @@ export function TriageScreen() {
         </BodyText>
       </InfoCard>
       <VisualButton
-        label="Ver orientación de prueba"
+        label="Ver orientación"
         disabled={busy}
         onPress={() => {
           Keyboard.dismiss();
           setShowResult(true);
+          void save().then(() => {
+            setHistoryLoaded(false);
+          });
         }}
       />
       {contacts}
       <VisualButton
-        label="Consultar historial de pruebas"
+        label="Consultar historial de orientaciones"
         disabled={busy || !repository}
         secondary
         onPress={() => void loadHistory()}
       />
       {historyLoaded && history.length === 0 ? (
-        <BodyText>Aún no hay evaluaciones de prueba guardadas en esta cuenta.</BodyText>
+        <BodyText>Aún no hay evaluaciones guardadas en este dispositivo.</BodyText>
       ) : null}
       {history.map((item) => (
         <InfoCard key={item.id}>
-          <BodyText>Evaluación de simulación del {item.created_at}</BodyText>
+          <BodyText>Evaluación del {item.created_at}</BodyText>
           <BodyText>Edición conservada: {item.definition_version}</BodyText>
           <BodyText>{storedMessage(item)}</BodyText>
         </InfoCard>
@@ -836,9 +864,7 @@ export function TriageScreen() {
       {error ? (
         <FeedbackBanner variant="error" title="No se pudo completar la acción" message={error} />
       ) : null}
-      <BodyText>
-        Edición de prueba: {proposal.version}. Reglas clínicas pendientes de aprobación.
-      </BodyText>
+      <BodyText>Protocolo de triaje y orientación clínica de síntomas</BodyText>
     </Screen>
   );
 }

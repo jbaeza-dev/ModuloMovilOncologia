@@ -51,6 +51,7 @@ export interface PatientContextManagerOptions {
   router: RouterAdapter;
   newId?: () => string;
   onStateChange?: () => void;
+  cancelNotifications?: () => Promise<void>;
 }
 
 export class PatientContextManager {
@@ -61,6 +62,7 @@ export class PatientContextManager {
   private router: RouterAdapter;
   private newId: () => string;
   private onStateChange?: () => void;
+  private cancelNotifications?: () => Promise<void>;
 
   private patientId: string | null = null;
   private contextEpoch = 0;
@@ -86,6 +88,7 @@ export class PatientContextManager {
     this.router = options.router;
     this.newId = options.newId ?? (() => 'uuid-' + Math.random().toString(36).slice(2, 9));
     this.onStateChange = options.onStateChange;
+    this.cancelNotifications = options.cancelNotifications;
 
     this.assistantController = new AssistantController(
       this.assistantAdapter,
@@ -232,7 +235,10 @@ export class PatientContextManager {
             });
           }
 
-          // 2. Cancelar agenda nativa del paciente saliente con el coordinador activo
+          // 2. Cancelar agenda nativa del paciente saliente con el coordinador activo y limpiar notificaciones
+          if (this.cancelNotifications) {
+            await this.cancelNotifications().catch(() => undefined);
+          }
           if (outgoingCoordinator && outgoingPatientId) {
             try {
               const cancelResult =

@@ -8,6 +8,7 @@ import {
   Text,
   TextInput,
   type TextStyle,
+  type ViewStyle,
   View,
 } from 'react-native';
 
@@ -70,9 +71,20 @@ type ButtonProps = {
   onPress?: () => void;
   secondary?: boolean;
   disabled?: boolean;
+  icon?: ReactNode;
+  size?: 'normal' | 'large';
+  style?: StyleProp<ViewStyle>;
 };
 
-export function VisualButton({ label, onPress, secondary = false, disabled = false }: ButtonProps) {
+export function VisualButton({
+  label,
+  onPress,
+  secondary = false,
+  disabled = false,
+  icon,
+  size = 'normal',
+  style,
+}: ButtonProps) {
   const styles = useStyles();
   return (
     <Pressable
@@ -83,12 +95,25 @@ export function VisualButton({ label, onPress, secondary = false, disabled = fal
       onPress={onPress}
       style={({ pressed }) => [
         styles.button,
+        size === 'large' && styles.largeButton,
         secondary && styles.secondaryButton,
         (disabled || !onPress) && styles.disabledButton,
+        style,
         pressed && styles.pressed,
       ]}
     >
-      <Text style={[styles.buttonLabel, secondary && styles.secondaryLabel]}>{label}</Text>
+      <View style={styles.buttonContent}>
+        {icon ? <View style={styles.buttonIcon}>{icon}</View> : null}
+        <Text
+          style={[
+            styles.buttonLabel,
+            size === 'large' && styles.largeButtonLabel,
+            secondary && styles.secondaryLabel,
+          ]}
+        >
+          {label}
+        </Text>
+      </View>
     </Pressable>
   );
 }
@@ -352,6 +377,26 @@ function useStyles() {
       alignItems: 'center',
       justifyContent: 'center',
       backgroundColor: colors.primary,
+    },
+    largeButton: {
+      minHeight: 58,
+      paddingVertical: 14,
+      paddingHorizontal: theme.spacing.lg,
+      borderRadius: theme.radius.md,
+    },
+    buttonContent: {
+      flexDirection: 'row',
+      alignItems: 'center',
+      justifyContent: 'center',
+      gap: theme.spacing.sm,
+    },
+    buttonIcon: {
+      alignItems: 'center',
+      justifyContent: 'center',
+    },
+    largeButtonLabel: {
+      fontSize: 17,
+      fontWeight: '700',
     },
     secondaryButton: { backgroundColor: colors.mutedSurface },
     disabledButton: { opacity: 0.55 },
