@@ -164,8 +164,12 @@ export function YouTubePlayerScreen() {
   const parsedVideoId = parseYouTubeVideoId(rawId);
 
   const [isFullscreen, setIsFullscreen] = useState(false);
-  // Por defecto en CUIDAQUIMIO los videos educativos son verticales (Shorts formato móvil)
-  const [isVerticalVideo, setIsVerticalVideo] = useState(true);
+  const isShortInitial = Boolean(
+    rawId.includes('/shorts/') ||
+    rawId.toLowerCase().includes('short') ||
+    (typeof title === 'string' && title.toLowerCase().includes('short')),
+  );
+  const [isVerticalVideo, setIsVerticalVideo] = useState(isShortInitial);
   const [isOffline, setIsOffline] = useState(false);
   const [checkingNetwork, setCheckingNetwork] = useState(true);
 

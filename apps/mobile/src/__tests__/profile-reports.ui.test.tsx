@@ -91,6 +91,7 @@ const mockReportData = {
   summary: {
     vitalsCount: 5,
     symptomsCount: 2,
+    avgPain: 3.5,
     avgTemperature: 36.6,
     avgPulse: 74,
   },
@@ -280,8 +281,8 @@ describe('Profile y Reports UI (Bloque 5)', () => {
       await fireEvent.press(screen.getByRole('button', { name: 'Ver resumen del período' }));
       expect(screen.getByText('Signos vitales registrados')).toBeTruthy();
       expect(screen.getByText('5 registros')).toBeTruthy();
-      expect(screen.getByText('Síntomas reportados')).toBeTruthy();
-      expect(screen.getByText('2 reportes')).toBeTruthy();
+      expect(screen.getByText('Dolor ENA prom.')).toBeTruthy();
+      expect(screen.getByText('3,5 / 10')).toBeTruthy();
 
       // Acción principal para generar o actualizar y abrir visor (sin compartir automáticamente)
       expect(screen.getByText('Actualizar y abrir PDF')).toBeTruthy();
