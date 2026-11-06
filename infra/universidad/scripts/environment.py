@@ -10,7 +10,7 @@ from urllib.parse import quote, urlparse
 SERVICE_KEYS = {
     "postgres": ["POSTGRES_USER", "POSTGRES_DB", "POSTGRES_PASSWORD", "QC_ADMIN_PASSWORD", "QC_REPLICA_PASSWORD", "QC_GATEWAY_PASSWORD", "QC_STORAGE_PASSWORD"],
     "jwks": ["AUTH_EXPECTED_ISSUER", "AUTH_ALLOWED_ALGORITHM"],
-    "clinical": ["AUTH_JWKS_MODE", "APP_ENV", "DATABASE_URL", "DEMO_CONTROL_KEY", "AUTH_PROVIDER", "AUTH_EXPECTED_ISSUER", "AUTH_EXPECTED_AUDIENCE", "AUTH_ALLOWED_ALGORITHM", "AUTH_JWKS_URL", "AUTH_PUBLIC_KEY", "SIMULATOR_PUBLIC_BASE_URL", "AI_SERVICE_URL", "EDUCATION_MEDIA_ROOT", "EDUCATION_TEMP_DIR", "API_DOCS_ENABLED", "PREPARATION_ENABLED", "EVALUATION_PATIENT_EMAILS", "GEMINI_API_KEY"],
+    "clinical": ["AUTH_JWKS_MODE", "APP_ENV", "DATABASE_URL", "DEMO_CONTROL_KEY", "AUTH_PROVIDER", "AUTH_EXPECTED_ISSUER", "AUTH_EXPECTED_AUDIENCE", "AUTH_ALLOWED_ALGORITHM", "AUTH_JWKS_URL", "AUTH_PUBLIC_KEY", "SIMULATOR_PUBLIC_BASE_URL", "AI_SERVICE_URL", "EDUCATION_MEDIA_ROOT", "EDUCATION_TEMP_DIR", "API_DOCS_ENABLED", "PREPARATION_ENABLED", "EVALUATION_PATIENT_EMAILS", "OPERATOR_ALLOWED_EMAILS", "GEMINI_API_KEY"],
     "gateway": ["AUTH_JWKS_MODE", "APP_ENV", "GATEWAY_DATABASE_URL", "CLINICAL_API_URL", "AI_API_URL", "AUTH_EXPECTED_ISSUER", "AUTH_EXPECTED_AUDIENCE", "AUTH_ALLOWED_ALGORITHM", "AUTH_JWKS_URL", "GATEWAY_CURSOR_KEY", "GATEWAY_PUBLIC_BASE_URL", "PUSH_PROVIDER", "EXPO_ACCESS_TOKEN", "API_DOCS_ENABLED"],
     "powersync": ["AUTH_JWKS_MODE", "PS_SOURCE_URI", "PS_STORAGE_URI", "PS_ADMIN_TOKEN", "PS_JWKS_URI"],
 }
@@ -89,6 +89,10 @@ def configuration(values):
         "EDUCATION_MEDIA_ROOT":"/var/lib/quimiocare/educacion","EDUCATION_TEMP_DIR":"/var/lib/quimiocare/temp","PUSH_PROVIDER":"expo",
         "API_DOCS_ENABLED":values.get("API_DOCS_ENABLED","false"),"PREPARATION_ENABLED":values.get("PREPARATION_ENABLED","false"),
     })
+    if "OPERATOR_ALLOWED_EMAILS" in values:
+        operators = values["OPERATOR_ALLOWED_EMAILS"]
+        if any(not re.fullmatch(r"[^\s,@]+@[^\s,@]+\.[^\s,@]+", item.strip()) for item in operators.split(",") if item.strip()):
+            raise ValueError("OPERATOR_ALLOWED_EMAILS: comma-separated emails required")
     emails = values.get("EVALUATION_PATIENT_EMAILS", "")
     if any(not re.fullmatch(r"[^@\s,]+@[^@\s,]+\.[^@\s,]+", email) for email in emails.split(",") if email):
         raise ValueError("EVALUATION_PATIENT_EMAILS: comma-separated emails required")

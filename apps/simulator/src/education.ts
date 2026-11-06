@@ -3,7 +3,7 @@ import { ApiError } from './errors.js';
 import type { ObjectValue } from './types.js';
 
 // Must match the server-controlled PowerSync eligibility projection, never REST/RLS inheritance.
-const ELIGIBLE = `activo=true AND categoria IS NOT NULL AND categoria ~ '[^[:space:]]'
+const ELIGIBLE = `activo=true AND categoria_habilitada=true AND categoria IS NOT NULL AND categoria ~ '[^[:space:]]'
   AND url IS NOT NULL AND url ~ '[^[:space:]]' AND (
   (tipo='imagen' AND archivo_mime IN ('image/png','image/jpeg') AND archivo_tamano_bytes>0
     AND archivo_revision IS NOT NULL AND archivo_sha256 ~ '^[0-9a-f]{64}$')

@@ -34,6 +34,7 @@ export interface ReportSummary {
   readonly maxTemperature: number | null;
   readonly minPulse: number | null;
   readonly maxPulse: number | null;
+  readonly avgPain?: number | null;
 }
 
 export interface ReportData {

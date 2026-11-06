@@ -23,6 +23,7 @@ export interface ClinicalConnectionController {
   resume(retryPaused?: boolean | 'session'): Promise<void>;
   disconnect(): Promise<void>;
   isConnected(): boolean;
+  triggerPendingUpload(): Promise<void>;
 }
 
 export function createClinicalConnectionController(
@@ -168,10 +169,28 @@ export function createClinicalConnectionController(
     }
   }
 
+  async function triggerPendingUpload(): Promise<void> {
+    if (store.closed || signal.aborted || session.getCurrentUser()?.id !== scope.owner) return;
+    if (store.pauseCode || !session.getSnapshot().uploadAllowed) return;
+    if (!connected) {
+      await resume('session');
+      return;
+    }
+    const connector = getConnector() as { uploadData?: (db: unknown) => Promise<void> };
+    if (connector && typeof connector.uploadData === 'function') {
+      try {
+        await connector.uploadData(database);
+      } catch {
+        // Pausas se registran en connector.uploadData si ocurre un error clínico
+      }
+    }
+  }
+
   return {
     resume,
     disconnect,
     isConnected: () => connected,
+    triggerPendingUpload,
   };
 }
 

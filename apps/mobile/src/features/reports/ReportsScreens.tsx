@@ -37,6 +37,7 @@ import { useAppTheme } from '../../providers/ThemeProvider';
 import { theme } from '../../theme';
 import { generateAndPersistReportPdf } from './report-pdf';
 import { generateAndPersistReportXlsx } from './report-xlsx';
+import { useIdentity } from '../access/SessionScreens';
 
 interface SavedReportCardProps {
   report: PatientReportItem;
@@ -149,6 +150,7 @@ export function ReportsScreen() {
   );
 
   const { repository, patientId, runSave, saving, manager } = useLocalData();
+  const { snapshot: identitySnapshot } = useIdentity();
 
   const loadData = useCallback(async () => {
     if (!repository) return null;
@@ -204,6 +206,41 @@ export function ReportsScreen() {
           throw new Error('No hay registros clínicos en el período para generar el reporte.');
         }
 
+        const patientRut =
+          identitySnapshot?.identity?.profile?.rut || freshData.profile?.rut || null;
+        const patientName =
+          identitySnapshot?.identity?.profile?.nombre ||
+          identitySnapshot?.identity?.user?.name ||
+          freshData.profile?.nombre ||
+          'Paciente';
+        const augmentedProfile = freshData.profile
+          ? {
+              ...freshData.profile,
+              rut: patientRut ?? freshData.profile.rut,
+              nombre: patientName ?? freshData.profile.nombre,
+            }
+          : {
+              paciente_id: activePatient,
+              nombre: patientName,
+              email: identitySnapshot?.identity?.profile?.email ?? null,
+              rut: patientRut,
+              obtenido_en: new Date().toISOString(),
+            };
+        const augmentedData = {
+          ...freshData,
+          profile: augmentedProfile,
+        };
+
+        if (patientRut && typeof repository.saveProfile === 'function') {
+          void repository
+            .saveProfile({
+              nombre: patientName,
+              email: augmentedProfile.email,
+              rut: patientRut,
+            })
+            .catch(() => {});
+        }
+
         const checkPatientBefore = manager?.getPatientId?.() ?? patientId;
         const checkEpochBefore = manager?.getContextEpoch?.() ?? 0;
         if (checkPatientBefore !== activePatient || checkEpochBefore !== activeEpoch) {
@@ -214,8 +251,8 @@ export function ReportsScreen() {
         failedStage = 'persistencia';
         const res =
           targetFormat === 'pdf'
-            ? await generateAndPersistReportPdf(freshData)
-            : await generateAndPersistReportXlsx(freshData);
+            ? await generateAndPersistReportPdf(augmentedData)
+            : await generateAndPersistReportXlsx(augmentedData);
 
         const checkPatientAfter = manager?.getPatientId?.() ?? patientId;
         const checkEpochAfter = manager?.getContextEpoch?.() ?? 0;
@@ -467,13 +504,13 @@ export function ReportsScreen() {
                 }
               />
               <DetailRow
-                label="Síntomas reportados"
+                label="Dolor ENA prom."
                 value={
                   loadingData
                     ? 'Calculando…'
-                    : `${reportData?.summary.symptomsCount ?? 0} ${
-                        (reportData?.summary.symptomsCount ?? 0) === 1 ? 'reporte' : 'reportes'
-                      }`
+                    : reportData?.summary.avgPain != null
+                      ? `${reportData.summary.avgPain.toLocaleString('es-CL')} / 10`
+                      : 'Sin registro'
                 }
               />
               {reportData?.summary.avgTemperature !== null &&

@@ -1,4 +1,5 @@
 import { prepare, requireOperator, getSyncedSigns, getSyncedEpro } from './preparation.js';
+import { clinicalCrud, clinicalCrudPath } from './preparation-clinical-crud.js';
 import { createServer } from 'node:http';
 import type { IncomingMessage, ServerResponse } from 'node:http';
 import { readFile } from 'node:fs/promises';
@@ -187,7 +188,7 @@ export function createSimulator(config: SimulatorConfig, db: Database) {
         url.pathname.replace(/^\/quimiocare(?=\/)/, '') === '/educacion/api/v1/podcasts'
       ) {
         const result = await db.query(
-          'SELECT drive_id AS id,titulo AS title,categoria AS category FROM qc_educacion_podcast WHERE activo=true ORDER BY fecha_creacion,id LIMIT 1000',
+          'SELECT drive_id AS id,titulo AS title,categoria AS category FROM qc_educacion_podcast WHERE activo=true AND NOT EXISTS(SELECT 1 FROM qc_preparacion_categoria c WHERE c.clave=lower(btrim(qc_educacion_podcast.categoria)) AND NOT c.activo) ORDER BY fecha_creacion,id LIMIT 1000',
         );
         send(res, 200, { episodios: result.rows });
         return;
@@ -210,7 +211,7 @@ export function createSimulator(config: SimulatorConfig, db: Database) {
       if (preparationPath === '/admin/api/v1/preparacion/acceso' && req.method === 'GET') {
         if (!config.preparationEnabled || config.service !== 'clinical')
           throw new ApiError(404, 'RECURSO_NO_ENCONTRADO', 'Preparacion deshabilitada.');
-        const principal = await operatorFromHeader(config, req.headers.authorization);
+        const principal = await operatorFromHeader(config, req.headers.authorization, db);
         const id = await requireOperator(db, config, principal);
         send(res, 200, { autorizado: true, operador_id: id });
         return;
@@ -221,7 +222,7 @@ export function createSimulator(config: SimulatorConfig, db: Database) {
       ) {
         if (!config.preparationEnabled || config.service !== 'clinical')
           throw new ApiError(404, 'RECURSO_NO_ENCONTRADO', 'Preparacion deshabilitada.');
-        const principal = await operatorFromHeader(config, req.headers.authorization);
+        const principal = await operatorFromHeader(config, req.headers.authorization, db);
         const pacienteId = url.searchParams.get('paciente_id');
         if (!pacienteId)
           throw new ApiError(422, 'ERROR_VALIDACION', 'Falta el parámetro paciente_id.');
@@ -237,7 +238,7 @@ export function createSimulator(config: SimulatorConfig, db: Database) {
       ) {
         if (!config.preparationEnabled || config.service !== 'clinical')
           throw new ApiError(404, 'RECURSO_NO_ENCONTRADO', 'Preparacion deshabilitada.');
-        const principal = await operatorFromHeader(config, req.headers.authorization);
+        const principal = await operatorFromHeader(config, req.headers.authorization, db);
         const pacienteId = url.searchParams.get('paciente_id');
         if (!pacienteId)
           throw new ApiError(422, 'ERROR_VALIDACION', 'Falta el parámetro paciente_id.');
@@ -250,14 +251,35 @@ export function createSimulator(config: SimulatorConfig, db: Database) {
         return;
       }
       if (preparationPath.startsWith('/admin/api/v1/preparacion/')) {
-        if (!config.preparationEnabled || config.service !== 'clinical' || req.method !== 'POST')
-          throw new ApiError(404, 'RECURSO_NO_ENCONTRADO', 'Preparacion deshabilitada.');
-        const principal = await operatorFromHeader(config, req.headers.authorization);
         const action = preparationPath.slice('/admin/api/v1/preparacion/'.length);
+        const crud = clinicalCrudPath(action, req.method);
+        if (action.startsWith('gestion/'))
+          throw new ApiError(404, 'RECURSO_NO_ENCONTRADO', 'Ruta no encontrada.');
+        if (
+          !config.preparationEnabled ||
+          config.service !== 'clinical' ||
+          !(crud
+            ? ['GET', 'POST', 'PUT', 'DELETE'].includes(req.method ?? '')
+            : req.method === 'POST')
+        )
+          throw new ApiError(404, 'RECURSO_NO_ENCONTRADO', 'Preparacion deshabilitada.');
+        const principal = await operatorFromHeader(config, req.headers.authorization, db);
+        if (crud && req.method === 'GET') {
+          await requireOperator(db, config, principal);
+          const result = await clinicalCrud(db, 'GET', action, {});
+          send(res, result.status, result.body);
+          return;
+        }
         const result =
           action === 'contenido-educativo/imagenes'
             ? await handlePublishEducation(config, db, principal, req)
-            : await prepare(db, config, principal, action, record(await jsonBody(req, 262144)));
+            : await prepare(
+                db,
+                config,
+                principal,
+                crud ? `gestion/${req.method}/${action}` : action,
+                record(await jsonBody(req, 262144)),
+              );
         send(res, result.status, result.body);
         return;
       }
@@ -267,7 +289,7 @@ export function createSimulator(config: SimulatorConfig, db: Database) {
         (url.pathname === '/admin/api/v1/contenido-educativo' ||
           url.pathname === '/quimiocare/admin/api/v1/contenido-educativo')
       ) {
-        const principal = await operatorFromHeader(config, req.headers.authorization);
+        const principal = await operatorFromHeader(config, req.headers.authorization, db);
         const result = await handlePublishEducation(config, db, principal, req);
         send(res, result.status, result.body);
         return;
@@ -278,7 +300,7 @@ export function createSimulator(config: SimulatorConfig, db: Database) {
         (url.pathname === '/admin/api/v1/mantenimiento/pausar-publicacion' ||
           url.pathname === '/quimiocare/admin/api/v1/mantenimiento/pausar-publicacion')
       ) {
-        const principal = await operatorFromHeader(config, req.headers.authorization);
+        const principal = await operatorFromHeader(config, req.headers.authorization, db);
         const opRow = (
           await db.query<{ id: string }>(
             'SELECT id FROM qc_demo_operador WHERE auth_issuer=$1 AND auth_subject=$2 AND activo=true',
@@ -310,7 +332,7 @@ export function createSimulator(config: SimulatorConfig, db: Database) {
         (url.pathname === '/admin/api/v1/mantenimiento/reanudar-publicacion' ||
           url.pathname === '/quimiocare/admin/api/v1/mantenimiento/reanudar-publicacion')
       ) {
-        const principal = await operatorFromHeader(config, req.headers.authorization);
+        const principal = await operatorFromHeader(config, req.headers.authorization, db);
         const opRow = (
           await db.query<{ id: string }>(
             'SELECT id FROM qc_demo_operador WHERE auth_issuer=$1 AND auth_subject=$2 AND activo=true',
@@ -352,7 +374,7 @@ export function createSimulator(config: SimulatorConfig, db: Database) {
         (url.pathname === '/admin/api/v1/vinculaciones/consumir' ||
           url.pathname === '/quimiocare/admin/api/v1/vinculaciones/consumir')
       ) {
-        const principal = await operatorFromHeader(config, req.headers.authorization);
+        const principal = await operatorFromHeader(config, req.headers.authorization, db);
         const raw = await jsonBody(req, 16384);
         const body = record(raw);
         if (typeof body.codigo !== 'string' || typeof body.plantilla_id !== 'string') {
@@ -377,6 +399,25 @@ export function createSimulator(config: SimulatorConfig, db: Database) {
         } catch {
           send(res, 503, { ok: false, service: `quimiocare-demo-${config.service}` });
         }
+        return;
+      }
+      if (
+        config.service === 'clinical' &&
+        req.method === 'GET' &&
+        url.pathname === '/api/v1/pacientes/me/equipo-tratante-demo'
+      ) {
+        const principal = await principalFromHeader(config, req.headers.authorization);
+        await guardScenario(db, principal, false);
+        const result = await db.query(
+          `SELECT md5(r.id::text || r.operador_id::text)::uuid AS id, r.paciente_id, r.operador_id AS profesional_id,
+                  r.vinculado_en, p.nombre, p.especialidad
+           FROM qc_demo_relacion_clinica r
+           JOIN qc_demo_profesional p ON p.operador_id=r.operador_id AND p.activo=true
+           JOIN qc_demo_operador o ON o.id=r.operador_id AND o.activo=true
+           WHERE r.paciente_id=$1 AND r.estado='activa' AND r.profesional_activo=true`,
+          [principal.id],
+        );
+        send(res, 200, { paciente_id: principal.id, origen: 'simulacion', items: result.rows });
         return;
       }
       if (!route || (config.service === 'ai' ? route.id !== 'IA-01' : route.id === 'IA-01')) {

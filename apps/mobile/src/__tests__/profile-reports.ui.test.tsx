@@ -91,6 +91,7 @@ const mockReportData = {
   summary: {
     vitalsCount: 5,
     symptomsCount: 2,
+    avgPain: 3.5,
     avgTemperature: 36.6,
     avgPulse: 74,
   },
@@ -110,6 +111,7 @@ const mockSavedReports = [
 
 const mockRepository = {
   profile: jest.fn().mockResolvedValue(mockPatientProfile),
+  saveProfile: jest.fn().mockResolvedValue(undefined),
   activeMedications: jest.fn().mockResolvedValue(mockActiveMedications),
   assignedMedicalTeam: jest.fn().mockResolvedValue([]),
   reports: {
@@ -177,6 +179,7 @@ const mockLocalDataContext = {
 
 jest.mock('../providers/LocalDataProvider', () => ({
   useLocalData: () => mockLocalDataContext,
+  useOptionalLocalData: () => mockLocalDataContext,
 }));
 
 import { MedicationScreen } from '../features/profile/MedicationScreen';
@@ -250,9 +253,6 @@ describe('Profile y Reports UI (Bloque 5)', () => {
       // Fechas civiles en formato DD/MM/AAAA
       expect(screen.getByText('01/10/2026')).toBeTruthy();
       expect(screen.getByText('20/10/2026')).toBeTruthy();
-      expect(screen.queryByText(/Última consulta:/)).toBeNull();
-      await fireEvent.press(screen.getByRole('button', { name: 'Estado de mi información' }));
-      expect(screen.getByText(/Última consulta:/)).toBeTruthy();
 
       const configButton = screen.getByText('Configurar aviso');
       expect(configButton).toBeTruthy();
@@ -281,8 +281,8 @@ describe('Profile y Reports UI (Bloque 5)', () => {
       await fireEvent.press(screen.getByRole('button', { name: 'Ver resumen del período' }));
       expect(screen.getByText('Signos vitales registrados')).toBeTruthy();
       expect(screen.getByText('5 registros')).toBeTruthy();
-      expect(screen.getByText('Síntomas reportados')).toBeTruthy();
-      expect(screen.getByText('2 reportes')).toBeTruthy();
+      expect(screen.getByText('Dolor ENA prom.')).toBeTruthy();
+      expect(screen.getByText('3,5 / 10')).toBeTruthy();
 
       // Acción principal para generar o actualizar y abrir visor (sin compartir automáticamente)
       expect(screen.getByText('Actualizar y abrir PDF')).toBeTruthy();

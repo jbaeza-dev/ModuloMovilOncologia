@@ -1,4 +1,5 @@
 import { createHash, createHmac, randomBytes, timingSafeEqual } from 'node:crypto';
+import { ensureOperatorAccess } from './operator-access.js';
 import { createRemoteJWKSet, jwtVerify, errors, customFetch } from 'jose';
 import type { SimulatorConfig } from './config.js';
 import type { Database } from './db.js';
@@ -179,8 +180,11 @@ export function verifyAccess(
 export async function operatorFromHeader(
   config: SimulatorConfig,
   authorization: string | undefined,
+  db?: Database,
 ): Promise<Principal> {
-  return await principalFromHeader(config, authorization);
+  const principal = await principalFromHeader(config, authorization);
+  if (db) await ensureOperatorAccess(db, config, principal);
+  return principal;
 }
 
 export async function principalFromHeader(

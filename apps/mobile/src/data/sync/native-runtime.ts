@@ -42,6 +42,8 @@ export interface ClinicalStore {
   disconnect(): Promise<void>;
   close(): Promise<void>;
   settleCatalog(): Promise<void>;
+  triggerPendingUpload?: () => Promise<void>;
+  isConnected?: () => boolean;
 }
 export function configuredSyncEndpoint(demo: boolean) {
   const raw = process.env.EXPO_PUBLIC_POWERSYNC_URL;
@@ -184,6 +186,8 @@ export async function openClinicalStore(
     },
     disconnect: () => connectionController.disconnect(),
     resume: (...args) => connectionController.resume(...args),
+    triggerPendingUpload: () => connectionController.triggerPendingUpload(),
+    isConnected: () => connectionController.isConnected(),
     async close() {
       if (store.closed) return;
       store.closed = true;

@@ -105,10 +105,24 @@ export function InfographicViewerScreen() {
     return copy ? verifiedLocalImageCopy(copy, patientId) : null;
   }, [repository, patientId, recurso]);
 
-  const { value: localCopy, loading: loadingCopy } = useFocusedValue(loadLocalCopy, null, {
+  const {
+    value: localCopy,
+    loading: loadingCopy,
+    refresh: refreshCopy,
+  } = useFocusedValue(loadLocalCopy, null, {
     queryKey: `${patientId ?? 'default'}:education:infographic-copy:${recurso ?? 'none'}`,
     context: EducationStatusRevisionContext,
   });
+
+  // Marcar automáticamente como visualizada al cargar la infografía
+  useEffect(() => {
+    if (repository && recurso && (imageLoaded || localCopy)) {
+      void repository.education
+        .markCopyViewed(recurso)
+        .then(() => refreshCopy())
+        .catch(() => {});
+    }
+  }, [repository, recurso, imageLoaded, Boolean(localCopy), refreshCopy]);
 
   const hasOlderCopy = Boolean(
     localCopy &&

@@ -30,3 +30,6 @@ EVALUATION_PATIENT_EMAILS=plataformaoncologica@gmail.com
 EXPO_ACCESS_TOKEN=
 # Optional Google Gemini API key for real oncology AI chatbot (gemini-3.5-flash-lite)
 GEMINI_API_KEY=
+
+# Uncomment to enforce and auto-provision Google operators. Empty = deny all.
+# OPERATOR_ALLOWED_EMAILS=operador@example.org,profesor@example.org

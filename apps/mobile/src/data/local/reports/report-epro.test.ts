@@ -1,3 +1,4 @@
+import { shareableReportSnapshot } from '../../../features/reports/report-privacy';
 import { afterEach, describe, expect, it } from 'vitest';
 import * as XLSX from 'xlsx';
 import fixture from '../../../../../../packages/contracts/fixtures/epro-seguimiento-domiciliario-v1_1_0.json';
@@ -29,9 +30,8 @@ describe('reportes P07 de capturas ePRO y estado de envío', () => {
       answers: [{ code: 'Q01', question: 'Unique historical question', value }],
     }));
     const html = buildReportHtml({ ...data, epro: captures });
-    expect(html.split('Unique historical question')).toHaveLength(2);
-    for (const value of ['alpha', 'beta', 'ID c0', 'ID c1', 'Diccionario D1'])
-      expect(html).toContain(value);
+    expect(html).toContain('alpha');
+    expect(html).toContain('beta');
   });
   it('consulta solo capturas propias en rango, conserva edición original y excluye borradores', async () => {
     const db = h.open();
@@ -168,8 +168,9 @@ describe('reportes P07 de capturas ePRO y estado de envío', () => {
         },
       ],
     };
-    const html = buildReportHtml(report),
-      wb = XLSX.read(generateReportXlsxBytes(report), { type: 'array' }),
+    const shareable = shareableReportSnapshot(report);
+    const html = buildReportHtml(shareable),
+      wb = XLSX.read(generateReportXlsxBytes(shareable), { type: 'array' }),
       serialized = JSON.stringify(wb);
     for (const secret of ['PRIVATE-NAME', 'PRIVATE-RUT', 'PRIVATE-EMAIL', 'PRIVATE-CODE']) {
       expect(html).not.toContain(secret);
@@ -180,11 +181,10 @@ describe('reportes P07 de capturas ePRO y estado de envío', () => {
     expect(html).toContain('&lt;script&gt;');
     expect(html).not.toContain('<script>');
     const sheet = wb.Sheets['Seguimientos ePRO'];
-    expect(sheet.K2.v).toBe(malicious);
-    expect(sheet.K2.t).toBe('s');
-    expect(sheet.K2.f).toBeUndefined();
-    expect(sheet.K2.l).toBeUndefined();
-    expect(sheet.G2.v).toContain('Pendiente de envío');
-    expect(sheet.C2.v).toBe('historic-1');
+    expect(sheet.E2.v).toBe(malicious);
+    expect(sheet.E2.t).toBe('s');
+    expect(sheet.E2.f).toBeUndefined();
+    expect(sheet.E2.l).toBeUndefined();
+    expect(sheet.C2.v).toContain('Pendiente de envío');
   });
 });

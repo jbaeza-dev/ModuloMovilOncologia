@@ -6,12 +6,15 @@ BEGIN;
 -- 1. Asegurar columna y trigger de elegibilidad móvil para contenido educativo
 ALTER TABLE public.contenido_educativo
   ADD COLUMN IF NOT EXISTS qc_mobile_eligible BOOLEAN NOT NULL DEFAULT FALSE;
+ALTER TABLE public.contenido_educativo ADD COLUMN IF NOT EXISTS categoria_habilitada boolean NOT NULL DEFAULT true;
 
 CREATE OR REPLACE FUNCTION public.qc_mobile_education_eligibility()
 RETURNS TRIGGER LANGUAGE plpgsql AS $function$
 BEGIN
+  SELECT activo INTO NEW.categoria_habilitada FROM qc_preparacion_categoria WHERE clave=lower(btrim(NEW.categoria)) FOR SHARE;
+  NEW.categoria_habilitada := coalesce(NEW.categoria_habilitada,true);
   NEW.qc_mobile_eligible := COALESCE(
-    NEW.activo
+    NEW.activo AND NEW.categoria_habilitada
     AND btrim(NEW.titulo) <> ''
     AND btrim(NEW.categoria) <> ''
     AND btrim(NEW.url) <> ''

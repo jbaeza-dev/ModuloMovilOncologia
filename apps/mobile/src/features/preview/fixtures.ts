@@ -6,6 +6,7 @@ export const vitalRecords = [
     pressure: '118/76 mmHg',
     pulse: '72 lpm',
     saturation: '98 %',
+    pain: '2/10',
     period: 7,
   },
   {
@@ -15,6 +16,7 @@ export const vitalRecords = [
     pressure: '120/78 mmHg',
     pulse: '74 lpm',
     saturation: '97 %',
+    pain: '0/10',
     period: 7,
   },
   {

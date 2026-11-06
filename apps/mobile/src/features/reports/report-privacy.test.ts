@@ -65,7 +65,7 @@ describe('privacidad equivalente en archivo y lectura accesible', () => {
     expect(snapshot.treatment?.nombre).toBe('Tratamiento sintético');
   });
   it('mantiene información clínica y ENA cero en el PDF sin reintroducir identidad', () => {
-    const html = buildReportHtml(data);
+    const html = buildReportHtml(shareableReportSnapshot(data));
     expect(html).toContain('Tratamiento sintético');
     expect(html).toContain('0/10');
     for (const value of [

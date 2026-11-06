@@ -1,6 +1,7 @@
 import { router } from 'expo-router';
 import { useState } from 'react';
 import { StyleSheet, View } from 'react-native';
+import FontAwesome from '@expo/vector-icons/FontAwesome';
 
 import { MascotHero } from '../../components/MascotAvatar';
 import { NavigationCard } from '../../components/NavigationCard';
@@ -69,7 +70,7 @@ export function LoginScreen() {
           <SectionTitle>
             {demoMode ? 'Demostración con datos de prueba' : 'Ingresa a tu cuenta'}
           </SectionTitle>
-          <StatusPill>{demoMode ? 'Demostración' : 'Cuenta institucional'}</StatusPill>
+          {demoMode ? <StatusPill>Demostración</StatusPill> : null}
         </View>
         <BodyText>
           {demoMode
@@ -89,6 +90,7 @@ export function LoginScreen() {
         ) : isOAuthConfigured ? (
           <VisualButton
             label={busy ? 'Abriendo acceso seguro…' : 'Continuar con Google'}
+            icon={<FontAwesome name="google" size={18} color="#FFFFFF" />}
             disabled={busy || !data}
             onPress={() => {
               setBusy(true);
@@ -99,7 +101,11 @@ export function LoginScreen() {
             }}
           />
         ) : (
-          <VisualButton label="Continuar con Google · No disponible" disabled />
+          <VisualButton
+            label="Continuar con Google · No disponible"
+            icon={<FontAwesome name="google" size={18} color="#FFFFFF" />}
+            disabled
+          />
         )}
       </InfoCard>
 

@@ -375,7 +375,7 @@ export function AssistantScreen() {
                   <View style={styles.responseMetadata}>
                     <Text
                       style={styles.metadataText}
-                    >{`Estado: ${responseStateLabel(msg.response.estado_respuesta)}. Confianza informada: ${msg.response.confianza_nivel}.`}</Text>
+                    >{`Estado: ${responseStateLabel(msg.response.estado_respuesta)}. Confianza informada: ${formatConfidenceLabel(msg.response.confianza_nivel)}.`}</Text>
                     <Text style={styles.metadataText}>
                       {msg.response.fuentes.length
                         ? `Fuentes: ${msg.response.fuentes.map((source) => `${source.tema} (guía ${source.guia})`).join(' · ')}`
@@ -608,6 +608,10 @@ function createStyles(colors: ReturnType<typeof useAppTheme>['theme']['colors'])
     },
   });
 }
+function formatConfidenceLabel(level: string): string {
+  return (level ?? '').replace(/_/g, ' ');
+}
+
 function responseStateLabel(state: string): string {
   return (
     (
@@ -616,8 +620,9 @@ function responseStateLabel(state: string): string {
         sin_informacion: 'sin información suficiente',
         cortesia: 'cortesía',
         no_disponible: 'no disponible',
+        no_verificada: 'no verificada',
       } as Record<string, string>
-    )[state] ?? state
+    )[state] ?? (state ?? '').replace(/_/g, ' ')
   );
 }
 function serviceDetail(body: unknown): string | null {

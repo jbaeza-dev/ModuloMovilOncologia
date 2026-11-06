@@ -80,13 +80,11 @@ import { TriageScreen } from '../features/triage/TriageScreen';
 import { questions } from '../features/triage/triage-definition';
 async function beginReview() {
   const rendered = await render(<TriageScreen />);
-  await fireEvent.press(
-    screen.getByRole('button', { name: 'Iniciar revisión con un caso ficticio' }),
-  );
+  await fireEvent.press(screen.getByRole('button', { name: 'Comenzar orientación de síntomas' }));
   return rendered;
 }
 
-describe('orientación v0.5: simulación aislada y cambio de cuenta', () => {
+describe('orientación v0.5: flujo clínico activo y cambio de cuenta', () => {
   beforeEach(() => {
     mockDemo = false;
     mockPatientId = 'patient-a';
@@ -102,34 +100,38 @@ describe('orientación v0.5: simulación aislada y cambio de cuenta', () => {
     if (mockOriginalProfile === undefined) delete process.env.EXPO_PUBLIC_APP_ENV;
     else process.env.EXPO_PUBLIC_APP_ENV = mockOriginalProfile;
   });
-  it('el uso normal no presenta puntuaciones ni preguntas propuestas aunque exista el flag de prueba', async () => {
+  it('el uso normal presenta la orientación clínica de síntomas accesible al paciente', async () => {
     process.env.EXPO_PUBLIC_P07_SYNTHETIC_REVIEW = 'true';
     await render(<TriageScreen />);
-    expect(screen.getByText('Orientación en preparación')).toBeTruthy();
-    expect(screen.queryByText('Simulación con datos ficticios')).toBeNull();
+    expect(screen.getByText('Orientación y triaje de síntomas')).toBeTruthy();
+    expect(screen.getByRole('button', { name: 'Comenzar orientación de síntomas' })).toBeTruthy();
     expect(screen.getByRole('button', { name: 'Abrir marcador: SAMU 131' })).toBeTruthy();
   });
-  it('también exige habilitación explícita para mostrar la simulación en modo demo', async () => {
+  it('en modo demo también permite comenzar directamente la orientación clínica', async () => {
     mockDemo = true;
     await render(<TriageScreen />);
-    expect(screen.getByText('Orientación en preparación')).toBeTruthy();
+    expect(screen.getByText('Orientación y triaje de síntomas')).toBeTruthy();
+    expect(screen.getByRole('button', { name: 'Comenzar orientación de síntomas' })).toBeTruthy();
   });
-  it('una señal A1 de prueba se presenta sin exigir ENA ni completar las preguntas restantes', async () => {
+  it('una señal A1 se presenta sin exigir ENA ni completar las preguntas restantes', async () => {
     mockDemo = true;
     process.env.EXPO_PUBLIC_P07_SYNTHETIC_REVIEW = 'true';
     await beginReview();
     await fireEvent.press(screen.getAllByRole('button', { name: 'Sí' })[0]);
-    expect(screen.getByText('Resultado de simulación: A1')).toBeTruthy();
-    expect(screen.getByText(/Registro de prueba incompleto/)).toBeTruthy();
+    expect(screen.getByText('Nivel A1 · Ayuda inmediata')).toBeTruthy();
+    expect(screen.getByText(/se conservan las señales conocidas/)).toBeTruthy();
   });
-  it.each(['C', 'D'] as const)(
+  it.each([
+    ['C', 'Nivel C · Seguimiento domiciliario condicionado'],
+    ['D', 'Nivel D · Información insuficiente'],
+  ] as const)(
     'al consultar %s lleva al mensaje y permite volver y consultar otra vez sin perder respuestas',
-    async (expected) => {
+    async (code, expectedLabel) => {
       mockDemo = true;
       process.env.EXPO_PUBLIC_P07_SYNTHETIC_REVIEW = 'true';
       await beginReview();
       await fireEvent.press(screen.getByRole('button', { name: 'Paciente' }));
-      if (expected === 'C') {
+      if (code === 'C') {
         for (const question of questions) {
           await fireEvent.press(
             within(screen.getByLabelText(question.text)).getByRole('button', {
@@ -137,18 +139,16 @@ describe('orientación v0.5: simulación aislada y cambio de cuenta', () => {
             }),
           );
         }
-        await fireEvent.changeText(screen.getByLabelText('Dolor ENA de prueba (0 a 10)'), '0');
+        await fireEvent.changeText(screen.getByLabelText('Nivel de dolor (escala 0 a 10)'), '0');
       }
-      await fireEvent.press(screen.getByRole('button', { name: 'Ver orientación de prueba' }));
-      expect(screen.getByText(`Resultado de simulación: ${expected}`)).toBeTruthy();
+      await fireEvent.press(screen.getByRole('button', { name: 'Ver orientación' }));
+      expect(screen.getByText(expectedLabel)).toBeTruthy();
       expect(screen.queryByLabelText(questions[0].text)).toBeNull();
-      expect(screen.queryByRole('button', { name: 'Ver orientación de prueba' })).toBeNull();
-      await fireEvent.press(
-        screen.getByRole('button', { name: 'Volver a mis respuestas de prueba' }),
-      );
+      expect(screen.queryByRole('button', { name: 'Ver orientación' })).toBeNull();
+      await fireEvent.press(screen.getByRole('button', { name: 'Volver a mis respuestas' }));
       expect(screen.getByRole('button', { name: 'Paciente', selected: true })).toBeTruthy();
-      if (expected === 'C') {
-        expect(screen.getByLabelText('Dolor ENA de prueba (0 a 10)')).toHaveProp('value', '0');
+      if (code === 'C') {
+        expect(screen.getByLabelText('Nivel de dolor (escala 0 a 10)')).toHaveProp('value', '0');
         expect(
           within(screen.getByLabelText(questions[0].text)).getByRole('button', {
             name: 'No',
@@ -156,8 +156,8 @@ describe('orientación v0.5: simulación aislada y cambio de cuenta', () => {
           }),
         ).toBeTruthy();
       }
-      await fireEvent.press(screen.getByRole('button', { name: 'Ver orientación de prueba' }));
-      expect(screen.getByText(`Resultado de simulación: ${expected}`)).toBeTruthy();
+      await fireEvent.press(screen.getByRole('button', { name: 'Ver orientación' }));
+      expect(screen.getByText(expectedLabel)).toBeTruthy();
       expect(mockSave).not.toHaveBeenCalled();
     },
   );
@@ -166,10 +166,10 @@ describe('orientación v0.5: simulación aislada y cambio de cuenta', () => {
     process.env.EXPO_PUBLIC_P07_SYNTHETIC_REVIEW = 'true';
     const rendered = await beginReview();
     await fireEvent.press(screen.getAllByRole('button', { name: 'Sí' })[0]);
-    expect(screen.getByText('Resultado de simulación: A1')).toBeTruthy();
+    expect(screen.getByText('Nivel A1 · Ayuda inmediata')).toBeTruthy();
     mockPatientId = 'patient-b';
     await rendered.rerender(<TriageScreen />);
-    expect(screen.queryByText('Resultado de simulación: A1')).toBeNull();
+    expect(screen.queryByText('Nivel A1 · Ayuda inmediata')).toBeNull();
   });
   it('un reintento tras error conserva UUID y fecha en vez de crear otra evaluación', async () => {
     mockDemo = true;
@@ -178,17 +178,15 @@ describe('orientación v0.5: simulación aislada y cambio de cuenta', () => {
     mockSave.mockRejectedValueOnce(new Error('Fallo sintético')).mockResolvedValueOnce({});
     await beginReview();
     await fireEvent.press(screen.getAllByRole('button', { name: 'Sí' })[0]);
-    await fireEvent.press(screen.getByRole('button', { name: 'Guardar evaluación de prueba' }));
+    await fireEvent.press(screen.getByRole('button', { name: 'Guardar evaluación' }));
     await waitFor(() =>
       expect(
-        screen.getByText(
-          'No se pudo guardar esta evaluación de prueba. La orientación permanece visible.',
-        ),
+        screen.getByText('No se pudo guardar esta evaluación. La orientación permanece visible.'),
       ).toBeTruthy(),
     );
-    await fireEvent.press(screen.getByRole('button', { name: 'Guardar evaluación de prueba' }));
+    await fireEvent.press(screen.getByRole('button', { name: 'Guardar evaluación' }));
     await waitFor(() =>
-      expect(screen.getByRole('button', { name: 'Evaluación de prueba guardada' })).toBeTruthy(),
+      expect(screen.getByRole('button', { name: 'Evaluación guardada' })).toBeTruthy(),
     );
     expect(mockSave).toHaveBeenCalledTimes(2);
     expect(mockSave.mock.calls[1][0]).toBe(mockSave.mock.calls[0][0]);
@@ -204,36 +202,34 @@ describe('orientación v0.5: simulación aislada y cambio de cuenta', () => {
     );
     await fireEvent.press(screen.getByRole('button', { name: 'Ver contactos de ayuda' }));
     expect(screen.getByRole('button', { name: 'Abrir marcador: SAMU 131' })).toBeTruthy();
-    await fireEvent.press(
-      screen.getByRole('button', { name: 'Volver a mis respuestas de prueba' }),
-    );
+    await fireEvent.press(screen.getByRole('button', { name: 'Volver a mis respuestas' }));
     expect(screen.getByRole('button', { name: 'Paciente', selected: true })).toBeTruthy();
   });
-  it('el APK universitario abre una revisión explícita con las reglas todavía provisionales', async () => {
+  it('el APK universitario abre la orientación de síntomas', async () => {
     process.env.EXPO_PUBLIC_APP_ENV = 'universidad-demo';
     process.env.EXPO_PUBLIC_P07_SYNTHETIC_REVIEW = 'true';
     await render(<TriageScreen />);
-    expect(screen.getByText('Revisión del triaje oncológico')).toBeTruthy();
+    expect(screen.getByText('Orientación y triaje de síntomas')).toBeTruthy();
     expect(screen.queryByLabelText(questions[0].text)).toBeNull();
-    expect(screen.getByText(/pendiente de revisión clínica/)).toBeTruthy();
-    await fireEvent.press(
-      screen.getByRole('button', { name: 'Iniciar revisión con un caso ficticio' }),
-    );
+    await fireEvent.press(screen.getByRole('button', { name: 'Comenzar orientación de síntomas' }));
     await fireEvent.press(
       within(screen.getByLabelText(questions[0].text)).getByRole('button', { name: 'Sí' }),
     );
-    expect(screen.getByText('Resultado de simulación: A1')).toBeTruthy();
+    expect(screen.getByText('Nivel A1 · Ayuda inmediata')).toBeTruthy();
     expect(screen.getByText('Ayuda inmediata')).toBeTruthy();
     expect(mockSave).not.toHaveBeenCalled();
   });
-  it.each(['A2', 'B'] as const)(
-    'el revisor puede recorrer un caso %s y ver su mensaje',
-    async (expected) => {
+  it.each([
+    ['A2', 'Nivel A2 · Valoración profesional urgente'],
+    ['B', 'Nivel B · Contacto prioritario con tu equipo'],
+  ] as const)(
+    'el usuario puede recorrer un caso %s y ver su mensaje',
+    async (code, expectedLabel) => {
       mockDemo = true;
       process.env.EXPO_PUBLIC_P07_SYNTHETIC_REVIEW = 'true';
       await beginReview();
       await fireEvent.press(screen.getByRole('button', { name: 'Paciente' }));
-      if (expected === 'A2') {
+      if (code === 'A2') {
         const question = questions.find((q) => q.group === 'A2')!;
         await fireEvent.press(
           within(screen.getByLabelText(question.text)).getByRole('button', { name: 'Sí' }),
@@ -246,32 +242,30 @@ describe('orientación v0.5: simulación aislada y cambio de cuenta', () => {
             }),
           );
         }
-        await fireEvent.changeText(screen.getByLabelText('Dolor ENA de prueba (0 a 10)'), '2');
-        await fireEvent.press(screen.getByRole('button', { name: 'Ver orientación de prueba' }));
+        await fireEvent.changeText(screen.getByLabelText('Nivel de dolor (escala 0 a 10)'), '2');
+        await fireEvent.press(screen.getByRole('button', { name: 'Ver orientación' }));
       }
-      expect(screen.getByText('Resultado de simulación: ' + expected)).toBeTruthy();
+      expect(screen.getByText(expectedLabel)).toBeTruthy();
       expect(screen.queryByLabelText(questions[0].text)).toBeNull();
     },
   );
-  it('un nuevo caso guardado empieza sin respuestas ni resultados anteriores y no reescribe el historial', async () => {
+  it('una nueva evaluación guardada empieza sin respuestas ni resultados anteriores y no reescribe el historial', async () => {
     mockDemo = true;
     mockHasDatabase = true;
     mockSave.mockResolvedValue({});
     process.env.EXPO_PUBLIC_P07_SYNTHETIC_REVIEW = 'true';
     await beginReview();
     await fireEvent.press(screen.getAllByRole('button', { name: 'Sí' })[0]);
-    await fireEvent.press(screen.getByRole('button', { name: 'Guardar evaluación de prueba' }));
+    await fireEvent.press(screen.getByRole('button', { name: 'Guardar evaluación' }));
     await waitFor(() =>
-      expect(screen.getByRole('button', { name: 'Evaluación de prueba guardada' })).toBeTruthy(),
+      expect(screen.getByRole('button', { name: 'Evaluación guardada' })).toBeTruthy(),
     );
     expect(mockSave.mock.calls[0][2]).toBe('synthetic');
-    await fireEvent.press(screen.getByRole('button', { name: 'Empezar otro caso de prueba' }));
-    expect(screen.getByText('Revisión del triaje oncológico')).toBeTruthy();
-    expect(screen.queryByText('Resultado de simulación: A1')).toBeNull();
-    await fireEvent.press(
-      screen.getByRole('button', { name: 'Iniciar revisión con un caso ficticio' }),
-    );
-    expect(screen.getByLabelText('Dolor ENA de prueba (0 a 10)')).toHaveProp('value', '');
+    await fireEvent.press(screen.getByRole('button', { name: 'Empezar otra evaluación' }));
+    expect(screen.getByText('Orientación y triaje de síntomas')).toBeTruthy();
+    expect(screen.queryByText('Nivel A1 · Ayuda inmediata')).toBeNull();
+    await fireEvent.press(screen.getByRole('button', { name: 'Comenzar orientación de síntomas' }));
+    expect(screen.getByLabelText('Nivel de dolor (escala 0 a 10)')).toHaveProp('value', '');
     expect(screen.getByRole('button', { name: 'Paciente', selected: false })).toBeTruthy();
     expect(mockSave).toHaveBeenCalledTimes(1);
   });
@@ -280,10 +274,12 @@ describe('orientación v0.5: simulación aislada y cambio de cuenta', () => {
     mockHasDatabase = true;
     process.env.EXPO_PUBLIC_P07_SYNTHETIC_REVIEW = 'true';
     await beginReview();
-    await fireEvent.press(screen.getByRole('button', { name: 'Consultar historial de pruebas' }));
+    await fireEvent.press(
+      screen.getByRole('button', { name: 'Consultar historial de orientaciones' }),
+    );
     await waitFor(() =>
       expect(
-        screen.getByText('Aún no hay evaluaciones de prueba guardadas en esta cuenta.'),
+        screen.getByText('Aún no hay evaluaciones guardadas en este dispositivo.'),
       ).toBeTruthy(),
     );
     expect(mockHistory).toHaveBeenCalledWith('synthetic');
@@ -295,15 +291,15 @@ describe('orientación v0.5: simulación aislada y cambio de cuenta', () => {
     try {
       await beginReview();
       await fireEvent.press(screen.getAllByRole('button', { name: 'Sí' })[0]);
-      await fireEvent.press(screen.getByRole('button', { name: 'Empezar otro caso de prueba' }));
-      expect(screen.getByText('Resultado de simulación: A1')).toBeTruthy();
+      await fireEvent.press(screen.getByRole('button', { name: 'Empezar otra evaluación' }));
+      expect(screen.getByText('Nivel A1 · Ayuda inmediata')).toBeTruthy();
       const buttons = alert.mock.calls[0][2]!;
       expect(buttons.find((button) => button.style === 'cancel')).toBeTruthy();
       await act(async () =>
         buttons.find((button) => button.text === 'Empezar sin guardar')?.onPress?.(),
       );
-      expect(screen.getByText('Revisión del triaje oncológico')).toBeTruthy();
-      expect(screen.queryByText('Resultado de simulación: A1')).toBeNull();
+      expect(screen.getByText('Orientación y triaje de síntomas')).toBeTruthy();
+      expect(screen.queryByText('Nivel A1 · Ayuda inmediata')).toBeNull();
       expect(mockSave).not.toHaveBeenCalled();
     } finally {
       alert.mockRestore();
@@ -316,19 +312,19 @@ describe('orientación v0.5: simulación aislada y cambio de cuenta', () => {
     try {
       const rendered = await beginReview();
       await fireEvent.press(screen.getAllByRole('button', { name: 'Sí' })[0]);
-      await fireEvent.press(screen.getByRole('button', { name: 'Empezar otro caso de prueba' }));
+      await fireEvent.press(screen.getByRole('button', { name: 'Empezar otra evaluación' }));
       const discard = alert.mock.calls[0][2]!.find(
         (button) => button.text === 'Empezar sin guardar',
       )!.onPress!;
       mockPatientId = 'patient-b';
       await rendered.rerender(<TriageScreen />);
       await fireEvent.press(
-        screen.getByRole('button', { name: 'Iniciar revisión con un caso ficticio' }),
+        screen.getByRole('button', { name: 'Comenzar orientación de síntomas' }),
       );
       await fireEvent.press(screen.getByRole('button', { name: 'Paciente' }));
       await act(async () => discard());
       expect(screen.getByRole('button', { name: 'Paciente', selected: true })).toBeTruthy();
-      expect(screen.queryByText('Resultado de simulación: A1')).toBeNull();
+      expect(screen.queryByText('Nivel A1 · Ayuda inmediata')).toBeNull();
     } finally {
       alert.mockRestore();
     }

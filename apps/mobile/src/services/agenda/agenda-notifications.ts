@@ -9,7 +9,9 @@ export class ExpoAgendaNotifications implements AgendaNotifications {
   private async ensureChannel() {
     await Notifications.setNotificationChannelAsync(channel, {
       name: 'Recordatorios de QuimioCare',
-      importance: Notifications.AndroidImportance.DEFAULT,
+      importance: Notifications.AndroidImportance.HIGH,
+      vibrationPattern: [0, 250, 250, 250],
+      lightColor: '#0d9488',
       showBadge: false,
     });
   }

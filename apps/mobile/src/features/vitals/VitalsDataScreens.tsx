@@ -87,16 +87,30 @@ function RecordCard({ item }: { item: VitalWithSyncRecord }) {
 
 export function VitalsDataScreen() {
   const { repository, patientId } = useLocalData();
+  const { theme: appTheme } = useAppTheme();
   const [days, setDays] = useState<7 | 30 | 90>(7);
   const styles = useStyles();
+
+  // Consulta desacoplada para el gráfico (todo el período hasta 500 mediciones)
+  const chartLoad = useCallback(
+    () => (repository ? repository.vitals(sinceDays(days), 500, 0) : Promise.resolve([])),
+    [repository, days],
+  );
+  const { value: chartRecords } = useFocusedValue(chartLoad, [] as VitalWithSyncRecord[], {
+    queryKey: `${patientId ?? 'default'}:vitals:chart:${days}`,
+    context: ClinicalRevisionContext,
+  });
+
+  // Lista paginada a 10 registros por página
   const load = useCallback(
     (offset: number) =>
-      repository ? repository.vitals(sinceDays(days), 30, offset) : Promise.resolve([]),
+      repository ? repository.vitals(sinceDays(days), 10, offset) : Promise.resolve([]),
     [repository, days],
   );
   const list = useFocusedList(load, {
-    queryKey: `${patientId ?? 'default'}:vitals:${days}`,
+    queryKey: `${patientId ?? 'default'}:vitals:list:${days}`,
     context: ClinicalRevisionContext,
+    pageSize: 10,
   });
 
   const sections = useMemo(
@@ -123,12 +137,16 @@ export function VitalsDataScreen() {
             <View style={styles.headerButtons}>
               <VisualButton
                 label="Registrar signos vitales"
+                size="large"
+                icon={<Feather name="activity" size={22} color={appTheme.colors.onPrimary} />}
                 disabled={!repository}
                 onPress={() => router.push('/vitales/registrar')}
               />
               <VisualButton
                 label="Ver reportes"
+                size="large"
                 secondary
+                icon={<Feather name="file-text" size={22} color={appTheme.colors.text} />}
                 onPress={() => router.push('/vitales/reportes')}
               />
             </View>
@@ -142,7 +160,7 @@ export function VitalsDataScreen() {
                 />
               ))}
             </View>
-            <WeeklyVitalsChart records={list.items} days={days} />
+            <WeeklyVitalsChart records={chartRecords ?? []} days={days} />
             <BodyText>Las mediciones se guardan en este dispositivo.</BodyText>
           </View>
         }
@@ -184,7 +202,7 @@ export function VitalsDataScreen() {
 }
 
 export function RegisterVitalsDataScreen() {
-  const { repository, runSave, saving, isClosing } = useLocalData();
+  const { repository, runSave, saving, isClosing, clinicalStore } = useLocalData();
   const navigation = useNavigation();
   const [values, setValues] = useState<VitalInput>(initialValues);
   const [fieldErrors, setFieldErrors] = useState<Partial<Record<keyof VitalInput, string>>>({});
@@ -270,7 +288,29 @@ export function RegisterVitalsDataScreen() {
   });
 
   const handleChange = (field: keyof VitalInput, text: string) => {
-    const next = { ...values, [field]: text };
+    let sanitized = text;
+    if (field === 'temperature') {
+      if (/^[0-9.,]*$/.test(text)) {
+        const sepMatch = text.match(/[.,]/);
+        if (sepMatch && sepMatch.index !== undefined) {
+          const parts = text.split(/[.,]/);
+          const intPart = parts[0].slice(0, 2);
+          const decPart = (parts[1] ?? '').slice(0, 1);
+          sanitized = intPart + sepMatch[0] + decPart;
+        } else {
+          sanitized = text.slice(0, 2);
+        }
+      }
+    } else if (field === 'pain') {
+      if (/^\d*$/.test(text)) {
+        sanitized = text.slice(0, 2);
+      }
+    } else {
+      if (/^\d*$/.test(text)) {
+        sanitized = text.slice(0, 3);
+      }
+    }
+    const next = { ...values, [field]: sanitized };
     setValues(next);
     setFieldErrors(validateVitalInput(next).errors);
     if (generalError) {
@@ -306,6 +346,19 @@ export function RegisterVitalsDataScreen() {
       setGeneralError(null);
       bypassPreventRemoveRef.current = true;
       setShowSuccessPopup(true);
+
+      // Disparar sincronización al servidor en segundo plano sin bloquear al usuario
+      void (async () => {
+        try {
+          if (clinicalStore?.triggerPendingUpload) {
+            await clinicalStore.triggerPendingUpload();
+          } else {
+            await clinicalStore?.resume('session');
+          }
+        } catch {
+          // El registro queda seguro localmente en cola_envio
+        }
+      })();
     } catch {
       setGeneralError('No se pudo guardar en este dispositivo. Intenta nuevamente.');
     } finally {
@@ -497,8 +550,10 @@ export function VitalDataDetailScreen() {
       ) : (
         <>
           <InfoCard>
-            <SectionTitle>{formatDate(record.fecha_registro)}</SectionTitle>
-            <DetailRow label="Temperatura" value={formatVital(record.temperatura, '°C')} />
+            <SectionTitle>
+              {`${formatDate(record.fecha_registro)} · ${formatRecordTime(record.fecha_registro)}`}
+            </SectionTitle>
+            <DetailRow label="Temperatura corporal" value={formatVital(record.temperatura, '°C')} />
             <DetailRow
               label="Presión arterial"
               value={
@@ -511,12 +566,33 @@ export function VitalDataDetailScreen() {
                       : 'Sin registro'
               }
             />
+            {record.presion_sistolica !== null ? (
+              <DetailRow label="Presión sistólica" value={`${record.presion_sistolica} mmHg`} />
+            ) : null}
+            {record.presion_diastolica !== null ? (
+              <DetailRow label="Presión diastólica" value={`${record.presion_diastolica} mmHg`} />
+            ) : null}
+            <DetailRow label="Pulso / Frecuencia" value={formatVital(record.pulso, 'lpm')} />
             <DetailRow
-              label="Dolor ENA"
-              value={record.dolor_ena == null ? 'Sin dato histórico' : `${record.dolor_ena}/10`}
+              label="Saturación de oxígeno"
+              value={formatVital(record.saturacion_o2, '%')}
             />
-            <DetailRow label="Pulso" value={formatVital(record.pulso, 'lpm')} />
-            <DetailRow label="Saturación" value={formatVital(record.saturacion_o2, '%')} />
+            <DetailRow
+              label="Dolor (Escala ENA)"
+              value={
+                record.dolor_ena == null
+                  ? 'Sin registro'
+                  : `${record.dolor_ena} de 10${record.dolor_ena === 0 ? ' (sin dolor)' : ''}`
+              }
+            />
+            <DetailRow
+              label="Sincronización"
+              value={
+                record.fecha_subida
+                  ? `Enviado el ${formatDate(record.fecha_subida)}`
+                  : 'Pendiente de envío al médico'
+              }
+            />
           </InfoCard>
           <StatusPill>{syncLabel}</StatusPill>
           <BodyText>

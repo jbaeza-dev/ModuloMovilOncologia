@@ -23,12 +23,14 @@ export async function generateAndPersistReportPdf(
   const printResult = await Print.printToFileAsync({
     html,
   });
+  const patientName = 'profile' in data && data.profile?.nombre ? data.profile.nombre : undefined;
   const result = await persistReportPdf(
     data.pacienteId,
     printResult.uri,
     data.periodDays,
     adapter,
     shareableReportSnapshot(data),
+    patientName,
   );
   return result;
 }

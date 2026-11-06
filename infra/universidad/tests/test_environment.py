@@ -16,6 +16,15 @@ def valid():
     return values
 
 class EnvironmentTests(unittest.TestCase):
+    def test_operator_allowlist_is_private_to_clinical_and_rejects_invalid_values(self):
+        raw=valid(); raw['OPERATOR_ALLOWED_EMAILS']='One@example.org, two@example.org'
+        self.assertEqual(environment.configuration(raw)['OPERATOR_ALLOWED_EMAILS'],raw['OPERATOR_ALLOWED_EMAILS'])
+        self.assertIn('OPERATOR_ALLOWED_EMAILS',environment.SERVICE_KEYS['clinical'])
+        self.assertNotIn('OPERATOR_ALLOWED_EMAILS',environment.SERVICE_KEYS['gateway'])
+        raw['OPERATOR_ALLOWED_EMAILS']='not-an-email'
+        with self.assertRaises(ValueError): environment.configuration(raw)
+        raw['OPERATOR_ALLOWED_EMAILS']=''
+        self.assertEqual(environment.configuration(raw)['OPERATOR_ALLOWED_EMAILS'],'')
     def test_distributed_keys_preserve_identity_and_isolate_authority_environment(self):
         raw=valid(); raw['AUTH_JWKS_MODE']='distributed'
         result=environment.configuration(raw)

@@ -205,6 +205,7 @@ export function VitalDetailScreen() {
         <DetailRow label="Presión arterial" value={record.pressure} />
         <DetailRow label="Pulso" value={record.pulse} />
         <DetailRow label="Saturación" value={record.saturation} />
+        <DetailRow label="Dolor ENA" value={(record as { pain?: string }).pain ?? '0/10'} />
       </InfoCard>
       <StatusPill>Sincronizado · ejemplo visual</StatusPill>
       <BodyText>

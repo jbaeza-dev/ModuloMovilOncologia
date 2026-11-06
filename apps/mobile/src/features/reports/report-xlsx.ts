@@ -67,10 +67,9 @@ function createWorksheet(
 
 /**
  * Construye el libro de trabajo con cuatro hojas estructuradas:
- * 1. Resumen: Identificador mínimo, tratamiento y métricas; sin perfil ni código de vinculación.
- * 2. Signos vitales: Detalle cronológico de todas las mediciones de signos vitales con ID y fecha local.
- * 3. Sintomas: Historial libre antiguo.
- * 4. Seguimientos ePRO: Respuestas confirmadas con su edición y estado.
+ * 1. Resumen: Identificación del paciente, tratamiento y métricas clínicas relevantes.
+ * 2. Signos vitales: Detalle cronológico de todas las mediciones de signos vitales con fecha local.
+ * 3. Seguimientos ePRO: Respuestas confirmadas con su fecha local, formulario y estado.
  */
 export function buildReportWorkbook(data: ReportData): XLSX.WorkBook {
   const wb = XLSX.utils.book_new();
@@ -79,44 +78,47 @@ export function buildReportWorkbook(data: ReportData): XLSX.WorkBook {
   const summaryRows: Array<Array<XLSX.CellObject | null | undefined>> = [
     [makeTextCell('QuimioCare — Reporte de Seguimiento Oncológico')],
     [],
+    [makeTextCell('IDENTIFICACIÓN DEL PACIENTE')],
+    [
+      makeTextCell('Nombre del paciente'),
+      makeTextCell(data.profile?.nombre || 'Paciente en seguimiento'),
+    ],
+    [makeTextCell('RUT'), makeTextCell(data.profile?.rut || 'Sin registrar')],
+    [
+      makeTextCell('Tratamiento'),
+      makeTextCell(data.treatment?.nombre ?? data.treatment?.tipo ?? 'En seguimiento oncológico'),
+    ],
+    [],
     [makeTextCell('INFORMACIÓN DEL REPORTE')],
     [makeTextCell('Período evaluado'), makeTextCell(`Últimos ${data.periodDays} días`)],
-    [makeTextCell('Inicio del período (UTC)'), makeTextCell(data.periodStart)],
     [
-      makeTextCell(`Inicio del período local (${data.timeZone})`),
-      makeTextCell(formatLocalDate(data.periodStart, data.timeZone)),
+      makeTextCell(`Rango de fechas (${data.timeZone})`),
+      makeTextCell(
+        `${formatLocalDate(data.periodStart, data.timeZone)} al ${formatLocalDate(data.periodEnd, data.timeZone)}`,
+      ),
     ],
-    [makeTextCell('Fin del período (UTC)'), makeTextCell(data.periodEnd)],
     [
-      makeTextCell(`Fin del período local (${data.timeZone})`),
-      makeTextCell(formatLocalDate(data.periodEnd, data.timeZone)),
-    ],
-    [makeTextCell('Fecha de emisión (UTC)'), makeTextCell(data.generatedAt)],
-    [
-      makeTextCell(`Fecha de emisión local (${data.timeZone})`),
+      makeTextCell(`Fecha de emisión (${data.timeZone})`),
       makeTextCell(formatLocalDate(data.generatedAt, data.timeZone)),
     ],
-    [makeTextCell('Zona horaria de referencia'), makeTextCell(data.timeZone)],
-    [makeTextCell('ID del paciente'), makeTextCell(data.pacienteId)],
-    [makeTextCell('Tratamiento'), makeTextCell(data.treatment?.nombre ?? data.treatment?.tipo)],
     [],
-    [makeTextCell('MÉTRICAS AGREGADAS EN EL PERÍODO')],
+    [makeTextCell('RESUMEN CLÍNICO DEL PERÍODO')],
     [makeTextCell('Total mediciones de signos vitales'), makeNumberCell(data.summary.vitalsCount)],
     [makeTextCell('Temperatura promedio (°C)'), makeNumberCell(data.summary.avgTemperature)],
     [makeTextCell('Pulso promedio (ppm)'), makeNumberCell(data.summary.avgPulse)],
     [makeTextCell('Presión sistólica promedio (mmHg)'), makeNumberCell(data.summary.avgSystolic)],
     [makeTextCell('Presión diastólica promedio (mmHg)'), makeNumberCell(data.summary.avgDiastolic)],
     [makeTextCell('Saturación O₂ promedio (%)'), makeNumberCell(data.summary.avgOxygenSaturation)],
-    [makeTextCell('Total reportes de síntomas'), makeNumberCell(data.summary.symptomsCount)],
+    [makeTextCell('Dolor ENA promedio (0–10)'), makeNumberCell(data.summary.avgPain ?? null)],
     [
       makeTextCell('Seguimientos ePRO confirmados localmente'),
       makeNumberCell(data.epro?.length ?? 0),
     ],
     [],
-    [makeTextCell('AVISO')],
+    [makeTextCell('AVISO CLÍNICO')],
     [
       makeTextCell(
-        'Registros locales con identificador mínimo; se omiten los campos de nombre, RUT, correo y código de vinculación. Los textos libres conservan lo que escribiste: revisa antes de compartir. Recepción del servidor no implica revisión clínica. No sustituye indicaciones del equipo tratante.',
+        'Este reporte contiene registros clínicos informados por el paciente para apoyo al equipo tratante. La recepción del servidor no implica revisión clínica inmediata. No sustituye la consulta médica presencial ni la atención en urgencias.',
       ),
     ],
   ];
@@ -126,9 +128,7 @@ export function buildReportWorkbook(data: ReportData): XLSX.WorkBook {
 
   // 2. Hoja "Signos vitales"
   const vitalsHeaders: Array<XLSX.CellObject> = [
-    makeTextCell('ID del registro'),
-    makeTextCell('Fecha y hora (UTC)'),
-    makeTextCell(`Fecha local (${data.timeZone})`),
+    makeTextCell(`Fecha y hora local (${data.timeZone})`),
     makeTextCell('Presión sistólica (mmHg)'),
     makeTextCell('Presión diastólica (mmHg)'),
     makeTextCell('Pulso (ppm)'),
@@ -141,8 +141,8 @@ export function buildReportWorkbook(data: ReportData): XLSX.WorkBook {
   const vitalsRows: Array<Array<XLSX.CellObject | null | undefined>> = [vitalsHeaders];
   if (data.vitals.length === 0) {
     vitalsRows.push([
-      makeTextCell('—'),
       makeTextCell('No hay mediciones registradas en el período evaluado.'),
+      null,
       null,
       null,
       null,
@@ -153,8 +153,6 @@ export function buildReportWorkbook(data: ReportData): XLSX.WorkBook {
   } else {
     for (const v of data.vitals) {
       vitalsRows.push([
-        makeTextCell(v.id),
-        makeTextCell(v.fecha_registro),
         makeTextCell(formatLocalDate(v.fecha_registro, data.timeZone)),
         makeNumberCell(v.presion_sistolica),
         makeNumberCell(v.presion_diastolica),
@@ -169,75 +167,29 @@ export function buildReportWorkbook(data: ReportData): XLSX.WorkBook {
     }
   }
 
-  const wsVitals = createWorksheet(vitalsRows, [38, 26, 26, 25, 25, 16, 18, 18, 20, 32]);
+  const wsVitals = createWorksheet(vitalsRows, [26, 25, 25, 16, 18, 18, 20, 24]);
   XLSX.utils.book_append_sheet(wb, wsVitals, 'Signos vitales');
 
-  // 3. Hoja "Sintomas"
-  const symptomsHeaders: Array<XLSX.CellObject> = [
-    makeTextCell('ID del registro'),
-    makeTextCell('Fecha y hora (UTC)'),
-    makeTextCell(`Fecha local (${data.timeZone})`),
-    makeTextCell('Descripción del síntoma'),
-  ];
-
-  const symptomsRows: Array<Array<XLSX.CellObject | null | undefined>> = [symptomsHeaders];
-  if (data.symptoms.length === 0) {
-    symptomsRows.push([
-      makeTextCell('—'),
-      makeTextCell('No hay síntomas registrados en el período evaluado.'),
-      null,
-      null,
-    ]);
-  } else {
-    for (const s of data.symptoms) {
-      symptomsRows.push([
-        makeTextCell(s.id),
-        makeTextCell(s.fecha_registro),
-        makeTextCell(formatLocalDate(s.fecha_registro, data.timeZone)),
-        makeTextCell(s.descripcion ?? ''),
-      ]);
-    }
-  }
-
-  const wsSymptoms = createWorksheet(symptomsRows, [38, 26, 26, 70]);
-  XLSX.utils.book_append_sheet(wb, wsSymptoms, 'Sintomas');
-
+  // 3. Hoja "Seguimientos ePRO"
   const eproRows: Array<Array<XLSX.CellObject | null>> = [
     [
-      'ID de captura',
-      'ID formulario',
-      'Edición',
-      'Título',
-      'Fecha UTC',
       `Fecha local (${data.timeZone})`,
+      'Formulario',
       'Estado de envío',
-      'Fuente histórica',
-      'Código de pregunta',
       'Pregunta',
       'Respuesta',
     ].map(makeTextCell),
   ];
   for (const capture of data.epro ?? []) {
-    // La fecha y el estado pertenecen a la captura, no cambian por cada respuesta.
     const localCapturedAt = formatLocalDate(capture.capturedAt, data.timeZone);
     const statusLabel = clinicalStatusLabel(capture.status);
     for (const answer of capture.answers.length
       ? capture.answers
       : [{ code: '', question: '', value: 'Sin respuestas disponibles' }])
       eproRows.push(
-        [
-          capture.id,
-          capture.formId,
-          capture.version,
-          capture.title,
-          capture.capturedAt,
-          localCapturedAt,
-          statusLabel,
-          capture.source,
-          answer.code,
-          answer.question,
-          answer.value,
-        ].map(makeTextCell),
+        [localCapturedAt, capture.title, statusLabel, answer.question, answer.value].map(
+          makeTextCell,
+        ),
       );
   }
   if (!data.epro?.length)
@@ -246,7 +198,7 @@ export function buildReportWorkbook(data: ReportData): XLSX.WorkBook {
     ]);
   XLSX.utils.book_append_sheet(
     wb,
-    createWorksheet(eproRows, [38, 38, 16, 45, 26, 26, 32, 16, 22, 65, 65]),
+    createWorksheet(eproRows, [26, 35, 24, 60, 60]),
     'Seguimientos ePRO',
   );
 
@@ -271,5 +223,6 @@ export async function generateAndPersistReportXlsx(
   adapter?: BinaryReportStorageAdapter,
 ): Promise<{ persistentUri: string; filename: string }> {
   const bytes = generateReportXlsxBytes(data);
-  return await persistReportXlsx(data.pacienteId, bytes, data.periodDays, adapter);
+  const patientName = data.profile?.nombre || undefined;
+  return await persistReportXlsx(data.pacienteId, bytes, data.periodDays, adapter, patientName);
 }

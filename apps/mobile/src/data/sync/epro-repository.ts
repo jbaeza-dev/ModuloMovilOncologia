@@ -175,7 +175,7 @@ export function createEproRepository(
           );
         const context = createDailyFormContext({ now: now() });
         const rows = await tx.all<{ id: string; value_json: string }>(
-          "SELECT id,value_json FROM qc_storage_control WHERE id LIKE 'epro:draft:%' OR id LIKE 'epro:capture:%'",
+          "SELECT id,value_json FROM qc_storage_control WHERE id LIKE 'epro:draft:%'",
         );
         for (const stored of rows) {
           const old = parse(stored.value_json, stored.id);
@@ -184,10 +184,7 @@ export function createEproRepository(
             old.definition.form.codigo !== definition.form.codigo
           )
             continue;
-          if (stored.id.startsWith('epro:capture:'))
-            throw new Error(
-              'Ya completaste el seguimiento de este día. Puedes consultar su historial.',
-            );
+          // Se permite realizar más de un seguimiento al día si el paciente lo requiere
           if (old.definition.form.id === formId) {
             draft = old;
             return;

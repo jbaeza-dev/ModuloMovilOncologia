@@ -29,6 +29,7 @@ export type GenerateReportParams =
         avgSystolic?: number | null;
         avgDiastolic?: number | null;
         avgOxygenSaturation?: number | null;
+        avgPain?: number | null;
       };
       vitals: readonly Readonly<VitalRecord>[];
       symptoms?: readonly Readonly<SymptomRecord>[];
@@ -70,54 +71,38 @@ export function buildReportHtml(data: GenerateReportParams): string {
   const periodDays = data.periodDays;
   const summary = data.summary;
   const vitals = data.vitals;
-  const symptoms = data.symptoms ?? [];
   const epro = data.epro ?? [];
-  const dictionaries = new Map<string, { id: number; capture: ReportEproCapture }>();
-  const dictionaryFor = (capture: ReportEproCapture) => {
-    const key = JSON.stringify([
-      capture.formId,
-      capture.version,
-      capture.answers.map((a) => [a.code, a.question]),
-    ]);
-    let entry = dictionaries.get(key);
-    if (!entry) {
-      entry = { id: dictionaries.size + 1, capture };
-      dictionaries.set(key, entry);
-    }
-    return entry.id;
-  };
   const eproHtml = epro.length
     ? epro
         .map((capture) => {
-          const rows: string[] = [];
-          for (let i = 0; i < capture.answers.length; i += 2) {
-            const pair = capture.answers.slice(i, i + 2);
-            rows.push(
-              '<tr>' +
-                pair
-                  .map((a) => `<td>${escapeHtml(a.code)}</td><td>${escapeHtml(a.value)}</td>`)
-                  .join('') +
-                (pair.length === 1 ? '<td></td><td></td>' : '') +
-                '</tr>',
-            );
-          }
-          return `<section>
-    <h3>${escapeHtml(capture.title)} · edición ${escapeHtml(capture.version)}</h3>
-    <p>ID ${escapeHtml(capture.id)} · ${escapeHtml(formatReportDate(capture.capturedAt, timeZone))}<br>
-    UTC: ${escapeHtml(capture.capturedAt)} · ${escapeHtml(clinicalStatusLabel(capture.status))}<br>
-    Preguntas originales: diccionario D${dictionaryFor(capture)} al final de los seguimientos.</p>
-    <table><thead><tr><th>Código</th><th>Respuesta</th><th>Código</th><th>Respuesta</th></tr></thead><tbody>
-    ${rows.join('')}
-    </tbody></table></section>`;
+          const rows = capture.answers
+            .map(
+              (a) => `<tr>
+                <td style="padding: 8px 12px; border-bottom: 1px solid #E2E8F0; font-size: 12px; vertical-align: top; width: 65%; color: #334155;">${escapeHtml(a.question || 'Pregunta')}</td>
+                <td style="padding: 8px 12px; border-bottom: 1px solid #E2E8F0; font-size: 12px; font-weight: 600; vertical-align: top; width: 35%; color: #0D9488;">${escapeHtml(a.value || '—')}</td>
+              </tr>`,
+            )
+            .join('');
+
+          return `<section class="epro-card" style="page-break-inside: avoid; break-inside: avoid; margin-bottom: 24px; border: 1px solid #E2E8F0; border-radius: 8px; padding: 14px 16px; background-color: #F8FAFC;">
+    <h3 style="margin: 0 0 6px 0; font-size: 15px; font-weight: 600; color: #0F172A;">${escapeHtml(capture.title)}</h3>
+    <p style="margin: 0 0 12px 0; font-size: 12px; color: #64748B;">Fecha de respuesta: <strong style="color: #334155;">${escapeHtml(formatReportDate(capture.capturedAt, timeZone))}</strong> · Estado: <strong style="color: #0D9488;">${escapeHtml(clinicalStatusLabel(capture.status))}</strong></p>
+    <table style="width: 100%; border-collapse: collapse; background: #FFFFFF; border-radius: 6px; overflow: hidden; margin: 0; table-layout: fixed;">
+      <thead>
+        <tr>
+          <th style="padding: 8px 12px; text-align: left; font-size: 11px; font-weight: 600; width: 65%;">Pregunta</th>
+          <th style="padding: 8px 12px; text-align: left; font-size: 11px; font-weight: 600; width: 35%;">Respuesta</th>
+        </tr>
+      </thead>
+      <tbody>
+        ${rows}
+      </tbody>
+    </table>
+  </section>`;
         })
         .join('')
-    : '<p>No hay seguimientos ePRO confirmados localmente en este período. Los borradores no se incluyen.</p>';
-  const dictionaryHtml = [...dictionaries.values()]
-    .map(
-      ({ id, capture }) =>
-        `<h3>Diccionario D${id} · ${escapeHtml(capture.title)} · edición ${escapeHtml(capture.version)}</h3><table><thead><tr><th>Código</th><th>Pregunta histórica</th></tr></thead><tbody>${capture.answers.map((a) => `<tr><td>${escapeHtml(a.code)}</td><td>${escapeHtml(a.question)}</td></tr>`).join('')}</tbody></table>`,
-    )
-    .join('');
+    : '<p style="color: #64748B; font-size: 13px;">No hay seguimientos ePRO confirmados localmente en este período. Los borradores no se incluyen.</p>';
+  const dictionaryHtml = '';
 
   const periodStartFormatted =
     'periodStart' in data && data.periodStart ? formatReportDate(data.periodStart, timeZone) : null;
@@ -129,7 +114,17 @@ export function buildReportHtml(data: GenerateReportParams): string {
       : `Últimos ${periodDays} días`;
 
   const totalVitals = summary.vitalsCount ?? ('total' in summary ? summary.total : undefined) ?? 0;
-  const totalSymptoms = summary.symptomsCount ?? symptoms.length;
+  const vitalsWithPain = vitals.filter((v) => v.dolor_ena !== null && v.dolor_ena !== undefined);
+  const calculatedAvgPain =
+    vitalsWithPain.length > 0
+      ? Math.round(
+          (vitalsWithPain.reduce((sum, v) => sum + (v.dolor_ena ?? 0), 0) / vitalsWithPain.length) *
+            10,
+        ) / 10
+      : null;
+  const avgPain =
+    'avgPain' in summary && summary.avgPain !== undefined ? summary.avgPain : calculatedAvgPain;
+  const avgPainText = avgPain !== null ? `${avgPain.toLocaleString('es-CL')} / 10` : '—';
 
   const vitalsRowsHtml = vitals.length
     ? vitals
@@ -144,7 +139,7 @@ export function buildReportHtml(data: GenerateReportParams): string {
           const pain = v.dolor_ena == null ? 'Sin registro' : `${v.dolor_ena}/10`;
           const sat = v.saturacion_o2 !== null ? `${v.saturacion_o2} %` : '—';
           return `<tr>
-            <td style="padding: 8px 12px; border-bottom: 1px solid #E2E8F0; font-size: 11px;">${escapeHtml(fecha)}<br>UTC: ${escapeHtml(v.fecha_registro)}<br>ID: ${escapeHtml(v.id)}</td>
+            <td style="padding: 8px 12px; border-bottom: 1px solid #E2E8F0; font-size: 12px; font-weight: 500;">${escapeHtml(fecha)}</td>
             <td style="padding: 8px 12px; border-bottom: 1px solid #E2E8F0; font-size: 13px; text-align: center;">${temp}</td>
             <td style="padding: 8px 12px; border-bottom: 1px solid #E2E8F0; font-size: 13px; text-align: center;">${pa}</td>
             <td style="padding: 8px 12px; border-bottom: 1px solid #E2E8F0; font-size: 13px; text-align: center;">${pulso}</td>
@@ -156,24 +151,11 @@ export function buildReportHtml(data: GenerateReportParams): string {
         .join('')
     : `<tr><td colspan="7" style="padding: 16px; text-align: center; color: #64748B;">No hay mediciones registradas en este período.</td></tr>`;
 
-  const symptomsRowsHtml = symptoms.length
-    ? symptoms
-        .map((s) => {
-          const fecha = formatReportDate(s.fecha_registro, timeZone);
-          const descripcion = escapeHtml(s.descripcion || '—');
-          return `<tr>
-            <td style="padding: 8px 12px; border-bottom: 1px solid #E2E8F0; font-size: 13px; white-space: nowrap; width: 160px;">${fecha}</td>
-            <td style="padding: 8px 12px; border-bottom: 1px solid #E2E8F0; font-size: 13px; white-space: pre-wrap; word-break: break-word;">${descripcion}</td>
-          </tr>`;
-        })
-        .join('')
-    : `<tr><td colspan="2" style="padding: 16px; text-align: center; color: #64748B;">No hay síntomas registrados en este período.</td></tr>`;
-
   return `<!DOCTYPE html>
 <html lang="es">
 <head>
   <meta charset="utf-8">
-  <title>Reporte de Signos Vitales y Síntomas — QuimioCare</title>
+  <title>Reporte Clínico de Signos Vitales — QuimioCare</title>
   <style>
     body {
       font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif;
@@ -254,11 +236,12 @@ export function buildReportHtml(data: GenerateReportParams): string {
     table {
       width: 100%;
       border-collapse: collapse;
+      table-layout: fixed;
       margin-top: 8px;
-      margin-bottom: 28px;
+      margin-bottom: 24px;
     }
     thead { display: table-header-group; }
-    td { padding: 8px; border-bottom: 1px solid #E2E8F0; font-size: 11px; overflow-wrap: anywhere; white-space: pre-wrap; }
+    td { padding: 8px 10px; border-bottom: 1px solid #E2E8F0; font-size: 11px; overflow-wrap: break-word; word-break: break-word; }
     th {
       background-color: #0D9488;
       color: white;
@@ -268,12 +251,15 @@ export function buildReportHtml(data: GenerateReportParams): string {
       font-weight: 600;
       text-transform: uppercase;
       letter-spacing: 0.5px;
+      overflow-wrap: break-word;
+      word-break: break-word;
     }
     th:first-child {
       text-align: left;
     }
-    tr {
+    section, tr, .summary-card, .meta-grid, .epro-card {
       page-break-inside: avoid;
+      break-inside: avoid;
     }
     .section-title {
       font-size: 15px;
@@ -293,8 +279,9 @@ export function buildReportHtml(data: GenerateReportParams): string {
       body {
         margin: 16px;
       }
-      .summary-card, .meta-grid, tr {
+      .summary-card, .meta-grid, tr, section, .epro-card {
         page-break-inside: avoid;
+        break-inside: avoid;
       }
     }
   </style>
@@ -302,20 +289,20 @@ export function buildReportHtml(data: GenerateReportParams): string {
 <body>
   <div class="header">
     <div class="brand">QuimioCare</div>
-    <div class="title">Resumen de Signos Vitales y Síntomas — Seguimiento de Quimioterapia</div>
+    <div class="title">Reporte Clínico de Signos Vitales y Seguimiento de Quimioterapia</div>
   </div>
 
   <div class="meta-grid">
-    <div class="meta-item"><span class="meta-label">Identificador local:</span> ${escapeHtml(data.pacienteId)}</div>
+    <div class="meta-item"><span class="meta-label">Paciente:</span> ${escapeHtml(data.profile?.nombre || 'Paciente en seguimiento')}</div>
+    <div class="meta-item"><span class="meta-label">RUT:</span> ${escapeHtml(data.profile?.rut || 'Sin registrar')}</div>
+    <div class="meta-item"><span class="meta-label">Tratamiento:</span> ${escapeHtml(data.treatment?.nombre ?? data.treatment?.tipo ?? 'En seguimiento oncológico')}</div>
     <div class="meta-item"><span class="meta-label">Período evaluado:</span> ${escapeHtml(periodDisplay)}</div>
-    <div class="meta-item"><span class="meta-label">Fecha de emisión:</span> ${generatedAt} <span style="font-size: 11px; color: #64748B;">(${escapeHtml(timeZone)})</span></div>
+    <div class="meta-item"><span class="meta-label">Fecha de emisión:</span> ${generatedAt}</div>
   </div>
 
   <div class="disclaimer">
-    <strong>Aviso:</strong> Este documento contiene registros guardados localmente. Se omiten los campos de nombre, RUT, correo y código de vinculación. Los textos libres conservan lo que escribiste. Revisa el contenido antes de compartirlo. No constituye un diagnóstico médico ni reemplaza las indicaciones del equipo tratante.
+    <strong>Aviso clínico:</strong> Este reporte contiene registros de salud informados por el paciente a través de la aplicación QuimioCare Móvil. Los datos sirven de apoyo al seguimiento del equipo tratante y no reemplazan la evaluación clínica directa ni las urgencias oncológicas.
   </div>
-
-  <div class="meta-item"><span class="meta-label">Tratamiento:</span> ${escapeHtml(data.treatment?.nombre ?? data.treatment?.tipo ?? 'Sin dato')}</div>
 
   <div class="summary-card">
     <div class="metric">
@@ -331,8 +318,8 @@ export function buildReportHtml(data: GenerateReportParams): string {
       <div class="metric-label">Pulso promedio</div>
     </div>
     <div class="metric">
-      <div class="metric-value">${totalSymptoms}</div>
-      <div class="metric-label">Síntomas reportados</div>
+      <div class="metric-value">${avgPainText}</div>
+      <div class="metric-label">Dolor ENA promedio</div>
     </div>
   </div>
 
@@ -358,18 +345,8 @@ export function buildReportHtml(data: GenerateReportParams): string {
   <p>La recepción del servidor no implica revisión clínica. Los datos ausentes se muestran sin inferir valores.</p>
   ${eproHtml}
   ${dictionaryHtml}
-  <div class="section-title">Detalle cronológico de síntomas históricos</div>
-  <table>
-    <thead>
-      <tr>
-        <th style="width: 160px; text-align: left;">Fecha y hora (${escapeHtml(timeZone)})</th>
-        <th style="text-align: left;">Descripción del síntoma</th>
-      </tr>
-    </thead>
-    <tbody>
-      ${symptomsRowsHtml}
-    </tbody>
-  </table>
+
+
 
   <div class="footer">
     QuimioCare Móvil — Demostración y acompañamiento al paciente oncológico · Generado localmente sin conexión

@@ -421,6 +421,23 @@ export async function consumeLinkCode(
     )
       throw new ApiError(409, 'CONFLICTO_ESTADO', 'El paciente ya está vinculado.');
     const now = new Date();
+    await client.query(
+      `INSERT INTO qc_demo_profesional(operador_id,nombre,especialidad)
+       VALUES($1,'Dra. Camila Rojas — demostración','Oncología médica (perfil ficticio)')
+       ON CONFLICT DO NOTHING`,
+      [operatorId],
+    );
+    const professional = await one(
+      client,
+      'SELECT operador_id FROM qc_demo_profesional WHERE operador_id=$1 AND activo=true',
+      [operatorId],
+    );
+    if (!professional)
+      throw new ApiError(
+        409,
+        'PROFESIONAL_INACTIVO',
+        'Active su perfil profesional antes de vincular pacientes.',
+      );
     const profile: ObjectValue = {
       ...template.perfil_clinico_template,
       id: randomUUID(),
@@ -446,7 +463,7 @@ export async function consumeLinkCode(
       client,
       `INSERT INTO qc_demo_relacion_clinica (paciente_id, operador_id, plantilla_id, estado, vinculado_en)
        VALUES ($1, $2, $3, 'activa', $4)
-       ON CONFLICT (paciente_id) DO UPDATE SET operador_id=excluded.operador_id, plantilla_id=excluded.plantilla_id, estado='activa'
+       ON CONFLICT (paciente_id) DO UPDATE SET operador_id=excluded.operador_id, plantilla_id=excluded.plantilla_id, estado='activa', profesional_activo=true, vinculado_en=excluded.vinculado_en, desvinculado_en=NULL
        RETURNING id`,
       [row.paciente_id, operatorId, templateId, now],
     );

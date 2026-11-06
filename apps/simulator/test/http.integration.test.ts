@@ -147,6 +147,34 @@ afterAll(async () => {
 });
 
 describe('authenticated HTTP against persistent PostgreSQL', () => {
+  it('returns only the authenticated patient team and hides inactive operators', async () => {
+    const a = await session(),
+      b = await session('B');
+    const operator = '11111111-1111-1111-1111-111111111111';
+    await db.query(
+      `INSERT INTO qc_demo_profesional(operador_id,nombre,especialidad)
+      VALUES($1,'Dra. Camila Rojas — demostración','Oncología médica') ON CONFLICT DO NOTHING`,
+      [operator],
+    );
+    await db.query(
+      `INSERT INTO qc_demo_relacion_clinica(paciente_id,operador_id,plantilla_id)
+      VALUES($1,$2,'DEMO-FOLFOX-v1')`,
+      [PATIENTS.A, operator],
+    );
+    const path = '/api/v1/pacientes/me/equipo-tratante-demo';
+    expect((await call(path)).status).toBe(401);
+    const response = await call(path, { token: a.access_token });
+    expect(response.status).toBe(200);
+    expect(response.body.paciente_id).toBe(PATIENTS.A);
+    expect(response.body.items).toHaveLength(1);
+    expect((await call(path, { token: b.access_token })).body.items).toEqual([]);
+    await db.query('UPDATE qc_demo_operador SET activo=false WHERE id=$1', [operator]);
+    try {
+      expect((await call(path, { token: a.access_token })).body.items).toEqual([]);
+    } finally {
+      await db.query('UPDATE qc_demo_operador SET activo=true WHERE id=$1', [operator]);
+    }
+  });
   it('requires bearer and operator credentials separately, and refuses unknown fields', async () => {
     expect((await call('/api/v1/auth/me')).status).toBe(401);
     expect((await call('/__demo/escenarios')).status).toBe(401);

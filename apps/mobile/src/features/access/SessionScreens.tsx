@@ -1,11 +1,14 @@
+import { View } from 'react-native';
 import { useCallback, useEffect, useState, useSyncExternalStore } from 'react';
 import { router } from 'expo-router';
+import { cleanRut, formatRut, validateRut } from '../../utils/rut-chileno';
 import { Screen } from '../../components/Screen';
 import { DateTimePickerField } from '../../components/DateTimePickerField';
 import { MascotHero } from '../../components/MascotAvatar';
 import {
   BodyText,
   DemoBadge,
+  ChoiceChip,
   DetailRow,
   InfoCard,
   SectionTitle,
@@ -256,22 +259,78 @@ export function OnlineConsentScreen() {
 }
 export function CompleteProfileScreen() {
   const { session, snapshot } = useIdentity(),
+    localData = useOptionalLocalData(),
     [rut, setRut] = useState(''),
     [phone, setPhone] = useState(''),
     [birth, setBirth] = useState(''),
     [sex, setSex] = useState(''),
     [busy, setBusy] = useState(false),
+    [dirty, setDirty] = useState(false),
     [message, setMessage] = useState<string | null>(null);
+
+  const existingProfile = snapshot.identity?.profile;
+
+  useEffect(() => {
+    if (!dirty && existingProfile) {
+      if (existingProfile.rut) {
+        setRut(formatRut(existingProfile.rut));
+      }
+      if (existingProfile.telefono) {
+        const cleanDigits = existingProfile.telefono.replace(/^\+?569?/, '').replace(/\D/g, '');
+        setPhone(cleanDigits.slice(0, 8));
+      }
+      if (existingProfile.fecha_nacimiento) {
+        setBirth(existingProfile.fecha_nacimiento);
+      }
+      if (existingProfile.sexo) {
+        setSex(existingProfile.sexo);
+      }
+    }
+  }, [existingProfile, dirty]);
+
+  const handleRutChange = (text: string) => {
+    setDirty(true);
+    setRut(formatRut(text));
+    if (message) setMessage(null);
+  };
+
+  const handlePhoneChange = (text: string) => {
+    setDirty(true);
+    const digits = text.replace(/\D/g, '').slice(0, 8);
+    setPhone(digits);
+    if (message) setMessage(null);
+  };
+
+  const isRutValid = validateRut(rut);
+  const showRutError = rut.length >= 8 && !isRutValid;
+
   async function save() {
     if (!session || busy) return;
+    if (!validateRut(rut)) {
+      setMessage('El RUT ingresado no es válido. Revisa los dígitos y el cálculo verificador.');
+      return;
+    }
     setBusy(true);
     try {
+      const canonicalPhone = phone.trim() ? `+569${phone.trim()}` : null;
+      const cleanedRut = cleanRut(rut);
       await session.completeProfile({
-        rut,
-        telefono: phone || null,
+        rut: cleanedRut,
+        telefono: canonicalPhone,
         fecha_nacimiento: birth || null,
         sexo: sex || null,
       });
+      if (localData?.repository) {
+        try {
+          await localData.repository.saveProfile({
+            nombre: existingProfile?.nombre || session.getCurrentUser()?.name || 'Paciente',
+            email: existingProfile?.email ?? null,
+            rut: cleanedRut,
+          });
+        } catch {
+          // ignore cache persistence fallback
+        }
+      }
       setMessage('Tus datos quedaron confirmados.');
       const consentRequired = Boolean(session.getSnapshot().consent?.requiere_aceptacion);
       if (consentRequired) {
@@ -285,13 +344,16 @@ export function CompleteProfileScreen() {
       setBusy(false);
     }
   }
+
+  const SEX_OPTIONS = ['Femenino', 'Masculino', 'Prefiero no informar'] as const;
+
   return (
     <Screen>
       <MascotHero
         pose="apoyo"
-        eyebrow="TU PRIMER INGRESO"
-        title="Completar mis datos"
-        description="Completa tus datos para continuar. Puedes revisar los términos antes de aceptarlos."
+        eyebrow="TU PERFIL"
+        title="Datos personales"
+        description="Completa o actualiza tus datos de contacto y antecedentes demográficos."
         compact
       />
       {snapshot.identity?.profile ? (
@@ -307,31 +369,68 @@ export function CompleteProfileScreen() {
       ) : snapshot.user?.name ? (
         <BodyText>{snapshot.user.name}</BodyText>
       ) : null}
-      <VisualField label="RUT" value={rut} onChangeText={setRut} />
+
       <VisualField
-        label="Teléfono"
-        value={phone}
-        onChangeText={setPhone}
-        keyboardType="phone-pad"
+        label="RUT"
+        value={rut}
+        onChangeText={handleRutChange}
+        keyboardType="default"
+        placeholder="Ej.: 12.345.678-9"
+        helperText="Formato automático con puntos y guion. Valida dígito verificador chileno."
+        errorText={showRutError ? 'RUT no válido según cálculo de dígito verificador.' : undefined}
       />
+
+      <VisualField
+        label="Teléfono de contacto (+56 9)"
+        value={phone}
+        onChangeText={handlePhoneChange}
+        keyboardType="phone-pad"
+        maxLength={8}
+        placeholder="Ej.: 87654321"
+        helperText="Asume prefijo nacional (+56 9). Ingresa solo los 8 dígitos restantes."
+      />
+
       <DateTimePickerField
         mode="date"
         label="Fecha de nacimiento"
         value={birth || null}
         maximumDate={new Date().toLocaleDateString('en-CA')}
-        onChange={setBirth}
+        onChange={(val) => {
+          setDirty(true);
+          setBirth(val);
+        }}
         disabled={busy}
       />
-      <VisualField label="Sexo" value={sex} onChangeText={setSex} />
-      {message ? <BodyText>{message}</BodyText> : null}
+
+      <SectionTitle>Sexo</SectionTitle>
+      <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 8, marginBottom: 12 }}>
+        {SEX_OPTIONS.map((option) => (
+          <ChoiceChip
+            key={option}
+            label={option}
+            selected={sex === option}
+            disabled={busy}
+            onPress={() => {
+              setDirty(true);
+              setSex(option);
+            }}
+          />
+        ))}
+      </View>
+
+      {message ? (
+        <BodyText style={{ color: isRutValid ? undefined : '#d32f2f' }}>{message}</BodyText>
+      ) : null}
+
       <VisualButton
         label="Guardar y continuar"
-        disabled={!session || busy || !rut.trim()}
+        disabled={!session || busy || !isRutValid}
         onPress={() => void save()}
       />
     </Screen>
   );
 }
+
 export function DevicesScreen() {
   const { data, session } = useIdentity(),
     [items, setItems] = useState<GatewaySesion[]>([]),

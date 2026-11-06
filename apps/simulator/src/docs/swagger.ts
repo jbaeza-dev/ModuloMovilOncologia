@@ -132,7 +132,7 @@ export async function handleSwaggerRoute(
   ) {
     res.setHeader('cache-control', 'no-store');
     res.setHeader('vary', 'Authorization');
-    const principal = await operatorFromHeader(config, req.headers.authorization);
+    const principal = await operatorFromHeader(config, req.headers.authorization, db);
     await requireOperator(db, config, principal);
   }
   if (path === '/docs/preparacion') {

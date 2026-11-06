@@ -16,6 +16,7 @@ import { issueSession } from '../src/auth.js';
 import { createSimulator } from '../src/app.js';
 import { PATIENTS } from '../src/types.js';
 import { enterMutation, getActivePublishes } from '../src/mutation-gate.js';
+import { requireOperator } from '../src/preparation.js';
 
 async function powershell(script: string, args: string[]) {
   // The recovery scripts use .NET APIs from PowerShell 7; Windows PowerShell 5 is not sufficient.
@@ -73,6 +74,89 @@ async function call(path: string, body?: unknown, auth = token, url = base) {
 }
 const prep = (action: string, body: Record<string, unknown> = {}, auth = token) =>
   call('/admin/api/v1/preparacion/' + action, { operacion_id: randomUUID(), ...body }, auth);
+
+async function manage(method: string, path: string, input?: unknown, auth = token) {
+  const response = await fetch(base + '/admin/api/v1/preparacion/' + path, {
+    method,
+    headers: { authorization: 'Bearer ' + auth, 'content-type': 'application/json' },
+    ...(input === undefined ? {} : { body: JSON.stringify(input) }),
+  });
+  return { status: response.status, body: await response.json() };
+}
+
+it('manages professional profiles and patient medications with audited replay and isolation', async () => {
+  const operator = PATIENTS.A;
+  const create = {
+    operacion_id: randomUUID(),
+    operador_id: operator,
+    nombre: 'Dra. Valentina Soto — demostración',
+    especialidad: 'Oncología médica',
+  };
+  expect((await manage('POST', 'profesionales', create)).status).toBe(201);
+  expect((await manage('POST', 'profesionales', create)).status).toBe(200);
+  expect((await manage('GET', 'profesionales/' + operator)).body.nombre).toBe(create.nombre);
+  expect(
+    (
+      await manage('PUT', 'profesionales/' + operator, {
+        operacion_id: randomUUID(),
+        nombre: 'Dr. Andrés Ruiz — demostración',
+      })
+    ).status,
+  ).toBe(200);
+  expect(
+    (await manage('DELETE', 'profesionales/' + operator, { operacion_id: randomUUID() })).body
+      .activo,
+  ).toBe(false);
+  expect(
+    (await manage('PUT', 'profesionales/' + operator, { operacion_id: randomUUID(), activo: true }))
+      .body.activo,
+  ).toBe(true);
+  expect((await manage('GET', 'profesionales', undefined, patientToken)).status).toBe(403);
+  const path = 'pacientes/' + PATIENTS.A + '/medicamentos';
+  const input = {
+    operacion_id: randomUUID(),
+    medicamento: {
+      nombre: 'Oxaliplatino',
+      dosis: 'Individualizada por oncología',
+      frecuencia: 'En el centro según ciclo',
+      activo: false,
+    },
+  };
+  const added = await manage('POST', path, input);
+  expect(added.status).toBe(201);
+  const id = added.body.medicamento.id;
+  expect((await manage('POST', path, input)).body.medicamento.id).toBe(id);
+  expect(
+    (
+      await manage('POST', path, {
+        ...input,
+        medicamento: { ...input.medicamento, nombre: 'Otro' },
+      })
+    ).status,
+  ).toBe(409);
+  expect((await manage('GET', path + '/' + id)).body.nombre).toBe('Oxaliplatino');
+  expect((await manage('GET', 'pacientes/' + PATIENTS.B + '/medicamentos/' + id)).status).toBe(404);
+  expect(
+    (
+      await manage('PUT', path + '/' + id, {
+        operacion_id: randomUUID(),
+        medicamento: { frecuencia: 'Según indicación del centro' },
+      })
+    ).body.medicamento.frecuencia,
+  ).toBe('Según indicación del centro');
+  expect(
+    (
+      await manage('PUT', path + '/' + id, {
+        operacion_id: randomUUID(),
+        medicamento: { id: randomUUID() },
+      })
+    ).status,
+  ).toBe(422);
+  const deletion = { operacion_id: randomUUID() };
+  expect((await manage('DELETE', path + '/' + id, deletion)).body.eliminado).toBe(true);
+  expect((await manage('DELETE', path + '/' + id, deletion)).status).toBe(200);
+  expect((await manage('GET', path + '/' + id)).status).toBe(404);
+});
 function imageForm(
   operation = randomUUID(),
   bytes: Uint8Array = PNG.sync.write(new PNG({ width: 2, height: 2 })),
@@ -134,6 +218,113 @@ afterAll(async () => {
   if (media) await rm(media, { recursive: true, force: true });
 });
 describe('Preparation HTTP with real PostgreSQL', () => {
+  it('auto-provisions only allowlisted external identities and honors removal and disable', async () => {
+    const subject = randomUUID(),
+      email = 'commission@example.test';
+    const policy = { ...config, operatorAllowedEmails: [email] };
+    const principal = {
+      id: subject,
+      tipo: 'external' as const,
+      issuer: config.issuer,
+      email,
+      displayName: 'Evaluador',
+    };
+    const ids = await Promise.all(
+      Array.from({ length: 4 }, () => requireOperator(db, policy, principal)),
+    );
+    expect(new Set(ids).size).toBe(1);
+    expect(
+      (await db.query('SELECT id FROM qc_demo_paciente WHERE id=$1', [subject])).rowCount,
+    ).toBe(0);
+    await expect(
+      requireOperator(db, { ...policy, operatorAllowedEmails: [] }, principal),
+    ).rejects.toMatchObject({ status: 403 });
+    await expect(requireOperator(db, policy, { ...principal, tipo: 'demo' })).rejects.toMatchObject(
+      { status: 403 },
+    );
+    await db.query('UPDATE qc_demo_operador SET activo=false WHERE id=$1', [ids[0]]);
+    await expect(requireOperator(db, policy, principal)).rejects.toMatchObject({ status: 403 });
+    await expect(
+      requireOperator(db, policy, { ...principal, issuer: 'https://other.invalid' }),
+    ).rejects.toMatchObject({ status: 403 });
+  });
+  it('lists prepared data and projects category retirement to REST and PowerSync eligibility', async () => {
+    const category = 'Gestión ' + randomUUID();
+    await prep('categorias', { nombre: category });
+    const categories = await manage('GET', 'categorias');
+    const id = categories.body.items.find((c: { nombre: string }) => c.nombre === category).id;
+    const video = await prep('contenido-educativo/videos', {
+      titulo: 'Ejemplo',
+      descripcion: 'Referencia de prueba',
+      categoria: category,
+      url: 'https://www.youtube.com/watch?v=abcdefghijk',
+    });
+    expect(video.status).toBe(201);
+    expect(
+      (await call('/api/v1/contenido-educativo/' + video.body.id, undefined, patientToken)).status,
+    ).toBe(200);
+    expect((await manage('GET', 'contenido-educativo/' + video.body.id)).status).toBe(200);
+    expect(
+      (
+        await db.query('SELECT qc_mobile_eligible FROM contenido_educativo WHERE id=$1', [
+          video.body.id,
+        ])
+      ).rows[0].qc_mobile_eligible,
+    ).toBe(true);
+    await manage('PUT', 'categorias/' + id, { operacion_id: randomUUID(), activo: false });
+    expect(
+      (
+        await db.query('SELECT activo,qc_mobile_eligible FROM contenido_educativo WHERE id=$1', [
+          video.body.id,
+        ])
+      ).rows[0],
+    ).toEqual({ activo: true, qc_mobile_eligible: false });
+    expect(
+      (await call('/api/v1/contenido-educativo/' + video.body.id, undefined, patientToken)).status,
+    ).toBe(404);
+    await manage('DELETE', 'contenido-educativo/' + video.body.id, { operacion_id: randomUUID() });
+    await manage('PUT', 'categorias/' + id, { operacion_id: randomUUID(), activo: true });
+    expect(
+      (
+        await db.query('SELECT qc_mobile_eligible FROM contenido_educativo WHERE id=$1', [
+          video.body.id,
+        ])
+      ).rows[0].qc_mobile_eligible,
+    ).toBe(false);
+    for (const path of [
+      'terminos',
+      'formularios',
+      'pacientes',
+      `pacientes/${PATIENTS.A}/contexto-clinico`,
+      `pacientes/${PATIENTS.A}/consentimientos`,
+      `pacientes/${PATIENTS.A}/escenario`,
+    ])
+      expect((await manage('GET', path)).status).toBe(200);
+  });
+  it('unlinks treatment separately from its professional and then closes the relationship', async () => {
+    const operator = '11111111-1111-1111-1111-111111111111';
+    await db.query(
+      `INSERT INTO qc_demo_relacion_clinica(paciente_id,operador_id,plantilla_id) VALUES($1,$2,'DEMO-FOLFOX-v1') ON CONFLICT(paciente_id) DO UPDATE SET estado='activa',profesional_activo=true`,
+      [PATIENTS.B, operator],
+    );
+    const path = `pacientes/${PATIENTS.B}/desvincular`;
+    const input = { operacion_id: randomUUID(), alcance: 'tratamiento' };
+    expect((await manage('POST', path, input)).status).toBe(200);
+    expect((await manage('POST', path, input)).status).toBe(200);
+    expect(
+      (await db.query('SELECT tratamiento FROM qc_demo_paciente WHERE id=$1', [PATIENTS.B])).rows[0]
+        .tratamiento,
+    ).toBeNull();
+    expect(
+      (await manage('GET', `pacientes/${PATIENTS.B}/vinculacion`)).body.items[0].profesional_activo,
+    ).toBe(true);
+    expect(
+      (await manage('POST', path, { operacion_id: randomUUID(), alcance: 'ambos' })).status,
+    ).toBe(200);
+    const link = (await manage('GET', `pacientes/${PATIENTS.B}/vinculacion`)).body.items[0];
+    expect(link.estado).toBe('finalizada');
+    expect(link.profesional_activo).toBe(false);
+  });
   it('checks operator access without creating a patient and redirects the retired panel', async () => {
     expect((await call('/quimiocare/admin/api/v1/preparacion/acceso')).body.autorizado).toBe(true);
     expect((await call('/admin/api/v1/preparacion/acceso', undefined, patientToken)).status).toBe(
@@ -153,7 +344,52 @@ describe('Preparation HTTP with real PostgreSQL', () => {
       200,
     );
     const spec = await call('/quimiocare/docs/preparacion/openapi.json');
-    expect(Object.keys(spec.body.paths)).toHaveLength(17);
+    expect(spec.status).toBe(200);
+    const preparationOperations: Record<string, string[]> = {
+      categorias: ['get', 'post'],
+      'categorias/{id}': ['get', 'put', 'delete'],
+      'contenido-educativo': ['get'],
+      'contenido-educativo/{id}': ['get', 'put', 'delete'],
+      'contenido-educativo/imagenes': ['post'],
+      'contenido-educativo/videos': ['post'],
+      'contenido-educativo/podcasts': ['post'],
+      'contenido-educativo/{id}/estado': ['post'],
+      podcasts: ['get'],
+      'podcasts/{id}': ['get', 'put', 'delete'],
+      'podcasts/{id}/estado': ['post'],
+      profesionales: ['get', 'post'],
+      'profesionales/{operador_id}': ['get', 'put', 'delete'],
+      pacientes: ['get'],
+      'pacientes/{id}': ['get'],
+      'pacientes/{paciente_id}/medicamentos': ['get', 'post'],
+      'pacientes/{paciente_id}/medicamentos/{medicamento_id}': ['get', 'put', 'delete'],
+      'pacientes/{paciente_id}/desvincular': ['post'],
+      'pacientes/{paciente_id}/vinculacion': ['get'],
+      'pacientes/{paciente_id}/consentimientos': ['get'],
+      'pacientes/{paciente_id}/consentimiento-demo': ['post'],
+      'pacientes/{paciente_id}/contexto-clinico': ['get', 'post'],
+      'pacientes/{paciente_id}/escenario': ['get', 'post'],
+      terminos: ['get', 'post'],
+      'terminos/{id}': ['get'],
+      'terminos/{id}/publicar': ['post'],
+      formularios: ['get', 'post'],
+      'formularios/{id}': ['get'],
+      'formularios/{id}/publicar': ['post'],
+      'sincronizacion/signos-vitales': ['get'],
+      'sincronizacion/formularios-respuestas': ['get'],
+    };
+    for (const [path, methods] of Object.entries(preparationOperations)) {
+      for (const method of methods) {
+        expect(
+          spec.body.paths['/admin/api/v1/preparacion/' + path]?.[method],
+          `${method.toUpperCase()} ${path}`,
+        ).toMatchObject({
+          security: [{ OperadorBearer: [] }],
+        });
+      }
+    }
+    expect(spec.body.paths['/admin/api/v1/vinculaciones/consumir']?.post).toBeDefined();
+    expect(spec.body.paths['/educacion/api/v1/podcasts']?.get).toBeDefined();
     expect(
       spec.body.paths['/admin/api/v1/preparacion/sincronizacion/signos-vitales'].get.security,
     ).toEqual([{ OperadorBearer: [] }]);

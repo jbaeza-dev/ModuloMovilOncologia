@@ -6,6 +6,7 @@ export interface LocalQueryOptions {
   queryKey?: string;
   context?: Context<number>;
   extraRevision?: number;
+  pageSize?: number;
 }
 
 export function useFocusedValue<T>(
@@ -76,6 +77,7 @@ export function useFocusedList<T>(
   const extraRevision = options?.extraRevision ?? 0;
   const effectiveRevision = dataRevision + extraRevision;
   const queryKey = options?.queryKey;
+  const pageSize = options?.pageSize ?? 30;
 
   const [items, setItems] = useState<T[]>([]);
   const [loading, setLoading] = useState(true);
@@ -112,7 +114,7 @@ export function useFocusedList<T>(
             if (generation.current !== current) return;
             setItems(result);
             hasLoadedRef.current = true;
-            setHasMore(result.length === 30);
+            setHasMore(result.length === pageSize);
           },
           () => {
             if (generation.current === current) setError(true);
@@ -137,7 +139,7 @@ export function useFocusedList<T>(
       const next = await load(items.length);
       if (generation.current !== current) return;
       setItems((previous) => [...previous, ...next]);
-      setHasMore(next.length === 30);
+      setHasMore(next.length === pageSize);
     } catch {
       if (generation.current === current) setError(true);
     } finally {
@@ -146,7 +148,7 @@ export function useFocusedList<T>(
         setLoadingMore(false);
       }
     }
-  }, [loading, hasMore, load, items.length]);
+  }, [loading, hasMore, load, items.length, pageSize]);
 
   return {
     items,

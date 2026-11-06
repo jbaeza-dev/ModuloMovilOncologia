@@ -35,7 +35,7 @@ type TrayTab = 'proximos' | 'actividad';
 interface UpcomingItem {
   id: string;
   ruleId: string;
-  tipo: 'registro_vitales' | 'medicacion';
+  tipo: 'registro_vitales' | 'medicacion' | 'cuestionario_diario';
   medicamentoId: string | null;
   medicamentoNombre?: string;
   fechaPrevistaUtc: string;
@@ -45,7 +45,7 @@ interface UpcomingItem {
 export function NoticesTrayScreen() {
   const { theme: appTheme } = useAppTheme();
   const styles = useStyles();
-  const { repository, notificationAdapter, patientId } = useLocalData();
+  const { repository, notificationAdapter, patientId, sharedAgenda } = useLocalData();
 
   const [activeTab, setActiveTab] = useState<TrayTab>('proximos');
   const [limit, setLimit] = useState(25);
@@ -70,8 +70,60 @@ export function NoticesTrayScreen() {
     }
     const deviceAvailability = resolveDeviceAvailability(permissionState, null);
 
+    if (snap.preferences && !snap.preferences.enabled) {
+      return { items: [], snapshot: snap, deviceAvailability };
+    }
+
     const activeRules = snap.rules.filter((r) => r.eliminadoEl === null && r.habilitado);
     const upcomingList: UpcomingItem[] = [];
+
+    // Cargar avisos desde la agenda compartida si existe
+    if (sharedAgenda) {
+      try {
+        const cached = await sharedAgenda.read();
+        const now = new Date();
+        const activeShared = cached.rules.filter((r) => r.activo);
+
+        for (const rule of activeShared) {
+          for (let dayOffset = 0; dayOffset <= 2; dayOffset++) {
+            const targetDate = new Date(now);
+            targetDate.setDate(now.getDate() + dayOffset);
+            const jsDay = targetDate.getDay();
+            const dayOfWeek = jsDay === 0 ? 7 : jsDay;
+
+            if (rule.dias_semana.includes(dayOfWeek)) {
+              const y = targetDate.getFullYear();
+              const m = String(targetDate.getMonth() + 1).padStart(2, '0');
+              const d = String(targetDate.getDate()).padStart(2, '0');
+              const dateStr = `${y}-${m}-${d}`;
+
+              for (const hora of rule.horas) {
+                const slotIso = `${dateStr}T${hora}:00`;
+                const slotDate = new Date(slotIso);
+                if (slotDate.getTime() >= now.getTime() - 30 * 60 * 1000) {
+                  upcomingList.push({
+                    id: `agenda-${rule.id}-${dateStr}-${hora}`,
+                    ruleId: rule.id,
+                    tipo:
+                      rule.tipo === 'signos'
+                        ? 'registro_vitales'
+                        : rule.tipo === 'epro'
+                          ? 'cuestionario_diario'
+                          : 'medicacion',
+                    medicamentoId: rule.medicamento_paciente_id ?? null,
+                    medicamentoNombre: rule.titulo,
+                    fechaPrevistaUtc: slotDate.toISOString(),
+                    zonaHoraria: 'America/Santiago',
+                  });
+                }
+              }
+            }
+          }
+        }
+      } catch {
+        // Continuar con reglas legacy
+      }
+    }
 
     for (const rule of activeRules) {
       const evalRes = classifyReminderStatus(snap, {

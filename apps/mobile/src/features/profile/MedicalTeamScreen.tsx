@@ -15,13 +15,21 @@ import type { AssignedProfessional } from '../../data/local/clinical-context/cli
 import { formatDate } from '../../data/local/repository';
 import { useFocusedValue } from '../../hooks/use-local-query';
 import { useLocalData } from '../../providers/LocalDataProvider';
+import { refreshMedicalTeam } from '../../data/local/clinical-context/refresh-medical-team';
 
 export function MedicalTeamScreen() {
-  const { repository } = useLocalData();
-  const load = useCallback(
-    () => (repository ? repository.assignedMedicalTeam() : Promise.resolve([])),
-    [repository],
-  );
+  const { repository, identitySession, clinicalStore } = useLocalData();
+  const load = useCallback(async () => {
+    if (identitySession && clinicalStore) {
+      await refreshMedicalTeam(
+        identitySession,
+        clinicalStore.connection,
+        clinicalStore.scope.owner,
+        clinicalStore.scope.localPatientId,
+      ).catch(() => undefined);
+    }
+    return repository ? repository.assignedMedicalTeam() : [];
+  }, [repository, identitySession, clinicalStore]);
   const {
     value: team,
     loading,
