@@ -51,18 +51,25 @@ export async function migrateSimulator(
     for (let index = 0; index < target; index++) {
       const fileName = SIMULATOR_MIGRATIONS[index];
       const sql = await readFile(new URL(`migrations/${fileName}`, import.meta.url), 'utf8');
-      const checksum = createHash('sha256').update(sql.replace(/\r\n/g, '\n')).digest('hex');
+      const canonicalChecksum = createHash('sha256')
+        .update(sql.replace(/\r\n/g, '\n'))
+        .digest('hex');
+      const crlfChecksum = createHash('sha256')
+        .update(sql.replace(/\r\n/g, '\n').replace(/\n/g, '\r\n'))
+        .digest('hex');
+      const rawChecksum = createHash('sha256').update(sql).digest('hex');
+      const validChecksums = new Set([canonicalChecksum, crlfChecksum, rawChecksum]);
       const prior = applied.rows.find((row) => row.version === index + 1);
 
       if (prior) {
-        if (prior.checksum && prior.checksum !== checksum) {
+        if (prior.checksum && !validChecksums.has(prior.checksum)) {
           throw new Error(`La migración aplicada ${fileName} cambió de contenido.`);
         }
-        if (!prior.checksum) {
-          // Actualizar checksum en registros heredados
+        if (!prior.checksum || prior.checksum !== canonicalChecksum) {
+          // Normalizar checksum en registros heredados o guardados con saltos de línea CRLF
           await client.query('UPDATE qc_demo_schema_migration SET checksum=$2 WHERE version=$1', [
             index + 1,
-            checksum,
+            canonicalChecksum,
           ]);
         }
         continue;
@@ -71,7 +78,7 @@ export async function migrateSimulator(
       await client.query(sql);
       await client.query(
         'INSERT INTO qc_demo_schema_migration(version, checksum) VALUES($1, $2) ON CONFLICT(version) DO UPDATE SET checksum=excluded.checksum',
-        [index + 1, checksum],
+        [index + 1, canonicalChecksum],
       );
     }
   });

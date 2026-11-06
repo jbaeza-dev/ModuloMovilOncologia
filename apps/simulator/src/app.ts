@@ -248,7 +248,6 @@ export function createSimulator(config: SimulatorConfig, db: Database) {
         const result = await getSyncedEpro(db, config, principal, pacienteId, formularioId, limite);
         send(res, result.status, result.body);
         return;
-        return;
       }
       if (preparationPath.startsWith('/admin/api/v1/preparacion/')) {
         const action = preparationPath.slice('/admin/api/v1/preparacion/'.length);

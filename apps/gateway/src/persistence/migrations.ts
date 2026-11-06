@@ -48,10 +48,14 @@ export async function databaseReady(db: Database): Promise<void> {
   );
   if (result.rows.length !== MIGRATIONS.length) throw new Error('Migraciones pendientes.');
   for (const [index, file] of MIGRATIONS.entries()) {
-    const hash = createHash('sha256')
-      .update(await readFile(new URL(`migrations/${file}`, import.meta.url)))
-      .digest('hex');
-    if (result.rows[index]?.version !== index + 1 || result.rows[index]?.checksum !== hash)
+    const raw = await readFile(new URL(`migrations/${file}`, import.meta.url), 'utf8');
+    const canonicalHash = createHash('sha256').update(raw.replace(/\r\n/g, '\n')).digest('hex');
+    const rawHash = createHash('sha256').update(raw).digest('hex');
+    const row = result.rows[index];
+    if (
+      row?.version !== index + 1 ||
+      (row?.checksum !== canonicalHash && row?.checksum !== rawHash)
+    )
       throw new Error('Esquema incompatible.');
   }
 }

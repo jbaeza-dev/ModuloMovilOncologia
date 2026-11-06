@@ -478,7 +478,7 @@ export async function persistReportFile(
           .normalize('NFD')
           .replace(/[\u0300-\u036f]/g, '')
           .replace(/[^a-z0-9_-]+/g, '_')
-          .replace(/^_+|_+$/g, '')
+          .replace(/(?:^_+)|(?:_+$)/g, '')
           .slice(0, 30);
       }
       const dateIso = new Date().toISOString().slice(0, 10);
