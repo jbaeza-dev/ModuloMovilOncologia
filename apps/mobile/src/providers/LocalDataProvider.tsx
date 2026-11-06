@@ -617,6 +617,7 @@ export function LocalDataProvider({ children }: { children: ReactNode }) {
           await coordinator.cancelPatientSchedule(currentId).catch(() => undefined);
           const prev = agendaRuntime.current;
           agendaRuntime.current = null;
+          agendaPreparation.current = null;
           setAgendaCoordinator(null);
           setAgendaBackgroundReady(false);
           await prev?.close?.().catch(() => undefined);
@@ -635,6 +636,7 @@ export function LocalDataProvider({ children }: { children: ReactNode }) {
           };
         } else {
           if (!agendaRuntime.current) {
+            agendaPreparation.current = null;
             await prepareAgenda().catch(() => undefined);
           }
           const reconcileCurrent = () =>

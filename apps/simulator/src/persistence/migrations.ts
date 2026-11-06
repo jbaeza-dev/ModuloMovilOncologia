@@ -51,7 +51,7 @@ export async function migrateSimulator(
     for (let index = 0; index < target; index++) {
       const fileName = SIMULATOR_MIGRATIONS[index];
       const sql = await readFile(new URL(`migrations/${fileName}`, import.meta.url), 'utf8');
-      const checksum = createHash('sha256').update(sql).digest('hex');
+      const checksum = createHash('sha256').update(sql.replace(/\r\n/g, '\n')).digest('hex');
       const prior = applied.rows.find((row) => row.version === index + 1);
 
       if (prior) {

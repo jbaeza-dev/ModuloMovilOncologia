@@ -105,6 +105,7 @@ const mockRepository = {
     getReminderStatusSnapshot: jest.fn(),
     setPreferences: jest.fn().mockResolvedValue(undefined),
   },
+  runExclusive: jest.fn((fn: () => Promise<unknown>) => fn()),
 };
 
 const mockLocalData = {
@@ -320,7 +321,14 @@ describe('HomeScreen UI tests (Bloque 2)', () => {
         'Tus horarios están guardados. Activa las notificaciones para recibir avisos.',
       ),
     ).toBeTruthy();
-    expect(screen.getByText('Permitir notificaciones')).toBeTruthy();
+    const permitButton = screen.getByText('Permitir notificaciones');
+    expect(permitButton).toBeTruthy();
+
+    await fireEvent.press(permitButton);
+    expect(mockLocalData.notificationAdapter.requestPermission).toHaveBeenCalled();
+    expect(mockRepository.reminders.setPreferences).toHaveBeenCalledWith(true);
+    expect(mockLocalData.bumpRemindersRevision).toHaveBeenCalled();
+    expect(mockLocalData.reconcileReminders).toHaveBeenCalledWith('paciente-demo-001');
 
     // El registro de signos vitales sigue disponible
     const vitalButtons = screen.getAllByRole('button', { name: 'Registrar signos vitales' });

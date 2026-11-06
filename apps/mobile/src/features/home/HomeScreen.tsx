@@ -196,16 +196,21 @@ export function HomeScreen() {
     setResumingNotices(true);
     try {
       await notificationAdapter.requestPermission();
-      if (devices) await registerNativePush(devices).catch(() => undefined);
-      if (
-        (manager?.getPatientId?.() ?? patientId) !== targetPatientId ||
-        (manager?.getContextEpoch?.() ?? 0) !== targetEpoch
-      ) {
-        return;
-      }
-      if (reconcileReminders) {
-        await reconcileReminders(targetPatientId);
-      }
+      if (!repository) return;
+      await trackOperation(async () => {
+        if (
+          (manager?.getPatientId?.() ?? patientId) !== targetPatientId ||
+          (manager?.getContextEpoch?.() ?? 0) !== targetEpoch
+        ) {
+          return;
+        }
+        await repository.reminders.setPreferences(true);
+        bumpRemindersRevision?.();
+        if (devices) await registerNativePush(devices).catch(() => undefined);
+        if (reconcileReminders) {
+          await reconcileReminders(targetPatientId);
+        }
+      });
       refreshReminderStatus();
     } finally {
       setResumingNotices(false);

@@ -78,6 +78,27 @@ export function createMobileSession() {
   });
   return session;
 }
+const INSTALLATION_KEY = 'quimiocare.expo.installation_id';
+const UUID_REGEX = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
+
+async function getOrCreateInstallationId(): Promise<string> {
+  try {
+    const existing = await SecureStore.getItemAsync(INSTALLATION_KEY);
+    if (existing && UUID_REGEX.test(existing)) {
+      return existing;
+    }
+  } catch {
+    // Si la lectura en almacenamiento seguro falla, continuar
+  }
+  const fresh = Crypto.randomUUID();
+  try {
+    await SecureStore.setItemAsync(INSTALLATION_KEY, fresh);
+  } catch {
+    // Si la persistencia falla, retornar el identificador válido en memoria
+  }
+  return fresh;
+}
+
 export function createDeviceClient(session: HttpSessionAdapter) {
   return new DeviceClient(session);
 }
@@ -97,7 +118,12 @@ export async function registerNativePush(devices: DeviceClient) {
   const projectId = process.env.EXPO_PUBLIC_EXPO_PROJECT_ID;
   if (!projectId)
     throw new Error('Falta configurar el proyecto de notificaciones de esta compilación.');
-  const token = await Notifications.getExpoPushTokenAsync({ projectId });
+  const deviceId = await getOrCreateInstallationId();
+  const token = await Notifications.getExpoPushTokenAsync({
+    projectId,
+    deviceId,
+    applicationId: 'cl.ubiobio.quimiocare',
+  });
   devices.assertContext(context);
   return devices.register(token.data, { version_so: String(Platform.Version) });
 }

@@ -27,7 +27,7 @@ export async function migrate(db: Database, target: number = MIGRATIONS.length):
         new URL(`migrations/${MIGRATIONS[index]}`, import.meta.url),
         'utf8',
       );
-      const checksum = createHash('sha256').update(sql).digest('hex');
+      const checksum = createHash('sha256').update(sql.replace(/\r\n/g, '\n')).digest('hex');
       const prior = applied.rows.find((row) => row.version === index + 1);
       if (prior) {
         if (prior.checksum !== checksum)
