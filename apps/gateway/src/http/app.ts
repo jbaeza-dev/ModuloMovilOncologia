@@ -109,7 +109,7 @@ export function createApp(
   });
   // Private operational probe; publish /health, never forward /internal through the public proxy.
   app.get('/internal/auth/check', async (req, res) => {
-    await auth.verify(req.headers.authorization);
+    await auth.verify(req.headers.authorization?.replace(/^Token\s+/i, 'Bearer '));
     res.sendStatus(204);
   });
   app.get('/internal/ready', async (req, res) => {

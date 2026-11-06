@@ -19,7 +19,10 @@ const server = createServer((req, res) => {
     return;
   }
   if (req.url === '/sync/stream') {
-    if (req.headers.authorization !== 'Bearer synthetic-proxy-test') {
+    if (
+      req.headers.authorization !== 'Bearer synthetic-proxy-test' &&
+      req.headers.authorization !== 'Token synthetic-proxy-test'
+    ) {
       res.writeHead(401).end();
       return;
     }
@@ -238,6 +241,14 @@ try {
         .status,
       401,
     );
+    const tokenStreaming = await fetch(base + '/quimiocare-backend/sync/stream', {
+      method: 'POST',
+      headers: { Authorization: 'Token synthetic-proxy-test' },
+      body: '{}',
+      signal: AbortSignal.timeout(5000),
+    });
+    assert.equal(tokenStreaming.status, 200);
+    await tokenStreaming.body.cancel();
     const start = Date.now();
     const streaming = await fetch(base + '/quimiocare-backend/sync/stream', {
       method: 'POST',

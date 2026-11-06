@@ -1,4 +1,5 @@
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
+import { SignJWT } from 'jose';
 import { createServer } from 'node:http';
 import type { Server } from 'node:http';
 import { once } from 'node:events';
@@ -46,6 +47,22 @@ describe('Real HTTP boundary with verified authentication', () => {
     expect(r.headers.get('x-powered-by')).toBeNull();
     expect(r.headers.get('cache-control')).toBe('no-store');
     expect((await fetch(base + '/internal/ready')).status).toBe(503);
+    const cfg = testConfig();
+    const jwt = await new SignJWT({ cohort: 'quimiocare-demo' })
+      .setProtectedHeader({ alg: 'HS256' })
+      .setSubject(randomUUID())
+      .setIssuer(cfg.authIssuer)
+      .setAudience(cfg.authAudience)
+      .setIssuedAt()
+      .setExpirationTime('1h')
+      .sign(new TextEncoder().encode(cfg.authVerifyKey));
+    for (const scheme of ['Bearer', 'Token']) {
+      const checkRes = await fetch(base + '/internal/auth/check', {
+        headers: { authorization: `${scheme} ${jwt}` },
+      });
+      expect(checkRes.status).toBe(204);
+    }
+    expect((await fetch(base + '/internal/auth/check')).status).toBe(401);
   });
   it.each([undefined, 'Bearer forged.jwt.token', 'Bearer synthetic-private-token'])(
     'never authorizes via unverified bearer %s',

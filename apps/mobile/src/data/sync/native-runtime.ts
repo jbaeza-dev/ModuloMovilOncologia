@@ -292,9 +292,16 @@ export async function openClinicalStore(
     };
     // Local data is available before network authorization; credentialsForSync gates actual uploads.
     if (!lab)
-      void store.resume(false).catch((error) => {
-        if (error instanceof SessionFailure) store.pauseCode = 'SESION_' + error.kind.toUpperCase();
-      });
+      void store
+        .resume(
+          session.getSnapshot().uploadAllowed && isRecoverableSessionPause(store.pauseCode)
+            ? 'session'
+            : false,
+        )
+        .catch((error) => {
+          if (error instanceof SessionFailure)
+            store.pauseCode = 'SESION_' + error.kind.toUpperCase();
+        });
     return store;
   } catch (error) {
     await store.close().catch(() => undefined);
