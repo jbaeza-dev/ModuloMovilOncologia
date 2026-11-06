@@ -713,4 +713,27 @@ describe('Verificación posterior al guardado de perfil', () => {
     expect(h.session.getSnapshot().identity?.profile.nombre).toBe('Nombre actualizado');
     expect(h.session.getSnapshot().uploadAllowed).toBe(true);
   });
+
+  it('permite revocar manualmente la asociación push del dispositivo actual al desactivar avisos en configuración', async () => {
+    const h = harness();
+    await login(h);
+    const devices = new DeviceClient(h.session);
+    const id = randomUUID();
+    await h.vault.write('device-association-' + owner, JSON.stringify(id));
+    await devices.revokeCurrentDevice();
+    expect(await devices.pendingCount()).toBe(0);
+    expect(await h.vault.read('device-association-' + owner)).toBeNull();
+    expect(h.session.getCurrentUser()?.id).toBe(owner);
+    expect(h.calls.some((v) => v.path.includes(`dispositivo/sesiones/${id}`))).toBe(true);
+  });
+
+  it('mantiene uploadAllowed activo mientras credentialsForSync revalida consentimiento en segundo plano', async () => {
+    const h = harness();
+    await login(h);
+    expect(h.session.getSnapshot().uploadAllowed).toBe(true);
+    const pendingCredentials = h.session.credentialsForSync();
+    expect(h.session.getSnapshot().uploadAllowed).toBe(true);
+    await expect(pendingCredentials).resolves.toMatchObject({ owner });
+    expect(h.session.getSnapshot().uploadAllowed).toBe(true);
+  });
 });

@@ -280,8 +280,8 @@ export async function openClinicalStore(
     const resumeOnConsent = session.subscribe(() => {
       if (
         !store.closed &&
-        isRecoverableSessionPause(store.pauseCode) &&
-        session.getSnapshot().uploadAllowed
+        session.getSnapshot().uploadAllowed &&
+        (isRecoverableSessionPause(store.pauseCode) || (!store.pauseCode && !store.isConnected?.()))
       )
         void store.resume('session').catch(() => undefined);
     });

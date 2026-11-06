@@ -489,7 +489,6 @@ export class HttpSessionAdapter implements SessionAdapter {
     const epoch = this.epoch,
       owner = this.current?.owner;
     if (!owner) throw new SessionFailure('expired');
-    this.update({ uploadAllowed: false });
     try {
       const r = await this.request('clinical', '/api/v1/auth/me');
       if (r.status !== 200) throw new SessionFailure('unavailable');
@@ -543,10 +542,12 @@ export class HttpSessionAdapter implements SessionAdapter {
         clinicalStatus: clinical.status,
         treatmentStatus: treatment.status,
       };
+      const isStale = clinical.status === 'unavailable' || treatment.status === 'unavailable';
       this.update({
         identity,
         user,
-        stale: clinical.status === 'unavailable' || treatment.status === 'unavailable',
+        stale: isStale,
+        ...(complete && !isStale ? {} : { uploadAllowed: false }),
         state: complete ? 'context_ready' : 'profile_incomplete',
         message: complete ? null : 'Completa tus datos para habilitar las operaciones online.',
       });
@@ -597,7 +598,6 @@ export class HttpSessionAdapter implements SessionAdapter {
     const epoch = this.epoch,
       owner = this.current?.owner;
     if (!owner) throw new SessionFailure('expired');
-    this.update({ uploadAllowed: false });
     try {
       const [terms, r] = await Promise.all([
         this.publicTerms(),

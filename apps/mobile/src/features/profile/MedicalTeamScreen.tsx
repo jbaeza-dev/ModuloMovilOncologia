@@ -28,7 +28,14 @@ export function MedicalTeamScreen() {
         clinicalStore.scope.localPatientId,
       ).catch(() => undefined);
     }
-    return repository ? repository.assignedMedicalTeam() : [];
+    const team = repository ? await repository.assignedMedicalTeam() : [];
+    if (identitySession && team.length > 0 && !identitySession.getSnapshot().uploadAllowed) {
+      await identitySession.refreshIdentity().catch(() => undefined);
+      if (identitySession.getSnapshot().uploadAllowed) {
+        await clinicalStore?.resume('session').catch(() => undefined);
+      }
+    }
+    return team;
   }, [repository, identitySession, clinicalStore]);
   const {
     value: team,

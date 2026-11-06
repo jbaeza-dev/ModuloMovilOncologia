@@ -166,6 +166,9 @@ export class DeviceClient {
       release();
     }
   }
+  async revokeCurrentDevice() {
+    await this.closeCurrent();
+  }
   private async closeCurrent() {
     const owner = this.owner(),
       key = 'device-association-' + owner,

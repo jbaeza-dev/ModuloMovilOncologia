@@ -99,6 +99,11 @@ async function handle(data: unknown, opened = false) {
       !(await isActive(binding))
     )
       return null;
+    const pref = await connection.first<{ habilitado: number }>(
+      'SELECT habilitado FROM preferencia_avisos WHERE paciente_id=?',
+      [binding.localPatientId],
+    );
+    if (pref && pref.habilitado === 0) return null;
     let valid = true;
     // Recheck the durable active identity before each native side effect, including a concurrent logout.
     const adapter = new ExpoAgendaNotifications();
@@ -256,6 +261,16 @@ export async function activateNativeAgenda(session: HttpSessionAdapter, store: C
   return {
     coordinator,
     taskRegistered,
+    async close() {
+      if (closed) return;
+      await coordinator.close().catch(() => undefined);
+      const current = await readBinding().catch(() => null);
+      if (current?.sessionId === sessionId && current.contextKey === contextKey)
+        await SecureStore.deleteItemAsync(ACTIVE).catch(() => undefined);
+      if (foreground?.coordinator === coordinator) foreground = null;
+      unregister();
+      closed = true;
+    },
     dispose() {
       coordinator.deactivate();
       unregister();

@@ -15,8 +15,14 @@ jest.mock('../providers/ThemeProvider', () => ({
     return { theme: resolveTheme('turquoise', 'light') };
   },
 }));
+const mockRouterReplace = jest.fn();
 jest.mock('expo-router', () => ({
-  router: { navigate: jest.fn(), canGoBack: () => false, back: jest.fn() },
+  router: {
+    navigate: jest.fn(),
+    replace: (...args: unknown[]) => mockRouterReplace(...args),
+    canGoBack: () => false,
+    back: jest.fn(),
+  },
 }));
 jest.mock('expo-router/react-navigation', () => ({ useNavigationState: () => false }));
 import { OnlineConsentScreen } from '../features/access/SessionScreens';
@@ -119,6 +125,7 @@ async function setup(revoked = false, missingContext = false) {
 }
 afterEach(() => {
   mockData.identitySession = null;
+  mockRouterReplace.mockClear();
 });
 describe('Online consent in the actual screen and session adapter', () => {
   it('confirms acceptance while showing that a new patient still needs linkage', async () => {
@@ -139,6 +146,7 @@ describe('Online consent in the actual screen and session adapter', () => {
       ),
     ).toBeTruthy();
     expect(session.getSnapshot().uploadAllowed).toBe(false);
+    expect(mockRouterReplace).toHaveBeenCalledWith('/(tabs)');
   });
   it('presents a synthetic definition and enables uploads only after C-16 plus fresh C-15', async () => {
     const { session, bodies } = await setup();

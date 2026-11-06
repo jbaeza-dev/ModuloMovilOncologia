@@ -471,7 +471,7 @@ function LegacyReminderEditScreen() {
     setSelectedHours((prev) => {
       const next = [...prev];
       next[index] = nextHhMm;
-      return Array.from(new Set(next)).sort();
+      return next.filter((h, i) => next.indexOf(h) === i);
     });
   };
 
@@ -1074,7 +1074,7 @@ function LegacyReminderEditScreen() {
                 <View style={{ marginTop: theme.spacing.sm, gap: theme.spacing.xs }}>
                   <Text style={styles.subheading}>Horarios adicionales</Text>
                   {selectedHours.slice(1).map((hour, idx) => (
-                    <View key={`${hour}-${idx}`} style={styles.extraHourRow}>
+                    <View key={`vital-extra-hour-${idx}`} style={styles.extraHourRow}>
                       <View style={{ flex: 1 }}>
                         <DateTimePickerField
                           mode="time"

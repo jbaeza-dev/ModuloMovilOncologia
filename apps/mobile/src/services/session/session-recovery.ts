@@ -19,7 +19,7 @@ export function needsSessionRecovery(snapshot: SessionSnapshot): boolean {
   return (
     Boolean(snapshot.user) &&
     (snapshot.state === 'service_unavailable' ||
-      (snapshot.state === 'clinical_incomplete' && snapshot.stale) ||
+      snapshot.state === 'clinical_incomplete' ||
       (snapshot.state === 'context_ready' && (snapshot.stale || !snapshot.uploadAllowed)))
   );
 }

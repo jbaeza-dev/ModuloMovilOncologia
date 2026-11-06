@@ -40,6 +40,12 @@ export function LinkCodeScreen() {
         ).catch(() => undefined);
       const team = await repository.assignedMedicalTeam();
       setAssignedTeam(team);
+      if (identitySession && team.length > 0 && !identitySession.getSnapshot().uploadAllowed) {
+        await identitySession.refreshIdentity().catch(() => undefined);
+        if (identitySession.getSnapshot().uploadAllowed) {
+          await clinicalStore?.resume('session').catch(() => undefined);
+        }
+      }
     } catch {
       // Ignorar fallo de lectura local
     }

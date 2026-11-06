@@ -78,9 +78,11 @@ export function EducationScreen() {
     [catalogReader],
   );
   const { patientId: screenPatientId } = useLocalData();
+  const statusRevision = useContext(EducationStatusRevisionContext);
   const searchCatalog = useFocusedValue(loadResources, null, {
     queryKey: `${screenPatientId ?? 'default'}:education:search-catalog`,
     context: EducationContentRevisionContext,
+    extraRevision: statusRevision,
   });
   const currentResources =
     searchCatalog.value?.source === catalogReader ? searchCatalog.value.resources : [];
@@ -111,6 +113,7 @@ export function EducationScreen() {
   } = useFocusedList(load, {
     queryKey: `${patientId ?? 'default'}:education:categories`,
     context: EducationContentRevisionContext,
+    extraRevision: statusRevision,
   });
   return (
     <Screen isRoot showHelp showProfile>

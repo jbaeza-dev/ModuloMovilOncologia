@@ -70,7 +70,7 @@ async function seedInto(client: SqlClient, publicBaseUrl: string): Promise<void>
     [
       'DEMO-FOLFOX-v1',
       'mFOLFOX6 — tratamiento adyuvante del cáncer de colon',
-      'Plantilla demostrativa basada en el protocolo estándar mFOLFOX6 para evaluación académica.',
+      'Pauta clínica adyuvante basada en el protocolo estándar mFOLFOX6 (oxaliplatino, ácido folínico y fluorouracilo en ciclos de 14 días).',
       1,
       folfox.clinical,
       folfox.treatment,

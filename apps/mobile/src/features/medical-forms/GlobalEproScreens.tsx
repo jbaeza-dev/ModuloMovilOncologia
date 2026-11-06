@@ -49,14 +49,27 @@ function answerLabel(q: FormQuestion, value: AnswerValue | undefined): string {
 }
 export function GlobalEproHubScreen() {
   const repo = useEproRepository(),
-    { trackOperation, isClosing } = useLocalData();
+    { trackOperation, isClosing, identitySession, clinicalStore } = useLocalData();
   const [busy, setBusy] = useState(false),
     [feedback, setFeedback] = useState('');
   const load = useCallback(async () => {
     if (!repo) return null;
-    const hub = await repo.hub();
+    let hub = await repo.hub();
+    if (!hub.current && identitySession) {
+      if (!identitySession.getSnapshot().uploadAllowed) {
+        await identitySession.refreshIdentity().catch(() => undefined);
+      }
+      if (
+        identitySession.getSnapshot().uploadAllowed &&
+        clinicalStore &&
+        !clinicalStore.isConnected?.()
+      ) {
+        await clinicalStore.resume('session').catch(() => undefined);
+        hub = await repo.hub();
+      }
+    }
     return { source: repo, hub };
-  }, [repo]);
+  }, [repo, identitySession, clinicalStore]);
   const { patientId } = useLocalData();
   const { value, loading, error, refresh } = useFocusedValue(load, null, {
     queryKey: `${patientId ?? 'default'}:epro:hub`,

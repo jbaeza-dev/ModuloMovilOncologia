@@ -117,6 +117,28 @@ describe('Agenda compartida: interfaz confirmada', () => {
       expect(mockSave).toHaveBeenCalledWith(rule.id, normalizedReminder(rule), 1),
     );
   });
+  it('al editar la hora con teclado no vuelve a 08:00 aunque no se pulse Aplicar hora antes de guardar', async () => {
+    mockParams.id = rule.id;
+    await render(
+      <ThemeProvider>
+        <SharedAgendaEditScreen />
+      </ThemeProvider>,
+    );
+    await screen.findByDisplayValue('Mi registro diario');
+    await fireEvent.press(
+      screen.getByRole('button', { name: 'Escribir hora con teclado para Horario 1' }),
+    );
+    const timeInput = await screen.findByLabelText('Campo de texto hora para Horario 1');
+    await fireEvent.changeText(timeInput, '14:30');
+    await fireEvent.press(screen.getByRole('button', { name: 'Guardar y confirmar horario' }));
+    await waitFor(() =>
+      expect(mockSave).toHaveBeenCalledWith(
+        rule.id,
+        expect.objectContaining({ horas: ['14:30'] }),
+        1,
+      ),
+    );
+  });
   it('muestra horarios confirmados y cobertura limitada real', async () => {
     await render(
       <ThemeProvider>

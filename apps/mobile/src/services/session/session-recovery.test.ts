@@ -137,6 +137,20 @@ describe('Recuperación automática de sesión sin interacción ni aceptación i
     await vi.advanceTimersByTimeAsync(120000);
     expect(h.refreshIdentity).toHaveBeenCalledTimes(1);
   });
+  it('recupera automáticamente cuando el usuario está en clinical_incomplete esperando vinculación', async () => {
+    const h = harness();
+    h.update({ state: 'clinical_incomplete', stale: false, uploadAllowed: false });
+    h.recovery.setForeground(true);
+    await vi.advanceTimersByTimeAsync(0);
+    expect(h.refreshIdentity).toHaveBeenCalledTimes(1);
+    h.refreshIdentity.mockImplementation(async () => {
+      h.update({ state: 'context_ready', stale: false, uploadAllowed: true });
+    });
+    await vi.advanceTimersByTimeAsync(2000);
+    expect(h.refreshIdentity).toHaveBeenCalledTimes(2);
+    await vi.advanceTimersByTimeAsync(60000);
+    expect(h.refreshIdentity).toHaveBeenCalledTimes(2);
+  });
 });
 
 it('conserva el intervalo creciente aunque el token pase por renovando antes de cada fallo', async () => {

@@ -181,6 +181,30 @@ describe('Swagger UI Offline y Documentación Interactiva', () => {
     expect(spec.paths['/admin/api/v1/vinculaciones/consumir'].post.security).toEqual([
       { OperadorBearer: [] },
     ]);
+    expect(spec.tags.map((t: { name: string }) => t.name)).toEqual([
+      '0. Vinculación del paciente',
+      '1. Categorías',
+      '2. Contenido educativo',
+      '3. Términos vigentes',
+      '4. Consentimiento sintético',
+      '5. Contexto clínico',
+      '6. Formularios',
+      '7. Escenarios',
+      '8. Supervisión de sincronización',
+      '9. Profesionales',
+      '10. Medicamentos',
+    ]);
+    const allOperationTags = Object.values(
+      spec.paths as Record<string, Record<string, { tags?: string[] }>>,
+    ).flatMap((methods) => Object.values(methods).flatMap((op) => op.tags ?? []));
+    expect(allOperationTags).not.toContain('Consultar y gestionar demostración');
+    const ctxExample =
+      spec.paths['/admin/api/v1/preparacion/pacientes/{paciente_id}/contexto-clinico'].post
+        .requestBody.content['application/json'].example;
+    expect(ctxExample.perfil_clinico.medicamentos).toHaveLength(3);
+    expect(ctxExample.perfil_clinico.medicamentos.every((m: { activo: boolean }) => m.activo)).toBe(
+      true,
+    );
   });
 
   it('devuelve la especificación unificada de 17 operaciones en /quimiocare/docs/openapi.json', async () => {

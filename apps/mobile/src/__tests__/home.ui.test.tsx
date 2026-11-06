@@ -446,4 +446,27 @@ describe('HomeScreen UI tests (Bloque 2)', () => {
     await fireEvent.press(linkBtn);
     expect(mockRouterPush).toHaveBeenCalledWith('/perfil/vinculacion');
   });
+
+  it('cuando los avisos están desactivados en configuración, avisa en el inicio y oculta la próxima medición', async () => {
+    mockReminderState = {
+      ...mockReminderState,
+      loading: false,
+      evaluation: {
+        ...mockReminderState.evaluation,
+        status: 'preferences_disabled',
+        deviceAvailability: 'available',
+      },
+    };
+
+    await render(<HomeScreen />);
+
+    expect(screen.getByText('Avisos desactivados')).toBeTruthy();
+    expect(
+      screen.getByText(
+        /Todos tus avisos están desactivados en configuración\. No recibirás ninguna alerta en este dispositivo/i,
+      ),
+    ).toBeTruthy();
+    expect(screen.queryByText('Tu próxima medición')).toBeNull();
+    expect(screen.getByRole('button', { name: /Reanudar.*avisos/i })).toBeTruthy();
+  });
 });

@@ -45,6 +45,7 @@ export function useReminderStatus(options: UseReminderStatusOptions = {}) {
       if (!agenda || !data.database) return;
       void (async () => {
         try {
+          const prefs = await data.repository?.reminders?.getPreferences?.().catch(() => null);
           const snapshot = await agenda.read(),
             coverage = (await data.agendaCoordinator?.coverage()) ?? null,
             jobs = await data.database!.all<{
@@ -60,7 +61,7 @@ export function useReminderStatus(options: UseReminderStatusOptions = {}) {
               ],
             );
           agenda.assert();
-          const evaluation = sharedReminderStatus(
+          let evaluation = sharedReminderStatus(
             snapshot.rules,
             snapshot.completed,
             jobs,
@@ -69,6 +70,17 @@ export function useReminderStatus(options: UseReminderStatusOptions = {}) {
             options.tipo === 'medicacion' ? 'medicacion' : 'signos',
             options.ruleId,
           );
+          if (prefs && !prefs.enabled && prefs.updatedAt !== null) {
+            evaluation = {
+              ...evaluation,
+              status: 'preferences_disabled',
+              notificationId: null,
+              fechaPrevistaUtc: null,
+              fechaCivilLocal: null,
+              horaMinutoLocal: null,
+              noUpcomingReason: null,
+            };
+          }
           if (active) setScoped({ agenda, evaluation });
         } catch {
           if (active) setScoped({ agenda, evaluation: createQueryErrorReminderStatus() });

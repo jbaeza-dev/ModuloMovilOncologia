@@ -14,6 +14,7 @@ export const SIMULATOR_MIGRATIONS = [
   '008-medicamentos-plantilla-folfox.sql',
   '009-profesional-activo.sql',
   '010-gestion-evaluacion.sql',
+  '011-folfox-medicamentos-activos.sql',
 ] as const;
 
 export async function migrateSimulator(

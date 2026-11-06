@@ -47,7 +47,11 @@ import { HttpAssistantAdapter } from '../services/assistant/http-assistant-adapt
 import { UnconfiguredAssistantAdapter } from '../services/assistant/unconfigured-assistant-adapter';
 
 import { DEMO_USERS } from '../services/session/demo-session-adapter';
-import { createMobileSession, createDeviceClient } from '../services/session/native-session';
+import {
+  createMobileSession,
+  createDeviceClient,
+  registerNativePush,
+} from '../services/session/native-session';
 import { HttpSessionAdapter } from '../services/session/http-session-adapter';
 import { AgendaClient } from '../services/agenda/agenda-client';
 import { activateNativeAgenda, handleAgendaNotification } from '../services/agenda/native-agenda';
@@ -73,14 +77,19 @@ export type ScopedCoordinatorState = {
   result: CoordinatorResult | null;
 };
 
+let checkForegroundNoticesEnabled: () => Promise<boolean> = async () => true;
+
 try {
   Notifications.setNotificationHandler({
-    handleNotification: async () => ({
-      shouldShowBanner: true,
-      shouldShowList: true,
-      shouldPlaySound: true,
-      shouldSetBadge: false,
-    }),
+    handleNotification: async () => {
+      const allowed = await checkForegroundNoticesEnabled().catch(() => true);
+      return {
+        shouldShowBanner: allowed,
+        shouldShowList: allowed,
+        shouldPlaySound: allowed,
+        shouldSetBadge: false,
+      };
+    },
   });
 } catch {
   // Entornos de prueba o sin soporte nativo
@@ -270,7 +279,46 @@ export function LocalDataProvider({ children }: { children: ReactNode }) {
       return current.promise;
     const epoch = manager.getContextEpoch();
     const promise = manager.trackOperation(async () => {
-      const runtime = await activateNativeAgenda(identitySession, clinicalStore);
+      const runtimePromise = activateNativeAgenda(identitySession, clinicalStore);
+      const prefRow = await clinicalStore.connection
+        .first<{
+          habilitado: number;
+          actualizado_el: string | null;
+        }>('SELECT habilitado, actualizado_el FROM preferencia_avisos WHERE paciente_id = ?', [
+          clinicalStore.scope.localPatientId,
+        ])
+        .catch(() => null);
+      let noticesEnabled = prefRow ? prefRow.habilitado === 1 : true;
+      if (!prefRow) {
+        await clinicalStore.connection
+          .run(
+            `INSERT INTO preferencia_avisos (paciente_id, habilitado, actualizado_el)
+             VALUES (?, 1, ?)
+             ON CONFLICT(paciente_id) DO NOTHING`,
+            [clinicalStore.scope.localPatientId, new Date().toISOString()],
+          )
+          .catch(() => undefined);
+        noticesEnabled = true;
+      }
+      if (!noticesEnabled) {
+        const unusedRuntime = await runtimePromise.catch(() => null);
+        await unusedRuntime?.close?.().catch(() => undefined);
+        unusedRuntime?.dispose?.();
+        const prev = agendaRuntime.current;
+        agendaRuntime.current = null;
+        setAgendaCoordinator(null);
+        setAgendaBackgroundReady(false);
+        await prev?.close?.().catch(() => undefined);
+        prev?.dispose?.();
+        if (typeof Notifications?.cancelAllScheduledNotificationsAsync === 'function') {
+          await Notifications.cancelAllScheduledNotificationsAsync().catch(() => undefined);
+        }
+        return;
+      }
+      if (devices) {
+        void registerNativePush(devices).catch(() => undefined);
+      }
+      const runtime = await runtimePromise;
       if (
         clinicalStore.closed ||
         identitySession.getCurrentUser()?.id !== clinicalStore.scope.owner ||
@@ -292,7 +340,7 @@ export function LocalDataProvider({ children }: { children: ReactNode }) {
     });
     agendaPreparation.current = preparation;
     return preparation.promise;
-  }, [identitySession, clinicalStore, manager]);
+  }, [identitySession, clinicalStore, manager, devices]);
   useEffect(() => {
     let active = true;
     void prepareAgenda().catch(() => {
@@ -564,60 +612,86 @@ export function LocalDataProvider({ children }: { children: ReactNode }) {
             throw new Error('El contexto de agenda cambió.');
         };
         assertAgendaContext();
-        const reconcileCurrent = () =>
-          reconcileActiveAgenda(
-            () => agendaRuntime.current?.coordinator ?? null,
-            assertAgendaContext,
-          );
-        // Retire this owner's legacy jobs even before registering a new push association.
-        const legacy = await coordinator.cancelPatientSchedule(currentId);
-        if (!legacy.success || legacy.pendingCount) {
+        const prefs = await repository?.reminders?.getPreferences?.().catch(() => null);
+        if (prefs && !prefs.enabled && prefs.updatedAt !== null) {
+          await coordinator.cancelPatientSchedule(currentId).catch(() => undefined);
+          const prev = agendaRuntime.current;
+          agendaRuntime.current = null;
+          setAgendaCoordinator(null);
+          setAgendaBackgroundReady(false);
+          await prev?.close?.().catch(() => undefined);
+          prev?.dispose?.();
+          if (typeof Notifications?.cancelAllScheduledNotificationsAsync === 'function') {
+            await Notifications.cancelAllScheduledNotificationsAsync().catch(() => undefined);
+          }
           result = {
-            status: 'programacion_pendiente',
-            motivoPendiente: 'cancelacion_regla_previa',
+            status: 'desactivada',
             totalDeseadas: 0,
             programadasConfirmadas: 0,
             cubiertoHastaIso: null,
             truncadas: 0,
             reglasAfectadas: [],
-            incidencias: ['Quedan avisos anteriores pendientes de cancelar en este teléfono.'],
+            incidencias: [],
           };
         } else {
-          // Cancel locally completed occurrences before any potentially slow network request.
-          await reconcileCurrent();
-          try {
-            await sharedAgenda.refresh();
-          } catch {
-            sharedAgenda.assert();
+          if (!agendaRuntime.current) {
+            await prepareAgenda().catch(() => undefined);
           }
-          const coverage = await reconcileCurrent();
-          result = coverage
-            ? {
-                status: !coverage.permission
-                  ? 'permiso_denegado'
-                  : coverage.pendingCancellations
-                    ? 'programacion_pendiente'
-                    : 'programada',
-                totalDeseadas: coverage.wanted,
-                programadasConfirmadas: coverage.confirmed,
-                cubiertoHastaIso: coverage.until,
-                truncadas: coverage.truncated,
-                reglasAfectadas: [],
-                incidencias: coverage.pendingCancellations
-                  ? ['Quedan cancelaciones nativas pendientes.']
-                  : [],
-              }
-            : {
-                status: 'programacion_pendiente',
-                totalDeseadas: 0,
-                programadasConfirmadas: 0,
-                cubiertoHastaIso: null,
-                truncadas: 0,
-                reglasAfectadas: [],
-                incidencias: [
-                  'Activa las notificaciones de este dispositivo para programar su respaldo.',
-                ],
-              };
+          const reconcileCurrent = () =>
+            reconcileActiveAgenda(
+              () => agendaRuntime.current?.coordinator ?? null,
+              assertAgendaContext,
+            );
+          // Retire this owner's legacy jobs even before registering a new push association.
+          const legacy = await coordinator.cancelPatientSchedule(currentId);
+          if (!legacy.success || legacy.pendingCount) {
+            result = {
+              status: 'programacion_pendiente',
+              motivoPendiente: 'cancelacion_regla_previa',
+              totalDeseadas: 0,
+              programadasConfirmadas: 0,
+              cubiertoHastaIso: null,
+              truncadas: 0,
+              reglasAfectadas: [],
+              incidencias: ['Quedan avisos anteriores pendientes de cancelar en este teléfono.'],
+            };
+          } else {
+            // Cancel locally completed occurrences before any potentially slow network request.
+            await reconcileCurrent();
+            try {
+              await sharedAgenda.refresh();
+            } catch {
+              sharedAgenda.assert();
+            }
+            const coverage = await reconcileCurrent();
+            result = coverage
+              ? {
+                  status: !coverage.permission
+                    ? 'permiso_denegado'
+                    : coverage.pendingCancellations
+                      ? 'programacion_pendiente'
+                      : 'programada',
+                  totalDeseadas: coverage.wanted,
+                  programadasConfirmadas: coverage.confirmed,
+                  cubiertoHastaIso: coverage.until,
+                  truncadas: coverage.truncated,
+                  reglasAfectadas: [],
+                  incidencias: coverage.pendingCancellations
+                    ? ['Quedan cancelaciones nativas pendientes.']
+                    : [],
+                }
+              : {
+                  status: 'programacion_pendiente',
+                  totalDeseadas: 0,
+                  programadasConfirmadas: 0,
+                  cubiertoHastaIso: null,
+                  truncadas: 0,
+                  reglasAfectadas: [],
+                  incidencias: [
+                    'Activa las notificaciones de este dispositivo para programar su respaldo.',
+                  ],
+                };
+          }
         }
       } else
         result = await coordinator.reconcile(
@@ -637,8 +711,19 @@ export function LocalDataProvider({ children }: { children: ReactNode }) {
 
       return result;
     },
-    [coordinator, manager, sharedAgenda],
+    [coordinator, manager, sharedAgenda, repository, prepareAgenda],
   );
+
+  useEffect(() => {
+    checkForegroundNoticesEnabled = async () => {
+      if (!repository) return false;
+      const prefs = await repository.reminders.getPreferences().catch(() => null);
+      return prefs ? prefs.enabled : true;
+    };
+    return () => {
+      checkForegroundNoticesEnabled = async () => true;
+    };
+  }, [repository]);
 
   // Reconciliación al seleccionar paciente
   useEffect(() => {
@@ -731,27 +816,31 @@ export function LocalDataProvider({ children }: { children: ReactNode }) {
       });
 
       receivedSub = Notifications.addNotificationReceivedListener((notification) => {
-        const data = notification.request.content.data;
-        if (notificationPayload(data) || localAgendaData(data)) {
-          void handleAgendaNotification(data).catch(() => undefined);
-        }
-        if (isValidNotificationPayload(data)) {
-          const currentId = manager.getPatientId();
-          const currentEpoch = manager.getContextEpoch();
-          if (currentId && data.pacienteId === currentId && repository) {
-            void repository.reminders
-              .recordNotificationObserved(data.notificacionId)
-              .then(() => {
-                if (
-                  manager.getPatientId() === currentId &&
-                  manager.getContextEpoch() === currentEpoch
-                ) {
-                  setRemindersRevision((r) => r + 1);
-                }
-              })
-              .catch(() => undefined);
+        void (async () => {
+          const allowed = await checkForegroundNoticesEnabled().catch(() => true);
+          if (!allowed) return;
+          const data = notification.request.content.data;
+          if (notificationPayload(data) || localAgendaData(data)) {
+            void handleAgendaNotification(data).catch(() => undefined);
           }
-        }
+          if (isValidNotificationPayload(data)) {
+            const currentId = manager.getPatientId();
+            const currentEpoch = manager.getContextEpoch();
+            if (currentId && data.pacienteId === currentId && repository) {
+              void repository.reminders
+                .recordNotificationObserved(data.notificacionId)
+                .then(() => {
+                  if (
+                    manager.getPatientId() === currentId &&
+                    manager.getContextEpoch() === currentEpoch
+                  ) {
+                    setRemindersRevision((r) => r + 1);
+                  }
+                })
+                .catch(() => undefined);
+            }
+          }
+        })();
       });
     } catch {
       // Ignorar si no está disponible en este entorno

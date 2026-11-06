@@ -5,1340 +5,65 @@
     "version": "1.0.0",
     "description": "Servidor sintético de evaluación: entre con Google como operador autorizado y prepare toda la demostración aquí. Vincule mediante código o prepare contexto directamente; son recorridos distintos. Los contratos externos no se modifican."
   },
+  "tags": [
+    {
+      "name": "0. Vinculación del paciente",
+      "description": "Consumo de código de vinculación, consulta de estado y desvinculación de tratamiento o profesional."
+    },
+    {
+      "name": "1. Categorías",
+      "description": "Consulta, creación, edición y retiro de categorías del catálogo educativo."
+    },
+    {
+      "name": "2. Contenido educativo",
+      "description": "Gestión de imágenes, videos y podcasts educativos del catálogo."
+    },
+    {
+      "name": "3. Términos vigentes",
+      "description": "Consulta, creación y publicación de versiones de términos y condiciones."
+    },
+    {
+      "name": "4. Consentimiento sintético",
+      "description": "Consulta y preparación de estados de consentimiento del paciente."
+    },
+    {
+      "name": "5. Contexto clínico",
+      "description": "Consulta de pacientes y preparación de ficha clínica y tratamiento activo."
+    },
+    {
+      "name": "6. Formularios",
+      "description": "Consulta, creación y publicación de formularios clínicos ePRO por tratamiento."
+    },
+    {
+      "name": "7. Escenarios",
+      "description": "Consulta y activación de escenarios de simulación por paciente."
+    },
+    {
+      "name": "8. Supervisión de sincronización",
+      "description": "Verificación de signos vitales y respuestas ePRO recibidas desde la aplicación móvil."
+    },
+    {
+      "name": "9. Profesionales",
+      "description": "Gestión del directorio de profesionales tratantes."
+    },
+    {
+      "name": "10. Medicamentos",
+      "description": "Consulta, prescripción, actualización y retiro de medicamentos por paciente."
+    }
+  ],
   "paths": {
-  "/admin/api/v1/preparacion/pacientes/{paciente_id}/desvincular": {
-    "post": {
-      "tags": [
-        "Consultar y gestionar demostración"
-      ],
-      "operationId": "gestion_post_pacientes_paciente_id_desvincular",
-      "summary": "Desvincular paciente",
-      "security": [
-        {
-          "OperadorBearer": []
-        }
-      ],
-      "parameters": [
-        {
-          "name": "paciente_id",
-          "in": "path",
-          "required": true,
-          "schema": {
-            "type": "string",
-            "format": "uuid"
-          }
-        }
-      ],
-      "description": "Desvincular ambos finaliza la relación y permite generar un nuevo código. Solo profesional oculta el equipo conservando tratamiento. Solo tratamiento lo retira conservando el equipo. Conserva perfil, consentimientos e historial y no altera medicamentos ajenos al esquema. La app debe actualizar identidad y equipo; los avisos existentes se revisan por separado.",
-      "requestBody": {
-        "required": true,
-        "content": {
-          "application/json": {
-            "schema": {
-              "type": "object",
-              "additionalProperties": false,
-              "required": [
-                "operacion_id",
-                "alcance"
-              ],
-              "properties": {
-                "operacion_id": {
-                  "type": "string",
-                  "format": "uuid"
-                },
-                "alcance": {
-                  "type": "string",
-                  "enum": [
-                    "profesional",
-                    "tratamiento",
-                    "ambos"
-                  ]
-                }
-              }
-            },
-            "example": {
-              "operacion_id": "c6b2df7f-49b3-4a21-bf15-aaaad4f28f9d",
-              "alcance": "ambos"
-            }
-          }
-        }
-      },
-      "responses": {
-        "200": {
-          "description": "Resultado o replay confirmado"
-        },
-        "401": {
-          "description": "Sesión inválida"
-        },
-        "403": {
-          "description": "Operador no autorizado"
-        },
-        "404": {
-          "description": "Recurso inexistente"
-        },
-        "409": {
-          "description": "Conflicto de operación"
-        },
-        "422": {
-          "description": "Datos inválidos"
-        }
-      }
-    }
-  },
-  "/admin/api/v1/preparacion/pacientes/{paciente_id}/consentimientos": {
-    "get": {
-      "tags": [
-        "Consultar y gestionar demostración"
-      ],
-      "operationId": "gestion_get_pacientes_paciente_id_consentimientos",
-      "summary": "Consultar pacientes/{paciente_id}/consentimientos",
-      "security": [
-        {
-          "OperadorBearer": []
-        }
-      ],
-      "parameters": [
-        {
-          "name": "paciente_id",
-          "in": "path",
-          "required": true,
-          "schema": {
-            "type": "string",
-            "format": "uuid"
-          }
-        }
-      ],
-      "description": "Consulta administrativa de datos persistidos, incluidos los retirados. Listas limitadas a 1000 registros. La app consume sus rutas contractuales habituales; esta consulta no acredita por sí sola la recepción en el teléfono.",
-      "responses": {
-        "200": {
-          "description": "Resultado o replay confirmado"
-        },
-        "401": {
-          "description": "Sesión inválida"
-        },
-        "403": {
-          "description": "Operador no autorizado"
-        },
-        "404": {
-          "description": "Recurso inexistente"
-        },
-        "409": {
-          "description": "Conflicto de operación"
-        },
-        "422": {
-          "description": "Datos inválidos"
-        }
-      }
-    }
-  },
-  "/admin/api/v1/preparacion/pacientes/{paciente_id}/vinculacion": {
-    "get": {
-      "tags": [
-        "Consultar y gestionar demostración"
-      ],
-      "operationId": "gestion_get_pacientes_paciente_id_vinculacion",
-      "summary": "Consultar pacientes/{paciente_id}/vinculacion",
-      "security": [
-        {
-          "OperadorBearer": []
-        }
-      ],
-      "parameters": [
-        {
-          "name": "paciente_id",
-          "in": "path",
-          "required": true,
-          "schema": {
-            "type": "string",
-            "format": "uuid"
-          }
-        }
-      ],
-      "description": "Consulta administrativa de datos persistidos, incluidos los retirados. Listas limitadas a 1000 registros. La app consume sus rutas contractuales habituales; esta consulta no acredita por sí sola la recepción en el teléfono.",
-      "responses": {
-        "200": {
-          "description": "Resultado o replay confirmado"
-        },
-        "401": {
-          "description": "Sesión inválida"
-        },
-        "403": {
-          "description": "Operador no autorizado"
-        },
-        "404": {
-          "description": "Recurso inexistente"
-        },
-        "409": {
-          "description": "Conflicto de operación"
-        },
-        "422": {
-          "description": "Datos inválidos"
-        }
-      }
-    }
-  },
-  "/admin/api/v1/preparacion/pacientes/{id}": {
-    "get": {
-      "tags": [
-        "Consultar y gestionar demostración"
-      ],
-      "operationId": "gestion_get_pacientes_id_",
-      "summary": "Consultar pacientes/{id}",
-      "security": [
-        {
-          "OperadorBearer": []
-        }
-      ],
-      "parameters": [
-        {
-          "name": "id",
-          "in": "path",
-          "required": true,
-          "schema": {
-            "type": "string",
-            "format": "uuid"
-          }
-        }
-      ],
-      "description": "Consulta administrativa de datos persistidos, incluidos los retirados. Listas limitadas a 1000 registros. La app consume sus rutas contractuales habituales; esta consulta no acredita por sí sola la recepción en el teléfono.",
-      "responses": {
-        "200": {
-          "description": "Resultado o replay confirmado"
-        },
-        "401": {
-          "description": "Sesión inválida"
-        },
-        "403": {
-          "description": "Operador no autorizado"
-        },
-        "404": {
-          "description": "Recurso inexistente"
-        },
-        "409": {
-          "description": "Conflicto de operación"
-        },
-        "422": {
-          "description": "Datos inválidos"
-        }
-      }
-    }
-  },
-  "/admin/api/v1/preparacion/pacientes": {
-    "get": {
-      "tags": [
-        "Consultar y gestionar demostración"
-      ],
-      "operationId": "gestion_get_pacientes",
-      "summary": "Consultar pacientes",
-      "security": [
-        {
-          "OperadorBearer": []
-        }
-      ],
-      "parameters": [],
-      "description": "Consulta administrativa de datos persistidos, incluidos los retirados. Listas limitadas a 1000 registros. La app consume sus rutas contractuales habituales; esta consulta no acredita por sí sola la recepción en el teléfono.",
-      "responses": {
-        "200": {
-          "description": "Resultado o replay confirmado"
-        },
-        "401": {
-          "description": "Sesión inválida"
-        },
-        "403": {
-          "description": "Operador no autorizado"
-        },
-        "404": {
-          "description": "Recurso inexistente"
-        },
-        "409": {
-          "description": "Conflicto de operación"
-        },
-        "422": {
-          "description": "Datos inválidos"
-        }
-      }
-    }
-  },
-  "/admin/api/v1/preparacion/formularios/{id}": {
-    "get": {
-      "tags": [
-        "Consultar y gestionar demostración"
-      ],
-      "operationId": "gestion_get_formularios_id_",
-      "summary": "Consultar formularios/{id}",
-      "security": [
-        {
-          "OperadorBearer": []
-        }
-      ],
-      "parameters": [
-        {
-          "name": "id",
-          "in": "path",
-          "required": true,
-          "schema": {
-            "type": "string",
-            "format": "uuid"
-          }
-        }
-      ],
-      "description": "Consulta administrativa de datos persistidos, incluidos los retirados. Listas limitadas a 1000 registros. La app consume sus rutas contractuales habituales; esta consulta no acredita por sí sola la recepción en el teléfono.",
-      "responses": {
-        "200": {
-          "description": "Resultado o replay confirmado"
-        },
-        "401": {
-          "description": "Sesión inválida"
-        },
-        "403": {
-          "description": "Operador no autorizado"
-        },
-        "404": {
-          "description": "Recurso inexistente"
-        },
-        "409": {
-          "description": "Conflicto de operación"
-        },
-        "422": {
-          "description": "Datos inválidos"
-        }
-      }
-    }
-  },
-  "/admin/api/v1/preparacion/terminos/{id}": {
-    "get": {
-      "tags": [
-        "Consultar y gestionar demostración"
-      ],
-      "operationId": "gestion_get_terminos_id_",
-      "summary": "Consultar terminos/{id}",
-      "security": [
-        {
-          "OperadorBearer": []
-        }
-      ],
-      "parameters": [
-        {
-          "name": "id",
-          "in": "path",
-          "required": true,
-          "schema": {
-            "type": "string",
-            "format": "uuid"
-          }
-        }
-      ],
-      "description": "Consulta administrativa de datos persistidos, incluidos los retirados. Listas limitadas a 1000 registros. La app consume sus rutas contractuales habituales; esta consulta no acredita por sí sola la recepción en el teléfono.",
-      "responses": {
-        "200": {
-          "description": "Resultado o replay confirmado"
-        },
-        "401": {
-          "description": "Sesión inválida"
-        },
-        "403": {
-          "description": "Operador no autorizado"
-        },
-        "404": {
-          "description": "Recurso inexistente"
-        },
-        "409": {
-          "description": "Conflicto de operación"
-        },
-        "422": {
-          "description": "Datos inválidos"
-        }
-      }
-    }
-  },
-  "/admin/api/v1/preparacion/podcasts/{id}": {
-  "delete": {
-    "tags": [
-      "Consultar y gestionar demostración"
-    ],
-    "operationId": "gestion_delete_podcasts_id_",
-    "summary": "Retirar podcasts/{id}",
-    "security": [
-      {
-        "OperadorBearer": []
-      }
-    ],
-    "parameters": [
-      {
-        "name": "id",
-        "in": "path",
-        "required": true,
-        "schema": {
-          "type": "string",
-          "format": "uuid"
-        }
-      }
-    ],
-    "description": "Cambio auditado e idempotente. Use un UUID nuevo para cada cambio. Retirar categorías oculta sus contenidos en REST, podcasts y la proyección PowerSync sin reactivar recursos retirados individualmente. No elimina archivos ni historial.",
-    "requestBody": {
-      "required": true,
-      "content": {
-        "application/json": {
-          "schema": {
-            "type": "object",
-            "additionalProperties": false,
-            "required": [
-              "operacion_id"
-            ],
-            "properties": {
-              "operacion_id": {
-                "type": "string",
-                "format": "uuid"
-              }
-            }
-          },
-          "example": {
-            "operacion_id": "eb6464d4-76d2-4f23-baa0-eedd889b587b"
-          }
-        }
-      }
-    },
-    "responses": {
-      "200": {
-        "description": "Resultado o replay confirmado"
-      },
-      "401": {
-        "description": "Sesión inválida"
-      },
-      "403": {
-        "description": "Operador no autorizado"
-      },
-      "404": {
-        "description": "Recurso inexistente"
-      },
-      "409": {
-        "description": "Conflicto de operación"
-      },
-      "422": {
-        "description": "Datos inválidos"
-      }
-    }
-  },
-  "put": {
-    "tags": [
-      "Consultar y gestionar demostración"
-    ],
-    "operationId": "gestion_put_podcasts_id_",
-    "summary": "Editar podcasts/{id}",
-    "security": [
-      {
-        "OperadorBearer": []
-      }
-    ],
-    "parameters": [
-      {
-        "name": "id",
-        "in": "path",
-        "required": true,
-        "schema": {
-          "type": "string",
-          "format": "uuid"
-        }
-      }
-    ],
-    "description": "Cambio auditado e idempotente. Use un UUID nuevo para cada cambio. Retirar categorías oculta sus contenidos en REST, podcasts y la proyección PowerSync sin reactivar recursos retirados individualmente. No elimina archivos ni historial.",
-    "requestBody": {
-      "required": true,
-      "content": {
-        "application/json": {
-          "schema": {
-            "type": "object",
-            "additionalProperties": false,
-            "required": [
-              "operacion_id"
-            ],
-            "properties": {
-              "operacion_id": {
-                "type": "string",
-                "format": "uuid"
-              },
-              "activo": {
-                "type": "boolean"
-              },
-              "titulo": {
-                "type": "string",
-                "maxLength": 200
-              },
-              "descripcion": {
-                "type": "string",
-                "maxLength": 1000
-              },
-              "categoria": {
-                "type": "string",
-                "maxLength": 200
-              }
-            }
-          },
-          "example": {
-            "operacion_id": "7c580623-a83f-4015-89bb-d5d156a58c34",
-            "activo": false
-          }
-        }
-      }
-    },
-    "responses": {
-      "200": {
-        "description": "Resultado o replay confirmado"
-      },
-      "401": {
-        "description": "Sesión inválida"
-      },
-      "403": {
-        "description": "Operador no autorizado"
-      },
-      "404": {
-        "description": "Recurso inexistente"
-      },
-      "409": {
-        "description": "Conflicto de operación"
-      },
-      "422": {
-        "description": "Datos inválidos"
-      }
-    }
-  },
-    "get": {
-      "tags": [
-        "Consultar y gestionar demostración"
-      ],
-      "operationId": "gestion_get_podcasts_id_",
-      "summary": "Consultar podcasts/{id}",
-      "security": [
-        {
-          "OperadorBearer": []
-        }
-      ],
-      "parameters": [
-        {
-          "name": "id",
-          "in": "path",
-          "required": true,
-          "schema": {
-            "type": "string",
-            "format": "uuid"
-          }
-        }
-      ],
-      "description": "Consulta administrativa de datos persistidos, incluidos los retirados. Listas limitadas a 1000 registros. La app consume sus rutas contractuales habituales; esta consulta no acredita por sí sola la recepción en el teléfono.",
-      "responses": {
-        "200": {
-          "description": "Resultado o replay confirmado"
-        },
-        "401": {
-          "description": "Sesión inválida"
-        },
-        "403": {
-          "description": "Operador no autorizado"
-        },
-        "404": {
-          "description": "Recurso inexistente"
-        },
-        "409": {
-          "description": "Conflicto de operación"
-        },
-        "422": {
-          "description": "Datos inválidos"
-        }
-      }
-    }
-  },
-  "/admin/api/v1/preparacion/podcasts": {
-    "get": {
-      "tags": [
-        "Consultar y gestionar demostración"
-      ],
-      "operationId": "gestion_get_podcasts",
-      "summary": "Consultar podcasts",
-      "security": [
-        {
-          "OperadorBearer": []
-        }
-      ],
-      "parameters": [],
-      "description": "Consulta administrativa de datos persistidos, incluidos los retirados. Listas limitadas a 1000 registros. La app consume sus rutas contractuales habituales; esta consulta no acredita por sí sola la recepción en el teléfono.",
-      "responses": {
-        "200": {
-          "description": "Resultado o replay confirmado"
-        },
-        "401": {
-          "description": "Sesión inválida"
-        },
-        "403": {
-          "description": "Operador no autorizado"
-        },
-        "404": {
-          "description": "Recurso inexistente"
-        },
-        "409": {
-          "description": "Conflicto de operación"
-        },
-        "422": {
-          "description": "Datos inválidos"
-        }
-      }
-    }
-  },
-  "/admin/api/v1/preparacion/contenido-educativo/{id}": {
-  "delete": {
-    "tags": [
-      "Consultar y gestionar demostración"
-    ],
-    "operationId": "gestion_delete_contenido_educativo_id_",
-    "summary": "Retirar contenido-educativo/{id}",
-    "security": [
-      {
-        "OperadorBearer": []
-      }
-    ],
-    "parameters": [
-      {
-        "name": "id",
-        "in": "path",
-        "required": true,
-        "schema": {
-          "type": "string",
-          "format": "uuid"
-        }
-      }
-    ],
-    "description": "Cambio auditado e idempotente. Use un UUID nuevo para cada cambio. Retirar categorías oculta sus contenidos en REST, podcasts y la proyección PowerSync sin reactivar recursos retirados individualmente. No elimina archivos ni historial.",
-    "requestBody": {
-      "required": true,
-      "content": {
-        "application/json": {
-          "schema": {
-            "type": "object",
-            "additionalProperties": false,
-            "required": [
-              "operacion_id"
-            ],
-            "properties": {
-              "operacion_id": {
-                "type": "string",
-                "format": "uuid"
-              }
-            }
-          },
-          "example": {
-            "operacion_id": "c4ebc8f0-7038-49db-8bdf-99a2eb1d5262"
-          }
-        }
-      }
-    },
-    "responses": {
-      "200": {
-        "description": "Resultado o replay confirmado"
-      },
-      "401": {
-        "description": "Sesión inválida"
-      },
-      "403": {
-        "description": "Operador no autorizado"
-      },
-      "404": {
-        "description": "Recurso inexistente"
-      },
-      "409": {
-        "description": "Conflicto de operación"
-      },
-      "422": {
-        "description": "Datos inválidos"
-      }
-    }
-  },
-  "put": {
-    "tags": [
-      "Consultar y gestionar demostración"
-    ],
-    "operationId": "gestion_put_contenido_educativo_id_",
-    "summary": "Editar contenido-educativo/{id}",
-    "security": [
-      {
-        "OperadorBearer": []
-      }
-    ],
-    "parameters": [
-      {
-        "name": "id",
-        "in": "path",
-        "required": true,
-        "schema": {
-          "type": "string",
-          "format": "uuid"
-        }
-      }
-    ],
-    "description": "Cambio auditado e idempotente. Use un UUID nuevo para cada cambio. Retirar categorías oculta sus contenidos en REST, podcasts y la proyección PowerSync sin reactivar recursos retirados individualmente. No elimina archivos ni historial.",
-    "requestBody": {
-      "required": true,
-      "content": {
-        "application/json": {
-          "schema": {
-            "type": "object",
-            "additionalProperties": false,
-            "required": [
-              "operacion_id"
-            ],
-            "properties": {
-              "operacion_id": {
-                "type": "string",
-                "format": "uuid"
-              },
-              "activo": {
-                "type": "boolean"
-              },
-              "titulo": {
-                "type": "string",
-                "maxLength": 200
-              },
-              "descripcion": {
-                "type": "string",
-                "maxLength": 1000
-              },
-              "categoria": {
-                "type": "string",
-                "maxLength": 200
-              }
-            }
-          },
-          "example": {
-            "operacion_id": "b0561b1b-094d-4e3f-bbf8-d327cfdc1e7c",
-            "activo": false
-          }
-        }
-      }
-    },
-    "responses": {
-      "200": {
-        "description": "Resultado o replay confirmado"
-      },
-      "401": {
-        "description": "Sesión inválida"
-      },
-      "403": {
-        "description": "Operador no autorizado"
-      },
-      "404": {
-        "description": "Recurso inexistente"
-      },
-      "409": {
-        "description": "Conflicto de operación"
-      },
-      "422": {
-        "description": "Datos inválidos"
-      }
-    }
-  },
-    "get": {
-      "tags": [
-        "Consultar y gestionar demostración"
-      ],
-      "operationId": "gestion_get_contenido_educativo_id_",
-      "summary": "Consultar contenido-educativo/{id}",
-      "security": [
-        {
-          "OperadorBearer": []
-        }
-      ],
-      "parameters": [
-        {
-          "name": "id",
-          "in": "path",
-          "required": true,
-          "schema": {
-            "type": "string",
-            "format": "uuid"
-          }
-        }
-      ],
-      "description": "Consulta administrativa de datos persistidos, incluidos los retirados. Listas limitadas a 1000 registros. La app consume sus rutas contractuales habituales; esta consulta no acredita por sí sola la recepción en el teléfono.",
-      "responses": {
-        "200": {
-          "description": "Resultado o replay confirmado"
-        },
-        "401": {
-          "description": "Sesión inválida"
-        },
-        "403": {
-          "description": "Operador no autorizado"
-        },
-        "404": {
-          "description": "Recurso inexistente"
-        },
-        "409": {
-          "description": "Conflicto de operación"
-        },
-        "422": {
-          "description": "Datos inválidos"
-        }
-      }
-    }
-  },
-  "/admin/api/v1/preparacion/contenido-educativo": {
-    "get": {
-      "tags": [
-        "Consultar y gestionar demostración"
-      ],
-      "operationId": "gestion_get_contenido_educativo",
-      "summary": "Consultar contenido-educativo",
-      "security": [
-        {
-          "OperadorBearer": []
-        }
-      ],
-      "parameters": [],
-      "description": "Consulta administrativa de datos persistidos, incluidos los retirados. Listas limitadas a 1000 registros. La app consume sus rutas contractuales habituales; esta consulta no acredita por sí sola la recepción en el teléfono.",
-      "responses": {
-        "200": {
-          "description": "Resultado o replay confirmado"
-        },
-        "401": {
-          "description": "Sesión inválida"
-        },
-        "403": {
-          "description": "Operador no autorizado"
-        },
-        "404": {
-          "description": "Recurso inexistente"
-        },
-        "409": {
-          "description": "Conflicto de operación"
-        },
-        "422": {
-          "description": "Datos inválidos"
-        }
-      }
-    }
-  },
-  "/admin/api/v1/preparacion/categorias/{id}": {
-  "delete": {
-    "tags": [
-      "Consultar y gestionar demostración"
-    ],
-    "operationId": "gestion_delete_categorias_id_",
-    "summary": "Retirar categorias/{id}",
-    "security": [
-      {
-        "OperadorBearer": []
-      }
-    ],
-    "parameters": [
-      {
-        "name": "id",
-        "in": "path",
-        "required": true,
-        "schema": {
-          "type": "string",
-          "format": "uuid"
-        }
-      }
-    ],
-    "description": "Cambio auditado e idempotente. Use un UUID nuevo para cada cambio. Retirar categorías oculta sus contenidos en REST, podcasts y la proyección PowerSync sin reactivar recursos retirados individualmente. No elimina archivos ni historial.",
-    "requestBody": {
-      "required": true,
-      "content": {
-        "application/json": {
-          "schema": {
-            "type": "object",
-            "additionalProperties": false,
-            "required": [
-              "operacion_id"
-            ],
-            "properties": {
-              "operacion_id": {
-                "type": "string",
-                "format": "uuid"
-              }
-            }
-          },
-          "example": {
-            "operacion_id": "50484e44-4c41-439a-8307-1ad9601c14d1"
-          }
-        }
-      }
-    },
-    "responses": {
-      "200": {
-        "description": "Resultado o replay confirmado"
-      },
-      "401": {
-        "description": "Sesión inválida"
-      },
-      "403": {
-        "description": "Operador no autorizado"
-      },
-      "404": {
-        "description": "Recurso inexistente"
-      },
-      "409": {
-        "description": "Conflicto de operación"
-      },
-      "422": {
-        "description": "Datos inválidos"
-      }
-    }
-  },
-  "put": {
-    "tags": [
-      "Consultar y gestionar demostración"
-    ],
-    "operationId": "gestion_put_categorias_id_",
-    "summary": "Editar categorias/{id}",
-    "security": [
-      {
-        "OperadorBearer": []
-      }
-    ],
-    "parameters": [
-      {
-        "name": "id",
-        "in": "path",
-        "required": true,
-        "schema": {
-          "type": "string",
-          "format": "uuid"
-        }
-      }
-    ],
-    "description": "Cambio auditado e idempotente. Use un UUID nuevo para cada cambio. Retirar categorías oculta sus contenidos en REST, podcasts y la proyección PowerSync sin reactivar recursos retirados individualmente. No elimina archivos ni historial.",
-    "requestBody": {
-      "required": true,
-      "content": {
-        "application/json": {
-          "schema": {
-            "type": "object",
-            "additionalProperties": false,
-            "required": [
-              "operacion_id"
-            ],
-            "properties": {
-              "operacion_id": {
-                "type": "string",
-                "format": "uuid"
-              },
-              "activo": {
-                "type": "boolean"
-              },
-              "nombre": {
-                "type": "string",
-                "maxLength": 200
-              }
-            }
-          },
-          "example": {
-            "operacion_id": "c6546c0e-54e3-452c-9036-e797b43554ff",
-            "activo": false
-          }
-        }
-      }
-    },
-    "responses": {
-      "200": {
-        "description": "Resultado o replay confirmado"
-      },
-      "401": {
-        "description": "Sesión inválida"
-      },
-      "403": {
-        "description": "Operador no autorizado"
-      },
-      "404": {
-        "description": "Recurso inexistente"
-      },
-      "409": {
-        "description": "Conflicto de operación"
-      },
-      "422": {
-        "description": "Datos inválidos"
-      }
-    }
-  },
-    "get": {
-      "tags": [
-        "Consultar y gestionar demostración"
-      ],
-      "operationId": "gestion_get_categorias_id_",
-      "summary": "Consultar categorias/{id}",
-      "security": [
-        {
-          "OperadorBearer": []
-        }
-      ],
-      "parameters": [
-        {
-          "name": "id",
-          "in": "path",
-          "required": true,
-          "schema": {
-            "type": "string",
-            "format": "uuid"
-          }
-        }
-      ],
-      "description": "Consulta administrativa de datos persistidos, incluidos los retirados. Listas limitadas a 1000 registros. La app consume sus rutas contractuales habituales; esta consulta no acredita por sí sola la recepción en el teléfono.",
-      "responses": {
-        "200": {
-          "description": "Resultado o replay confirmado"
-        },
-        "401": {
-          "description": "Sesión inválida"
-        },
-        "403": {
-          "description": "Operador no autorizado"
-        },
-        "404": {
-          "description": "Recurso inexistente"
-        },
-        "409": {
-          "description": "Conflicto de operación"
-        },
-        "422": {
-          "description": "Datos inválidos"
-        }
-      }
-    }
-  },
-    "/admin/api/v1/preparacion/profesionales": {
-      "get": {
-        "tags": [
-          "Profesionales"
-        ],
-        "summary": "Consultar profesionales",
-        "operationId": "getProfesionalesLista",
-        "security": [
-          {
-            "OperadorBearer": []
-          }
-        ],
-        "description": "Gestión de demostración con auditoría. Use un operacion_id nuevo para cada cambio; repita el mismo solo al reintentar esa operación. Retirar conserva el perfil y sus vínculos históricos. PUT permite reactivarlo. El ID corresponde al operador, obtenido al comprobar acceso.",
-        "parameters": [],
-        "responses": {
-          "200": {
-            "description": "Resultado o replay idéntico"
-          },
-          "201": {
-            "description": "Registro creado"
-          },
-          "401": {
-            "description": "Falta sesión válida"
-          },
-          "403": {
-            "description": "Se requiere operador activo"
-          },
-          "404": {
-            "description": "Registro inexistente"
-          },
-          "409": {
-            "description": "Conflicto o contexto pendiente"
-          },
-          "422": {
-            "description": "Datos inválidos"
-          }
-        }
-      },
+    "/admin/api/v1/preparacion/pacientes/{paciente_id}/desvincular": {
       "post": {
         "tags": [
-          "Profesionales"
+          "0. Vinculación del paciente"
         ],
-        "summary": "Crear profesionales",
-        "operationId": "postProfesionalesLista",
+        "operationId": "gestion_post_pacientes_paciente_id_desvincular",
+        "summary": "Desvincular paciente",
         "security": [
           {
             "OperadorBearer": []
           }
         ],
-        "description": "Gestión de demostración con auditoría. Use un operacion_id nuevo para cada cambio; repita el mismo solo al reintentar esa operación. Retirar conserva el perfil y sus vínculos históricos. PUT permite reactivarlo. El ID corresponde al operador, obtenido al comprobar acceso.",
-        "parameters": [],
-        "requestBody": {
-          "required": true,
-          "content": {
-            "application/json": {
-              "schema": {
-                "type": "object",
-                "additionalProperties": false,
-                "properties": {
-                  "operacion_id": {
-                    "type": "string",
-                    "format": "uuid"
-                  },
-                  "operador_id": {
-                    "type": "string",
-                    "format": "uuid"
-                  },
-                  "nombre": {
-                    "type": "string",
-                    "maxLength": 150
-                  },
-                  "especialidad": {
-                    "type": "string",
-                    "maxLength": 150
-                  },
-                  "activo": {
-                    "type": "boolean"
-                  }
-                },
-                "required": [
-                  "operacion_id",
-                  "operador_id",
-                  "nombre",
-                  "especialidad"
-                ]
-              },
-              "example": {
-                "operacion_id": "77777777-7777-4777-8777-000000000001",
-                "nombre": "Dra. Valentina Soto — demostración",
-                "especialidad": "Oncología médica (perfil ficticio)",
-                "operador_id": "11111111-1111-4111-8111-111111111111"
-              }
-            }
-          }
-        },
-        "responses": {
-          "200": {
-            "description": "Resultado o replay idéntico"
-          },
-          "201": {
-            "description": "Registro creado"
-          },
-          "401": {
-            "description": "Falta sesión válida"
-          },
-          "403": {
-            "description": "Se requiere operador activo"
-          },
-          "404": {
-            "description": "Registro inexistente"
-          },
-          "409": {
-            "description": "Conflicto o contexto pendiente"
-          },
-          "422": {
-            "description": "Datos inválidos"
-          }
-        }
-      }
-    },
-    "/admin/api/v1/preparacion/profesionales/{operador_id}": {
-      "get": {
-        "tags": [
-          "Profesionales"
-        ],
-        "summary": "Consultar profesionales",
-        "operationId": "getProfesionalesDetalle",
-        "security": [
-          {
-            "OperadorBearer": []
-          }
-        ],
-        "description": "Gestión de demostración con auditoría. Use un operacion_id nuevo para cada cambio; repita el mismo solo al reintentar esa operación. Retirar conserva el perfil y sus vínculos históricos. PUT permite reactivarlo. El ID corresponde al operador, obtenido al comprobar acceso.",
-        "parameters": [
-          {
-            "name": "operador_id",
-            "in": "path",
-            "required": true,
-            "schema": {
-              "type": "string",
-              "format": "uuid"
-            }
-          }
-        ],
-        "responses": {
-          "200": {
-            "description": "Resultado o replay idéntico"
-          },
-          "201": {
-            "description": "Registro creado"
-          },
-          "401": {
-            "description": "Falta sesión válida"
-          },
-          "403": {
-            "description": "Se requiere operador activo"
-          },
-          "404": {
-            "description": "Registro inexistente"
-          },
-          "409": {
-            "description": "Conflicto o contexto pendiente"
-          },
-          "422": {
-            "description": "Datos inválidos"
-          }
-        }
-      },
-      "put": {
-        "tags": [
-          "Profesionales"
-        ],
-        "summary": "Editar profesionales",
-        "operationId": "putProfesionalesDetalle",
-        "security": [
-          {
-            "OperadorBearer": []
-          }
-        ],
-        "description": "Gestión de demostración con auditoría. Use un operacion_id nuevo para cada cambio; repita el mismo solo al reintentar esa operación. Retirar conserva el perfil y sus vínculos históricos. PUT permite reactivarlo. El ID corresponde al operador, obtenido al comprobar acceso.",
-        "parameters": [
-          {
-            "name": "operador_id",
-            "in": "path",
-            "required": true,
-            "schema": {
-              "type": "string",
-              "format": "uuid"
-            }
-          }
-        ],
-        "requestBody": {
-          "required": true,
-          "content": {
-            "application/json": {
-              "schema": {
-                "type": "object",
-                "additionalProperties": false,
-                "properties": {
-                  "operacion_id": {
-                    "type": "string",
-                    "format": "uuid"
-                  },
-                  "nombre": {
-                    "type": "string",
-                    "maxLength": 150
-                  },
-                  "especialidad": {
-                    "type": "string",
-                    "maxLength": 150
-                  },
-                  "activo": {
-                    "type": "boolean"
-                  }
-                },
-                "required": [
-                  "operacion_id"
-                ]
-              },
-              "example": {
-                "operacion_id": "77777777-7777-4777-8777-000000000002",
-                "nombre": "Dra. Valentina Soto — demostración",
-                "especialidad": "Oncología médica (perfil ficticio)",
-                "activo": true
-              }
-            }
-          }
-        },
-        "responses": {
-          "200": {
-            "description": "Resultado o replay idéntico"
-          },
-          "201": {
-            "description": "Registro creado"
-          },
-          "401": {
-            "description": "Falta sesión válida"
-          },
-          "403": {
-            "description": "Se requiere operador activo"
-          },
-          "404": {
-            "description": "Registro inexistente"
-          },
-          "409": {
-            "description": "Conflicto o contexto pendiente"
-          },
-          "422": {
-            "description": "Datos inválidos"
-          }
-        }
-      },
-      "delete": {
-        "tags": [
-          "Profesionales"
-        ],
-        "summary": "Retirar profesionales",
-        "operationId": "deleteProfesionalesDetalle",
-        "security": [
-          {
-            "OperadorBearer": []
-          }
-        ],
-        "description": "Gestión de demostración con auditoría. Use un operacion_id nuevo para cada cambio; repita el mismo solo al reintentar esa operación. Retirar conserva el perfil y sus vínculos históricos. PUT permite reactivarlo. El ID corresponde al operador, obtenido al comprobar acceso.",
-        "parameters": [
-          {
-            "name": "operador_id",
-            "in": "path",
-            "required": true,
-            "schema": {
-              "type": "string",
-              "format": "uuid"
-            }
-          }
-        ],
-        "requestBody": {
-          "required": true,
-          "content": {
-            "application/json": {
-              "schema": {
-                "type": "object",
-                "required": [
-                  "operacion_id"
-                ],
-                "additionalProperties": false,
-                "properties": {
-                  "operacion_id": {
-                    "type": "string",
-                    "format": "uuid"
-                  }
-                }
-              },
-              "example": {
-                "operacion_id": "77777777-7777-4777-8777-000000000003"
-              }
-            }
-          }
-        },
-        "responses": {
-          "200": {
-            "description": "Resultado o replay idéntico"
-          },
-          "201": {
-            "description": "Registro creado"
-          },
-          "401": {
-            "description": "Falta sesión válida"
-          },
-          "403": {
-            "description": "Se requiere operador activo"
-          },
-          "404": {
-            "description": "Registro inexistente"
-          },
-          "409": {
-            "description": "Conflicto o contexto pendiente"
-          },
-          "422": {
-            "description": "Datos inválidos"
-          }
-        }
-      }
-    },
-    "/admin/api/v1/preparacion/pacientes/{paciente_id}/medicamentos": {
-      "get": {
-        "tags": [
-          "Medicamentos"
-        ],
-        "summary": "Consultar medicamentos",
-        "operationId": "getMedicamentosLista",
-        "security": [
-          {
-            "OperadorBearer": []
-          }
-        ],
-        "description": "Gestión de demostración con auditoría. Use un operacion_id nuevo para cada cambio; repita el mismo solo al reintentar esa operación. Edita la lista del perfil clínico consumida por la app, sin alterar el esquema oncológico. Las dosis y frecuencias las introduce el operador; no se calculan. activo=false no habilita recordatorios domiciliarios.",
         "parameters": [
           {
             "name": "paciente_id",
@@ -1350,53 +75,7 @@
             }
           }
         ],
-        "responses": {
-          "200": {
-            "description": "Resultado o replay idéntico"
-          },
-          "201": {
-            "description": "Registro creado"
-          },
-          "401": {
-            "description": "Falta sesión válida"
-          },
-          "403": {
-            "description": "Se requiere operador activo"
-          },
-          "404": {
-            "description": "Registro inexistente"
-          },
-          "409": {
-            "description": "Conflicto o contexto pendiente"
-          },
-          "422": {
-            "description": "Datos inválidos"
-          }
-        }
-      },
-      "post": {
-        "tags": [
-          "Medicamentos"
-        ],
-        "summary": "Crear medicamentos",
-        "operationId": "postMedicamentosLista",
-        "security": [
-          {
-            "OperadorBearer": []
-          }
-        ],
-        "description": "Gestión de demostración con auditoría. Use un operacion_id nuevo para cada cambio; repita el mismo solo al reintentar esa operación. Edita la lista del perfil clínico consumida por la app, sin alterar el esquema oncológico. Las dosis y frecuencias las introduce el operador; no se calculan. activo=false no habilita recordatorios domiciliarios.",
-        "parameters": [
-          {
-            "name": "paciente_id",
-            "in": "path",
-            "required": true,
-            "schema": {
-              "type": "string",
-              "format": "uuid"
-            }
-          }
-        ],
+        "description": "Desvincular ambos finaliza la relación y permite generar un nuevo código. Solo profesional oculta el equipo conservando tratamiento. Solo tratamiento lo retira conservando el equipo. Conserva perfil, consentimientos e historial y no altera medicamentos ajenos al esquema. La app debe actualizar identidad y equipo; los avisos existentes se revisan por separado.",
         "requestBody": {
           "required": true,
           "content": {
@@ -1406,93 +85,45 @@
                 "additionalProperties": false,
                 "required": [
                   "operacion_id",
-                  "medicamento"
+                  "alcance"
                 ],
                 "properties": {
                   "operacion_id": {
                     "type": "string",
                     "format": "uuid"
                   },
-                  "medicamento": {
-                    "type": "object",
-                    "additionalProperties": false,
-                    "properties": {
-                      "nombre": {
-                        "type": "string",
-                        "maxLength": 500
-                      },
-                      "dosis": {
-                        "type": "string",
-                        "maxLength": 500
-                      },
-                      "frecuencia": {
-                        "type": "string",
-                        "maxLength": 500
-                      },
-                      "motivo": {
-                        "type": "string",
-                        "maxLength": 1000
-                      },
-                      "activo": {
-                        "type": "boolean",
-                        "default": false
-                      },
-                      "fecha_inicio": {
-                        "type": [
-                          "string",
-                          "null"
-                        ],
-                        "format": "date"
-                      },
-                      "fecha_termino": {
-                        "type": [
-                          "string",
-                          "null"
-                        ],
-                        "format": "date"
-                      }
-                    },
-                    "required": [
-                      "nombre",
-                      "dosis",
-                      "frecuencia"
+                  "alcance": {
+                    "type": "string",
+                    "enum": [
+                      "profesional",
+                      "tratamiento",
+                      "ambos"
                     ]
                   }
                 }
               },
               "example": {
-                "operacion_id": "77777777-7777-4777-8777-000000000004",
-                "medicamento": {
-                  "nombre": "Oxaliplatino",
-                  "dosis": "Individualizada por oncología",
-                  "frecuencia": "Administración en el centro según ciclo",
-                  "motivo": "Componente del esquema. Ejemplo sin indicación domiciliaria.",
-                  "activo": false,
-                  "fecha_inicio": null,
-                  "fecha_termino": null
-                }
+                "operacion_id": "c6b2df7f-49b3-4a21-bf15-aaaad4f28f9d",
+                "alcance": "ambos"
               }
             }
           }
         },
         "responses": {
           "200": {
-            "description": "Resultado o replay idéntico"
-          },
-          "201": {
-            "description": "Registro creado"
+            "description": "Resultado o replay confirmado"
           },
           "401": {
-            "description": "Falta sesión válida"
+            "description": "Sesión inválida"
           },
           "403": {
-            "description": "Se requiere operador activo"
+            "description": "Operador no autorizado"
           },
           "404": {
-            "description": "Registro inexistente"
+            "description": "Recurso inexistente"
           },
           "409": {
-            "description": "Conflicto o contexto pendiente"
+            "description": "Conflicto de operación"
           },
           "422": {
             "description": "Datos inválidos"
@@ -1500,19 +131,18 @@
         }
       }
     },
-    "/admin/api/v1/preparacion/pacientes/{paciente_id}/medicamentos/{medicamento_id}": {
+    "/admin/api/v1/preparacion/pacientes/{paciente_id}/vinculacion": {
       "get": {
         "tags": [
-          "Medicamentos"
+          "0. Vinculación del paciente"
         ],
-        "summary": "Consultar medicamentos",
-        "operationId": "getMedicamentosDetalle",
+        "operationId": "gestion_get_pacientes_paciente_id_vinculacion",
+        "summary": "Consultar pacientes/{paciente_id}/vinculacion",
         "security": [
           {
             "OperadorBearer": []
           }
         ],
-        "description": "Gestión de demostración con auditoría. Use un operacion_id nuevo para cada cambio; repita el mismo solo al reintentar esa operación. Edita la lista del perfil clínico consumida por la app, sin alterar el esquema oncológico. Las dosis y frecuencias las introduce el operador; no se calculan. activo=false no habilita recordatorios domiciliarios.",
         "parameters": [
           {
             "name": "paciente_id",
@@ -1522,243 +152,24 @@
               "type": "string",
               "format": "uuid"
             }
-          },
-          {
-            "name": "medicamento_id",
-            "in": "path",
-            "required": true,
-            "schema": {
-              "type": "string",
-              "format": "uuid"
-            }
           }
         ],
+        "description": "Consulta administrativa de datos persistidos, incluidos los retirados. Listas limitadas a 1000 registros. La app consume sus rutas contractuales habituales; esta consulta no acredita por sí sola la recepción en el teléfono.",
         "responses": {
           "200": {
-            "description": "Resultado o replay idéntico"
-          },
-          "201": {
-            "description": "Registro creado"
+            "description": "Resultado o replay confirmado"
           },
           "401": {
-            "description": "Falta sesión válida"
+            "description": "Sesión inválida"
           },
           "403": {
-            "description": "Se requiere operador activo"
+            "description": "Operador no autorizado"
           },
           "404": {
-            "description": "Registro inexistente"
+            "description": "Recurso inexistente"
           },
           "409": {
-            "description": "Conflicto o contexto pendiente"
-          },
-          "422": {
-            "description": "Datos inválidos"
-          }
-        }
-      },
-      "put": {
-        "tags": [
-          "Medicamentos"
-        ],
-        "summary": "Editar medicamentos",
-        "operationId": "putMedicamentosDetalle",
-        "security": [
-          {
-            "OperadorBearer": []
-          }
-        ],
-        "description": "Gestión de demostración con auditoría. Use un operacion_id nuevo para cada cambio; repita el mismo solo al reintentar esa operación. Edita la lista del perfil clínico consumida por la app, sin alterar el esquema oncológico. Las dosis y frecuencias las introduce el operador; no se calculan. activo=false no habilita recordatorios domiciliarios.",
-        "parameters": [
-          {
-            "name": "paciente_id",
-            "in": "path",
-            "required": true,
-            "schema": {
-              "type": "string",
-              "format": "uuid"
-            }
-          },
-          {
-            "name": "medicamento_id",
-            "in": "path",
-            "required": true,
-            "schema": {
-              "type": "string",
-              "format": "uuid"
-            }
-          }
-        ],
-        "requestBody": {
-          "required": true,
-          "content": {
-            "application/json": {
-              "schema": {
-                "type": "object",
-                "additionalProperties": false,
-                "required": [
-                  "operacion_id",
-                  "medicamento"
-                ],
-                "properties": {
-                  "operacion_id": {
-                    "type": "string",
-                    "format": "uuid"
-                  },
-                  "medicamento": {
-                    "type": "object",
-                    "additionalProperties": false,
-                    "properties": {
-                      "nombre": {
-                        "type": "string",
-                        "maxLength": 500
-                      },
-                      "dosis": {
-                        "type": "string",
-                        "maxLength": 500
-                      },
-                      "frecuencia": {
-                        "type": "string",
-                        "maxLength": 500
-                      },
-                      "motivo": {
-                        "type": "string",
-                        "maxLength": 1000
-                      },
-                      "activo": {
-                        "type": "boolean",
-                        "default": false
-                      },
-                      "fecha_inicio": {
-                        "type": [
-                          "string",
-                          "null"
-                        ],
-                        "format": "date"
-                      },
-                      "fecha_termino": {
-                        "type": [
-                          "string",
-                          "null"
-                        ],
-                        "format": "date"
-                      }
-                    }
-                  }
-                }
-              },
-              "example": {
-                "operacion_id": "77777777-7777-4777-8777-000000000005",
-                "medicamento": {
-                  "nombre": "Oxaliplatino",
-                  "dosis": "Individualizada por oncología",
-                  "frecuencia": "Administración en el centro según ciclo",
-                  "motivo": "Componente del esquema. Ejemplo sin indicación domiciliaria.",
-                  "activo": false,
-                  "fecha_inicio": null,
-                  "fecha_termino": null
-                }
-              }
-            }
-          }
-        },
-        "responses": {
-          "200": {
-            "description": "Resultado o replay idéntico"
-          },
-          "201": {
-            "description": "Registro creado"
-          },
-          "401": {
-            "description": "Falta sesión válida"
-          },
-          "403": {
-            "description": "Se requiere operador activo"
-          },
-          "404": {
-            "description": "Registro inexistente"
-          },
-          "409": {
-            "description": "Conflicto o contexto pendiente"
-          },
-          "422": {
-            "description": "Datos inválidos"
-          }
-        }
-      },
-      "delete": {
-        "tags": [
-          "Medicamentos"
-        ],
-        "summary": "Eliminar medicamentos",
-        "operationId": "deleteMedicamentosDetalle",
-        "security": [
-          {
-            "OperadorBearer": []
-          }
-        ],
-        "description": "Gestión de demostración con auditoría. Use un operacion_id nuevo para cada cambio; repita el mismo solo al reintentar esa operación. Edita la lista del perfil clínico consumida por la app, sin alterar el esquema oncológico. Las dosis y frecuencias las introduce el operador; no se calculan. activo=false no habilita recordatorios domiciliarios.",
-        "parameters": [
-          {
-            "name": "paciente_id",
-            "in": "path",
-            "required": true,
-            "schema": {
-              "type": "string",
-              "format": "uuid"
-            }
-          },
-          {
-            "name": "medicamento_id",
-            "in": "path",
-            "required": true,
-            "schema": {
-              "type": "string",
-              "format": "uuid"
-            }
-          }
-        ],
-        "requestBody": {
-          "required": true,
-          "content": {
-            "application/json": {
-              "schema": {
-                "type": "object",
-                "required": [
-                  "operacion_id"
-                ],
-                "additionalProperties": false,
-                "properties": {
-                  "operacion_id": {
-                    "type": "string",
-                    "format": "uuid"
-                  }
-                }
-              },
-              "example": {
-                "operacion_id": "77777777-7777-4777-8777-000000000006"
-              }
-            }
-          }
-        },
-        "responses": {
-          "200": {
-            "description": "Resultado o replay idéntico"
-          },
-          "201": {
-            "description": "Registro creado"
-          },
-          "401": {
-            "description": "Falta sesión válida"
-          },
-          "403": {
-            "description": "Se requiere operador activo"
-          },
-          "404": {
-            "description": "Registro inexistente"
-          },
-          "409": {
-            "description": "Conflicto o contexto pendiente"
+            "description": "Conflicto de operación"
           },
           "422": {
             "description": "Datos inválidos"
@@ -1887,40 +298,40 @@
       }
     },
     "/admin/api/v1/preparacion/categorias": {
-  "get": {
-    "tags": [
-      "Consultar y gestionar demostración"
-    ],
-    "operationId": "gestion_get_categorias",
-    "summary": "Consultar categorias",
-    "security": [
-      {
-        "OperadorBearer": []
-      }
-    ],
-    "parameters": [],
-    "description": "Consulta administrativa de datos persistidos, incluidos los retirados. Listas limitadas a 1000 registros. La app consume sus rutas contractuales habituales; esta consulta no acredita por sí sola la recepción en el teléfono.",
-    "responses": {
-      "200": {
-        "description": "Resultado o replay confirmado"
+      "get": {
+        "tags": [
+          "1. Categorías"
+        ],
+        "operationId": "gestion_get_categorias",
+        "summary": "Consultar categorias",
+        "security": [
+          {
+            "OperadorBearer": []
+          }
+        ],
+        "parameters": [],
+        "description": "Consulta administrativa de datos persistidos, incluidos los retirados. Listas limitadas a 1000 registros. La app consume sus rutas contractuales habituales; esta consulta no acredita por sí sola la recepción en el teléfono.",
+        "responses": {
+          "200": {
+            "description": "Resultado o replay confirmado"
+          },
+          "401": {
+            "description": "Sesión inválida"
+          },
+          "403": {
+            "description": "Operador no autorizado"
+          },
+          "404": {
+            "description": "Recurso inexistente"
+          },
+          "409": {
+            "description": "Conflicto de operación"
+          },
+          "422": {
+            "description": "Datos inválidos"
+          }
+        }
       },
-      "401": {
-        "description": "Sesión inválida"
-      },
-      "403": {
-        "description": "Operador no autorizado"
-      },
-      "404": {
-        "description": "Recurso inexistente"
-      },
-      "409": {
-        "description": "Conflicto de operación"
-      },
-      "422": {
-        "description": "Datos inválidos"
-      }
-    }
-  },
       "post": {
         "tags": [
           "1. Categorías"
@@ -1957,6 +368,572 @@
               "example": {
                 "operacion_id": "11111111-1111-4111-8111-111111111111",
                 "nombre": "Educación de evaluación"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Resultado o replay confirmado",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object"
+                }
+              }
+            }
+          },
+          "201": {
+            "description": "Recurso creado",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Sesión inválida",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Operador no autorizado",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Recurso no encontrado",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "Identificador o versión en conflicto",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object"
+                }
+              }
+            }
+          },
+          "413": {
+            "description": "Archivo mayor a 5 MiB",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Datos inválidos",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "Servicio temporalmente no disponible",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/admin/api/v1/preparacion/categorias/{id}": {
+      "delete": {
+        "tags": [
+          "1. Categorías"
+        ],
+        "operationId": "gestion_delete_categorias_id_",
+        "summary": "Retirar categorias/{id}",
+        "security": [
+          {
+            "OperadorBearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          }
+        ],
+        "description": "Cambio auditado e idempotente. Use un UUID nuevo para cada cambio. Retirar categorías oculta sus contenidos en REST, podcasts y la proyección PowerSync sin reactivar recursos retirados individualmente. No elimina archivos ni historial.",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "additionalProperties": false,
+                "required": [
+                  "operacion_id"
+                ],
+                "properties": {
+                  "operacion_id": {
+                    "type": "string",
+                    "format": "uuid"
+                  }
+                }
+              },
+              "example": {
+                "operacion_id": "50484e44-4c41-439a-8307-1ad9601c14d1"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Resultado o replay confirmado"
+          },
+          "401": {
+            "description": "Sesión inválida"
+          },
+          "403": {
+            "description": "Operador no autorizado"
+          },
+          "404": {
+            "description": "Recurso inexistente"
+          },
+          "409": {
+            "description": "Conflicto de operación"
+          },
+          "422": {
+            "description": "Datos inválidos"
+          }
+        }
+      },
+      "put": {
+        "tags": [
+          "1. Categorías"
+        ],
+        "operationId": "gestion_put_categorias_id_",
+        "summary": "Editar categorias/{id}",
+        "security": [
+          {
+            "OperadorBearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          }
+        ],
+        "description": "Cambio auditado e idempotente. Use un UUID nuevo para cada cambio. Retirar categorías oculta sus contenidos en REST, podcasts y la proyección PowerSync sin reactivar recursos retirados individualmente. No elimina archivos ni historial.",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "additionalProperties": false,
+                "required": [
+                  "operacion_id"
+                ],
+                "properties": {
+                  "operacion_id": {
+                    "type": "string",
+                    "format": "uuid"
+                  },
+                  "activo": {
+                    "type": "boolean"
+                  },
+                  "nombre": {
+                    "type": "string",
+                    "maxLength": 200
+                  }
+                }
+              },
+              "example": {
+                "operacion_id": "c6546c0e-54e3-452c-9036-e797b43554ff",
+                "activo": false
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Resultado o replay confirmado"
+          },
+          "401": {
+            "description": "Sesión inválida"
+          },
+          "403": {
+            "description": "Operador no autorizado"
+          },
+          "404": {
+            "description": "Recurso inexistente"
+          },
+          "409": {
+            "description": "Conflicto de operación"
+          },
+          "422": {
+            "description": "Datos inválidos"
+          }
+        }
+      },
+      "get": {
+        "tags": [
+          "1. Categorías"
+        ],
+        "operationId": "gestion_get_categorias_id_",
+        "summary": "Consultar categorias/{id}",
+        "security": [
+          {
+            "OperadorBearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          }
+        ],
+        "description": "Consulta administrativa de datos persistidos, incluidos los retirados. Listas limitadas a 1000 registros. La app consume sus rutas contractuales habituales; esta consulta no acredita por sí sola la recepción en el teléfono.",
+        "responses": {
+          "200": {
+            "description": "Resultado o replay confirmado"
+          },
+          "401": {
+            "description": "Sesión inválida"
+          },
+          "403": {
+            "description": "Operador no autorizado"
+          },
+          "404": {
+            "description": "Recurso inexistente"
+          },
+          "409": {
+            "description": "Conflicto de operación"
+          },
+          "422": {
+            "description": "Datos inválidos"
+          }
+        }
+      }
+    },
+    "/admin/api/v1/preparacion/contenido-educativo": {
+      "get": {
+        "tags": [
+          "2. Contenido educativo"
+        ],
+        "operationId": "gestion_get_contenido_educativo",
+        "summary": "Consultar contenido-educativo",
+        "security": [
+          {
+            "OperadorBearer": []
+          }
+        ],
+        "parameters": [],
+        "description": "Consulta administrativa de datos persistidos, incluidos los retirados. Listas limitadas a 1000 registros. La app consume sus rutas contractuales habituales; esta consulta no acredita por sí sola la recepción en el teléfono.",
+        "responses": {
+          "200": {
+            "description": "Resultado o replay confirmado"
+          },
+          "401": {
+            "description": "Sesión inválida"
+          },
+          "403": {
+            "description": "Operador no autorizado"
+          },
+          "404": {
+            "description": "Recurso inexistente"
+          },
+          "409": {
+            "description": "Conflicto de operación"
+          },
+          "422": {
+            "description": "Datos inválidos"
+          }
+        }
+      }
+    },
+    "/admin/api/v1/preparacion/contenido-educativo/{id}": {
+      "delete": {
+        "tags": [
+          "2. Contenido educativo"
+        ],
+        "operationId": "gestion_delete_contenido_educativo_id_",
+        "summary": "Retirar contenido-educativo/{id}",
+        "security": [
+          {
+            "OperadorBearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          }
+        ],
+        "description": "Cambio auditado e idempotente. Use un UUID nuevo para cada cambio. Retirar categorías oculta sus contenidos en REST, podcasts y la proyección PowerSync sin reactivar recursos retirados individualmente. No elimina archivos ni historial.",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "additionalProperties": false,
+                "required": [
+                  "operacion_id"
+                ],
+                "properties": {
+                  "operacion_id": {
+                    "type": "string",
+                    "format": "uuid"
+                  }
+                }
+              },
+              "example": {
+                "operacion_id": "c4ebc8f0-7038-49db-8bdf-99a2eb1d5262"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Resultado o replay confirmado"
+          },
+          "401": {
+            "description": "Sesión inválida"
+          },
+          "403": {
+            "description": "Operador no autorizado"
+          },
+          "404": {
+            "description": "Recurso inexistente"
+          },
+          "409": {
+            "description": "Conflicto de operación"
+          },
+          "422": {
+            "description": "Datos inválidos"
+          }
+        }
+      },
+      "put": {
+        "tags": [
+          "2. Contenido educativo"
+        ],
+        "operationId": "gestion_put_contenido_educativo_id_",
+        "summary": "Editar contenido-educativo/{id}",
+        "security": [
+          {
+            "OperadorBearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          }
+        ],
+        "description": "Cambio auditado e idempotente. Use un UUID nuevo para cada cambio. Retirar categorías oculta sus contenidos en REST, podcasts y la proyección PowerSync sin reactivar recursos retirados individualmente. No elimina archivos ni historial.",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "additionalProperties": false,
+                "required": [
+                  "operacion_id"
+                ],
+                "properties": {
+                  "operacion_id": {
+                    "type": "string",
+                    "format": "uuid"
+                  },
+                  "activo": {
+                    "type": "boolean"
+                  },
+                  "titulo": {
+                    "type": "string",
+                    "maxLength": 200
+                  },
+                  "descripcion": {
+                    "type": "string",
+                    "maxLength": 1000
+                  },
+                  "categoria": {
+                    "type": "string",
+                    "maxLength": 200
+                  }
+                }
+              },
+              "example": {
+                "operacion_id": "b0561b1b-094d-4e3f-bbf8-d327cfdc1e7c",
+                "activo": false
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Resultado o replay confirmado"
+          },
+          "401": {
+            "description": "Sesión inválida"
+          },
+          "403": {
+            "description": "Operador no autorizado"
+          },
+          "404": {
+            "description": "Recurso inexistente"
+          },
+          "409": {
+            "description": "Conflicto de operación"
+          },
+          "422": {
+            "description": "Datos inválidos"
+          }
+        }
+      },
+      "get": {
+        "tags": [
+          "2. Contenido educativo"
+        ],
+        "operationId": "gestion_get_contenido_educativo_id_",
+        "summary": "Consultar contenido-educativo/{id}",
+        "security": [
+          {
+            "OperadorBearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          }
+        ],
+        "description": "Consulta administrativa de datos persistidos, incluidos los retirados. Listas limitadas a 1000 registros. La app consume sus rutas contractuales habituales; esta consulta no acredita por sí sola la recepción en el teléfono.",
+        "responses": {
+          "200": {
+            "description": "Resultado o replay confirmado"
+          },
+          "401": {
+            "description": "Sesión inválida"
+          },
+          "403": {
+            "description": "Operador no autorizado"
+          },
+          "404": {
+            "description": "Recurso inexistente"
+          },
+          "409": {
+            "description": "Conflicto de operación"
+          },
+          "422": {
+            "description": "Datos inválidos"
+          }
+        }
+      }
+    },
+    "/admin/api/v1/preparacion/contenido-educativo/{id}/estado": {
+      "post": {
+        "tags": [
+          "2. Contenido educativo"
+        ],
+        "summary": "Activar o retirar del catálogo sin borrar archivos",
+        "description": "Herramienta de simulación; no forma parte del contrato externo. Reutilice operacion_id solo para repetir exactamente esta operación. Consulte el resultado desde la app.",
+        "security": [
+          {
+            "OperadorBearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "in": "path",
+            "name": "id",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            },
+            "example": "22222222-2222-4222-8222-222222222222"
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "required": [
+                  "operacion_id",
+                  "activo"
+                ],
+                "properties": {
+                  "operacion_id": {
+                    "type": "string",
+                    "format": "uuid"
+                  },
+                  "activo": {
+                    "type": "boolean"
+                  }
+                },
+                "additionalProperties": false
+              },
+              "example": {
+                "operacion_id": "11111111-1111-4111-8111-111111111111",
+                "activo": false
               }
             }
           }
@@ -2202,6 +1179,161 @@
         }
       }
     },
+    "/admin/api/v1/preparacion/contenido-educativo/podcasts": {
+      "post": {
+        "tags": [
+          "2. Contenido educativo"
+        ],
+        "summary": "Publicar podcast de Drive",
+        "description": "Publica un episodio de audio de Drive en la app. El archivo debe permitir reproducción pública. Requiere internet; no descarga audio al teléfono.",
+        "security": [
+          {
+            "OperadorBearer": []
+          }
+        ],
+        "parameters": [],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "additionalProperties": false,
+                "required": [
+                  "operacion_id",
+                  "titulo",
+                  "descripcion",
+                  "categoria",
+                  "url"
+                ],
+                "properties": {
+                  "operacion_id": {
+                    "type": "string",
+                    "format": "uuid"
+                  },
+                  "titulo": {
+                    "type": "string",
+                    "maxLength": 200
+                  },
+                  "descripcion": {
+                    "type": "string",
+                    "maxLength": 1000
+                  },
+                  "categoria": {
+                    "type": "string",
+                    "maxLength": 200
+                  },
+                  "url": {
+                    "type": "string",
+                    "maxLength": 200
+                  }
+                }
+              },
+              "example": {
+                "operacion_id": "11111111-1111-4111-8111-111111111112",
+                "titulo": "Podcast educativo",
+                "descripcion": "Audio educativo autorizado.",
+                "categoria": "Categoría previamente creada",
+                "url": "https://drive.google.com/file/d/ID_REAL_DEL_ARCHIVO/view"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Resultado o replay confirmado",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object"
+                }
+              }
+            }
+          },
+          "201": {
+            "description": "Recurso creado",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Sesión inválida",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Operador no autorizado",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Recurso no encontrado",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "Identificador o versión en conflicto",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object"
+                }
+              }
+            }
+          },
+          "413": {
+            "description": "Archivo mayor a 5 MiB",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Datos inválidos",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "Servicio temporalmente no disponible",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object"
+                }
+              }
+            }
+          }
+        },
+        "operationId": "prepararPodcast"
+      }
+    },
     "/admin/api/v1/preparacion/contenido-educativo/videos": {
       "post": {
         "tags": [
@@ -2352,13 +1484,245 @@
         }
       }
     },
-    "/admin/api/v1/preparacion/contenido-educativo/{id}/estado": {
+    "/admin/api/v1/preparacion/podcasts": {
+      "get": {
+        "tags": [
+          "2. Contenido educativo"
+        ],
+        "operationId": "gestion_get_podcasts",
+        "summary": "Consultar podcasts",
+        "security": [
+          {
+            "OperadorBearer": []
+          }
+        ],
+        "parameters": [],
+        "description": "Consulta administrativa de datos persistidos, incluidos los retirados. Listas limitadas a 1000 registros. La app consume sus rutas contractuales habituales; esta consulta no acredita por sí sola la recepción en el teléfono.",
+        "responses": {
+          "200": {
+            "description": "Resultado o replay confirmado"
+          },
+          "401": {
+            "description": "Sesión inválida"
+          },
+          "403": {
+            "description": "Operador no autorizado"
+          },
+          "404": {
+            "description": "Recurso inexistente"
+          },
+          "409": {
+            "description": "Conflicto de operación"
+          },
+          "422": {
+            "description": "Datos inválidos"
+          }
+        }
+      }
+    },
+    "/admin/api/v1/preparacion/podcasts/{id}": {
+      "delete": {
+        "tags": [
+          "2. Contenido educativo"
+        ],
+        "operationId": "gestion_delete_podcasts_id_",
+        "summary": "Retirar podcasts/{id}",
+        "security": [
+          {
+            "OperadorBearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          }
+        ],
+        "description": "Cambio auditado e idempotente. Use un UUID nuevo para cada cambio. Retirar categorías oculta sus contenidos en REST, podcasts y la proyección PowerSync sin reactivar recursos retirados individualmente. No elimina archivos ni historial.",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "additionalProperties": false,
+                "required": [
+                  "operacion_id"
+                ],
+                "properties": {
+                  "operacion_id": {
+                    "type": "string",
+                    "format": "uuid"
+                  }
+                }
+              },
+              "example": {
+                "operacion_id": "eb6464d4-76d2-4f23-baa0-eedd889b587b"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Resultado o replay confirmado"
+          },
+          "401": {
+            "description": "Sesión inválida"
+          },
+          "403": {
+            "description": "Operador no autorizado"
+          },
+          "404": {
+            "description": "Recurso inexistente"
+          },
+          "409": {
+            "description": "Conflicto de operación"
+          },
+          "422": {
+            "description": "Datos inválidos"
+          }
+        }
+      },
+      "put": {
+        "tags": [
+          "2. Contenido educativo"
+        ],
+        "operationId": "gestion_put_podcasts_id_",
+        "summary": "Editar podcasts/{id}",
+        "security": [
+          {
+            "OperadorBearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          }
+        ],
+        "description": "Cambio auditado e idempotente. Use un UUID nuevo para cada cambio. Retirar categorías oculta sus contenidos en REST, podcasts y la proyección PowerSync sin reactivar recursos retirados individualmente. No elimina archivos ni historial.",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "additionalProperties": false,
+                "required": [
+                  "operacion_id"
+                ],
+                "properties": {
+                  "operacion_id": {
+                    "type": "string",
+                    "format": "uuid"
+                  },
+                  "activo": {
+                    "type": "boolean"
+                  },
+                  "titulo": {
+                    "type": "string",
+                    "maxLength": 200
+                  },
+                  "descripcion": {
+                    "type": "string",
+                    "maxLength": 1000
+                  },
+                  "categoria": {
+                    "type": "string",
+                    "maxLength": 200
+                  }
+                }
+              },
+              "example": {
+                "operacion_id": "7c580623-a83f-4015-89bb-d5d156a58c34",
+                "activo": false
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Resultado o replay confirmado"
+          },
+          "401": {
+            "description": "Sesión inválida"
+          },
+          "403": {
+            "description": "Operador no autorizado"
+          },
+          "404": {
+            "description": "Recurso inexistente"
+          },
+          "409": {
+            "description": "Conflicto de operación"
+          },
+          "422": {
+            "description": "Datos inválidos"
+          }
+        }
+      },
+      "get": {
+        "tags": [
+          "2. Contenido educativo"
+        ],
+        "operationId": "gestion_get_podcasts_id_",
+        "summary": "Consultar podcasts/{id}",
+        "security": [
+          {
+            "OperadorBearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          }
+        ],
+        "description": "Consulta administrativa de datos persistidos, incluidos los retirados. Listas limitadas a 1000 registros. La app consume sus rutas contractuales habituales; esta consulta no acredita por sí sola la recepción en el teléfono.",
+        "responses": {
+          "200": {
+            "description": "Resultado o replay confirmado"
+          },
+          "401": {
+            "description": "Sesión inválida"
+          },
+          "403": {
+            "description": "Operador no autorizado"
+          },
+          "404": {
+            "description": "Recurso inexistente"
+          },
+          "409": {
+            "description": "Conflicto de operación"
+          },
+          "422": {
+            "description": "Datos inválidos"
+          }
+        }
+      }
+    },
+    "/admin/api/v1/preparacion/podcasts/{id}/estado": {
       "post": {
         "tags": [
           "2. Contenido educativo"
         ],
-        "summary": "Activar o retirar del catálogo sin borrar archivos",
-        "description": "Herramienta de simulación; no forma parte del contrato externo. Reutilice operacion_id solo para repetir exactamente esta operación. Consulte el resultado desde la app.",
+        "summary": "Activar o retirar podcast",
+        "description": "Activa o retira un episodio del catálogo de la app. Use el UUID devuelto al publicar y un operacion_id nuevo para cada cambio.",
         "security": [
           {
             "OperadorBearer": []
@@ -2398,7 +1762,7 @@
                 "additionalProperties": false
               },
               "example": {
-                "operacion_id": "11111111-1111-4111-8111-111111111111",
+                "operacion_id": "11111111-1111-4111-8111-111111111113",
                 "activo": false
               }
             }
@@ -2495,44 +1859,96 @@
               }
             }
           }
+        },
+        "operationId": "estadoPodcast"
+      }
+    },
+    "/educacion/api/v1/podcasts": {
+      "get": {
+        "operationId": "catalogoPodcasts",
+        "summary": "Consultar podcasts publicados",
+        "description": "Extensión propia de educación. Metadatos educativos públicos; no contiene datos de pacientes. Los episodios requieren internet.",
+        "tags": [
+          "2. Contenido educativo"
+        ],
+        "security": [],
+        "responses": {
+          "200": {
+            "description": "Episodios activos",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "required": [
+                    "episodios"
+                  ],
+                  "properties": {
+                    "episodios": {
+                      "type": "array",
+                      "items": {
+                        "type": "object",
+                        "required": [
+                          "id",
+                          "title",
+                          "category"
+                        ],
+                        "properties": {
+                          "id": {
+                            "type": "string",
+                            "description": "Identificador público del archivo de Drive."
+                          },
+                          "title": {
+                            "type": "string"
+                          },
+                          "category": {
+                            "type": "string"
+                          }
+                        }
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          }
         }
       }
     },
     "/admin/api/v1/preparacion/terminos": {
-  "get": {
-    "tags": [
-      "Consultar y gestionar demostración"
-    ],
-    "operationId": "gestion_get_terminos",
-    "summary": "Consultar terminos",
-    "security": [
-      {
-        "OperadorBearer": []
-      }
-    ],
-    "parameters": [],
-    "description": "Consulta administrativa de datos persistidos, incluidos los retirados. Listas limitadas a 1000 registros. La app consume sus rutas contractuales habituales; esta consulta no acredita por sí sola la recepción en el teléfono.",
-    "responses": {
-      "200": {
-        "description": "Resultado o replay confirmado"
+      "get": {
+        "tags": [
+          "3. Términos vigentes"
+        ],
+        "operationId": "gestion_get_terminos",
+        "summary": "Consultar terminos",
+        "security": [
+          {
+            "OperadorBearer": []
+          }
+        ],
+        "parameters": [],
+        "description": "Consulta administrativa de datos persistidos, incluidos los retirados. Listas limitadas a 1000 registros. La app consume sus rutas contractuales habituales; esta consulta no acredita por sí sola la recepción en el teléfono.",
+        "responses": {
+          "200": {
+            "description": "Resultado o replay confirmado"
+          },
+          "401": {
+            "description": "Sesión inválida"
+          },
+          "403": {
+            "description": "Operador no autorizado"
+          },
+          "404": {
+            "description": "Recurso inexistente"
+          },
+          "409": {
+            "description": "Conflicto de operación"
+          },
+          "422": {
+            "description": "Datos inválidos"
+          }
+        }
       },
-      "401": {
-        "description": "Sesión inválida"
-      },
-      "403": {
-        "description": "Operador no autorizado"
-      },
-      "404": {
-        "description": "Recurso inexistente"
-      },
-      "409": {
-        "description": "Conflicto de operación"
-      },
-      "422": {
-        "description": "Datos inválidos"
-      }
-    }
-  },
       "post": {
         "tags": [
           "3. Términos vigentes"
@@ -2676,6 +2092,52 @@
                 }
               }
             }
+          }
+        }
+      }
+    },
+    "/admin/api/v1/preparacion/terminos/{id}": {
+      "get": {
+        "tags": [
+          "3. Términos vigentes"
+        ],
+        "operationId": "gestion_get_terminos_id_",
+        "summary": "Consultar terminos/{id}",
+        "security": [
+          {
+            "OperadorBearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          }
+        ],
+        "description": "Consulta administrativa de datos persistidos, incluidos los retirados. Listas limitadas a 1000 registros. La app consume sus rutas contractuales habituales; esta consulta no acredita por sí sola la recepción en el teléfono.",
+        "responses": {
+          "200": {
+            "description": "Resultado o replay confirmado"
+          },
+          "401": {
+            "description": "Sesión inválida"
+          },
+          "403": {
+            "description": "Operador no autorizado"
+          },
+          "404": {
+            "description": "Recurso inexistente"
+          },
+          "409": {
+            "description": "Conflicto de operación"
+          },
+          "422": {
+            "description": "Datos inválidos"
           }
         }
       }
@@ -2981,51 +2443,179 @@
         }
       }
     },
-    "/admin/api/v1/preparacion/pacientes/{paciente_id}/contexto-clinico": {
-  "get": {
-    "tags": [
-      "Consultar y gestionar demostración"
-    ],
-    "operationId": "gestion_get_pacientes_paciente_id_contexto_clinico",
-    "summary": "Consultar pacientes/{paciente_id}/contexto-clinico",
-    "security": [
-      {
-        "OperadorBearer": []
-      }
-    ],
-    "parameters": [
-      {
-        "name": "paciente_id",
-        "in": "path",
-        "required": true,
-        "schema": {
-          "type": "string",
-          "format": "uuid"
+    "/admin/api/v1/preparacion/pacientes/{paciente_id}/consentimientos": {
+      "get": {
+        "tags": [
+          "4. Consentimiento sintético"
+        ],
+        "operationId": "gestion_get_pacientes_paciente_id_consentimientos",
+        "summary": "Consultar pacientes/{paciente_id}/consentimientos",
+        "security": [
+          {
+            "OperadorBearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "paciente_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          }
+        ],
+        "description": "Consulta administrativa de datos persistidos, incluidos los retirados. Listas limitadas a 1000 registros. La app consume sus rutas contractuales habituales; esta consulta no acredita por sí sola la recepción en el teléfono.",
+        "responses": {
+          "200": {
+            "description": "Resultado o replay confirmado"
+          },
+          "401": {
+            "description": "Sesión inválida"
+          },
+          "403": {
+            "description": "Operador no autorizado"
+          },
+          "404": {
+            "description": "Recurso inexistente"
+          },
+          "409": {
+            "description": "Conflicto de operación"
+          },
+          "422": {
+            "description": "Datos inválidos"
+          }
         }
       }
-    ],
-    "description": "Consulta administrativa de datos persistidos, incluidos los retirados. Listas limitadas a 1000 registros. La app consume sus rutas contractuales habituales; esta consulta no acredita por sí sola la recepción en el teléfono.",
-    "responses": {
-      "200": {
-        "description": "Resultado o replay confirmado"
-      },
-      "401": {
-        "description": "Sesión inválida"
-      },
-      "403": {
-        "description": "Operador no autorizado"
-      },
-      "404": {
-        "description": "Recurso inexistente"
-      },
-      "409": {
-        "description": "Conflicto de operación"
-      },
-      "422": {
-        "description": "Datos inválidos"
+    },
+    "/admin/api/v1/preparacion/pacientes": {
+      "get": {
+        "tags": [
+          "5. Contexto clínico"
+        ],
+        "operationId": "gestion_get_pacientes",
+        "summary": "Consultar pacientes",
+        "security": [
+          {
+            "OperadorBearer": []
+          }
+        ],
+        "parameters": [],
+        "description": "Consulta administrativa de datos persistidos, incluidos los retirados. Listas limitadas a 1000 registros. La app consume sus rutas contractuales habituales; esta consulta no acredita por sí sola la recepción en el teléfono.",
+        "responses": {
+          "200": {
+            "description": "Resultado o replay confirmado"
+          },
+          "401": {
+            "description": "Sesión inválida"
+          },
+          "403": {
+            "description": "Operador no autorizado"
+          },
+          "404": {
+            "description": "Recurso inexistente"
+          },
+          "409": {
+            "description": "Conflicto de operación"
+          },
+          "422": {
+            "description": "Datos inválidos"
+          }
+        }
       }
-    }
-  },
+    },
+    "/admin/api/v1/preparacion/pacientes/{id}": {
+      "get": {
+        "tags": [
+          "5. Contexto clínico"
+        ],
+        "operationId": "gestion_get_pacientes_id_",
+        "summary": "Consultar pacientes/{id}",
+        "security": [
+          {
+            "OperadorBearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          }
+        ],
+        "description": "Consulta administrativa de datos persistidos, incluidos los retirados. Listas limitadas a 1000 registros. La app consume sus rutas contractuales habituales; esta consulta no acredita por sí sola la recepción en el teléfono.",
+        "responses": {
+          "200": {
+            "description": "Resultado o replay confirmado"
+          },
+          "401": {
+            "description": "Sesión inválida"
+          },
+          "403": {
+            "description": "Operador no autorizado"
+          },
+          "404": {
+            "description": "Recurso inexistente"
+          },
+          "409": {
+            "description": "Conflicto de operación"
+          },
+          "422": {
+            "description": "Datos inválidos"
+          }
+        }
+      }
+    },
+    "/admin/api/v1/preparacion/pacientes/{paciente_id}/contexto-clinico": {
+      "get": {
+        "tags": [
+          "5. Contexto clínico"
+        ],
+        "operationId": "gestion_get_pacientes_paciente_id_contexto_clinico",
+        "summary": "Consultar pacientes/{paciente_id}/contexto-clinico",
+        "security": [
+          {
+            "OperadorBearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "paciente_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          }
+        ],
+        "description": "Consulta administrativa de datos persistidos, incluidos los retirados. Listas limitadas a 1000 registros. La app consume sus rutas contractuales habituales; esta consulta no acredita por sí sola la recepción en el teléfono.",
+        "responses": {
+          "200": {
+            "description": "Resultado o replay confirmado"
+          },
+          "401": {
+            "description": "Sesión inválida"
+          },
+          "403": {
+            "description": "Operador no autorizado"
+          },
+          "404": {
+            "description": "Recurso inexistente"
+          },
+          "409": {
+            "description": "Conflicto de operación"
+          },
+          "422": {
+            "description": "Datos inválidos"
+          }
+        }
+      },
       "post": {
         "tags": [
           "5. Contexto clínico"
@@ -3097,7 +2687,41 @@
                   "consumo_alcohol": false,
                   "fecha_actualizacion": "2026-10-17T15:00:00Z",
                   "grupo_sanguineo": "O+",
-                  "medicamentos": [],
+                  "medicamentos": [
+                    {
+                      "id": "b4a8f101-1111-4111-8111-000000000001",
+                      "medicamento_id": "c5b9f202-1111-4111-8111-000000000001",
+                      "nombre": "Oxaliplatino",
+                      "dosis": "85 mg/m? en infusi?n IV de 2 horas",
+                      "frecuencia": "D?a 1 de cada ciclo cada 14 d?as",
+                      "motivo": "Componente del esquema mFOLFOX6: agente alquilante de platino en infusi?n intravenosa.",
+                      "activo": true,
+                      "fecha_inicio": null,
+                      "fecha_termino": null
+                    },
+                    {
+                      "id": "b4a8f101-1111-4111-8111-000000000002",
+                      "medicamento_id": "c5b9f202-1111-4111-8111-000000000002",
+                      "nombre": "?cido fol?nico (leucovorina)",
+                      "dosis": "400 mg/m? en infusi?n IV de 2 horas",
+                      "frecuencia": "D?a 1 de cada ciclo cada 14 d?as",
+                      "motivo": "Componente del esquema mFOLFOX6: modulador bioqu?mico para potenciar el fluorouracilo.",
+                      "activo": true,
+                      "fecha_inicio": null,
+                      "fecha_termino": null
+                    },
+                    {
+                      "id": "b4a8f101-1111-4111-8111-000000000003",
+                      "medicamento_id": "c5b9f202-1111-4111-8111-000000000003",
+                      "nombre": "Fluorouracilo (5-FU)",
+                      "dosis": "400 mg/m? en bolo IV y 2400 mg/m? en infusi?n continua de 46 horas",
+                      "frecuencia": "D?a 1 (bolo e inicio de infusi?n continua por 46 h) cada 14 d?as",
+                      "motivo": "Componente del esquema mFOLFOX6: antimetabolito fluoropirimid?nico en bolo e infusi?n continua.",
+                      "activo": true,
+                      "fecha_inicio": null,
+                      "fecha_termino": null
+                    }
+                  ],
                   "peso": 72.5,
                   "tabaquismo": false
                 },
@@ -3115,8 +2739,12 @@
                     "ciclo_actual": 2,
                     "via_administracion": "intravenosa",
                     "fecha_proximo_ciclo": "2026-10-25",
-                    "farmacos": [],
-                    "observaciones": "Pauta general de referencia: ciclos cada 14 días. Administración intravenosa; fluorouracilo en infusión continua durante 46 horas. La duración y las dosis se individualizan por el equipo tratante. Caso de demostración académica; no representa una prescripción. Fuente: eviQ, protocolo 637."
+                    "farmacos": [
+                      "Oxaliplatino 85 mg/m? IV (d?a 1)",
+                      "?cido fol?nico 400 mg/m? IV (d?a 1)",
+                      "Fluorouracilo 400 mg/m? bolo IV y 2400 mg/m? infusi?n continua de 46 h"
+                    ],
+                    "observaciones": "Pauta cl?nica adyuvante mFOLFOX6 en ciclos cada 14 d?as hasta completar 12 ciclos (oxaliplatino 85 mg/m? IV d?a 1, ?cido fol?nico 400 mg/m? IV d?a 1 y fluorouracilo 400 mg/m? en bolo IV seguido de 2400 mg/m? en infusi?n continua por 46 horas). Protocolo de referencia cl?nica eviQ 637."
                   },
                   "tipo_tratamiento_codigo": "quimioterapia",
                   "tipo_tratamiento_id": "59875675-0c47-5026-9e35-bd9389f38626",
@@ -3221,40 +2849,40 @@
       }
     },
     "/admin/api/v1/preparacion/formularios": {
-  "get": {
-    "tags": [
-      "Consultar y gestionar demostración"
-    ],
-    "operationId": "gestion_get_formularios",
-    "summary": "Consultar formularios",
-    "security": [
-      {
-        "OperadorBearer": []
-      }
-    ],
-    "parameters": [],
-    "description": "Consulta administrativa de datos persistidos, incluidos los retirados. Listas limitadas a 1000 registros. La app consume sus rutas contractuales habituales; esta consulta no acredita por sí sola la recepción en el teléfono.",
-    "responses": {
-      "200": {
-        "description": "Resultado o replay confirmado"
+      "get": {
+        "tags": [
+          "6. Formularios"
+        ],
+        "operationId": "gestion_get_formularios",
+        "summary": "Consultar formularios",
+        "security": [
+          {
+            "OperadorBearer": []
+          }
+        ],
+        "parameters": [],
+        "description": "Consulta administrativa de datos persistidos, incluidos los retirados. Listas limitadas a 1000 registros. La app consume sus rutas contractuales habituales; esta consulta no acredita por sí sola la recepción en el teléfono.",
+        "responses": {
+          "200": {
+            "description": "Resultado o replay confirmado"
+          },
+          "401": {
+            "description": "Sesión inválida"
+          },
+          "403": {
+            "description": "Operador no autorizado"
+          },
+          "404": {
+            "description": "Recurso inexistente"
+          },
+          "409": {
+            "description": "Conflicto de operación"
+          },
+          "422": {
+            "description": "Datos inválidos"
+          }
+        }
       },
-      "401": {
-        "description": "Sesión inválida"
-      },
-      "403": {
-        "description": "Operador no autorizado"
-      },
-      "404": {
-        "description": "Recurso inexistente"
-      },
-      "409": {
-        "description": "Conflicto de operación"
-      },
-      "422": {
-        "description": "Datos inválidos"
-      }
-    }
-  },
       "post": {
         "tags": [
           "6. Formularios"
@@ -4888,6 +4516,52 @@
         }
       }
     },
+    "/admin/api/v1/preparacion/formularios/{id}": {
+      "get": {
+        "tags": [
+          "6. Formularios"
+        ],
+        "operationId": "gestion_get_formularios_id_",
+        "summary": "Consultar formularios/{id}",
+        "security": [
+          {
+            "OperadorBearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          }
+        ],
+        "description": "Consulta administrativa de datos persistidos, incluidos los retirados. Listas limitadas a 1000 registros. La app consume sus rutas contractuales habituales; esta consulta no acredita por sí sola la recepción en el teléfono.",
+        "responses": {
+          "200": {
+            "description": "Resultado o replay confirmado"
+          },
+          "401": {
+            "description": "Sesión inválida"
+          },
+          "403": {
+            "description": "Operador no autorizado"
+          },
+          "404": {
+            "description": "Recurso inexistente"
+          },
+          "409": {
+            "description": "Conflicto de operación"
+          },
+          "422": {
+            "description": "Datos inválidos"
+          }
+        }
+      }
+    },
     "/admin/api/v1/preparacion/formularios/{id}/publicar": {
       "post": {
         "tags": [
@@ -5030,50 +4704,50 @@
       }
     },
     "/admin/api/v1/preparacion/pacientes/{paciente_id}/escenario": {
-  "get": {
-    "tags": [
-      "Consultar y gestionar demostración"
-    ],
-    "operationId": "gestion_get_pacientes_paciente_id_escenario",
-    "summary": "Consultar pacientes/{paciente_id}/escenario",
-    "security": [
-      {
-        "OperadorBearer": []
-      }
-    ],
-    "parameters": [
-      {
-        "name": "paciente_id",
-        "in": "path",
-        "required": true,
-        "schema": {
-          "type": "string",
-          "format": "uuid"
+      "get": {
+        "tags": [
+          "7. Escenarios"
+        ],
+        "operationId": "gestion_get_pacientes_paciente_id_escenario",
+        "summary": "Consultar pacientes/{paciente_id}/escenario",
+        "security": [
+          {
+            "OperadorBearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "paciente_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          }
+        ],
+        "description": "Consulta administrativa de datos persistidos, incluidos los retirados. Listas limitadas a 1000 registros. La app consume sus rutas contractuales habituales; esta consulta no acredita por sí sola la recepción en el teléfono.",
+        "responses": {
+          "200": {
+            "description": "Resultado o replay confirmado"
+          },
+          "401": {
+            "description": "Sesión inválida"
+          },
+          "403": {
+            "description": "Operador no autorizado"
+          },
+          "404": {
+            "description": "Recurso inexistente"
+          },
+          "409": {
+            "description": "Conflicto de operación"
+          },
+          "422": {
+            "description": "Datos inválidos"
+          }
         }
-      }
-    ],
-    "description": "Consulta administrativa de datos persistidos, incluidos los retirados. Listas limitadas a 1000 registros. La app consume sus rutas contractuales habituales; esta consulta no acredita por sí sola la recepción en el teléfono.",
-    "responses": {
-      "200": {
-        "description": "Resultado o replay confirmado"
       },
-      "401": {
-        "description": "Sesión inválida"
-      },
-      "403": {
-        "description": "Operador no autorizado"
-      },
-      "404": {
-        "description": "Recurso inexistente"
-      },
-      "409": {
-        "description": "Conflicto de operación"
-      },
-      "422": {
-        "description": "Datos inválidos"
-      }
-    }
-  },
       "post": {
         "tags": [
           "7. Escenarios"
@@ -5228,442 +4902,6 @@
         }
       }
     },
-    "/admin/api/v1/preparacion/contenido-educativo/podcasts": {
-      "post": {
-        "tags": [
-          "2. Contenido educativo"
-        ],
-        "summary": "Publicar podcast de Drive",
-        "description": "Publica un episodio de audio de Drive en la app. El archivo debe permitir reproducción pública. Requiere internet; no descarga audio al teléfono.",
-        "security": [
-          {
-            "OperadorBearer": []
-          }
-        ],
-        "parameters": [],
-        "requestBody": {
-          "required": true,
-          "content": {
-            "application/json": {
-              "schema": {
-                "type": "object",
-                "additionalProperties": false,
-                "required": [
-                  "operacion_id",
-                  "titulo",
-                  "descripcion",
-                  "categoria",
-                  "url"
-                ],
-                "properties": {
-                  "operacion_id": {
-                    "type": "string",
-                    "format": "uuid"
-                  },
-                  "titulo": {
-                    "type": "string",
-                    "maxLength": 200
-                  },
-                  "descripcion": {
-                    "type": "string",
-                    "maxLength": 1000
-                  },
-                  "categoria": {
-                    "type": "string",
-                    "maxLength": 200
-                  },
-                  "url": {
-                    "type": "string",
-                    "maxLength": 200
-                  }
-                }
-              },
-              "example": {
-                "operacion_id": "11111111-1111-4111-8111-111111111112",
-                "titulo": "Podcast educativo",
-                "descripcion": "Audio educativo autorizado.",
-                "categoria": "Categoría previamente creada",
-                "url": "https://drive.google.com/file/d/ID_REAL_DEL_ARCHIVO/view"
-              }
-            }
-          }
-        },
-        "responses": {
-          "200": {
-            "description": "Resultado o replay confirmado",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "type": "object"
-                }
-              }
-            }
-          },
-          "201": {
-            "description": "Recurso creado",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "type": "object"
-                }
-              }
-            }
-          },
-          "401": {
-            "description": "Sesión inválida",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "type": "object"
-                }
-              }
-            }
-          },
-          "403": {
-            "description": "Operador no autorizado",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "type": "object"
-                }
-              }
-            }
-          },
-          "404": {
-            "description": "Recurso no encontrado",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "type": "object"
-                }
-              }
-            }
-          },
-          "409": {
-            "description": "Identificador o versión en conflicto",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "type": "object"
-                }
-              }
-            }
-          },
-          "413": {
-            "description": "Archivo mayor a 5 MiB",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "type": "object"
-                }
-              }
-            }
-          },
-          "422": {
-            "description": "Datos inválidos",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "type": "object"
-                }
-              }
-            }
-          },
-          "503": {
-            "description": "Servicio temporalmente no disponible",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "type": "object"
-                }
-              }
-            }
-          }
-        },
-        "operationId": "prepararPodcast"
-      }
-    },
-    "/admin/api/v1/preparacion/podcasts/{id}/estado": {
-      "post": {
-        "tags": [
-          "2. Contenido educativo"
-        ],
-        "summary": "Activar o retirar podcast",
-        "description": "Activa o retira un episodio del catálogo de la app. Use el UUID devuelto al publicar y un operacion_id nuevo para cada cambio.",
-        "security": [
-          {
-            "OperadorBearer": []
-          }
-        ],
-        "parameters": [
-          {
-            "in": "path",
-            "name": "id",
-            "required": true,
-            "schema": {
-              "type": "string",
-              "format": "uuid"
-            },
-            "example": "22222222-2222-4222-8222-222222222222"
-          }
-        ],
-        "requestBody": {
-          "required": true,
-          "content": {
-            "application/json": {
-              "schema": {
-                "type": "object",
-                "required": [
-                  "operacion_id",
-                  "activo"
-                ],
-                "properties": {
-                  "operacion_id": {
-                    "type": "string",
-                    "format": "uuid"
-                  },
-                  "activo": {
-                    "type": "boolean"
-                  }
-                },
-                "additionalProperties": false
-              },
-              "example": {
-                "operacion_id": "11111111-1111-4111-8111-111111111113",
-                "activo": false
-              }
-            }
-          }
-        },
-        "responses": {
-          "200": {
-            "description": "Resultado o replay confirmado",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "type": "object"
-                }
-              }
-            }
-          },
-          "201": {
-            "description": "Recurso creado",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "type": "object"
-                }
-              }
-            }
-          },
-          "401": {
-            "description": "Sesión inválida",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "type": "object"
-                }
-              }
-            }
-          },
-          "403": {
-            "description": "Operador no autorizado",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "type": "object"
-                }
-              }
-            }
-          },
-          "404": {
-            "description": "Recurso no encontrado",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "type": "object"
-                }
-              }
-            }
-          },
-          "409": {
-            "description": "Identificador o versión en conflicto",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "type": "object"
-                }
-              }
-            }
-          },
-          "413": {
-            "description": "Archivo mayor a 5 MiB",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "type": "object"
-                }
-              }
-            }
-          },
-          "422": {
-            "description": "Datos inválidos",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "type": "object"
-                }
-              }
-            }
-          },
-          "503": {
-            "description": "Servicio temporalmente no disponible",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "type": "object"
-                }
-              }
-            }
-          }
-        },
-        "operationId": "estadoPodcast"
-      }
-    },
-    "/educacion/api/v1/podcasts": {
-      "get": {
-        "operationId": "catalogoPodcasts",
-        "summary": "Consultar podcasts publicados",
-        "description": "Extensión propia de educación. Metadatos educativos públicos; no contiene datos de pacientes. Los episodios requieren internet.",
-        "tags": [
-          "Contenido educativo"
-        ],
-        "security": [],
-        "responses": {
-          "200": {
-            "description": "Episodios activos",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "type": "object",
-                  "required": [
-                    "episodios"
-                  ],
-                  "properties": {
-                    "episodios": {
-                      "type": "array",
-                      "items": {
-                        "type": "object",
-                        "required": [
-                          "id",
-                          "title",
-                          "category"
-                        ],
-                        "properties": {
-                          "id": {
-                            "type": "string",
-                            "description": "Identificador público del archivo de Drive."
-                          },
-                          "title": {
-                            "type": "string"
-                          },
-                          "category": {
-                            "type": "string"
-                          }
-                        }
-                      }
-                    }
-                  }
-                }
-              }
-            }
-          }
-        }
-      }
-    },
-    "/admin/api/v1/preparacion/sincronizacion/signos-vitales": {
-      "get": {
-        "tags": [
-          "8. Supervisión de sincronización"
-        ],
-        "summary": "Consultar signos vitales sincronizados por el paciente",
-        "description": "Permite al operador clínico y evaluador verificar en tiempo real los signos vitales que el paciente ha enviado y sincronizado exitosamente al servidor.",
-        "security": [
-          {
-            "OperadorBearer": []
-          }
-        ],
-        "parameters": [
-          {
-            "name": "paciente_id",
-            "in": "query",
-            "required": true,
-            "description": "UUID del paciente a consultar.",
-            "schema": {
-              "type": "string",
-              "format": "uuid"
-            }
-          },
-          {
-            "name": "limite",
-            "in": "query",
-            "required": false,
-            "description": "Límite máximo de registros a retornar (por defecto 20, máximo 100).",
-            "schema": {
-              "type": "integer",
-              "default": 20,
-              "minimum": 1,
-              "maximum": 100
-            }
-          }
-        ],
-        "responses": {
-          "200": {
-            "description": "Lista de signos vitales sincronizados por el paciente.",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "type": "object",
-                  "required": [
-                    "paciente_id",
-                    "total",
-                    "registros"
-                  ],
-                  "properties": {
-                    "paciente_id": {
-                      "type": "string",
-                      "format": "uuid"
-                    },
-                    "operador_id": {
-                      "type": "string",
-                      "format": "uuid"
-                    },
-                    "total": {
-                      "type": "integer"
-                    },
-                    "registros": {
-                      "type": "array",
-                      "items": {
-                        "type": "object"
-                      }
-                    }
-                  }
-                }
-              }
-            }
-          },
-          "401": {
-            "description": "No autorizado."
-          },
-          "403": {
-            "description": "Operador no autorizado."
-          },
-          "422": {
-            "description": "Parámetro inválido."
-          }
-        }
-      }
-    },
     "/admin/api/v1/preparacion/sincronizacion/formularios-respuestas": {
       "get": {
         "tags": [
@@ -5753,6 +4991,852 @@
           },
           "422": {
             "description": "Parámetro inválido."
+          }
+        }
+      }
+    },
+    "/admin/api/v1/preparacion/sincronizacion/signos-vitales": {
+      "get": {
+        "tags": [
+          "8. Supervisión de sincronización"
+        ],
+        "summary": "Consultar signos vitales sincronizados por el paciente",
+        "description": "Permite al operador clínico y evaluador verificar en tiempo real los signos vitales que el paciente ha enviado y sincronizado exitosamente al servidor.",
+        "security": [
+          {
+            "OperadorBearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "paciente_id",
+            "in": "query",
+            "required": true,
+            "description": "UUID del paciente a consultar.",
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          },
+          {
+            "name": "limite",
+            "in": "query",
+            "required": false,
+            "description": "Límite máximo de registros a retornar (por defecto 20, máximo 100).",
+            "schema": {
+              "type": "integer",
+              "default": 20,
+              "minimum": 1,
+              "maximum": 100
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Lista de signos vitales sincronizados por el paciente.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "required": [
+                    "paciente_id",
+                    "total",
+                    "registros"
+                  ],
+                  "properties": {
+                    "paciente_id": {
+                      "type": "string",
+                      "format": "uuid"
+                    },
+                    "operador_id": {
+                      "type": "string",
+                      "format": "uuid"
+                    },
+                    "total": {
+                      "type": "integer"
+                    },
+                    "registros": {
+                      "type": "array",
+                      "items": {
+                        "type": "object"
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "No autorizado."
+          },
+          "403": {
+            "description": "Operador no autorizado."
+          },
+          "422": {
+            "description": "Parámetro inválido."
+          }
+        }
+      }
+    },
+    "/admin/api/v1/preparacion/profesionales": {
+      "get": {
+        "tags": [
+          "9. Profesionales"
+        ],
+        "summary": "Consultar profesionales",
+        "operationId": "getProfesionalesLista",
+        "security": [
+          {
+            "OperadorBearer": []
+          }
+        ],
+        "description": "Gestión de demostración con auditoría. Use un operacion_id nuevo para cada cambio; repita el mismo solo al reintentar esa operación. Retirar conserva el perfil y sus vínculos históricos. PUT permite reactivarlo. El ID corresponde al operador, obtenido al comprobar acceso.",
+        "parameters": [],
+        "responses": {
+          "200": {
+            "description": "Resultado o replay idéntico"
+          },
+          "201": {
+            "description": "Registro creado"
+          },
+          "401": {
+            "description": "Falta sesión válida"
+          },
+          "403": {
+            "description": "Se requiere operador activo"
+          },
+          "404": {
+            "description": "Registro inexistente"
+          },
+          "409": {
+            "description": "Conflicto o contexto pendiente"
+          },
+          "422": {
+            "description": "Datos inválidos"
+          }
+        }
+      },
+      "post": {
+        "tags": [
+          "9. Profesionales"
+        ],
+        "summary": "Crear profesionales",
+        "operationId": "postProfesionalesLista",
+        "security": [
+          {
+            "OperadorBearer": []
+          }
+        ],
+        "description": "Gestión de demostración con auditoría. Use un operacion_id nuevo para cada cambio; repita el mismo solo al reintentar esa operación. Retirar conserva el perfil y sus vínculos históricos. PUT permite reactivarlo. El ID corresponde al operador, obtenido al comprobar acceso.",
+        "parameters": [],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "additionalProperties": false,
+                "properties": {
+                  "operacion_id": {
+                    "type": "string",
+                    "format": "uuid"
+                  },
+                  "operador_id": {
+                    "type": "string",
+                    "format": "uuid"
+                  },
+                  "nombre": {
+                    "type": "string",
+                    "maxLength": 150
+                  },
+                  "especialidad": {
+                    "type": "string",
+                    "maxLength": 150
+                  },
+                  "activo": {
+                    "type": "boolean"
+                  }
+                },
+                "required": [
+                  "operacion_id",
+                  "operador_id",
+                  "nombre",
+                  "especialidad"
+                ]
+              },
+              "example": {
+                "operacion_id": "77777777-7777-4777-8777-000000000001",
+                "nombre": "Dra. Valentina Soto — demostración",
+                "especialidad": "Oncología médica (perfil ficticio)",
+                "operador_id": "11111111-1111-4111-8111-111111111111"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Resultado o replay idéntico"
+          },
+          "201": {
+            "description": "Registro creado"
+          },
+          "401": {
+            "description": "Falta sesión válida"
+          },
+          "403": {
+            "description": "Se requiere operador activo"
+          },
+          "404": {
+            "description": "Registro inexistente"
+          },
+          "409": {
+            "description": "Conflicto o contexto pendiente"
+          },
+          "422": {
+            "description": "Datos inválidos"
+          }
+        }
+      }
+    },
+    "/admin/api/v1/preparacion/profesionales/{operador_id}": {
+      "get": {
+        "tags": [
+          "9. Profesionales"
+        ],
+        "summary": "Consultar profesionales",
+        "operationId": "getProfesionalesDetalle",
+        "security": [
+          {
+            "OperadorBearer": []
+          }
+        ],
+        "description": "Gestión de demostración con auditoría. Use un operacion_id nuevo para cada cambio; repita el mismo solo al reintentar esa operación. Retirar conserva el perfil y sus vínculos históricos. PUT permite reactivarlo. El ID corresponde al operador, obtenido al comprobar acceso.",
+        "parameters": [
+          {
+            "name": "operador_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Resultado o replay idéntico"
+          },
+          "201": {
+            "description": "Registro creado"
+          },
+          "401": {
+            "description": "Falta sesión válida"
+          },
+          "403": {
+            "description": "Se requiere operador activo"
+          },
+          "404": {
+            "description": "Registro inexistente"
+          },
+          "409": {
+            "description": "Conflicto o contexto pendiente"
+          },
+          "422": {
+            "description": "Datos inválidos"
+          }
+        }
+      },
+      "put": {
+        "tags": [
+          "9. Profesionales"
+        ],
+        "summary": "Editar profesionales",
+        "operationId": "putProfesionalesDetalle",
+        "security": [
+          {
+            "OperadorBearer": []
+          }
+        ],
+        "description": "Gestión de demostración con auditoría. Use un operacion_id nuevo para cada cambio; repita el mismo solo al reintentar esa operación. Retirar conserva el perfil y sus vínculos históricos. PUT permite reactivarlo. El ID corresponde al operador, obtenido al comprobar acceso.",
+        "parameters": [
+          {
+            "name": "operador_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "additionalProperties": false,
+                "properties": {
+                  "operacion_id": {
+                    "type": "string",
+                    "format": "uuid"
+                  },
+                  "nombre": {
+                    "type": "string",
+                    "maxLength": 150
+                  },
+                  "especialidad": {
+                    "type": "string",
+                    "maxLength": 150
+                  },
+                  "activo": {
+                    "type": "boolean"
+                  }
+                },
+                "required": [
+                  "operacion_id"
+                ]
+              },
+              "example": {
+                "operacion_id": "77777777-7777-4777-8777-000000000002",
+                "nombre": "Dra. Valentina Soto — demostración",
+                "especialidad": "Oncología médica (perfil ficticio)",
+                "activo": true
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Resultado o replay idéntico"
+          },
+          "201": {
+            "description": "Registro creado"
+          },
+          "401": {
+            "description": "Falta sesión válida"
+          },
+          "403": {
+            "description": "Se requiere operador activo"
+          },
+          "404": {
+            "description": "Registro inexistente"
+          },
+          "409": {
+            "description": "Conflicto o contexto pendiente"
+          },
+          "422": {
+            "description": "Datos inválidos"
+          }
+        }
+      },
+      "delete": {
+        "tags": [
+          "9. Profesionales"
+        ],
+        "summary": "Retirar profesionales",
+        "operationId": "deleteProfesionalesDetalle",
+        "security": [
+          {
+            "OperadorBearer": []
+          }
+        ],
+        "description": "Gestión de demostración con auditoría. Use un operacion_id nuevo para cada cambio; repita el mismo solo al reintentar esa operación. Retirar conserva el perfil y sus vínculos históricos. PUT permite reactivarlo. El ID corresponde al operador, obtenido al comprobar acceso.",
+        "parameters": [
+          {
+            "name": "operador_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "required": [
+                  "operacion_id"
+                ],
+                "additionalProperties": false,
+                "properties": {
+                  "operacion_id": {
+                    "type": "string",
+                    "format": "uuid"
+                  }
+                }
+              },
+              "example": {
+                "operacion_id": "77777777-7777-4777-8777-000000000003"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Resultado o replay idéntico"
+          },
+          "201": {
+            "description": "Registro creado"
+          },
+          "401": {
+            "description": "Falta sesión válida"
+          },
+          "403": {
+            "description": "Se requiere operador activo"
+          },
+          "404": {
+            "description": "Registro inexistente"
+          },
+          "409": {
+            "description": "Conflicto o contexto pendiente"
+          },
+          "422": {
+            "description": "Datos inválidos"
+          }
+        }
+      }
+    },
+    "/admin/api/v1/preparacion/pacientes/{paciente_id}/medicamentos": {
+      "get": {
+        "tags": [
+          "10. Medicamentos"
+        ],
+        "summary": "Consultar medicamentos",
+        "operationId": "getMedicamentosLista",
+        "security": [
+          {
+            "OperadorBearer": []
+          }
+        ],
+        "description": "Gestión de demostración con auditoría. Use un operacion_id nuevo para cada cambio; repita el mismo solo al reintentar esa operación. Edita la lista del perfil clínico consumida por la app, sin alterar el esquema oncológico. Las dosis y frecuencias las introduce el operador; no se calculan. activo=false no habilita recordatorios domiciliarios.",
+        "parameters": [
+          {
+            "name": "paciente_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Resultado o replay idéntico"
+          },
+          "201": {
+            "description": "Registro creado"
+          },
+          "401": {
+            "description": "Falta sesión válida"
+          },
+          "403": {
+            "description": "Se requiere operador activo"
+          },
+          "404": {
+            "description": "Registro inexistente"
+          },
+          "409": {
+            "description": "Conflicto o contexto pendiente"
+          },
+          "422": {
+            "description": "Datos inválidos"
+          }
+        }
+      },
+      "post": {
+        "tags": [
+          "10. Medicamentos"
+        ],
+        "summary": "Crear medicamentos",
+        "operationId": "postMedicamentosLista",
+        "security": [
+          {
+            "OperadorBearer": []
+          }
+        ],
+        "description": "Gestión de demostración con auditoría. Use un operacion_id nuevo para cada cambio; repita el mismo solo al reintentar esa operación. Edita la lista del perfil clínico consumida por la app, sin alterar el esquema oncológico. Las dosis y frecuencias las introduce el operador; no se calculan. activo=false no habilita recordatorios domiciliarios.",
+        "parameters": [
+          {
+            "name": "paciente_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "additionalProperties": false,
+                "required": [
+                  "operacion_id",
+                  "medicamento"
+                ],
+                "properties": {
+                  "operacion_id": {
+                    "type": "string",
+                    "format": "uuid"
+                  },
+                  "medicamento": {
+                    "type": "object",
+                    "additionalProperties": false,
+                    "properties": {
+                      "nombre": {
+                        "type": "string",
+                        "maxLength": 500
+                      },
+                      "dosis": {
+                        "type": "string",
+                        "maxLength": 500
+                      },
+                      "frecuencia": {
+                        "type": "string",
+                        "maxLength": 500
+                      },
+                      "motivo": {
+                        "type": "string",
+                        "maxLength": 1000
+                      },
+                      "activo": {
+                        "type": "boolean",
+                        "default": false
+                      },
+                      "fecha_inicio": {
+                        "type": [
+                          "string",
+                          "null"
+                        ],
+                        "format": "date"
+                      },
+                      "fecha_termino": {
+                        "type": [
+                          "string",
+                          "null"
+                        ],
+                        "format": "date"
+                      }
+                    },
+                    "required": [
+                      "nombre",
+                      "dosis",
+                      "frecuencia"
+                    ]
+                  }
+                }
+              },
+              "example": {
+                "operacion_id": "77777777-7777-4777-8777-000000000004",
+                "medicamento": {
+                  "nombre": "Oxaliplatino",
+                  "dosis": "85 mg/m? en infusi?n IV de 2 horas",
+                  "frecuencia": "D?a 1 de cada ciclo cada 14 d?as",
+                  "motivo": "Componente del esquema mFOLFOX6: agente alquilante de platino en infusi?n intravenosa.",
+                  "activo": true,
+                  "fecha_inicio": null,
+                  "fecha_termino": null
+                }
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Resultado o replay idéntico"
+          },
+          "201": {
+            "description": "Registro creado"
+          },
+          "401": {
+            "description": "Falta sesión válida"
+          },
+          "403": {
+            "description": "Se requiere operador activo"
+          },
+          "404": {
+            "description": "Registro inexistente"
+          },
+          "409": {
+            "description": "Conflicto o contexto pendiente"
+          },
+          "422": {
+            "description": "Datos inválidos"
+          }
+        }
+      }
+    },
+    "/admin/api/v1/preparacion/pacientes/{paciente_id}/medicamentos/{medicamento_id}": {
+      "get": {
+        "tags": [
+          "10. Medicamentos"
+        ],
+        "summary": "Consultar medicamentos",
+        "operationId": "getMedicamentosDetalle",
+        "security": [
+          {
+            "OperadorBearer": []
+          }
+        ],
+        "description": "Gestión de demostración con auditoría. Use un operacion_id nuevo para cada cambio; repita el mismo solo al reintentar esa operación. Edita la lista del perfil clínico consumida por la app, sin alterar el esquema oncológico. Las dosis y frecuencias las introduce el operador; no se calculan. activo=false no habilita recordatorios domiciliarios.",
+        "parameters": [
+          {
+            "name": "paciente_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          },
+          {
+            "name": "medicamento_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Resultado o replay idéntico"
+          },
+          "201": {
+            "description": "Registro creado"
+          },
+          "401": {
+            "description": "Falta sesión válida"
+          },
+          "403": {
+            "description": "Se requiere operador activo"
+          },
+          "404": {
+            "description": "Registro inexistente"
+          },
+          "409": {
+            "description": "Conflicto o contexto pendiente"
+          },
+          "422": {
+            "description": "Datos inválidos"
+          }
+        }
+      },
+      "put": {
+        "tags": [
+          "10. Medicamentos"
+        ],
+        "summary": "Editar medicamentos",
+        "operationId": "putMedicamentosDetalle",
+        "security": [
+          {
+            "OperadorBearer": []
+          }
+        ],
+        "description": "Gestión de demostración con auditoría. Use un operacion_id nuevo para cada cambio; repita el mismo solo al reintentar esa operación. Edita la lista del perfil clínico consumida por la app, sin alterar el esquema oncológico. Las dosis y frecuencias las introduce el operador; no se calculan. activo=false no habilita recordatorios domiciliarios.",
+        "parameters": [
+          {
+            "name": "paciente_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          },
+          {
+            "name": "medicamento_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "additionalProperties": false,
+                "required": [
+                  "operacion_id",
+                  "medicamento"
+                ],
+                "properties": {
+                  "operacion_id": {
+                    "type": "string",
+                    "format": "uuid"
+                  },
+                  "medicamento": {
+                    "type": "object",
+                    "additionalProperties": false,
+                    "properties": {
+                      "nombre": {
+                        "type": "string",
+                        "maxLength": 500
+                      },
+                      "dosis": {
+                        "type": "string",
+                        "maxLength": 500
+                      },
+                      "frecuencia": {
+                        "type": "string",
+                        "maxLength": 500
+                      },
+                      "motivo": {
+                        "type": "string",
+                        "maxLength": 1000
+                      },
+                      "activo": {
+                        "type": "boolean",
+                        "default": false
+                      },
+                      "fecha_inicio": {
+                        "type": [
+                          "string",
+                          "null"
+                        ],
+                        "format": "date"
+                      },
+                      "fecha_termino": {
+                        "type": [
+                          "string",
+                          "null"
+                        ],
+                        "format": "date"
+                      }
+                    }
+                  }
+                }
+              },
+              "example": {
+                "operacion_id": "77777777-7777-4777-8777-000000000005",
+                "medicamento": {
+                  "nombre": "Oxaliplatino",
+                  "dosis": "85 mg/m? en infusi?n IV de 2 horas",
+                  "frecuencia": "D?a 1 de cada ciclo cada 14 d?as",
+                  "motivo": "Componente del esquema mFOLFOX6: agente alquilante de platino en infusi?n intravenosa.",
+                  "activo": true,
+                  "fecha_inicio": null,
+                  "fecha_termino": null
+                }
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Resultado o replay idéntico"
+          },
+          "201": {
+            "description": "Registro creado"
+          },
+          "401": {
+            "description": "Falta sesión válida"
+          },
+          "403": {
+            "description": "Se requiere operador activo"
+          },
+          "404": {
+            "description": "Registro inexistente"
+          },
+          "409": {
+            "description": "Conflicto o contexto pendiente"
+          },
+          "422": {
+            "description": "Datos inválidos"
+          }
+        }
+      },
+      "delete": {
+        "tags": [
+          "10. Medicamentos"
+        ],
+        "summary": "Eliminar medicamentos",
+        "operationId": "deleteMedicamentosDetalle",
+        "security": [
+          {
+            "OperadorBearer": []
+          }
+        ],
+        "description": "Gestión de demostración con auditoría. Use un operacion_id nuevo para cada cambio; repita el mismo solo al reintentar esa operación. Edita la lista del perfil clínico consumida por la app, sin alterar el esquema oncológico. Las dosis y frecuencias las introduce el operador; no se calculan. activo=false no habilita recordatorios domiciliarios.",
+        "parameters": [
+          {
+            "name": "paciente_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          },
+          {
+            "name": "medicamento_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "required": [
+                  "operacion_id"
+                ],
+                "additionalProperties": false,
+                "properties": {
+                  "operacion_id": {
+                    "type": "string",
+                    "format": "uuid"
+                  }
+                }
+              },
+              "example": {
+                "operacion_id": "77777777-7777-4777-8777-000000000006"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Resultado o replay idéntico"
+          },
+          "201": {
+            "description": "Registro creado"
+          },
+          "401": {
+            "description": "Falta sesión válida"
+          },
+          "403": {
+            "description": "Se requiere operador activo"
+          },
+          "404": {
+            "description": "Registro inexistente"
+          },
+          "409": {
+            "description": "Conflicto o contexto pendiente"
+          },
+          "422": {
+            "description": "Datos inválidos"
           }
         }
       }

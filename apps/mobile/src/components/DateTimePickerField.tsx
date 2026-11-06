@@ -1,6 +1,6 @@
 import Feather from '@expo/vector-icons/Feather';
 import DateTimePicker, { type DateTimePickerEvent } from '@react-native-community/datetimepicker';
-import { useRef, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import { Platform, Pressable, StyleSheet, Text, TextInput, View } from 'react-native';
 
 import { useAppTheme } from '../providers/ThemeProvider';
@@ -66,6 +66,13 @@ function formatTimeFromPicker(selected: Date): string {
   return `${hours}:${minutes}`;
 }
 
+function normalizeTimeDraft(raw: string): string | null {
+  const trimmed = raw.trim();
+  if (isValidTimeHhMm(trimmed)) return trimmed;
+  if (/^\d:[0-5]\d$/.test(trimmed)) return `0${trimmed}`;
+  return null;
+}
+
 export function DateTimePickerField(props: DateTimePickerFieldProps) {
   const { label, helperText, accessibilityLabel, disabled = false, mode } = props;
   const { theme: appTheme } = useAppTheme();
@@ -76,6 +83,14 @@ export function DateTimePickerField(props: DateTimePickerFieldProps) {
   const [keyboardDraft, setKeyboardDraft] = useState(props.value ?? '');
   const keyboardDraftRef = useRef(props.value ?? '');
   const [keyboardError, setKeyboardError] = useState<string | null>(null);
+
+  useEffect(() => {
+    if (!showKeyboardInput) {
+      const next = props.value ?? '';
+      keyboardDraftRef.current = next;
+      setKeyboardDraft(next);
+    }
+  }, [props.value, showKeyboardInput]);
 
   const handleOpenPicker = () => {
     if (disabled) return;
@@ -109,12 +124,15 @@ export function DateTimePickerField(props: DateTimePickerFieldProps) {
   const handleApplyKeyboardInput = () => {
     const trimmed = keyboardDraftRef.current.trim();
     if (props.mode === 'time') {
-      if (!isValidTimeHhMm(trimmed)) {
+      const normalized = normalizeTimeDraft(trimmed);
+      if (!normalized) {
         setKeyboardError('Ingresa una hora válida en formato 24h HH:mm (ej. 07:00).');
         return;
       }
       setKeyboardError(null);
-      props.onChange(trimmed);
+      keyboardDraftRef.current = normalized;
+      setKeyboardDraft(normalized);
+      props.onChange(normalized);
       setShowKeyboardInput(false);
     } else {
       if (!isValidCivilDate(trimmed)) {
@@ -134,18 +152,27 @@ export function DateTimePickerField(props: DateTimePickerFieldProps) {
         ? `${formatCivilDateDisplay(props.value)} (${props.value})`
         : (props.placeholder ?? 'Seleccionar fecha');
 
-  const pickerValue =
-    props.mode === 'time' ? timeStringToDate(props.value) : civilDateToLocalDate(props.value);
+  const pickerValue = useMemo(
+    () =>
+      props.mode === 'time' ? timeStringToDate(props.value) : civilDateToLocalDate(props.value),
+    [props.mode, props.value],
+  );
 
-  const minimumDate =
-    props.mode === 'date' && isValidCivilDate(props.minimumDate)
-      ? civilDateToLocalDate(props.minimumDate)
-      : undefined;
+  const minimumDate = useMemo(
+    () =>
+      props.mode === 'date' && isValidCivilDate(props.minimumDate)
+        ? civilDateToLocalDate(props.minimumDate)
+        : undefined,
+    [props.mode, props.mode === 'date' ? props.minimumDate : null],
+  );
 
-  const maximumDate =
-    props.mode === 'date' && isValidCivilDate(props.maximumDate)
-      ? civilDateToLocalDate(props.maximumDate)
-      : undefined;
+  const maximumDate = useMemo(
+    () =>
+      props.mode === 'date' && isValidCivilDate(props.maximumDate)
+        ? civilDateToLocalDate(props.maximumDate)
+        : undefined,
+    [props.mode, props.mode === 'date' ? props.maximumDate : null],
+  );
 
   return (
     <View style={styles.container}>
@@ -184,9 +211,23 @@ export function DateTimePickerField(props: DateTimePickerFieldProps) {
             : `Escribir fecha con teclado para ${label}`
         }
         onPress={() => {
-          const initial = props.value ?? '';
-          keyboardDraftRef.current = initial;
-          setKeyboardDraft(initial);
+          if (showKeyboardInput) {
+            const trimmed = keyboardDraftRef.current.trim();
+            if (props.mode === 'time') {
+              const normalized = normalizeTimeDraft(trimmed);
+              if (normalized) {
+                keyboardDraftRef.current = normalized;
+                setKeyboardDraft(normalized);
+                props.onChange(normalized);
+              }
+            } else if (isValidCivilDate(trimmed)) {
+              props.onChange(trimmed);
+            }
+          } else {
+            const initial = props.value ?? '';
+            keyboardDraftRef.current = initial;
+            setKeyboardDraft(initial);
+          }
           setKeyboardError(null);
           setShowKeyboardInput((prev) => !prev);
         }}
@@ -211,7 +252,29 @@ export function DateTimePickerField(props: DateTimePickerFieldProps) {
                 keyboardDraftRef.current = text;
                 setKeyboardDraft(text);
                 if (keyboardError) setKeyboardError(null);
+                const trimmed = text.trim();
+                if (props.mode === 'time' && isValidTimeHhMm(trimmed)) {
+                  props.onChange(trimmed);
+                } else if (props.mode === 'date' && isValidCivilDate(trimmed)) {
+                  props.onChange(trimmed);
+                }
               }}
+              onBlur={() => {
+                const trimmed = keyboardDraftRef.current.trim();
+                if (props.mode === 'time') {
+                  const normalized = normalizeTimeDraft(trimmed);
+                  if (normalized) {
+                    keyboardDraftRef.current = normalized;
+                    setKeyboardDraft(normalized);
+                    setKeyboardError(null);
+                    props.onChange(normalized);
+                  }
+                } else if (isValidCivilDate(trimmed)) {
+                  setKeyboardError(null);
+                  props.onChange(trimmed);
+                }
+              }}
+              onSubmitEditing={handleApplyKeyboardInput}
               placeholder={mode === 'time' ? '07:00' : '2026-10-16'}
               placeholderTextColor={appTheme.colors.secondary}
               keyboardType="numbers-and-punctuation"

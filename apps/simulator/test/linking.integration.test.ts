@@ -130,7 +130,7 @@ describe('PostgreSQL individual linking', () => {
       await db.query('SELECT perfil_clinico FROM qc_demo_paciente WHERE id=$1', [id])
     ).rows[0].perfil_clinico.medicamentos;
     expect(medications).toHaveLength(3);
-    expect(medications.every((m: { activo: boolean }) => !m.activo)).toBe(true);
+    expect(medications.every((m: { activo: boolean }) => m.activo)).toBe(true);
     expect(
       (await db.query('SELECT * FROM qc_demo_auditoria_vinculacion WHERE paciente_id=$1', [id]))
         .rowCount,

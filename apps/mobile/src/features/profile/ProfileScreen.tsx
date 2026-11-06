@@ -12,6 +12,7 @@ import { useLocalData } from '../../providers/LocalDataProvider';
 import { useAppTheme } from '../../providers/ThemeProvider';
 import { PALETTE_OPTIONS, theme } from '../../theme';
 import { isDemoMode } from '../../utils/environment';
+import { registerNativePush } from '../../services/session/native-session';
 
 export { ProfileScreen, PersonalDataScreen, ClinicalProfileScreen } from './IdentityProfileScreens';
 
@@ -28,6 +29,7 @@ export function PreferencesScreen() {
     trackOperation,
     closeActiveContext,
     isClosing,
+    devices,
   } = useLocalData();
   const { theme: appTheme, paletteId, selectPalette } = useAppTheme();
 
@@ -50,9 +52,14 @@ export function PreferencesScreen() {
       await repository.reminders.setPreferences(nextVal);
       bumpRemindersRevision?.();
       if (!nextVal) {
+        if (devices && typeof devices.revokeCurrentDevice === 'function') {
+          await devices.revokeCurrentDevice().catch(() => undefined);
+        }
         if (typeof Notifications?.cancelAllScheduledNotificationsAsync === 'function') {
           await Notifications.cancelAllScheduledNotificationsAsync().catch(() => undefined);
         }
+      } else if (devices) {
+        await registerNativePush(devices).catch(() => undefined);
       }
       if (patientId) {
         if (reconcileReminders) {

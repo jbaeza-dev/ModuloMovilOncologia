@@ -52,7 +52,7 @@ export function SharedAgendaEditScreen() {
     [error, setError] = useState<string | null>(null);
   useEffect(() => {
     let current = true;
-    if (!agenda) return;
+    if (!agenda || ready) return;
     void agenda.read().then((snapshot) => {
       if (!current) return;
       const rule = snapshot.rules.find((v) => v.id === id);
@@ -76,7 +76,7 @@ export function SharedAgendaEditScreen() {
     return () => {
       current = false;
     };
-  }, [agenda, id, params.id]);
+  }, [agenda, id, params.id, ready]);
   usePreventRemove(dirty && !done, ({ data }) =>
     Alert.alert('¿Descartar los cambios?', 'El horario confirmado se conserva.', [
       { text: 'Seguir editando', style: 'cancel' },

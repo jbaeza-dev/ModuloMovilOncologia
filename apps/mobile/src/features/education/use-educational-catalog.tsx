@@ -18,11 +18,23 @@ export function useEducationalCatalog() {
 }
 export function CatalogStatusNotice() {
   const automatic = useAutomaticEducationStatus();
-  const { repository } = useLocalData();
-  const load = useCallback(
-    () => repository?.replicatedCatalog.status() ?? Promise.resolve(null),
-    [repository],
-  );
+  const { repository, identitySession, clinicalStore } = useLocalData();
+  const load = useCallback(async () => {
+    const status = await (repository?.replicatedCatalog.status() ?? Promise.resolve(null));
+    if (!status?.completed_at && identitySession) {
+      if (!identitySession.getSnapshot().uploadAllowed) {
+        await identitySession.refreshIdentity().catch(() => undefined);
+      }
+      if (
+        identitySession.getSnapshot().uploadAllowed &&
+        clinicalStore &&
+        !clinicalStore.isConnected?.()
+      ) {
+        await clinicalStore.resume('session').catch(() => undefined);
+      }
+    }
+    return status;
+  }, [repository, identitySession, clinicalStore]);
   const { value, loading, error } = useFocusedValue(load, null, {
     context: EducationStatusRevisionContext,
   });

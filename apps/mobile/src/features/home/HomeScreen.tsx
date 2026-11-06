@@ -71,6 +71,8 @@ export function HomeScreen() {
     bumpRemindersRevision,
     notificationAdapter,
     devices,
+    identitySession,
+    clinicalStore,
   } = useLocalData();
 
   const loadProfile = useCallback(
@@ -85,7 +87,23 @@ export function HomeScreen() {
     },
   );
 
-  const loadDailyStatus = useCallback(() => epro?.hub() ?? Promise.resolve(null), [epro]);
+  const loadDailyStatus = useCallback(async () => {
+    let hub = await (epro?.hub() ?? Promise.resolve(null));
+    if (!hub?.current && identitySession) {
+      if (!identitySession.getSnapshot().uploadAllowed) {
+        await identitySession.refreshIdentity().catch(() => undefined);
+      }
+      if (
+        identitySession.getSnapshot().uploadAllowed &&
+        clinicalStore &&
+        !clinicalStore.isConnected?.()
+      ) {
+        await clinicalStore.resume('session').catch(() => undefined);
+        hub = await (epro?.hub() ?? Promise.resolve(null));
+      }
+    }
+    return hub;
+  }, [epro, identitySession, clinicalStore]);
 
   const {
     value: dailyStatus,
@@ -246,14 +264,14 @@ export function HomeScreen() {
       );
     }
 
-    if (evaluation.status === 'preferences_disabled') {
+    if (snapshot?.preferences?.enabled === false || evaluation.status === 'preferences_disabled') {
       const otherCount = evaluation.otherEnabledRulesCount;
       return (
         <>
           <Text style={styles.description}>
             {otherCount > 0
-              ? `Todos tus avisos están pausados. Reanudar activará este horario y otros ${otherCount} avisos habilitados.`
-              : 'Todos tus avisos están pausados.'}
+              ? `Todos tus avisos están desactivados en configuración. No recibirás ninguna alerta en este dispositivo hasta que los vuelvas a habilitar (tienes ${otherCount} avisos configurados).`
+              : 'Todos tus avisos están desactivados en configuración. No recibirás ninguna alerta en este dispositivo hasta que los vuelvas a habilitar.'}
           </Text>
           <VisualButton
             label={
@@ -434,7 +452,12 @@ export function HomeScreen() {
               {renderReminderCardContent()}
             </InfoCard>
           </>
-        ) : null}
+        ) : (
+          <InfoCard>
+            <Text style={styles.cardTitle}>Avisos desactivados</Text>
+            {renderReminderCardContent()}
+          </InfoCard>
+        )}
       </View>
       <View style={styles.section}>
         <SectionTitle>Para acompañarte</SectionTitle>

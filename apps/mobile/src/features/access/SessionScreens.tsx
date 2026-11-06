@@ -187,6 +187,7 @@ export function OnlineConsentScreen() {
           ? 'Tu aceptación quedó confirmada. Falta la vinculación clínica: solicita tu código desde Perfil.'
           : 'Tu aceptación quedó confirmada.',
       );
+      router.replace?.('/(tabs)');
     } catch (e) {
       setFeedback(e instanceof Error ? e.message : 'No se pudo confirmar la aceptación.');
     } finally {
