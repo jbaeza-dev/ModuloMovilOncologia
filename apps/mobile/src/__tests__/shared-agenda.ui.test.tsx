@@ -139,6 +139,34 @@ describe('Agenda compartida: interfaz confirmada', () => {
       ),
     );
   });
+  it('permite seleccionar días de la semana y presets en agenda compartida', async () => {
+    mockParams.id = rule.id;
+    await render(
+      <ThemeProvider>
+        <SharedAgendaEditScreen />
+      </ThemeProvider>,
+    );
+    await screen.findByDisplayValue('Mi registro diario');
+    expect(screen.getByText('Todos los días')).toBeTruthy();
+
+    // Seleccionar preset Lun a Vie
+    await fireEvent.press(screen.getByRole('button', { name: 'Seleccionar lunes a viernes' }));
+    expect(screen.getByText('Lunes a viernes (días hábiles)')).toBeTruthy();
+
+    // Desmarcar Lunes
+    await fireEvent.press(screen.getByLabelText('Lunes'));
+    expect(screen.getByText(/4 días a la semana/)).toBeTruthy();
+
+    // Guardar y verificar que dias_semana contiene [2, 3, 4, 5]
+    await fireEvent.press(screen.getByRole('button', { name: 'Guardar y confirmar horario' }));
+    await waitFor(() =>
+      expect(mockSave).toHaveBeenCalledWith(
+        rule.id,
+        expect.objectContaining({ dias_semana: [2, 3, 4, 5] }),
+        1,
+      ),
+    );
+  });
   it('muestra horarios confirmados y cobertura limitada real', async () => {
     await render(
       <ThemeProvider>

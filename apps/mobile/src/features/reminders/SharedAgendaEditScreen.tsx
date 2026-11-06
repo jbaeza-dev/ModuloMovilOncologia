@@ -1,7 +1,7 @@
 import { useProfileIdentity } from '../profile/IdentityProfileScreens';
 import { medicationAvailable } from '@quimiocare/contracts/agenda';
 import { useEffect, useState } from 'react';
-import { Alert, Pressable, Text, View } from 'react-native';
+import { Alert, Pressable, StyleSheet, Text, View } from 'react-native';
 import { router, useLocalSearchParams, useNavigation } from 'expo-router';
 import { usePreventRemove } from 'expo-router/react-navigation';
 import * as Crypto from 'expo-crypto';
@@ -18,12 +18,40 @@ import {
 } from '../../components/Visual';
 import { useLocalData } from '../../providers/LocalDataProvider';
 import { useAppTheme } from '../../providers/ThemeProvider';
+import type { AppTheme } from '../../theme';
 import { validConfiguration } from '../../data/agenda/agenda-repository';
+
 const labels = { signos: 'Signos vitales', epro: 'Cuestionario diario', medicacion: 'Medicación' };
-const days = ['Lunes', 'Martes', 'Miércoles', 'Jueves', 'Viernes', 'Sábado', 'Domingo'];
+
+const DAYS_CONFIG = [
+  { id: 1, label: 'Lunes', short: 'Lu' },
+  { id: 2, label: 'Martes', short: 'Ma' },
+  { id: 3, label: 'Miércoles', short: 'Mi' },
+  { id: 4, label: 'Jueves', short: 'Ju' },
+  { id: 5, label: 'Viernes', short: 'Vi' },
+  { id: 6, label: 'Sábado', short: 'Sá' },
+  { id: 7, label: 'Domingo', short: 'Do' },
+];
+
+function getWeekdaysSummary(selected: number[]): string {
+  if (selected.length === 7) return 'Todos los días';
+  if (selected.length === 5 && [1, 2, 3, 4, 5].every((d) => selected.includes(d))) {
+    return 'Lunes a viernes (días hábiles)';
+  }
+  if (selected.length === 2 && [6, 7].every((d) => selected.includes(d))) {
+    return 'Fines de semana (sábado y domingo)';
+  }
+  if (selected.length === 0) return 'Sin días seleccionados (marca al menos uno)';
+  const names = selected
+    .map((id) => DAYS_CONFIG.find((d) => d.id === id)?.short)
+    .filter(Boolean)
+    .join(', ');
+  return `${selected.length} día${selected.length > 1 ? 's' : ''} a la semana (${names})`;
+}
 export function SharedAgendaEditScreen() {
   const { sharedAgenda: agenda, reconcileReminders, trackOperation } = useLocalData(),
     { theme } = useAppTheme(),
+    styles = createStyles(theme),
     navigation = useNavigation(),
     params = useLocalSearchParams<{ id?: string; tipo?: string; medicamentoId?: string }>();
   const { identity } = useProfileIdentity();
@@ -295,32 +323,118 @@ export function SharedAgendaEditScreen() {
           if (available) update(setHours)([...current, available].join(', '));
         }}
       />
-      <SectionTitle>Días de la semana</SectionTitle>
-      <View style={{ gap: 8 }}>
-        {days.map((label, index) => (
+      <InfoCard>
+        <SectionTitle>Días de la semana</SectionTitle>
+        <BodyText style={{ marginBottom: 12, color: theme.colors.secondary }}>
+          {getWeekdaysSummary(weekdays)}
+        </BodyText>
+
+        <View style={styles.daysRow}>
+          {DAYS_CONFIG.map((day) => {
+            const isSelected = weekdays.includes(day.id);
+            return (
+              <Pressable
+                key={day.id}
+                accessibilityRole="checkbox"
+                accessibilityLabel={day.label}
+                accessibilityState={{ checked: isSelected, disabled: busy }}
+                disabled={busy}
+                onPress={() => {
+                  setWeekdays((current) =>
+                    current.includes(day.id)
+                      ? current.filter((v) => v !== day.id)
+                      : [...current, day.id].sort((a, b) => a - b),
+                  );
+                  setDirty(true);
+                }}
+                style={({ pressed }) => [
+                  styles.dayButton,
+                  isSelected && styles.dayButtonSelected,
+                  pressed && styles.dayButtonPressed,
+                ]}
+              >
+                <Text style={[styles.dayButtonText, isSelected && styles.dayButtonTextSelected]}>
+                  {day.short}
+                </Text>
+                <View style={[styles.dayIndicator, isSelected && styles.dayIndicatorSelected]} />
+              </Pressable>
+            );
+          })}
+        </View>
+
+        <View style={styles.presetsRow}>
           <Pressable
-            key={label}
-            accessibilityRole="checkbox"
-            accessibilityLabel={label}
-            accessibilityState={{ checked: weekdays.includes(index + 1), disabled: busy }}
+            accessibilityRole="button"
+            accessibilityLabel="Seleccionar todos los días"
             disabled={busy}
             onPress={() => {
-              setWeekdays((current) =>
-                current.includes(index + 1)
-                  ? current.filter((v) => v !== index + 1)
-                  : [...current, index + 1].sort((a, b) => a - b),
-              );
+              setWeekdays([1, 2, 3, 4, 5, 6, 7]);
               setDirty(true);
             }}
-            style={{ padding: 14, borderRadius: 12, backgroundColor: theme.colors.surface }}
+            style={[styles.presetChip, weekdays.length === 7 && styles.presetChipActive]}
           >
-            <Text style={{ color: theme.colors.text }}>
-              {weekdays.includes(index + 1) ? '☑ ' : '☐ '}
-              {label}
+            <Text
+              style={[styles.presetChipText, weekdays.length === 7 && styles.presetChipTextActive]}
+            >
+              Todos
             </Text>
           </Pressable>
-        ))}
-      </View>
+
+          <Pressable
+            accessibilityRole="button"
+            accessibilityLabel="Seleccionar lunes a viernes"
+            disabled={busy}
+            onPress={() => {
+              setWeekdays([1, 2, 3, 4, 5]);
+              setDirty(true);
+            }}
+            style={[
+              styles.presetChip,
+              weekdays.length === 5 &&
+                [1, 2, 3, 4, 5].every((d) => weekdays.includes(d)) &&
+                styles.presetChipActive,
+            ]}
+          >
+            <Text
+              style={[
+                styles.presetChipText,
+                weekdays.length === 5 &&
+                  [1, 2, 3, 4, 5].every((d) => weekdays.includes(d)) &&
+                  styles.presetChipTextActive,
+              ]}
+            >
+              Lun a Vie
+            </Text>
+          </Pressable>
+
+          <Pressable
+            accessibilityRole="button"
+            accessibilityLabel="Seleccionar fines de semana"
+            disabled={busy}
+            onPress={() => {
+              setWeekdays([6, 7]);
+              setDirty(true);
+            }}
+            style={[
+              styles.presetChip,
+              weekdays.length === 2 &&
+                [6, 7].every((d) => weekdays.includes(d)) &&
+                styles.presetChipActive,
+            ]}
+          >
+            <Text
+              style={[
+                styles.presetChipText,
+                weekdays.length === 2 &&
+                  [6, 7].every((d) => weekdays.includes(d)) &&
+                  styles.presetChipTextActive,
+              ]}
+            >
+              Fin de semana
+            </Text>
+          </Pressable>
+        </View>
+      </InfoCard>
       <DateTimePickerField
         mode="date"
         label="Fecha de inicio"
@@ -379,3 +493,87 @@ export function SharedAgendaEditScreen() {
     </Screen>
   );
 }
+
+const createStyles = (theme: AppTheme) =>
+  StyleSheet.create({
+    daysRow: {
+      flexDirection: 'row',
+      justifyContent: 'space-between',
+      alignItems: 'center',
+      marginBottom: 12,
+    },
+    dayButton: {
+      flex: 1,
+      maxWidth: 44,
+      height: 50,
+      marginHorizontal: 2,
+      borderRadius: 14,
+      borderWidth: 1.5,
+      borderColor: theme.colors.border,
+      backgroundColor: theme.colors.surface,
+      alignItems: 'center',
+      justifyContent: 'center',
+      paddingVertical: 4,
+    },
+    dayButtonSelected: {
+      backgroundColor: theme.colors.primary,
+      borderColor: theme.colors.primary,
+      elevation: 2,
+      shadowColor: theme.colors.primary,
+      shadowOffset: { width: 0, height: 2 },
+      shadowOpacity: 0.25,
+      shadowRadius: 3,
+    },
+    dayButtonPressed: {
+      opacity: 0.8,
+    },
+    dayButtonText: {
+      fontSize: 15,
+      fontFamily: theme.typography.label.fontFamily,
+      fontWeight: '700',
+      color: theme.colors.text,
+    },
+    dayButtonTextSelected: {
+      color: theme.colors.onPrimary,
+    },
+    dayIndicator: {
+      width: 5,
+      height: 5,
+      borderRadius: 2.5,
+      marginTop: 4,
+      backgroundColor: 'transparent',
+    },
+    dayIndicatorSelected: {
+      backgroundColor: theme.colors.onPrimary,
+    },
+    presetsRow: {
+      flexDirection: 'row',
+      gap: 8,
+      marginTop: 4,
+    },
+    presetChip: {
+      flex: 1,
+      minHeight: 36,
+      borderRadius: 999,
+      borderWidth: 1,
+      borderColor: theme.colors.border,
+      backgroundColor: theme.colors.surface,
+      alignItems: 'center',
+      justifyContent: 'center',
+      paddingHorizontal: 8,
+    },
+    presetChipActive: {
+      backgroundColor: theme.colors.primaryContainer,
+      borderColor: theme.colors.primary,
+    },
+    presetChipText: {
+      fontSize: 13,
+      fontFamily: theme.typography.label.fontFamily,
+      fontWeight: '600',
+      color: theme.colors.secondary,
+    },
+    presetChipTextActive: {
+      color: theme.colors.primary,
+      fontWeight: '700',
+    },
+  });
