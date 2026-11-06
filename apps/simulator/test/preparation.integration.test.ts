@@ -344,7 +344,52 @@ describe('Preparation HTTP with real PostgreSQL', () => {
       200,
     );
     const spec = await call('/quimiocare/docs/preparacion/openapi.json');
-    expect(Object.keys(spec.body.paths)).toHaveLength(17);
+    expect(spec.status).toBe(200);
+    const preparationOperations: Record<string, string[]> = {
+      categorias: ['get', 'post'],
+      'categorias/{id}': ['get', 'put', 'delete'],
+      'contenido-educativo': ['get'],
+      'contenido-educativo/{id}': ['get', 'put', 'delete'],
+      'contenido-educativo/imagenes': ['post'],
+      'contenido-educativo/videos': ['post'],
+      'contenido-educativo/podcasts': ['post'],
+      'contenido-educativo/{id}/estado': ['post'],
+      podcasts: ['get'],
+      'podcasts/{id}': ['get', 'put', 'delete'],
+      'podcasts/{id}/estado': ['post'],
+      profesionales: ['get', 'post'],
+      'profesionales/{operador_id}': ['get', 'put', 'delete'],
+      pacientes: ['get'],
+      'pacientes/{id}': ['get'],
+      'pacientes/{paciente_id}/medicamentos': ['get', 'post'],
+      'pacientes/{paciente_id}/medicamentos/{medicamento_id}': ['get', 'put', 'delete'],
+      'pacientes/{paciente_id}/desvincular': ['post'],
+      'pacientes/{paciente_id}/vinculacion': ['get'],
+      'pacientes/{paciente_id}/consentimientos': ['get'],
+      'pacientes/{paciente_id}/consentimiento-demo': ['post'],
+      'pacientes/{paciente_id}/contexto-clinico': ['get', 'post'],
+      'pacientes/{paciente_id}/escenario': ['get', 'post'],
+      terminos: ['get', 'post'],
+      'terminos/{id}': ['get'],
+      'terminos/{id}/publicar': ['post'],
+      formularios: ['get', 'post'],
+      'formularios/{id}': ['get'],
+      'formularios/{id}/publicar': ['post'],
+      'sincronizacion/signos-vitales': ['get'],
+      'sincronizacion/formularios-respuestas': ['get'],
+    };
+    for (const [path, methods] of Object.entries(preparationOperations)) {
+      for (const method of methods) {
+        expect(
+          spec.body.paths['/admin/api/v1/preparacion/' + path]?.[method],
+          `${method.toUpperCase()} ${path}`,
+        ).toMatchObject({
+          security: [{ OperadorBearer: [] }],
+        });
+      }
+    }
+    expect(spec.body.paths['/admin/api/v1/vinculaciones/consumir']?.post).toBeDefined();
+    expect(spec.body.paths['/educacion/api/v1/podcasts']?.get).toBeDefined();
     expect(
       spec.body.paths['/admin/api/v1/preparacion/sincronizacion/signos-vitales'].get.security,
     ).toEqual([{ OperadorBearer: [] }]);
