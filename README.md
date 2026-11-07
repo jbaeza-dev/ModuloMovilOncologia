@@ -52,4 +52,3 @@ No ejecutar esta suite sobre la base que usa el teléfono: reinicia datos de pru
 pnpm --filter @modulo-movil-oncologia/mobile start
 pnpm --filter @modulo-movil-oncologia/mobile run android
 ```
-
