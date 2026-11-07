@@ -53,18 +53,3 @@ pnpm --filter @modulo-movil-oncologia/mobile start
 pnpm --filter @modulo-movil-oncologia/mobile run android
 ```
 
-La build demo existente usa `EXPO_PUBLIC_DEMO_MODE=true`. Las URLs se configuran por entorno; localhost en Android corresponde al teléfono. El protocolo de diagnóstico Android del equipo detalla la compilación del APK y las pruebas PowerSync. Un bundle JavaScript correcto no acredita recepción push ni réplica nativa.
-
-## Servicios propios y contratos
-
-El entorno demo se configura mediante `node infra/demo/configure.mjs` y su definición está en `infra/demo/compose.yaml`. La documentación local del equipo detalla el arranque y las pruebas de persistencia. No imprimir `.env`, tokens ni salidas de Compose con secretos interpolados. Los scripts de configuración no sobrescriben credenciales sobre volúmenes existentes.
-
-Consultar el [paquete de contratos](packages/contracts/README.md) y el [simulador](apps/simulator/README.md). El gateway no debe convertirse en un segundo emisor clínico: la integración prevista usa SDK PowerSync y uploadData hacia la API clínica conforme al contrato.
-
-## Comprobación y revisión
-
-CI verifica calidad móvil, contratos y HTTP con PostgreSQL. Cada capacidad se acepta con evidencia de su entorno real; pruebas unitarias, compilación y aceptación nativa son resultados distintos.
-
-Las guías operativas y los informes de validación del equipo se conservan localmente fuera del repositorio. En ellos se describe la configuración de CI/CD, el `.env` privado del host y la evidencia de validación; las pruebas locales no acreditan por sí solas el servidor universitario.
-
-Cada cambio se entrega para revisión de Javier y requiere su visto bueno y mensaje exacto antes del commit. La publicación e integración de una rama necesitan su autorización aplicable.
