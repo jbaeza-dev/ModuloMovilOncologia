@@ -1,10 +1,14 @@
 import { describe, it, expect, vi } from 'vitest';
 import { readFile } from 'node:fs/promises';
 import { runInNewContext } from 'node:vm';
+import { fileURLToPath } from 'node:url';
 import { webcrypto, createHash } from 'node:crypto';
 import { readConfig } from '../src/config.js';
 
-const script = await readFile(new URL('../src/docs/preparation-auth.js', import.meta.url), 'utf8');
+const scriptUrl = new URL('../src/docs/preparation-auth.js', import.meta.url);
+const script = await readFile(scriptUrl, 'utf8');
+// El nombre real del archivo permite que la cobertura V8 atribuya la ejecución en el sandbox.
+const scriptFile = fileURLToPath(scriptUrl);
 const root = '/quimiocare/docs/preparacion/';
 const issuer = 'https://auth.example/auth/v1';
 const state = 's'.repeat(43);
@@ -69,23 +73,27 @@ function harness(query = '', authorized: boolean | number = true) {
     specActions: { updateJsonSpec: vi.fn() },
   };
   const createUi = vi.fn().mockResolvedValue(ui);
-  runInNewContext(script, {
-    window,
-    document: { getElementById: (id: string) => nodes[id] },
-    sessionStorage: {
-      getItem: (k: string) => storage.get(k) ?? null,
-      setItem: (k: string, v: string) => storage.set(k, v),
-      removeItem: (k: string) => storage.delete(k),
+  runInNewContext(
+    script,
+    {
+      window,
+      document: { getElementById: (id: string) => nodes[id] },
+      sessionStorage: {
+        getItem: (k: string) => storage.get(k) ?? null,
+        setItem: (k: string, v: string) => storage.set(k, v),
+        removeItem: (k: string) => storage.delete(k),
+      },
+      crypto: webcrypto,
+      TextEncoder,
+      Uint8Array,
+      btoa,
+      URL,
+      fetch,
+      AbortSignal,
+      Date,
     },
-    crypto: webcrypto,
-    TextEncoder,
-    Uint8Array,
-    btoa,
-    URL,
-    fetch,
-    AbortSignal,
-    Date,
-  });
+    { filename: scriptFile },
+  );
   const start = () =>
     window.initPreparationAuth(createUi, { root, issuer, publicKey: 'sb_publishable_test' });
   const pending = (createdAt = Date.now()) =>

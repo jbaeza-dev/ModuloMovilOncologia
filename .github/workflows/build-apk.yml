@@ -1,14 +1,9 @@
 name: Compilar APK Android (Demo / Universidad)
 
 on:
-  pull_request:
-    branches: [main]
-    paths:
-      - 'apps/mobile/**'
-      - 'packages/**'
-      - '.github/workflows/build-apk.yml'
-      - 'pnpm-lock.yaml'
-      - 'scripts/configure-apk.mjs'
+  # Se compila automáticamente al integrar en main (perfil universidad-demo). Los pull
+  # requests no compilan APK para no consumir minutos de Actions; la compilación manual
+  # (workflow_dispatch) sigue disponible.
   push:
     branches:
       - main

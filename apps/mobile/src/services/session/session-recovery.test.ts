@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
-import { SessionRecovery } from './session-recovery';
+import { SessionRecovery, needsSessionRecovery } from './session-recovery';
 import type { SessionSnapshot } from './http-session-types';
 const recoveries: SessionRecovery[] = [];
 afterEach(() => {
@@ -169,4 +169,74 @@ it('conserva el intervalo creciente aunque el token pase por renovando antes de 
   expect(h.refreshIdentity).toHaveBeenCalledTimes(2);
   await vi.advanceTimersByTimeAsync(3000);
   expect(h.refreshIdentity).toHaveBeenCalledTimes(3);
+});
+
+describe('needsSessionRecovery y condiciones de elegibilidad', () => {
+  const snap = (patch: Partial<SessionSnapshot>): SessionSnapshot => ({
+    state: 'context_ready',
+    user: { id: 'a', name: 'Prueba', isDemo: true, localPatientId: 'local-a' },
+    identity: null,
+    stale: false,
+    terms: null,
+    consent: null,
+    uploadAllowed: true,
+    message: null,
+    revision: 0,
+    ...patch,
+  });
+  it('solo recupera con usuario y en estados recuperables', () => {
+    expect(needsSessionRecovery(snap({}))).toBe(false);
+    expect(needsSessionRecovery(snap({ stale: true }))).toBe(true);
+    expect(needsSessionRecovery(snap({ uploadAllowed: false }))).toBe(true);
+    expect(needsSessionRecovery(snap({ state: 'clinical_incomplete' }))).toBe(true);
+    expect(needsSessionRecovery(snap({ state: 'service_unavailable', user: null }))).toBe(false);
+    expect(needsSessionRecovery(snap({ state: 'expired' }))).toBe(false);
+  });
+
+  it('no reintenta en estados bloqueados, sin conexión o en segundo plano', async () => {
+    const h = harness();
+    h.update({ state: 'expired' });
+    h.recovery.setForeground(true);
+    await vi.advanceTimersByTimeAsync(0);
+    expect(h.refreshIdentity).not.toHaveBeenCalled();
+    h.update({ state: 'service_unavailable' });
+    h.recovery.setOnline(false);
+    await vi.advanceTimersByTimeAsync(60000);
+    expect(h.refreshIdentity).not.toHaveBeenCalled();
+    h.recovery.setOnline(true);
+    await vi.advanceTimersByTimeAsync(0);
+    expect(h.refreshIdentity).toHaveBeenCalledTimes(1);
+    h.recovery.setForeground(false);
+    await vi.advanceTimersByTimeAsync(60000);
+    expect(h.refreshIdentity).toHaveBeenCalledTimes(1);
+  });
+
+  it('con transporte local sigue reintentando aunque el sistema informe sin red', async () => {
+    const h = harness(true);
+    h.recovery.setForeground(true);
+    h.recovery.setOnline(false);
+    await vi.advanceTimersByTimeAsync(0);
+    expect(h.refreshIdentity).toHaveBeenCalled();
+  });
+
+  it('el cambio de cuenta reinicia los intentos y un contexto sano los limpia', async () => {
+    const h = harness();
+    h.recovery.setForeground(true);
+    await vi.advanceTimersByTimeAsync(0);
+    h.update({ user: { id: 'b', name: 'Otra', isDemo: true, localPatientId: 'local-b' } });
+    await vi.advanceTimersByTimeAsync(1000);
+    expect(h.refreshIdentity.mock.calls.length).toBeGreaterThanOrEqual(2);
+    h.update({ state: 'context_ready', stale: false, uploadAllowed: true });
+    const llamadas = h.refreshIdentity.mock.calls.length;
+    await vi.advanceTimersByTimeAsync(120000);
+    expect(h.refreshIdentity).toHaveBeenCalledTimes(llamadas);
+  });
+
+  it('después de desechar no vuelve a intentar', async () => {
+    const h = harness();
+    h.recovery.dispose();
+    h.recovery.setForeground(true);
+    await vi.advanceTimersByTimeAsync(60000);
+    expect(h.refreshIdentity).not.toHaveBeenCalled();
+  });
 });

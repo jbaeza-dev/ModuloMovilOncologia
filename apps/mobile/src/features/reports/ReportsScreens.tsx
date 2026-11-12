@@ -36,6 +36,7 @@ import { ClinicalRevisionContext } from '../../providers/QueryRevision';
 import { useAppTheme } from '../../providers/ThemeProvider';
 import { theme } from '../../theme';
 import { generateAndPersistReportPdf } from './report-pdf';
+import { startPdfJob } from './pdf-generation-jobs';
 import { generateAndPersistReportXlsx } from './report-xlsx';
 import { useIdentity } from '../access/SessionScreens';
 
@@ -247,12 +248,32 @@ export function ReportsScreen() {
           return;
         }
 
+        if (targetFormat === 'pdf') {
+          // PDF: el visor se abre de inmediato y prepara pdf.js mientras el reporte se
+          // imprime y se guarda cifrado; al terminar lo muestra (RNF-06).
+          const job = startPdfJob(activePatient, () => generateAndPersistReportPdf(augmentedData));
+          failedStage = 'navegacion';
+          router.push({
+            pathname: '/reportes/visor-pdf' as never,
+            params: { jobId: job.id, periodDays: String(targetDays) },
+          });
+          failedStage = 'persistencia';
+          await job.promise;
+          if (
+            !isMountedRef.current ||
+            (manager?.getPatientId?.() ?? patientId) !== activePatient ||
+            (manager?.getContextEpoch?.() ?? 0) !== activeEpoch
+          ) {
+            return;
+          }
+          refreshReports();
+          setReportFeedback('Archivo guardado en este teléfono. Puedes abrirlo o compartirlo.');
+          return;
+        }
+
         // 2. Etapa de serialización y persistencia cifrada
         failedStage = 'persistencia';
-        const res =
-          targetFormat === 'pdf'
-            ? await generateAndPersistReportPdf(augmentedData)
-            : await generateAndPersistReportXlsx(augmentedData);
+        const res = await generateAndPersistReportXlsx(augmentedData);
 
         const checkPatientAfter = manager?.getPatientId?.() ?? patientId;
         const checkEpochAfter = manager?.getContextEpoch?.() ?? 0;
@@ -271,9 +292,8 @@ export function ReportsScreen() {
 
         // 4. Etapa de navegación: Abrir directamente el visor interno
         failedStage = 'navegacion';
-        const viewerRoute = targetFormat === 'pdf' ? '/reportes/visor-pdf' : '/reportes/visor-xlsx';
         router.push({
-          pathname: viewerRoute as never,
+          pathname: '/reportes/visor-xlsx' as never,
           params: {
             uri: res.persistentUri,
             filename: res.filename,
@@ -282,9 +302,10 @@ export function ReportsScreen() {
         });
       });
     } catch (err) {
+      // Con PDF el visor queda encima y también muestra el error; aquí se deja para el regreso.
       if (
         !isMountedRef.current ||
-        !isFocusedRef.current ||
+        (!isFocusedRef.current && targetFormat !== 'pdf') ||
         (manager?.getContextEpoch?.() ?? 0) !== activeEpoch
       ) {
         return;

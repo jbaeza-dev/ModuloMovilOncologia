@@ -207,6 +207,83 @@ export function formatBarTopLabel(
   return null;
 }
 
+const PLOT_TOP = 26;
+const PLOT_HEIGHT = 128;
+const FEVER = '#E11D48';
+const WARM = '#D97706';
+
+/** Segmento entre dos puntos, dibujado con una vista rotada (sin dependencias nativas). */
+function LineSegment({
+  x1,
+  y1,
+  x2,
+  y2,
+  color,
+  dashed,
+}: {
+  x1: number;
+  y1: number;
+  x2: number;
+  y2: number;
+  color: string;
+  dashed: boolean;
+}) {
+  const length = Math.hypot(x2 - x1, y2 - y1);
+  const angle = Math.atan2(y2 - y1, x2 - x1);
+  const thickness = 3;
+  const centerY = (y1 + y2) / 2;
+  const base = {
+    position: 'absolute' as const,
+    left: (x1 + x2) / 2 - length / 2,
+    width: length,
+    transform: [{ rotate: `${angle}rad` }],
+  };
+  if (dashed) {
+    const dashes = Math.max(1, Math.floor(length / 9));
+    return (
+      <View
+        style={[
+          base,
+          {
+            top: centerY - thickness / 2,
+            height: thickness,
+            flexDirection: 'row',
+            justifyContent: 'space-between',
+          },
+        ]}
+      >
+        {Array.from({ length: dashes }, (_, i) => (
+          <View
+            key={i}
+            style={{ width: 5, height: thickness, borderRadius: 2, backgroundColor: color }}
+          />
+        ))}
+      </View>
+    );
+  }
+  return (
+    <>
+      <View
+        style={[
+          base,
+          { top: centerY - 4, height: 8, borderRadius: 4, backgroundColor: color, opacity: 0.14 },
+        ]}
+      />
+      <View
+        style={[
+          base,
+          {
+            top: centerY - thickness / 2,
+            height: thickness,
+            borderRadius: thickness,
+            backgroundColor: color,
+          },
+        ]}
+      />
+    </>
+  );
+}
+
 export function WeeklyVitalsChart({ records }: WeeklyVitalsChartProps) {
   const { theme: appTheme } = useAppTheme();
   const styles = createStyles(appTheme.colors);
@@ -214,6 +291,7 @@ export function WeeklyVitalsChart({ records }: WeeklyVitalsChartProps) {
   const [metric, setMetric] = useState<VitalsMetric>('bp');
   const [showTable, setShowTable] = useState(false);
   const [selectedDayIso, setSelectedDayIso] = useState<string | null>(null);
+  const [chartWidth, setChartWidth] = useState(0);
 
   // Generar los últimos 7 días calendario hasta hoy
   const weekDays = useMemo<DayData[]>(() => {
@@ -267,14 +345,49 @@ export function WeeklyVitalsChart({ records }: WeeklyVitalsChartProps) {
 
   const heightFor = (value: number | null | undefined) => {
     if (value == null) return 0;
-    if (metric === 'pain' && value === 0) return 8;
     if (maxVal === minVal) return 50;
-    if (metric === 'temp') {
-      const ratio = Math.max(0, Math.min(1, (value - minVal) / (maxVal - minVal)));
-      return Math.max(18, Math.min(94, 18 + ratio * 74));
-    }
-    return Math.max(6, Math.min(95, 6 + ((value - minVal) / (maxVal - minVal)) * 88));
+    return Math.max(4, Math.min(96, 4 + ((value - minVal) / (maxVal - minVal)) * 92));
   };
+
+  const columnWidth = chartWidth / weekDays.length;
+  const columnX = (index: number) => columnWidth * (index + 0.5);
+  const yFor = (pct: number) => PLOT_TOP + PLOT_HEIGHT * (1 - pct / 100);
+  const topValueFor = (stats: DailyMetricStats) =>
+    metric === 'bp' ? (stats.systolic ?? stats.diastolic) : stats.value;
+  const pointColor = (value: number) =>
+    metric === 'temp' && value >= 38.0
+      ? FEVER
+      : metric === 'temp' && value >= 37.3
+        ? WARM
+        : appTheme.colors.primary;
+
+  const seriesDefs: Array<{
+    key: string;
+    dashed: boolean;
+    pick: (stats: DailyMetricStats) => number | null;
+  }> =
+    metric === 'bp'
+      ? [
+          { key: 'sistolica', dashed: false, pick: (st) => st.systolic },
+          { key: 'diastolica', dashed: true, pick: (st) => st.diastolic },
+        ]
+      : [{ key: 'valor', dashed: false, pick: (st) => st.value }];
+  const series = seriesDefs.map((serie) => {
+    const color = serie.dashed ? appTheme.colors.secondary : appTheme.colors.primary;
+    const points = weekDays.flatMap((day, index) => {
+      const value = serie.pick(calculateDailyMetricStats(day.records, metric));
+      if (value == null || !Number.isFinite(value)) return [];
+      return [
+        {
+          index,
+          x: columnX(index),
+          y: yFor(heightFor(value)),
+          color: serie.dashed ? color : pointColor(value),
+        },
+      ];
+    });
+    return { key: serie.key, dashed: serie.dashed, color, points };
+  });
 
   const handleMetricChange = (newMetric: VitalsMetric) => {
     setMetric(newMetric);
@@ -325,82 +438,165 @@ export function WeeklyVitalsChart({ records }: WeeklyVitalsChartProps) {
         {metric === 'bp' ? (
           <>
             <View style={styles.legendItem}>
-              <View style={[styles.legendSwatch, { backgroundColor: appTheme.colors.primary }]} />
+              <View style={[styles.legendLine, { backgroundColor: appTheme.colors.primary }]} />
               <Text style={styles.legendLabel}>▲ Sistólica (sólida)</Text>
             </View>
             <View style={styles.legendItem}>
-              <View
-                style={[
-                  styles.legendSwatch,
-                  {
-                    backgroundColor: appTheme.colors.secondary,
-                    borderWidth: 1,
-                    borderStyle: 'dashed',
-                  },
-                ]}
-              />
+              <View style={styles.legendDashes}>
+                {[0, 1, 2].map((i) => (
+                  <View
+                    key={i}
+                    style={[styles.legendDash, { backgroundColor: appTheme.colors.secondary }]}
+                  />
+                ))}
+              </View>
               <Text style={styles.legendLabel}>▼ Diastólica (punteada)</Text>
             </View>
           </>
         ) : metric === 'pain' ? (
           <View style={styles.legendItem}>
-            <View style={[styles.legendSwatch, { backgroundColor: appTheme.colors.primary }]} />
-            <Text style={styles.legendLabel}>● Dolor ENA (0 = sin dolor medido)</Text>
+            <View style={[styles.legendDot, { borderColor: appTheme.colors.primary }]} />
+            <Text style={styles.legendLabel}>Dolor ENA (0 = sin dolor medido)</Text>
           </View>
         ) : metric === 'temp' ? (
           <>
             <View style={styles.legendItem}>
-              <View style={[styles.legendSwatch, { backgroundColor: appTheme.colors.primary }]} />
-              <Text style={styles.legendLabel}>● Temperatura normal (&lt;37.3 °C)</Text>
+              <View style={[styles.legendDot, { borderColor: appTheme.colors.primary }]} />
+              <Text style={styles.legendLabel}>Normal (&lt;37.3 °C)</Text>
             </View>
             <View style={styles.legendItem}>
-              <View style={[styles.legendSwatch, { backgroundColor: '#E11D48' }]} />
-              <Text style={styles.legendLabel}>● Fiebre (≥38.0 °C)</Text>
+              <View style={[styles.legendDot, { borderColor: FEVER }]} />
+              <Text style={styles.legendLabel}>Fiebre (≥38.0 °C)</Text>
+            </View>
+            <View style={styles.legendItem}>
+              <View style={[styles.legendDot, { borderColor: WARM }]} />
+              <Text style={styles.legendLabel}>Temperatura elevada (37.3 a 37.9 °C)</Text>
             </View>
           </>
         ) : (
           <View style={styles.legendItem}>
-            <View style={[styles.legendSwatch, { backgroundColor: appTheme.colors.primary }]} />
-            <Text style={styles.legendLabel}>● Medición diaria (promedio si hay varias tomas)</Text>
+            <View style={[styles.legendDot, { borderColor: appTheme.colors.primary }]} />
+            <Text style={styles.legendLabel}>Medición diaria (promedio si hay varias tomas)</Text>
           </View>
         )}
       </View>
 
-      {/* Gráfica de 7 Días */}
-      <View style={styles.chartArea} accessible={false}>
-        {/* Líneas clínicas de referencia para temperatura */}
-        {metric === 'temp' ? (
-          <>
-            <View
-              style={[
-                styles.referenceLine,
-                { bottom: `${heightFor(38.0)}%`, borderColor: '#F43F5E' },
-              ]}
-              pointerEvents="none"
-            >
-              <Text style={[styles.referenceLineLabel, { color: '#E11D48' }]}>38° Fiebre</Text>
-            </View>
-            <View
-              style={[
-                styles.referenceLine,
-                { bottom: `${heightFor(37.0)}%`, borderColor: appTheme.colors.border },
-              ]}
-              pointerEvents="none"
-            >
-              <Text style={[styles.referenceLineLabel, { color: appTheme.colors.secondary }]}>
-                37°
-              </Text>
-            </View>
-          </>
-        ) : null}
+      {/* Gráfica de líneas de 7 días */}
+      <View
+        style={styles.chartArea}
+        accessible={false}
+        onLayout={(event) => setChartWidth(event.nativeEvent.layout.width)}
+      >
+        {/* Capa visual: cuadrícula, referencias, líneas y puntos (TalkBack lee las columnas). */}
+        <View
+          style={[StyleSheet.absoluteFill, styles.plotLayer]}
+          pointerEvents="none"
+          importantForAccessibility="no-hide-descendants"
+          accessibilityElementsHidden
+        >
+          {[0, 50, 100].map((pct) => (
+            <View key={pct} style={[styles.gridLine, { top: yFor(pct) }]} />
+          ))}
+          {metric === 'temp' ? (
+            <>
+              <View
+                style={[styles.referenceLine, { top: yFor(heightFor(38.0)), borderColor: FEVER }]}
+              >
+                <Text style={[styles.referenceLineLabel, { color: FEVER }]}>38° Fiebre</Text>
+              </View>
+              <View
+                style={[
+                  styles.referenceLine,
+                  { top: yFor(heightFor(37.0)), borderColor: appTheme.colors.inputBorder },
+                ]}
+              >
+                <Text style={[styles.referenceLineLabel, { color: appTheme.colors.secondary }]}>
+                  37°
+                </Text>
+              </View>
+            </>
+          ) : null}
+          {chartWidth > 0
+            ? series.map((serie) => (
+                <React.Fragment key={serie.key}>
+                  {serie.points.slice(1).map((point, index) => {
+                    const previous = serie.points[index]!;
+                    return (
+                      <LineSegment
+                        key={`${serie.key}-seg-${point.index}`}
+                        x1={previous.x}
+                        y1={previous.y}
+                        x2={point.x}
+                        y2={point.y}
+                        color={serie.color}
+                        dashed={serie.dashed}
+                      />
+                    );
+                  })}
+                  {serie.points.map((point) => {
+                    const selected = weekDays[point.index]?.dateIso === selectedDayIso;
+                    const size = selected ? 16 : 12;
+                    return (
+                      <View
+                        key={`${serie.key}-dot-${point.index}`}
+                        style={[
+                          styles.dot,
+                          {
+                            left: point.x - size / 2,
+                            top: point.y - size / 2,
+                            width: size,
+                            height: size,
+                            borderRadius: size / 2,
+                            borderColor: point.color,
+                            backgroundColor: selected ? point.color : appTheme.colors.surface,
+                          },
+                        ]}
+                      />
+                    );
+                  })}
+                </React.Fragment>
+              ))
+            : null}
+          {chartWidth > 0
+            ? weekDays.map((day, index) => {
+                const stats = calculateDailyMetricStats(day.records, metric);
+                const label = formatBarTopLabel(stats, metric);
+                const top = topValueFor(stats);
+                if (!stats.count || label == null || top == null) {
+                  return (
+                    <View
+                      key={`vacio-${day.dateIso}`}
+                      style={[styles.emptyDot, { left: columnX(index) - 4, top: yFor(0) - 4 }]}
+                    />
+                  );
+                }
+                return (
+                  <Text
+                    key={`valor-${day.dateIso}`}
+                    numberOfLines={1}
+                    style={[
+                      styles.pointLabel,
+                      {
+                        left: columnX(index) - columnWidth / 2,
+                        width: columnWidth,
+                        top: Math.max(0, yFor(heightFor(top)) - 24),
+                      },
+                      selectedDayIso === day.dateIso && styles.pointLabelSelected,
+                    ]}
+                  >
+                    {label}
+                  </Text>
+                );
+              })
+            : null}
+        </View>
+
+        {/* Columnas táctiles por día (mínimo 48 dp de ancho). */}
         {weekDays.map((day) => {
           const stats = calculateDailyMetricStats(day.records, metric);
           const hasData = stats.count > 0;
           const count = stats.count;
           const isSelected = selectedDayIso === day.dateIso;
-          const hSysPercent = heightFor(stats.systolic);
-          const hDiaPercent = heightFor(stats.diastolic);
-          const hSinglePercent = heightFor(stats.value);
 
           let a11yDesc = 'Sin registros';
           if (hasData) {
@@ -423,88 +619,30 @@ export function WeeklyVitalsChart({ records }: WeeklyVitalsChartProps) {
               key={day.dateIso}
               accessibilityRole="button"
               accessibilityLabel={`${day.dayLabel} ${day.dayShort}: ${a11yDesc}${count > 1 ? `. ${count} tomas registradas` : ''}`}
+              accessibilityState={{ selected: isSelected }}
               onPress={() => setSelectedDayIso(isSelected ? null : day.dateIso)}
               style={[styles.dayColumn, isSelected && styles.dayColumnSelected]}
             >
-              {/* Valor medido arriba de la barra */}
-              <View style={styles.topLabelContainer}>
-                {hasData ? (
-                  <Text
-                    style={[styles.barTopLabel, isSelected && styles.barTopLabelSelected]}
-                    numberOfLines={1}
-                  >
-                    {formatBarTopLabel(stats, metric)}
-                  </Text>
-                ) : null}
-              </View>
-
-              {/* Área de barras */}
-              <View style={styles.barsTrack}>
-                {hasData ? (
-                  metric === 'bp' ? (
-                    <View style={styles.dualBars}>
-                      <View
-                        style={[
-                          styles.bar,
-                          {
-                            height: `${hSysPercent}%`,
-                            opacity: stats.systolic == null ? 0 : 1,
-                            backgroundColor: appTheme.colors.primary,
-                          },
-                        ]}
-                      />
-                      <View
-                        style={[
-                          styles.bar,
-                          {
-                            height: `${hDiaPercent}%`,
-                            opacity: stats.diastolic == null ? 0 : 1,
-                            backgroundColor: appTheme.colors.secondary,
-                            borderWidth: 1,
-                            borderColor: appTheme.colors.border,
-                            borderStyle: 'dashed',
-                          },
-                        ]}
-                      />
+              <View style={styles.dayFooter}>
+                <Text
+                  style={[
+                    styles.dayLabelText,
+                    day.isToday && styles.todayLabelText,
+                    isSelected && styles.selectedLabelText,
+                  ]}
+                >
+                  {day.dayLabel}
+                </Text>
+                <View style={styles.countSlot}>
+                  {count > 1 ? (
+                    <View style={styles.countBadge}>
+                      <Text style={styles.countBadgeText} numberOfLines={1}>
+                        ×{count}
+                      </Text>
                     </View>
-                  ) : (
-                    <View
-                      style={[
-                        styles.barSingle,
-                        {
-                          height: `${hSinglePercent}%`,
-                          backgroundColor:
-                            metric === 'temp' && stats.value != null && stats.value >= 38.0
-                              ? '#E11D48'
-                              : metric === 'temp' && stats.value != null && stats.value >= 37.3
-                                ? '#D97706'
-                                : appTheme.colors.primary,
-                        },
-                      ]}
-                    />
-                  )
-                ) : (
-                  <View style={styles.noDataBar} />
-                )}
-              </View>
-
-              {/* Insignia de múltiples tomas */}
-              {count > 1 ? (
-                <View style={styles.countBadge}>
-                  <Text style={styles.countBadgeText}>{count}</Text>
+                  ) : null}
                 </View>
-              ) : null}
-
-              {/* Etiqueta del día */}
-              <Text
-                style={[
-                  styles.dayLabelText,
-                  day.isToday && styles.todayLabelText,
-                  isSelected && styles.selectedLabelText,
-                ]}
-              >
-                {day.dayLabel}
-              </Text>
+              </View>
             </Pressable>
           );
         })}
@@ -610,7 +748,7 @@ function createStyles(colors: ReturnType<typeof useAppTheme>['theme']['colors'])
     metricTab: {
       flexGrow: 1,
       minWidth: '17%',
-      minHeight: 44,
+      minHeight: 48,
       paddingHorizontal: 6,
       paddingVertical: 6,
       alignItems: 'center',
@@ -657,10 +795,25 @@ function createStyles(colors: ReturnType<typeof useAppTheme>['theme']['colors'])
       alignItems: 'center',
       gap: 6,
     },
-    legendSwatch: {
+    legendLine: {
+      width: 18,
+      height: 3,
+      borderRadius: 2,
+    },
+    legendDashes: {
+      flexDirection: 'row',
+      gap: 2,
+    },
+    legendDash: {
+      width: 5,
+      height: 3,
+      borderRadius: 2,
+    },
+    legendDot: {
       width: 12,
       height: 12,
-      borderRadius: 2,
+      borderRadius: 6,
+      borderWidth: 3,
     },
     legendLabel: {
       fontSize: 11.5,
@@ -670,94 +823,88 @@ function createStyles(colors: ReturnType<typeof useAppTheme>['theme']['colors'])
     chartArea: {
       position: 'relative',
       flexDirection: 'row',
-      height: 165,
-      paddingTop: 24,
-      paddingBottom: 4,
-      alignItems: 'flex-end',
-      justifyContent: 'space-between',
-      borderBottomWidth: 1.5,
-      borderBottomColor: colors.border,
+      height: PLOT_TOP + PLOT_HEIGHT + 44,
+      // Usa todo el ancho de la tarjeta para que cada día tenga un área táctil amplia.
+      marginHorizontal: -theme.spacing.md + 2,
       marginVertical: theme.spacing.sm,
+    },
+    plotLayer: {
+      // Por encima del resaltado del día seleccionado; no recibe toques.
+      zIndex: 1,
+    },
+    gridLine: {
+      position: 'absolute',
+      left: 8,
+      right: 8,
+      height: 1,
+      backgroundColor: colors.border,
+      opacity: 0.7,
     },
     referenceLine: {
       position: 'absolute',
-      left: 0,
-      right: 0,
-      borderBottomWidth: 1,
+      left: 8,
+      right: 8,
+      borderTopWidth: 1.5,
       borderStyle: 'dashed',
       flexDirection: 'row',
       justifyContent: 'flex-end',
-      paddingRight: 4,
-      zIndex: 0,
+      paddingRight: 2,
     },
     referenceLineLabel: {
-      fontSize: 9.5,
+      fontSize: 10,
       fontWeight: '700',
-      marginTop: -14,
+      marginTop: -15,
     },
-    topLabelContainer: {
-      minHeight: 16,
-      justifyContent: 'flex-end',
-      alignItems: 'center',
-      marginBottom: 2,
-      zIndex: 2,
+    dot: {
+      position: 'absolute',
+      borderWidth: 3,
     },
-    barTopLabel: {
-      fontSize: 9.5,
+    emptyDot: {
+      position: 'absolute',
+      width: 8,
+      height: 8,
+      borderRadius: 4,
+      borderWidth: 1.5,
+      borderColor: colors.inputBorder,
+      opacity: 0.6,
+    },
+    pointLabel: {
+      position: 'absolute',
+      fontSize: 11,
       fontWeight: '700',
       color: colors.text,
       textAlign: 'center',
     },
-    barTopLabelSelected: {
+    pointLabelSelected: {
       color: colors.primary,
       fontWeight: '800',
     },
     dayColumn: {
       flex: 1,
+      minWidth: 48,
       height: '100%',
-      alignItems: 'center',
       justifyContent: 'flex-end',
-      paddingHorizontal: 2,
+      alignItems: 'center',
+      borderRadius: theme.radius.sm,
     },
     dayColumnSelected: {
       backgroundColor: colors.primaryContainer,
-      borderRadius: 6,
     },
-    barsTrack: {
-      flex: 1,
-      width: '100%',
-      justifyContent: 'flex-end',
+    dayFooter: {
+      height: 44,
       alignItems: 'center',
-    },
-    dualBars: {
-      flexDirection: 'row',
-      alignItems: 'flex-end',
+      justifyContent: 'flex-start',
+      paddingTop: 4,
       gap: 2,
-      height: '100%',
     },
-    bar: {
-      width: 10,
-      borderTopLeftRadius: 3,
-      borderTopRightRadius: 3,
-    },
-    barSingle: {
-      width: 14,
-      borderTopLeftRadius: 4,
-      borderTopRightRadius: 4,
-    },
-    noDataBar: {
-      width: 12,
-      height: 4,
-      borderRadius: 2,
-      backgroundColor: colors.inputBorder,
-      opacity: 0.5,
+    countSlot: {
+      height: 16,
+      justifyContent: 'center',
     },
     countBadge: {
-      marginTop: 2,
       backgroundColor: colors.primaryContainer,
       borderRadius: 8,
-      paddingHorizontal: 4,
-      paddingVertical: 1,
+      paddingHorizontal: 6,
     },
     countBadgeText: {
       fontSize: 9.5,
@@ -768,7 +915,6 @@ function createStyles(colors: ReturnType<typeof useAppTheme>['theme']['colors'])
       fontSize: 11.5,
       fontWeight: '700',
       color: colors.text,
-      marginTop: 4,
     },
     todayLabelText: {
       color: colors.primary,
@@ -804,7 +950,7 @@ function createStyles(colors: ReturnType<typeof useAppTheme>['theme']['colors'])
       color: colors.text,
     },
     tableToggle: {
-      minHeight: 44,
+      minHeight: 48,
       flexDirection: 'row',
       alignItems: 'center',
       justifyContent: 'space-between',

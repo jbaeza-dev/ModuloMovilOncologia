@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
-import { Linking, Pressable, StyleSheet, Switch, Text, View } from 'react-native';
+import { AppState, Linking, Pressable, StyleSheet, Switch, Text, View } from 'react-native';
 import { router, useFocusEffect } from 'expo-router';
 import type { GatewayRecordatorio } from '@quimiocare/contracts';
 import { normalizedReminder } from '@quimiocare/contracts/agenda';
@@ -100,6 +100,17 @@ export function SharedAgendaScreen() {
       };
     }, [load, reconcileReminders]),
   );
+  // Al volver de los Ajustes de Android se revisa otra vez el permiso y se reprograman los avisos.
+  useEffect(() => {
+    const subscription = AppState.addEventListener('change', (state) => {
+      if (state !== 'active') return;
+      void reconcileReminders()
+        .catch(() => undefined)
+        .then(() => load())
+        .catch(() => undefined);
+    });
+    return () => subscription.remove();
+  }, [load, reconcileReminders]);
   const change = (r: GatewayRecordatorio) =>
     act(async () => {
       await agenda?.save(r.id, { ...normalizedReminder(r), activo: !r.activo }, r.version);
@@ -112,6 +123,24 @@ export function SharedAgendaScreen() {
         <Text accessibilityRole="alert" style={{ color: theme.colors.error }}>
           {error}
         </Text>
+      )}
+      {coverage && !coverage.permission && (
+        <InfoCard>
+          <Text
+            accessibilityRole="alert"
+            style={{ color: theme.colors.error, fontSize: 18, fontWeight: '800' }}
+          >
+            Avisos desactivados en este teléfono
+          </Text>
+          <BodyText>
+            Las notificaciones de QuimioCare están bloqueadas en los Ajustes de Android. Tus
+            horarios se conservan, pero no recibirás avisos hasta que las vuelvas a activar.
+          </BodyText>
+          <VisualButton
+            label="Abrir Ajustes de Android"
+            onPress={() => void Linking.openSettings()}
+          />
+        </InfoCard>
       )}
       <VisualButton
         label="Crear recordatorio"

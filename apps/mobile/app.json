@@ -15,6 +15,10 @@
     "android": {
       "package": "cl.ubiobio.quimiocare",
       "googleServicesFile": "./google-services.json",
+      "permissions": [
+        "android.permission.SCHEDULE_EXACT_ALARM",
+        "android.permission.USE_EXACT_ALARM"
+      ],
       "adaptiveIcon": {
         "foregroundImage": "./assets/icons/adaptive-foreground-432.png",
         "backgroundImage": "./assets/icons/adaptive-background-432.png",

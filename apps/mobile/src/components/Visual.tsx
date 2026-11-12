@@ -1,4 +1,4 @@
-import type { ComponentProps, ReactNode, Ref } from 'react';
+import { type ComponentProps, type ReactNode, type Ref, useId } from 'react';
 import {
   type DimensionValue,
   Pressable,
@@ -160,10 +160,14 @@ export function VisualField({
   const styles = useStyles();
   const { theme: appTheme } = useAppTheme();
   const hasError = Boolean(errorText);
+  const generatedId = useId().replaceAll(':', '');
+  // TalkBack lee un EditText vacío por su placeholder; vincular la etiqueta visible
+  // (labelFor en Android) hace que anuncie primero el nombre del campo.
+  const labelId = `${nativeID ?? `campo-${generatedId}`}-label`;
 
   return (
     <View style={styles.field}>
-      <Text nativeID={nativeID ? `${nativeID}-label` : undefined} style={styles.fieldLabel}>
+      <Text nativeID={labelId} style={styles.fieldLabel}>
         {label}
       </Text>
       {helperText ? <Text style={styles.fieldHelper}>{helperText}</Text> : null}
@@ -172,7 +176,8 @@ export function VisualField({
         {...input}
         editable={editable}
         accessibilityLabel={label}
-        accessibilityHint={accessibilityHint}
+        accessibilityLabelledBy={labelId}
+        accessibilityHint={accessibilityHint ?? helperText}
         aria-invalid={hasError}
         autoCapitalize={
           input.autoCapitalize ?? (input.keyboardType === 'email-address' ? 'none' : 'sentences')

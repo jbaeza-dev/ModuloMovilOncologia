@@ -6,7 +6,7 @@ export default defineConfig({
     coverage: {
       provider: 'v8',
       all: true,
-      include: ['src/**/*.ts'],
+      include: ['src/**/*.ts', 'src/docs/**/*.js'],
       exclude: [...coverageConfigDefaults.exclude],
       reportsDirectory: resolve(__dirname, '../../coverage/simulator'),
       reporter: [

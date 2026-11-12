@@ -11,6 +11,9 @@ export default defineConfig({
         ...coverageConfigDefaults.exclude,
         'apps/mobile/src/**/testing/**',
         'apps/mobile/src/features/preview/**',
+        // Los hooks de React se ejercitan desde las pantallas y se miden en Jest; así cada archivo
+        // se informa una sola vez y SonarQube no suma las condiciones de dos reportes.
+        'apps/mobile/src/**/use-*.ts',
       ],
       reportsDirectory: resolve(__dirname, 'coverage/mobile-vitest'),
       reporter: [

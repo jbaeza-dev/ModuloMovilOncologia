@@ -377,8 +377,13 @@ export function TriageScreen() {
     </InfoCard>
   );
   const warning = (
-    <View style={{ marginBottom: 8, alignItems: 'flex-start' }}>
+    <View style={{ marginBottom: 8, alignItems: 'flex-start', gap: 6 }}>
       <StatusPill>Orientación clínica de síntomas</StatusPill>
+      {/* RNF-08: aviso visible en todas las pantallas de la orientación. */}
+      <BodyText style={{ fontSize: 14 }}>
+        Orientación de apoyo: no entrega diagnósticos y no reemplaza la atención de tu equipo de
+        salud.
+      </BodyText>
     </View>
   );
   const resultCard = result.outcome ? (

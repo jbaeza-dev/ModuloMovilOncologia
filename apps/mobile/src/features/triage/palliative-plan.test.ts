@@ -133,3 +133,115 @@ describe('procedencia e integridad del plan individual, integración nativa pend
     });
   });
 });
+
+describe('validación de formato y contexto del plan individual', () => {
+  const firmado = (cambios: Partial<IndividualPlan>, sobre: Record<string, unknown> = {}) =>
+    ({ ...envelope, plan: { ...plan, ...cambios }, ...sobre }) as SignedPlan;
+
+  it.each([
+    ['un arreglo', []],
+    ['un texto', 'plan'],
+    ['un sobre sin plan', { ...envelope, plan: null }],
+    ['un plan arreglo', { ...envelope, plan: [] }],
+    ['sin firma', { ...envelope, signature: ' ' }],
+    ['sin clave', { ...envelope, keyId: 5 }],
+    ['instrucciones vacías', firmado({ instructions: '  ' })],
+    ['versión no entera', firmado({ version: 1.5 })],
+    ['versión cero', firmado({ version: 0 })],
+    ['revisión inválida', firmado({ reviewAt: 5 as unknown as string })],
+    ['señales que no son lista', firmado({ coveredSignals: 'A1' as unknown as string[] })],
+    ['señal vacía', firmado({ coveredSignals: [' '] })],
+  ])('rechaza el formato con %s', async (_caso, valor) => {
+    const r = await assessIndividualPlan(
+      valor as unknown as SignedPlan,
+      context,
+      trust,
+      cryptography,
+    );
+    expect(r.reason).toBe('invalid-format');
+    expect(r.applicable).toBe(false);
+  });
+
+  it.each([
+    ['fecha de aprobación inválida', firmado({ approvedAt: 'no-fecha' }), context],
+    ['aprobación futura', firmado({ approvedAt: '2027-01-01T00:00:00Z' }), context],
+    ['fecha de revisión inválida', firmado({ reviewAt: 'no-fecha' }), context],
+    ['otro paciente', firmado({ patientId: 'patient-b' }), context],
+    ['otro entorno', firmado({ environment: 'prod' }), context],
+    ['hora actual inválida', envelope, { ...context, now: 'no-fecha' }],
+  ])('rechaza el contexto con %s', async (_caso, sobre, ctx) => {
+    const r = await assessIndividualPlan(sobre, ctx, trust, cryptography);
+    expect(r.reason).toBe('invalid-or-different-context');
+  });
+
+  it('sin confianza o sin criptografía queda declarado sin verificar', async () => {
+    expect((await assessIndividualPlan(envelope, context, trust, null)).reason).toBe(
+      'issuer-not-configured',
+    );
+    expect((await assessIndividualPlan(envelope, context, null, cryptography)).state).toBe(
+      'DECLARADO_NO_VERIFICADO',
+    );
+  });
+
+  it.each([
+    ['clave desconocida', { ...trust, issuerKeys: {} }],
+    [
+      'emisor distinto',
+      {
+        ...trust,
+        issuerKeys: { 'key-test': { ...trust.issuerKeys['key-test'], issuerId: 'otro' } },
+      },
+    ],
+    ['comprobación inválida', { ...trust, lastCheckedAt: 'no-fecha' }],
+    ['comprobación futura', { ...trust, lastCheckedAt: '2027-01-01T00:00:00Z' }],
+  ])('rechaza un emisor no confiable por %s', async (_caso, confianza) => {
+    expect((await assessIndividualPlan(envelope, context, confianza, cryptography)).reason).toBe(
+      'untrusted-issuer',
+    );
+  });
+
+  it('rechaza un hash con formato inválido o que no coincide', async () => {
+    expect(
+      (
+        await assessIndividualPlan(
+          { ...envelope, contentHash: 'abc' },
+          context,
+          trust,
+          cryptography,
+        )
+      ).reason,
+    ).toBe('invalid-provenance');
+    expect(
+      (
+        await assessIndividualPlan(
+          { ...envelope, contentHash: 'a'.repeat(64) },
+          context,
+          trust,
+          cryptography,
+        )
+      ).reason,
+    ).toBe('invalid-provenance');
+  });
+
+  it('informa verificación no disponible si la criptografía falla', async () => {
+    const rota = { ...cryptography, hash: async () => Promise.reject(new Error('sin motor')) };
+    expect((await assessIndividualPlan(envelope, context, trust, rota)).reason).toBe(
+      'verification-unavailable',
+    );
+  });
+
+  it('exige contingencia cuando la señal no está cubierta, faltan medios o falló el manejo', async () => {
+    for (const ctx of [
+      { ...context, signal: 'OTRA' },
+      { ...context, meansAvailable: false },
+      { ...context, careFailed: true },
+    ]) {
+      const r = await assessIndividualPlan(envelope, ctx, trust, cryptography);
+      expect(r).toMatchObject({
+        state: 'VERIFICADO_LOCAL',
+        applicable: false,
+        reason: 'contingency-required',
+      });
+    }
+  });
+});

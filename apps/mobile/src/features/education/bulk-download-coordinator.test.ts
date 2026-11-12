@@ -732,3 +732,47 @@ describe('Regulación de cuota de almacenamiento educativo (enforceEducationStor
     expect(removeCopySpy).toHaveBeenCalledWith('info-pesada-1');
   });
 });
+
+describe('Cuota educativa: orden de expulsión sin fecha de acceso y fallos al expulsar', () => {
+  it('ordena por visualización o descarga, usa la fecha mínima y continúa si una expulsión falla', async () => {
+    const copies = [
+      {
+        contentId: 'vista-reciente',
+        estado: 'descargado',
+        rutaRelativa: 'files/vista.png',
+        tamanoBytes: 10,
+        visualizadoEn: '2026-11-03T10:00:00Z',
+      },
+      {
+        contentId: 'sin-fechas',
+        estado: 'descargado',
+        rutaRelativa: 'files/sin-fechas.png',
+      },
+      {
+        contentId: 'descargada',
+        estado: 'descargado',
+        rutaRelativa: 'files/descargada.png',
+        tamanoBytes: 10,
+        descargadoEn: '2026-11-02T10:00:00Z',
+      },
+    ];
+    const advertencia = vi.spyOn(console, 'warn').mockImplementation(() => undefined);
+    vi.spyOn(resourceStorage, 'deleteResourceFile').mockImplementation(async (_p, id) => {
+      if (id === 'sin-fechas') throw new Error('archivo bloqueado');
+      return true;
+    });
+    const res = await storageService.enforceEducationStorageQuota({
+      patientId: 'pac-1',
+      repository: createMockRepo(copies as unknown as EducationalLocalCopy[]),
+      maxCopies: 1,
+      maxBytes: 100000,
+    });
+    expect(res.evictedIds).toEqual(['descargada', 'vista-reciente']);
+    expect(res.freedBytes).toBe(20);
+    expect(advertencia).toHaveBeenCalledWith(
+      expect.stringContaining('No se pudo evictar sin-fechas'),
+      expect.any(Error),
+    );
+    advertencia.mockRestore();
+  });
+});

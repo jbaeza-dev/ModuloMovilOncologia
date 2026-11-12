@@ -1,7 +1,10 @@
 module.exports = {
   preset: 'jest-expo',
+  // Jest mide pantallas, componentes y hooks; la lógica en .ts se mide en Vitest. Así cada archivo
+  // se informa una sola vez y SonarQube no suma las condiciones de dos reportes.
   collectCoverageFrom: [
-    'src/**/*.{ts,tsx}',
+    'src/**/*.tsx',
+    'src/**/use-*.ts',
     '!src/**/*.test.{ts,tsx}',
     '!src/**/__tests__/**',
     '!src/**/testing/**',

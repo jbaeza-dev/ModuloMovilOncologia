@@ -451,5 +451,51 @@ describe('Profile y Reports UI (Bloque 5)', () => {
       });
       expect(mockDeletePatientReport).not.toHaveBeenCalled();
     });
+
+    it('en PDF abre el visor de inmediato con la generación en curso y luego informa el guardado', async () => {
+      // eslint-disable-next-line @typescript-eslint/no-require-imports
+      const { generateAndPersistReportPdf } = require('../features/reports/report-pdf');
+      let generado = false;
+      let generadoAlNavegar: boolean | null = null;
+      (generateAndPersistReportPdf as jest.Mock).mockImplementationOnce(
+        () =>
+          new Promise((r) =>
+            setTimeout(() => {
+              generado = true;
+              r({ filename: 'reporte.pdf', persistentUri: '/mock/reports/paciente-a/reporte.pdf' });
+            }, 50),
+          ),
+      );
+      mockRouterPush.mockImplementationOnce(() => {
+        generadoAlNavegar = generado;
+      });
+      await render(<ReportsScreen />);
+      await fireEvent.press(await screen.findByText('Actualizar y abrir PDF'));
+      await waitFor(() => expect(mockRouterPush).toHaveBeenCalledTimes(1));
+      // El visor se abre antes de que termine la generación.
+      expect(generadoAlNavegar).toBe(false);
+      const destino = mockRouterPush.mock.calls[0]![0] as {
+        pathname: string;
+        params: { jobId: string; periodDays: string };
+      };
+      expect(destino.pathname).toBe('/reportes/visor-pdf');
+      expect(destino.params.jobId).toMatch(/^pdf-/);
+      expect(destino.params.periodDays).toBe('30');
+      expect(await screen.findByText(/Archivo guardado en este teléfono/)).toBeTruthy();
+    });
+
+    it('si falla la generación del PDF deja el error en Mis reportes para el regreso', async () => {
+      // eslint-disable-next-line @typescript-eslint/no-require-imports
+      const { generateAndPersistReportPdf } = require('../features/reports/report-pdf');
+      (generateAndPersistReportPdf as jest.Mock).mockRejectedValueOnce(new Error('sin espacio'));
+      await render(<ReportsScreen />);
+      await fireEvent.press(await screen.findByText('Actualizar y abrir PDF'));
+      expect(
+        await screen.findByText(
+          'No se pudo guardar el reporte en formato PDF en este dispositivo.',
+        ),
+      ).toBeTruthy();
+      expect(mockRouterPush).toHaveBeenCalledTimes(1);
+    });
   });
 });

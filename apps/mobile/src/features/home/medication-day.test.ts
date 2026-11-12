@@ -257,3 +257,81 @@ describe('Persistencia y trazabilidad de confirmación', () => {
     expect(await db.first('SELECT count(*) n FROM qc_medication_intake_events')).toEqual({ n: 1 });
   });
 });
+
+describe('Prueba de aviso al asociar una toma a su horario', () => {
+  const avisos = () => build().cards[0]!.slots[0]!.notices;
+  const toma = (json: string | null, over: Record<string, unknown> = {}) => ({
+    id: 'toma-1',
+    paciente_id: 'p',
+    medicamento_id: medicine.id.toUpperCase(),
+    medicamento_nombre: 'Ejemplo A',
+    fecha_civil: '2026-11-03',
+    horario_programado: 'aviso#08:00',
+    es_programado: 1,
+    fecha_hora: now,
+    estado: 'taken' as const,
+    registrado_en: now,
+    avisos_confirmados_json: json,
+    ...over,
+  });
+  const conToma = (entry: ReturnType<typeof toma>) =>
+    medicationDay({
+      medications: [medicine],
+      rules: [rule],
+      intakes: [entry],
+      pendingIds: new Set(),
+      now,
+    }).cards[0]!;
+
+  it('asocia la toma cuando los avisos confirmados coinciden con el horario', () => {
+    const card = conToma(toma(JSON.stringify(avisos())));
+    expect(card.slots[0]!.intake?.id).toBe('toma-1');
+    expect(card.historical).toEqual([]);
+  });
+
+  it.each([
+    ['sin avisos', null],
+    ['JSON inválido', '{no-json'],
+    ['lista vacía', '[]'],
+    ['no es lista', '{"a":1}'],
+    ['referencia nula', '[null]'],
+    ['ocurrencia sin texto', JSON.stringify([{ occurrenceId: 5 }])],
+  ])('deja la toma en el historial si la prueba falta o no es válida (%s)', (_caso, json) => {
+    const card = conToma(toma(json));
+    expect(card.slots[0]!.intake).toBeNull();
+    expect(card.historical.map((e) => e.id)).toEqual(['toma-1']);
+  });
+
+  it('rechaza referencias que no corresponden a la zona, versión, hora o instante', () => {
+    const base = avisos()[0]!;
+    for (const cambio of [
+      { timezone: 'UTC' },
+      { version: 99 },
+      { time: '09:00' },
+      { date: '2026-11-04' },
+      { scheduledAt: '2026-11-03T00:00:00.000Z' },
+      { reminderId: 'otro' },
+    ])
+      expect(conToma(toma(JSON.stringify([{ ...base, ...cambio }]))).slots[0]!.intake).toBeNull();
+  });
+
+  it('rechaza más de 100 referencias y las tomas no programadas', () => {
+    const base = avisos()[0]!;
+    expect(
+      conToma(toma(JSON.stringify(Array.from({ length: 101 }, () => base)))).slots[0]!.intake,
+    ).toBeNull();
+    expect(conToma(toma(JSON.stringify([base]), { es_programado: 0 })).slots[0]!.intake).toBeNull();
+  });
+
+  it('marca cambios pendientes y no usa reglas pendientes para los horarios', () => {
+    const model = medicationDay({
+      medications: [medicine],
+      rules: [rule],
+      intakes: [],
+      pendingIds: new Set([rule.id]),
+      now,
+    });
+    expect(model.cards[0]!.pendingChange).toBe(true);
+    expect(model.cards[0]!.slots).toEqual([]);
+  });
+});

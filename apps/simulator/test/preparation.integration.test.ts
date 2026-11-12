@@ -336,6 +336,53 @@ describe('Preparation HTTP with real PostgreSQL', () => {
     expect(redirect.status).toBe(308);
     expect(redirect.headers.get('location')).toBe('/quimiocare/docs/preparacion/');
   });
+  it('consulta lo sincronizado de un paciente y exige su identificador', async () => {
+    const signos = '/quimiocare/admin/api/v1/preparacion/sincronizacion/signos-vitales';
+    const epro = '/quimiocare/admin/api/v1/preparacion/sincronizacion/formularios-respuestas';
+    for (const ruta of [signos, epro]) {
+      const sinPaciente = await call(ruta);
+      expect(sinPaciente.status).toBe(422);
+      expect(sinPaciente.body.error.codigo).toBe('ERROR_VALIDACION');
+    }
+    const lecturaSignos = await call(`${signos}?paciente_id=${PATIENTS.B}&limite=5`);
+    expect(lecturaSignos.status).toBe(200);
+    const lecturaEpro = await call(
+      `${epro}?paciente_id=${PATIENTS.B}&formulario_id=${randomUUID()}`,
+    );
+    expect(lecturaEpro.status).toBe(200);
+    expect(
+      (await call(`${signos}?paciente_id=${PATIENTS.B}`, undefined, patientToken)).status,
+    ).toBe(403);
+
+    const formulario = (await db.query<{ id: string }>('SELECT id FROM formulario LIMIT 1'))
+      .rows[0]!;
+    const signoId = randomUUID();
+    const signoTexto = randomUUID();
+    await db.query(
+      'INSERT INTO qc_demo_signo(id,paciente_id,request,respuesta) VALUES ($1,$2,$3,$4),($5,$2,$3,$6)',
+      [signoId, PATIENTS.B, {}, { presion_sistolica: 120 }, signoTexto, JSON.stringify('texto')],
+    );
+    const eproId = randomUUID();
+    await db.query(
+      'INSERT INTO qc_demo_epro(id,paciente_id,formulario_id,request,respuesta) VALUES ($1,$2,$3,$4,$5)',
+      [eproId, PATIENTS.B, formulario.id, {}, { estado: 'recibido' }],
+    );
+    const conFilas = await call(`${signos}?paciente_id=${PATIENTS.B}&limite=no-numero`);
+    expect(conFilas.status).toBe(200);
+    const registros = conFilas.body.registros as Array<Record<string, unknown>>;
+    expect(registros.find((r) => r.id === signoId)?.presion_sistolica).toBe(120);
+    expect(Object.keys(registros.find((r) => r.id === signoTexto)!).sort()).toEqual([
+      'fecha_subida',
+      'id',
+    ]);
+    const todasEpro = await call(`${epro}?paciente_id=${PATIENTS.B}`);
+    expect(todasEpro.status).toBe(200);
+    expect(
+      (todasEpro.body.respuestas as Array<Record<string, unknown>>).find((r) => r.id === eproId),
+    ).toMatchObject({ formulario_id: formulario.id, estado: 'recibido' });
+    await db.query('DELETE FROM qc_demo_signo WHERE id = ANY($1)', [[signoId, signoTexto]]);
+    await db.query('DELETE FROM qc_demo_epro WHERE id=$1', [eproId]);
+  });
   it('serves the main preparation docs, editable examples and assets', async () => {
     const page = await fetch(base + '/quimiocare/docs/preparacion/');
     expect(page.status).toBe(200);

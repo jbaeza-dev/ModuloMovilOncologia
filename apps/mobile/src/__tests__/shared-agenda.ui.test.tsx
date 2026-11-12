@@ -61,6 +61,7 @@ const rule: GatewayRecordatorio = {
   canal: 'push_con_respaldo_local',
   respaldo_segundos: 120,
 };
+let mockPermission = true;
 const mockRead = jest.fn(),
   mockSave = jest.fn(),
   mockIntents = jest.fn(),
@@ -76,7 +77,7 @@ const mockData = {
   },
   agendaCoordinator: {
     coverage: async () => ({
-      permission: true,
+      permission: mockPermission,
       confirmed: 64,
       wanted: 64,
       truncated: 48,
@@ -90,6 +91,7 @@ const mockData = {
 };
 beforeEach(() => {
   jest.clearAllMocks();
+  mockPermission = true;
   mockMedications = [];
   for (const key of Object.keys(mockParams)) delete mockParams[key];
   mockRead.mockResolvedValue({ rules: [rule], state: { synchronized_at: '2026-10-29T12:00:00Z' } });
@@ -178,6 +180,50 @@ describe('Agenda compartida: interfaz confirmada', () => {
     expect(screen.getByText(/64 avisos programados/)).toBeTruthy();
     expect(screen.getByText(/48 avisos fuera/)).toBeTruthy();
     expect(screen.getByText(/no registran una toma/)).toBeTruthy();
+  });
+  it('sin permiso de notificaciones muestra un aviso visible que abre los Ajustes de Android', async () => {
+    mockPermission = false;
+    // eslint-disable-next-line @typescript-eslint/no-require-imports
+    const { Linking } = require('react-native');
+    const openSettings = jest.spyOn(Linking, 'openSettings').mockResolvedValue(undefined);
+    await render(
+      <ThemeProvider>
+        <SharedAgendaScreen />
+      </ThemeProvider>,
+    );
+    expect(await screen.findByText('Avisos desactivados en este teléfono')).toBeTruthy();
+    expect(screen.getByText(/no recibirás avisos hasta que las vuelvas a activar/)).toBeTruthy();
+    await fireEvent.press(screen.getByRole('button', { name: 'Abrir Ajustes de Android' }));
+    expect(openSettings).toHaveBeenCalledTimes(1);
+    openSettings.mockRestore();
+  });
+  it('con permiso no muestra el aviso de avisos desactivados', async () => {
+    await render(
+      <ThemeProvider>
+        <SharedAgendaScreen />
+      </ThemeProvider>,
+    );
+    await waitFor(() => expect(screen.getByText('Mi registro diario')).toBeTruthy());
+    expect(screen.queryByText('Avisos desactivados en este teléfono')).toBeNull();
+  });
+  it('al volver a la app revisa otra vez la agenda y el permiso', async () => {
+    // eslint-disable-next-line @typescript-eslint/no-require-imports
+    const { AppState } = require('react-native');
+    await render(
+      <ThemeProvider>
+        <SharedAgendaScreen />
+      </ThemeProvider>,
+    );
+    await waitFor(() => expect(screen.getByText('Mi registro diario')).toBeTruthy());
+    const listeners = (AppState.addEventListener as jest.Mock).mock.calls
+      .filter(([evento]) => evento === 'change')
+      .map(([, listener]) => listener as (state: string) => void);
+    expect(listeners.length).toBeGreaterThan(0);
+    mockRefresh.mockClear();
+    listeners.forEach((listener) => listener('background'));
+    expect(mockRefresh).not.toHaveBeenCalled();
+    listeners.forEach((listener) => listener('active'));
+    await waitFor(() => expect(mockRefresh).toHaveBeenCalled());
   });
   it('pausar envía la configuración completa y su versión, sin cambiar la regla optimistamente', async () => {
     await render(

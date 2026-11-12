@@ -101,6 +101,29 @@ describe('Componentes Accesibles Visual.tsx y Screen.tsx (B1 - UX-03 a UX-07)', 
       expect(input.props.accessibilityHint).toBe('Ingresa tu temperatura en grados Celsius');
     });
 
+    it('vincula la etiqueta visible al campo y usa la ayuda como pista para TalkBack', async () => {
+      await render(
+        <VisualField
+          label="Temperatura corporal (°C)"
+          value=""
+          placeholder="Ej.: 36,8"
+          helperText="Entrada de 30,0 a 45,0 °C"
+        />,
+      );
+
+      const input = screen.getByPlaceholderText('Ej.: 36,8');
+      const labelId = input.props.accessibilityLabelledBy as string;
+      expect(labelId).toMatch(/-label$/);
+      expect(screen.getByText('Temperatura corporal (°C)').props.nativeID).toBe(labelId);
+      expect(input.props.accessibilityLabel).toBe('Temperatura corporal (°C)');
+      expect(input.props.accessibilityHint).toBe('Entrada de 30,0 a 45,0 °C');
+    });
+
+    it('respeta el nativeID entregado para la etiqueta', async () => {
+      await render(<VisualField label="Peso" value="70" nativeID="peso" />);
+      expect(screen.getByDisplayValue('70').props.accessibilityLabelledBy).toBe('peso-label');
+    });
+
     it('muestra error visible con anuncio accesible y borde destacado', async () => {
       await render(
         <VisualField label="Presión sistólica" value="abc" errorText="Ingresa un número válido" />,

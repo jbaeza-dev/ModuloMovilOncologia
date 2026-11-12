@@ -1,4 +1,4 @@
-import { afterEach, describe, expect, it } from 'vitest';
+import { afterEach, describe, expect, it, vi } from 'vitest';
 import { migrateDatabase } from '../../data/local/migrations';
 import {
   createSqliteTestHarness,
@@ -60,5 +60,86 @@ describe('historia local de orientación sin otro emisor clínico', () => {
       ),
     ).rejects.toThrow('antecedente');
     expect(await repo.history('synthetic')).toHaveLength(2);
+  });
+});
+
+describe('validaciones del repositorio de orientación', () => {
+  const entrada = { answers: { 'A1-CONCIENCIA': 'yes' as const }, informant: null, pain: null };
+
+  it('exige paciente y entorno', () => {
+    const db = harness.open();
+    expect(() => createOrientationRepository(db, { patientId: '', environment: 'test' })).toThrow(
+      'Falta el contexto de orientación.',
+    );
+    expect(() => createOrientationRepository(db, { patientId: patientA, environment: '' })).toThrow(
+      'Falta el contexto de orientación.',
+    );
+  });
+
+  it('rechaza registros sin identificador o con fecha inválida', async () => {
+    const db = harness.open();
+    await migrateDatabase(db);
+    const repo = createOrientationRepository(db, { patientId: patientA, environment: 'test' });
+    await expect(repo.save('', entrada, 'synthetic', measured)).rejects.toThrow(
+      'Registro de orientación inválido.',
+    );
+    await expect(repo.save('x', entrada, 'synthetic', 'no-fecha')).rejects.toThrow(
+      'Registro de orientación inválido.',
+    );
+  });
+
+  it('exige que el antecedente pertenezca a la misma cuenta y modo', async () => {
+    const db = harness.open();
+    await migrateDatabase(db);
+    const repo = createOrientationRepository(db, { patientId: patientA, environment: 'test' });
+    await expect(repo.save('dos', entrada, 'synthetic', measured, 'inexistente')).rejects.toThrow(
+      'El antecedente no pertenece a esta evaluación.',
+    );
+    await repo.save('uno', entrada, 'synthetic', measured);
+    await repo.save('dos', entrada, 'synthetic', measured, 'uno');
+    expect(await repo.history('synthetic')).toHaveLength(2);
+  });
+
+  it('consulta el plan individual cuando hay un resolutor configurado', async () => {
+    const db = harness.open();
+    await migrateDatabase(db);
+    const resolver = vi.fn(async () => ({
+      state: 'SIN_PLAN_REGISTRADO' as const,
+      applicable: false,
+      reason: 'not-registered',
+      planId: null,
+      version: null,
+      contentHash: null,
+      trustCheckedAt: null,
+      patientId: null,
+      environment: null,
+      coveredSignals: [],
+      instructions: null,
+      contingency: null,
+      contact: null,
+    }));
+    const repo = createOrientationRepository(
+      db,
+      { patientId: patientA, environment: 'test' },
+      resolver,
+    );
+    const r = await repo.save('plan', entrada, 'synthetic', measured);
+    expect(resolver).toHaveBeenCalled();
+    expect(r.planNotAppliedReason).toBe('not-registered');
+  });
+
+  it.each([
+    [0, 0],
+    [101, 0],
+    [1.5, 0],
+    [10, -1],
+    [10, 0.5],
+  ])('rechaza páginas de historial inválidas (límite %s, desde %s)', async (limit, offset) => {
+    const db = harness.open();
+    await migrateDatabase(db);
+    const repo = createOrientationRepository(db, { patientId: patientA, environment: 'test' });
+    await expect(repo.history('synthetic', limit, offset)).rejects.toThrow(
+      'Página de historial inválida.',
+    );
   });
 });

@@ -67,11 +67,17 @@ jest.mock('../providers/ThemeProvider', () => ({
   useAppTheme: () => ({ theme: mockTheme }),
 }));
 
+const mockInjectJavaScript = jest.fn();
 jest.mock('react-native-webview', () => {
   // eslint-disable-next-line @typescript-eslint/no-require-imports
   const { View } = require('react-native');
+  // eslint-disable-next-line @typescript-eslint/no-require-imports
+  const ReactInner = require('react');
   return {
-    WebView: (props: unknown) => <View testID="mock-webview" {...(props as object)} />,
+    WebView: ReactInner.forwardRef((props: unknown, ref: unknown) => {
+      ReactInner.useImperativeHandle(ref, () => ({ injectJavaScript: mockInjectJavaScript }));
+      return <View testID="mock-webview" {...(props as object)} />;
+    }),
   };
 });
 
@@ -177,6 +183,8 @@ jest.mock('../providers/LocalDataProvider', () => ({
 }));
 
 import { PdfReportViewer } from '../features/reports/PdfReportViewer';
+import { clearPdfJobs, startPdfJob } from '../features/reports/pdf-generation-jobs';
+import { rememberRenderedPdf } from '../features/reports/rendered-pdf-cache';
 import { SpreadsheetReportViewer } from '../features/reports/SpreadsheetReportViewer';
 
 describe('Document Viewers UI (Etapa 5)', () => {
@@ -272,6 +280,111 @@ describe('Document Viewers UI (Etapa 5)', () => {
       await screen.findByTestId('mock-webview');
       await fireEvent.press(screen.getByLabelText('Volver a la lista de reportes'));
       expect(mockRouterBack).toHaveBeenCalledTimes(1);
+    });
+  });
+
+  describe('PdfReportViewer mientras se genera el reporte (RNF-06)', () => {
+    const generado = {
+      persistentUri: '/mock/reports/paciente-a/nuevo.pdf',
+      filename: 'reporte_paciente-a_30d_2026-11-11T12-00-00.pdf',
+    };
+    const mensaje = (data: object) => ({ nativeEvent: { data: JSON.stringify(data) } });
+
+    afterEach(() => clearPdfJobs());
+
+    it('prepara el visor de inmediato y entrega el PDF en memoria cuando termina', async () => {
+      let terminar!: (v: typeof generado) => void;
+      const job = startPdfJob('paciente-a', () => new Promise((r) => (terminar = r)));
+      mockSearchParams = { jobId: job.id, periodDays: '30' };
+      await render(<PdfReportViewer />);
+      const visor = await screen.findByTestId('mock-webview');
+      expect(screen.getByText('Generando el reporte PDF…')).toBeTruthy();
+      expect(screen.getByLabelText('Página siguiente')).toBeDisabled();
+      expect(
+        screen.getByRole('button', { name: 'Compartir reporte PDF con tu médico' }),
+      ).toBeDisabled();
+
+      await fireEvent(visor, 'message', mensaje({ type: 'READY' }));
+      expect(mockInjectJavaScript).not.toHaveBeenCalled();
+
+      rememberRenderedPdf(generado.persistentUri, 'paciente-a', 'JVBERi0=');
+      terminar(generado);
+      await waitFor(() =>
+        expect(mockInjectJavaScript).toHaveBeenCalledWith("window.qcLoadPdf('JVBERi0='); true;"),
+      );
+      expect(await screen.findByText('Abriendo el reporte PDF…')).toBeTruthy();
+
+      await fireEvent(
+        visor,
+        'message',
+        mensaje({ type: 'PAGE_UPDATE', current: 1, total: 3, zoom: 1, rendered: true }),
+      );
+      expect(screen.queryByText('Abriendo el reporte PDF…')).toBeNull();
+      expect(screen.getByText('Página 1 de 3')).toBeTruthy();
+      // eslint-disable-next-line @typescript-eslint/no-require-imports
+      const storage = require('../data/local/files/report-storage');
+      await fireEvent.press(
+        screen.getByRole('button', { name: 'Compartir reporte PDF con tu médico' }),
+      );
+      expect(storage.shareReportFile).toHaveBeenCalledWith(generado.persistentUri, 'pdf');
+    });
+
+    it('espera a que pdf.js esté listo antes de entregar el PDF', async () => {
+      rememberRenderedPdf(generado.persistentUri, 'paciente-a', 'JVBERi0=');
+      const job = startPdfJob('paciente-a', () => Promise.resolve(generado));
+      mockSearchParams = { jobId: job.id };
+      await render(<PdfReportViewer />);
+      const visor = await screen.findByTestId('mock-webview');
+      await waitFor(() => expect(screen.getByText('Abriendo el reporte PDF…')).toBeTruthy());
+      expect(mockInjectJavaScript).not.toHaveBeenCalled();
+      await fireEvent(visor, 'message', mensaje({ type: 'READY' }));
+      expect(mockInjectJavaScript).toHaveBeenCalledTimes(1);
+    });
+
+    it('sin copia en memoria lee el archivo recién guardado', async () => {
+      const job = startPdfJob('paciente-a', () => Promise.resolve(generado));
+      mockSearchParams = { jobId: job.id };
+      await render(<PdfReportViewer />);
+      expect(await screen.findByLabelText('Página siguiente')).toBeTruthy();
+      expect(screen.queryByText('Generando el reporte PDF…')).toBeNull();
+    });
+
+    it('si la generación falla lo informa y permite volver a Mis reportes', async () => {
+      const job = startPdfJob('paciente-a', () => Promise.reject(new Error('sin espacio')));
+      mockSearchParams = { jobId: job.id };
+      await render(<PdfReportViewer />);
+      expect(await screen.findByText('No se pudo generar el reporte PDF')).toBeTruthy();
+      expect(screen.queryByTestId('mock-webview')).toBeNull();
+      await fireEvent.press(screen.getByRole('button', { name: 'Volver a Mis reportes' }));
+      expect(mockRouterBack).toHaveBeenCalledTimes(1);
+    });
+
+    it.each([
+      ['de otro paciente', () => startPdfJob('paciente-b', () => Promise.resolve(generado)).id],
+      ['desconocida', () => 'pdf-inexistente'],
+    ])('no muestra una generación %s', async (_caso, crearId) => {
+      mockSearchParams = { jobId: crearId() };
+      await render(<PdfReportViewer />);
+      expect(
+        await screen.findByText(
+          'Este reporte ya no está disponible. Vuelve a generarlo desde Mis reportes.',
+        ),
+      ).toBeTruthy();
+    });
+
+    it('si pdf.js falla, reintenta leyendo el archivo ya guardado', async () => {
+      const job = startPdfJob('paciente-a', () => Promise.resolve(generado));
+      rememberRenderedPdf(generado.persistentUri, 'paciente-a', 'JVBERi0=');
+      mockSearchParams = { jobId: job.id };
+      await render(<PdfReportViewer />);
+      const visor = await screen.findByTestId('mock-webview');
+      await fireEvent(visor, 'message', mensaje({ type: 'READY' }));
+      await fireEvent(visor, 'message', mensaje({ type: 'ERROR' }));
+      expect(
+        await screen.findByText('No se pudo mostrar el PDF. Vuelve a intentarlo.'),
+      ).toBeTruthy();
+      await fireEvent.press(screen.getByRole('button', { name: 'Reintentar lectura' }));
+      expect(await screen.findByLabelText('Página siguiente')).toBeTruthy();
     });
   });
 

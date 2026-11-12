@@ -203,4 +203,53 @@ describe('Retención clínica condicionada con migraciones reales (90 días)', (
     const vitals = await db.all<{ id: string }>('SELECT id FROM signos_vitales');
     expect(vitals.length).toBe(1);
   });
+  async function signoAntiguoAceptado(db: Awaited<ReturnType<typeof setupRealDb>>, id: string) {
+    const oldDate = new Date(Date.now() - 120 * 24 * 60 * 60 * 1000).toISOString();
+    await db.run(
+      'INSERT INTO signos_vitales (id, paciente_id, fecha_registro, temperatura, creado_localmente_en) VALUES (?, ?, ?, ?, ?)',
+      [id, scope.localPatientId, oldDate, 36.5, oldDate],
+    );
+    await db.run(
+      'INSERT INTO qc_clinical_command (id, owner, environment, kind, captured_at, payload_json, status, ack_json, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)',
+      [
+        id,
+        scope.owner,
+        scope.environment,
+        'signos',
+        oldDate,
+        '{}',
+        'aceptado',
+        '{"received":true}',
+        oldDate,
+      ],
+    );
+  }
+
+  it('se detiene sin purgar cuando se agota el presupuesto de tiempo', async () => {
+    const db = await setupRealDb();
+    await signoAntiguoAceptado(db, 'v-presupuesto');
+    const result = await runClinicalRetentionCleanup(db, scope, {
+      forceEnable: true,
+      maxDurationMs: -1,
+    });
+    expect(result).toEqual({
+      purgedRecords: 0,
+      batchesExecuted: 0,
+      stoppedReason: 'budget_exhausted',
+    });
+  });
+
+  it('con un lote lleno de signos omite los formularios y sigue en el lote siguiente', async () => {
+    const db = await setupRealDb();
+    await signoAntiguoAceptado(db, 'v-lote-1');
+    await signoAntiguoAceptado(db, 'v-lote-2');
+    const result = await runClinicalRetentionCleanup(db, scope, {
+      forceEnable: true,
+      batchSize: 1,
+      cooperativePauseMs: 0,
+    });
+    expect(result.purgedRecords).toBe(2);
+    expect(result.batchesExecuted).toBe(2);
+    expect(result.stoppedReason).toBe('complete');
+  });
 });

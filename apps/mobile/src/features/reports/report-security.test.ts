@@ -888,3 +888,41 @@ beforeEach(() => {
   });
   return release;
 });
+
+describe('clearAllPatientReports con fallos puntuales del almacenamiento', () => {
+  it('continúa ante archivos que no se pueden borrar y tolera acompañantes ausentes o bloqueados', async () => {
+    const dir = getPatientReportDirectory(patientB).uri.replace(/\/$/, '');
+    const archivo = (nombre: string, size: number | null) => ({
+      uri: `${dir}/${nombre}`,
+      name: nombre,
+      isFile: true,
+      size,
+    });
+    const entradas = [
+      archivo('reporte_7d_1730000000000.pdf', 100),
+      archivo('reporte_30d_1730000000001.xlsx', null),
+      archivo('reporte_90d_1730000000002.pdf', 50),
+    ];
+    const borrados: string[] = [];
+    const adapter: BinaryReportStorageAdapter = {
+      writeBytes: async () => undefined,
+      copyFile: async () => undefined,
+      moveFile: async () => undefined,
+      ensureDirectory: async () => undefined,
+      directoryExists: async () => true,
+      listDirectory: async () => entradas,
+      getFileSize: async (uri) => entradas.find((e) => e.uri === uri)?.size ?? null,
+      fileExists: async (uri) => uri.endsWith('1730000000000.pdf.a11y.json'),
+      deleteFile: async (uri) => {
+        if (uri.includes('_90d_') || uri.endsWith('.a11y.json')) throw new Error('bloqueado');
+        borrados.push(uri);
+      },
+    };
+    const result = await clearAllPatientReports(patientB, adapter);
+    expect(result.deleted).toBe(2);
+    expect(borrados.map((u) => u.split('/').pop()).sort()).toEqual([
+      'reporte_30d_1730000000001.xlsx',
+      'reporte_7d_1730000000000.pdf',
+    ]);
+  });
+});
