@@ -7,6 +7,7 @@ import {
 } from '../../data/local/files/report-storage';
 import type { ReportData } from '../../data/local/reports/report-types';
 import { buildReportHtml, type GenerateReportParams } from './report-template';
+import { rememberRenderedPdf } from './rendered-pdf-cache';
 
 export { buildReportHtml, type GenerateReportParams } from './report-template';
 
@@ -20,8 +21,10 @@ export async function generateAndPersistReportPdf(
   adapter?: BinaryReportStorageAdapter,
 ): Promise<{ persistentUri: string; filename: string }> {
   const html = buildReportHtml(data);
+  // base64: el visor usa esta copia en memoria y no relee ni descifra el archivo guardado.
   const printResult = await Print.printToFileAsync({
     html,
+    base64: true,
   });
   const patientName = 'profile' in data && data.profile?.nombre ? data.profile.nombre : undefined;
   const result = await persistReportPdf(
@@ -32,5 +35,6 @@ export async function generateAndPersistReportPdf(
     shareableReportSnapshot(data),
     patientName,
   );
+  rememberRenderedPdf(result.persistentUri, data.pacienteId, printResult.base64);
   return result;
 }

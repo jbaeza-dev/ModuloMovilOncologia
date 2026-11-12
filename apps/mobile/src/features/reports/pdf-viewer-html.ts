@@ -1,4 +1,12 @@
-export function buildPdfJsHtml(base64Pdf: string): string {
+/**
+ * HTML del visor PDF basado en pdf.js.
+ *
+ * Con `base64Pdf` abre ese documento al cargar. Sin él, prepara pdf.js y su worker por
+ * adelantado, avisa `READY` y espera `window.qcLoadPdf(base64)`: así el visor se carga
+ * mientras el reporte todavía se está generando (RNF-06).
+ */
+export function buildPdfJsHtml(base64Pdf?: string): string {
+  const initialStatus = base64Pdf ? 'Cargando reporte en PDF…' : 'Generando el reporte PDF…';
   return `<!DOCTYPE html>
 <html lang="es">
 <head>
@@ -49,14 +57,13 @@ export function buildPdfJsHtml(base64Pdf: string): string {
 </head>
 <body>
   <div id="viewer-body">
-    <div id="status-msg">Cargando reporte en PDF…</div>
+    <div id="status-msg">${initialStatus}</div>
     <div class="page-container" id="page-box" style="display:none;">
       <canvas id="pdf-canvas"></canvas>
     </div>
   </div>
 
   <script>
-    var pdfData = atob("${base64Pdf}");
     var pdfDoc = null;
     var pageNum = 1;
     var pageRendering = false;
@@ -99,7 +106,7 @@ export function buildPdfJsHtml(base64Pdf: string): string {
           if (statusEl) statusEl.style.display = 'none';
           var boxEl = document.getElementById('page-box');
           if (boxEl) boxEl.style.display = 'flex';
-          sendBridge('PAGE_UPDATE', { current: num, total: pdfDoc.numPages, zoom: scale });
+          sendBridge('PAGE_UPDATE', { current: num, total: pdfDoc.numPages, zoom: scale, rendered: true });
           if (pageNumPending !== null) {
             renderPage(pageNumPending);
             pageNumPending = null;
@@ -153,26 +160,47 @@ export function buildPdfJsHtml(base64Pdf: string): string {
     };
     window.addEventListener('resize', function() { queueRenderPage(pageNum); });
 
-    try {
-      if (typeof pdfjsLib !== 'undefined') {
-        pdfjsLib.GlobalWorkerOptions.workerSrc = 'file:///android_asset/pdfjs/pdf.worker.min.js';
-        var loadingTask = pdfjsLib.getDocument({ data: pdfData, isEvalSupported: false, enableXfa: false });
+    var qcWorker = null;
+
+    function showStatus(text) {
+      var statusEl = document.getElementById('status-msg');
+      if (statusEl) statusEl.innerText = text;
+    }
+
+    function openPdf(pdfData) {
+      try {
+        var options = { data: pdfData, isEvalSupported: false, enableXfa: false };
+        if (qcWorker) options.worker = qcWorker;
+        var loadingTask = pdfjsLib.getDocument(options);
         loadingTask.promise.then(function(pdf) {
           pdfDoc = pdf;
+          pageNum = 1;
           sendBridge('PAGE_UPDATE', { current: 1, total: pdf.numPages, zoom: 1.0 });
           renderPage(1);
         }).catch(function(err) {
-          var statusEl = document.getElementById('status-msg');
-          if (statusEl) statusEl.innerText = 'No se pudo abrir este PDF. Vuelve a intentarlo.';
-          sendBridge('ERROR', { error: err.message });
+          showStatus('No se pudo abrir este PDF. Vuelve a intentarlo.');
+          sendBridge('ERROR', { error: err && err.message });
         });
-      } else {
-        var statusEl = document.getElementById('status-msg');
-        if (statusEl) statusEl.innerText = 'Cargando visor PDF…';
+      } catch (e) {
+        showStatus('No se pudo abrir el visor. Vuelve a intentarlo.');
+        sendBridge('ERROR', {});
       }
-    } catch(e) {
-      var statusEl = document.getElementById('status-msg');
-      if (statusEl) statusEl.innerText = 'No se pudo abrir el visor. Vuelve a intentarlo.';
+    }
+
+    window.qcLoadPdf = function(base64) {
+      showStatus('Cargando reporte en PDF…');
+      openPdf(atob(base64));
+    };
+
+    if (typeof pdfjsLib !== 'undefined') {
+      pdfjsLib.GlobalWorkerOptions.workerSrc = 'file:///android_asset/pdfjs/pdf.worker.min.js';
+      // El worker se crea de inmediato para que su carga no quede en la ruta crítica.
+      if (typeof pdfjsLib.PDFWorker === 'function') {
+        try { qcWorker = new pdfjsLib.PDFWorker({ name: 'qc-visor' }); } catch (e) { qcWorker = null; }
+      }
+      ${base64Pdf ? `openPdf(atob("${base64Pdf}"));` : "sendBridge('READY', {});"}
+    } else {
+      showStatus('Cargando visor PDF…');
     }
   </script>
 </body>

@@ -23,13 +23,17 @@ import { useAppTheme } from '../../providers/ThemeProvider';
 import { theme } from '../../theme';
 
 import { buildPdfJsHtml } from './pdf-viewer-html';
+import { getPdfJob } from './pdf-generation-jobs';
+import { takeRenderedPdf } from './rendered-pdf-cache';
 export { buildPdfJsHtml } from './pdf-viewer-html';
 
 export function PdfReportViewer() {
-  const { uri, filename } = useLocalSearchParams<{
-    uri: string;
-    filename: string;
+  const { uri, filename, jobId } = useLocalSearchParams<{
+    uri?: string;
+    filename?: string;
     periodDays?: string;
+    /** Generación en curso iniciada desde «Mis reportes» (ver pdf-generation-jobs). */
+    jobId?: string;
   }>();
 
   const { theme: appTheme } = useAppTheme();
@@ -39,7 +43,18 @@ export function PdfReportViewer() {
 
   const webViewRef = useRef<WebView>(null);
   const [pdfBase64, setPdfBase64] = useState<string | null>(null);
-  const [loading, setLoading] = useState(true);
+  const [loading, setLoading] = useState(!jobId);
+  // Archivo a leer: el reporte guardado que se abrió, o el recién generado si no quedó en memoria.
+  const [sourceUri, setSourceUri] = useState<string | null>(uri ?? null);
+  const [jobState, setJobState] = useState<'none' | 'generating' | 'ready' | 'failed'>(
+    jobId ? 'generating' : 'none',
+  );
+  const [viewerFailed, setViewerFailed] = useState(false);
+  const [docRendered, setDocRendered] = useState(false);
+  // En modo generación, pdf.js se carga antes de que exista el PDF y luego se le entrega.
+  const [shellHtml] = useState(() => (jobId ? buildPdfJsHtml() : null));
+  const shellReadyRef = useRef(false);
+  const pendingPdfRef = useRef<string | null>(null);
   const [fileError, setFileError] = useState<string | null>(null);
   const [currentPage, setCurrentPage] = useState(1);
   const [totalPages, setTotalPages] = useState(1);
@@ -49,10 +64,62 @@ export function PdfReportViewer() {
   const [retryCount, setRetryCount] = useState(0);
   const [resolvedUri, setResolvedUri] = useState<string | null>(uri ?? null);
 
+  function flushPendingPdf() {
+    const pending = pendingPdfRef.current;
+    if (!pending || !shellReadyRef.current || !webViewRef.current) return;
+    pendingPdfRef.current = null;
+    // El base64 solo contiene [A-Za-z0-9+/=], por lo que puede ir entre comillas simples.
+    webViewRef.current.injectJavaScript(`window.qcLoadPdf('${pending}'); true;`);
+  }
+
+  // Generación en curso: espera el PDF y lo entrega al visor ya preparado.
   useEffect(() => {
+    if (!jobId) return;
     let active = true;
     const startPatient = manager?.getPatientId?.() ?? patientId;
     const startEpoch = manager?.getContextEpoch?.() ?? 0;
+    const job = getPdfJob(jobId, startPatient);
+    if (!job) {
+      setJobState('failed');
+      setFileError('Este reporte ya no está disponible. Vuelve a generarlo desde Mis reportes.');
+      return;
+    }
+    job.then(
+      (res) => {
+        const samePatient = (manager?.getPatientId?.() ?? patientId) === startPatient;
+        const sameEpoch = (manager?.getContextEpoch?.() ?? 0) === startEpoch;
+        if (!active || !samePatient || !sameEpoch) return;
+        setResolvedUri(res.persistentUri);
+        setJobState('ready');
+        const rendered = takeRenderedPdf(res.persistentUri, startPatient);
+        if (rendered) {
+          pendingPdfRef.current = rendered;
+          flushPendingPdf();
+        } else {
+          setSourceUri(res.persistentUri);
+        }
+      },
+      () => {
+        if (!active) return;
+        setJobState('failed');
+        setFileError(
+          'No se pudo generar el reporte PDF en este dispositivo. Vuelve a Mis reportes e inténtalo de nuevo.',
+        );
+      },
+    );
+    return () => {
+      active = false;
+    };
+    // El trabajo se resuelve una sola vez por apertura del visor.
+  }, [jobId]);
+
+  useEffect(() => {
+    // En modo generación, el archivo solo se lee si el PDF no quedó en memoria.
+    if (jobId && !sourceUri) return;
+    let active = true;
+    const startPatient = manager?.getPatientId?.() ?? patientId;
+    const startEpoch = manager?.getContextEpoch?.() ?? 0;
+    const uri = sourceUri ?? undefined;
 
     async function loadPdf() {
       setLoading(true);
@@ -90,6 +157,12 @@ export function PdfReportViewer() {
 
             const assertCurrent = clinicalFileLease(canonicalUri);
             assertCurrent();
+            // Reporte recién generado: se usa la copia en memoria y se evita releer y descifrar.
+            const justRendered = takeRenderedPdf(uri, startPatient);
+            if (justRendered) {
+              if (active) setPdfBase64(justRendered);
+              return;
+            }
             const encryptedBytes = await targetFile.bytes();
             const midPatient = manager?.getPatientId?.() ?? patientId;
             const midEpoch = manager?.getContextEpoch?.() ?? 0;
@@ -103,10 +176,14 @@ export function PdfReportViewer() {
               return;
             }
 
+            // Conversión por bloques: evita concatenar el PDF byte a byte.
             let binary = '';
             const len = decryptedBytes.byteLength;
-            for (let i = 0; i < len; i++) {
-              binary += String.fromCharCode(decryptedBytes[i]);
+            for (let i = 0; i < len; i += 0x8000) {
+              binary += String.fromCharCode.apply(
+                null,
+                Array.from(decryptedBytes.subarray(i, Math.min(i + 0x8000, len))),
+              );
             }
             const b64 =
               typeof btoa === 'function'
@@ -133,7 +210,7 @@ export function PdfReportViewer() {
     return () => {
       active = false;
     };
-  }, [patientId, manager, filename, uri, retryCount]);
+  }, [patientId, manager, filename, sourceUri, jobId, retryCount]);
 
   const handleShare = async () => {
     const shareTargetUri = resolvedUri ?? uri;
@@ -175,12 +252,17 @@ export function PdfReportViewer() {
   const handleWebViewMessage = (event: { nativeEvent: { data: string } }) => {
     try {
       const data = JSON.parse(event.nativeEvent.data);
-      if (data.type === 'PAGE_UPDATE') {
+      if (data.type === 'READY') {
+        shellReadyRef.current = true;
+        flushPendingPdf();
+      } else if (data.type === 'PAGE_UPDATE') {
+        if (data.rendered) setDocRendered(true);
         if (typeof data.current === 'number') setCurrentPage(data.current);
         if (typeof data.total === 'number') setTotalPages(data.total);
         if (typeof data.zoom === 'number') setZoomPct(Math.round(data.zoom * 100));
       } else if (data.type === 'ERROR') {
         setFileError('No se pudo mostrar el PDF. Vuelve a intentarlo.');
+        setViewerFailed(true);
         setPdfBase64(null);
       }
     } catch {
@@ -189,7 +271,19 @@ export function PdfReportViewer() {
   };
 
   // Contenido HTML para el visor integrado de PDF basado en WebView (sin fallback silencioso a HTML)
-  const pdfJsHtml = pdfBase64 ? buildPdfJsHtml(pdfBase64) : null;
+  const usingShell = !pdfBase64 && !!shellHtml && jobState !== 'failed' && !sourceUri;
+  const pdfJsHtml = viewerFailed
+    ? null
+    : pdfBase64
+      ? buildPdfJsHtml(pdfBase64)
+      : usingShell
+        ? shellHtml
+        : null;
+  // La barra se muestra desde el inicio para que la WebView no cambie de tamaño al abrir el
+  // documento (evita volver a dibujar la página); sus botones se activan cuando está listo.
+  const showControls = !loading && !!pdfJsHtml;
+  const controlsReady = !!pdfBase64 || docRendered;
+  const shareUri = resolvedUri ?? uri ?? null;
 
   return (
     <DocumentScreen>
@@ -209,13 +303,13 @@ export function PdfReportViewer() {
         <Pressable
           accessibilityRole="button"
           accessibilityLabel="Compartir reporte PDF con tu médico"
-          disabled={sharing}
+          disabled={sharing || !shareUri}
           onPress={handleShare}
           style={({ pressed }) => [
             styles.toolbarBtn,
             styles.shareBtn,
             pressed && styles.pressed,
-            sharing && styles.disabled,
+            (sharing || !shareUri) && styles.disabled,
           ]}
         >
           <Feather name="share-2" size={18} color={appTheme.colors.primary} />
@@ -224,18 +318,18 @@ export function PdfReportViewer() {
       </View>
 
       {/* Controles de navegación de página y zoom accesibles en modo visual */}
-      {!loading && pdfJsHtml ? (
+      {showControls ? (
         <View style={styles.viewerControls}>
           <View style={styles.controlGroup}>
             <Pressable
               accessibilityRole="button"
               accessibilityLabel="Página anterior"
-              disabled={currentPage <= 1}
+              disabled={!controlsReady || currentPage <= 1}
               onPress={handlePrevPage}
               style={({ pressed }) => [
                 styles.navBtn,
                 pressed && styles.pressed,
-                currentPage <= 1 && styles.disabled,
+                (!controlsReady || currentPage <= 1) && styles.disabled,
               ]}
             >
               <Feather name="chevron-left" size={18} color={appTheme.colors.text} />
@@ -248,12 +342,12 @@ export function PdfReportViewer() {
             <Pressable
               accessibilityRole="button"
               accessibilityLabel="Página siguiente"
-              disabled={currentPage >= totalPages}
+              disabled={!controlsReady || currentPage >= totalPages}
               onPress={handleNextPage}
               style={({ pressed }) => [
                 styles.navBtn,
                 pressed && styles.pressed,
-                currentPage >= totalPages && styles.disabled,
+                (!controlsReady || currentPage >= totalPages) && styles.disabled,
               ]}
             >
               <Feather name="chevron-right" size={18} color={appTheme.colors.text} />
@@ -264,8 +358,13 @@ export function PdfReportViewer() {
             <Pressable
               accessibilityRole="button"
               accessibilityLabel="Reducir zoom"
+              disabled={!controlsReady}
               onPress={handleZoomOut}
-              style={({ pressed }) => [styles.navBtn, pressed && styles.pressed]}
+              style={({ pressed }) => [
+                styles.navBtn,
+                pressed && styles.pressed,
+                !controlsReady && styles.disabled,
+              ]}
             >
               <Feather name="minus" size={16} color={appTheme.colors.text} />
             </Pressable>
@@ -275,8 +374,13 @@ export function PdfReportViewer() {
             <Pressable
               accessibilityRole="button"
               accessibilityLabel="Aumentar zoom"
+              disabled={!controlsReady}
               onPress={handleZoomIn}
-              style={({ pressed }) => [styles.navBtn, pressed && styles.pressed]}
+              style={({ pressed }) => [
+                styles.navBtn,
+                pressed && styles.pressed,
+                !controlsReady && styles.disabled,
+              ]}
             >
               <Feather name="plus" size={16} color={appTheme.colors.text} />
             </Pressable>
@@ -284,8 +388,13 @@ export function PdfReportViewer() {
             <Pressable
               accessibilityRole="button"
               accessibilityLabel="Ajustar zoom al 100%"
+              disabled={!controlsReady}
               onPress={handleResetZoom}
-              style={({ pressed }) => [styles.resetBtn, pressed && styles.pressed]}
+              style={({ pressed }) => [
+                styles.resetBtn,
+                pressed && styles.pressed,
+                !controlsReady && styles.disabled,
+              ]}
             >
               <Text style={styles.resetBtnText}>Ajustar</Text>
             </Pressable>
@@ -322,23 +431,43 @@ export function PdfReportViewer() {
               allowUniversalAccessFromFileURLs
               onMessage={handleWebViewMessage}
             />
-          ) : (
+          ) : null}
+          {pdfJsHtml && usingShell && !docRendered ? (
+            <View style={styles.generatingOverlay} accessibilityLiveRegion="polite">
+              <ActivityIndicator size="large" color={appTheme.colors.primary} />
+              <BodyText style={{ marginTop: 12, textAlign: 'center' }}>
+                {jobState === 'ready' ? 'Abriendo el reporte PDF…' : 'Generando el reporte PDF…'}
+              </BodyText>
+            </View>
+          ) : null}
+          {pdfJsHtml ? null : (
             <ScrollView
               contentContainerStyle={[styles.centerContainer, { flexGrow: 1, flex: undefined }]}
             >
               <Feather name="alert-triangle" size={48} color={appTheme.colors.warning} />
               <Text style={styles.errorTitle}>
-                No se pudo abrir el archivo PDF original en el visor integrado
+                {jobState === 'failed'
+                  ? 'No se pudo generar el reporte PDF'
+                  : 'No se pudo abrir el archivo PDF original en el visor integrado'}
               </Text>
               <BodyText style={{ marginTop: 8, textAlign: 'center' }}>
                 {fileError ??
                   'No fue posible leer o descifrar el documento PDF guardado en este dispositivo.'}
               </BodyText>
               <View style={{ marginTop: 16, width: '100%', gap: theme.spacing.sm }}>
-                <VisualButton
-                  label="Reintentar lectura"
-                  onPress={() => setRetryCount((c) => c + 1)}
-                />
+                {jobState === 'failed' ? (
+                  <VisualButton label="Volver a Mis reportes" onPress={() => router.back()} />
+                ) : (
+                  <VisualButton
+                    label="Reintentar lectura"
+                    onPress={() => {
+                      setViewerFailed(false);
+                      // Tras un fallo del visor, el reporte recién generado se relee del archivo.
+                      if (jobId && resolvedUri) setSourceUri(resolvedUri);
+                      setRetryCount((c) => c + 1);
+                    }}
+                  />
+                )}
               </View>
             </ScrollView>
           )}
@@ -474,6 +603,17 @@ function createStyles(colors: ReturnType<typeof useAppTheme>['theme']['colors'])
       color: colors.text,
       textAlign: 'center',
       marginTop: 12,
+    },
+    generatingOverlay: {
+      position: 'absolute',
+      top: 0,
+      right: 0,
+      bottom: 0,
+      left: 0,
+      alignItems: 'center',
+      justifyContent: 'center',
+      padding: theme.spacing.lg,
+      backgroundColor: colors.surface,
     },
     webViewContainer: {
       flex: 1,

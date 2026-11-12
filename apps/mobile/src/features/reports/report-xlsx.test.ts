@@ -433,3 +433,34 @@ beforeEach(() => {
   });
   return release;
 });
+
+describe('exportador Excel: datos ausentes y capturas ePRO sin respuestas', () => {
+  const textos = (wb: XLSX.WorkBook, hoja: string) =>
+    XLSX.utils.sheet_to_json<string[]>(wb.Sheets[hoja]!, { header: 1 }).flat().map(String);
+
+  it('sin perfil, tratamiento, dolor ni ePRO usa los textos de respaldo', () => {
+    const wb = buildReportWorkbook(
+      createMockReportData({
+        profile: null,
+        treatment: null,
+        epro: undefined,
+        summary: { ...createMockReportData().summary, avgPain: undefined },
+      } as unknown as Partial<ReportData>),
+    );
+    const resumen = textos(wb, 'Resumen');
+    expect(resumen).toContain('Paciente en seguimiento');
+    expect(resumen).toContain('Sin registrar');
+    expect(resumen).toContain('En seguimiento oncológico');
+    expect(textos(wb, 'Seguimientos ePRO')).toContain(
+      'No hay seguimientos ePRO en el período. Los borradores no se incluyen.',
+    );
+  });
+
+  it('una captura sin respuestas se informa con una fila explícita', () => {
+    const base = createMockReportData();
+    const wb = buildReportWorkbook(
+      createMockReportData({ epro: [{ ...base.epro![0]!, answers: [] }] }),
+    );
+    expect(textos(wb, 'Seguimientos ePRO')).toContain('Sin respuestas disponibles');
+  });
+});

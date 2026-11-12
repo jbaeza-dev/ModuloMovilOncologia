@@ -1054,6 +1054,80 @@ describe('Incremento 6: UI de Acceso, Navegación Raíz, Sesión y Asistente', (
         ),
       ).toBeTruthy();
     });
+
+    describe('RNF-08: aviso permanente en todos los estados del asistente', () => {
+      const aviso = 'Orientación educativa. No reemplaza a tu equipo de salud.';
+
+      async function montarAsistente() {
+        let contextRef = {} as LocalDataContext;
+        await render(
+          <LocalDataProvider>
+            <AssistantScreen />
+            <ContextConsumer onReady={(ctx) => (contextRef = ctx)} />
+          </LocalDataProvider>,
+        );
+        await waitFor(() => {
+          expect(contextRef.assistantController).toBeTruthy();
+        });
+        return () => contextRef;
+      }
+
+      it('muestra el aviso con el servicio no configurado', async () => {
+        const contexto = await montarAsistente();
+        await act(async () => {
+          contexto().assistantController?.setAdapter(new UnconfiguredAssistantAdapter());
+        });
+        expect(await screen.findByText('Servicio no configurado')).toBeOnTheScreen();
+        expect(screen.getByText(aviso)).toBeOnTheScreen();
+      });
+
+      it('muestra el aviso en la conversación vacía', async () => {
+        await montarAsistente();
+        expect(await screen.findByText('0 / 2000')).toBeOnTheScreen();
+        expect(screen.getByText(aviso)).toBeOnTheScreen();
+      });
+
+      it('muestra el aviso mientras procesa una consulta', async () => {
+        const contexto = await montarAsistente();
+        await act(async () => {
+          contexto().assistantController?.setAdapter(
+            new FakeAssistantAdapter({ simulatedDelayMs: 4000 }),
+          );
+        });
+        await fireEvent.changeText(screen.getByLabelText('Escribe tu consulta'), 'consulta');
+        await fireEvent.press(screen.getByText('Enviar consulta'));
+        expect(
+          await screen.findAllByLabelText('El asistente está escribiendo una respuesta'),
+        ).toBeTruthy();
+        expect(screen.getByText(aviso)).toBeOnTheScreen();
+      });
+
+      it('muestra el aviso junto a una respuesta normal', async () => {
+        const contexto = await montarAsistente();
+        await act(async () => {
+          contexto().assistantController?.setAdapter(
+            new FakeAssistantAdapter({ simulatedDelayMs: 10, customReply: 'Respuesta sintética' }),
+          );
+        });
+        await fireEvent.changeText(screen.getByLabelText('Escribe tu consulta'), 'consulta');
+        await fireEvent.press(screen.getByText('Enviar consulta'));
+        expect(await screen.findByLabelText('Asistente: Respuesta sintética')).toBeOnTheScreen();
+        expect(screen.getByText(aviso)).toBeOnTheScreen();
+      });
+
+      it('muestra el aviso sin conexión', async () => {
+        const contexto = await montarAsistente();
+        await act(async () => {
+          contexto().assistantController?.setAdapter(
+            new FakeAssistantAdapter({ shouldSimulateOffline: true }),
+          );
+        });
+        await fireEvent.changeText(screen.getByLabelText('Escribe tu consulta'), 'consulta');
+        await fireEvent.press(screen.getByText('Enviar consulta'));
+        expect(await screen.findByText('Sin conexión')).toBeOnTheScreen();
+        expect(screen.getByText(aviso)).toBeOnTheScreen();
+      });
+    });
   });
 
   describe('Cierre por session_required con SQLite abierto (Punto 1)', () => {

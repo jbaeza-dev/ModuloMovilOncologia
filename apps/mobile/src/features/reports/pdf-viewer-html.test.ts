@@ -56,3 +56,74 @@ it('fits the actual PDF page to the viewport and allows zoom and refitting after
   await flush();
   expect(messages.at(-1)?.current).toBe(2);
 });
+
+it('sin PDF prepara pdf.js y su worker, avisa READY y abre el documento al recibirlo', async () => {
+  const messages: Array<{ type: string; total?: number }> = [];
+  const canvas = {
+    width: 0,
+    height: 0,
+    style: {} as Record<string, string>,
+    getContext: () => ({}),
+  };
+  const status = { style: {} as Record<string, string>, innerText: '' };
+  const elements = { 'pdf-canvas': canvas, 'status-msg': status, 'page-box': { style: {} } };
+  const page = {
+    getViewport: ({ scale }: { scale: number }) => ({ width: 600 * scale, height: 800 * scale }),
+    render: () => ({ promise: Promise.resolve() }),
+  };
+  const getDocument = vi.fn().mockReturnValue({
+    promise: Promise.resolve({ numPages: 4, getPage: async () => page }),
+  });
+  class PDFWorker {
+    constructor(public options: unknown) {}
+  }
+  const window: Record<string, unknown> = {
+    innerWidth: 360,
+    devicePixelRatio: 2,
+    ReactNativeWebView: { postMessage: (value: string) => messages.push(JSON.parse(value)) },
+    addEventListener: () => undefined,
+  };
+  const html = buildPdfJsHtml();
+  expect(html).toContain('Generando el reporte PDF…');
+  const script = html.match(/<script>\s*([\s\S]*?)<\/script>/)![1];
+  runInNewContext(script, {
+    window,
+    document: { getElementById: (id: keyof typeof elements) => elements[id] },
+    atob: (text: string) => Buffer.from(text, 'base64').toString('binary'),
+    pdfjsLib: { GlobalWorkerOptions: {}, getDocument, PDFWorker },
+  });
+  expect(messages).toEqual([{ type: 'READY' }]);
+  expect(getDocument).not.toHaveBeenCalled();
+  (window.qcLoadPdf as (b64: string) => void)('JVBERi0=');
+  for (let n = 0; n < 8; n++) await Promise.resolve();
+  expect(getDocument.mock.calls[0][0].worker).toBeInstanceOf(PDFWorker);
+  expect(getDocument.mock.calls[0][0].data).toBe('%PDF-');
+  expect(messages.at(-1)).toMatchObject({ type: 'PAGE_UPDATE', total: 4, rendered: true });
+});
+
+it('informa un PDF que no se puede abrir', async () => {
+  const messages: Array<{ type: string }> = [];
+  const status = { style: {}, innerText: '' };
+  const html = buildPdfJsHtml();
+  const script = html.match(/<script>\s*([\s\S]*?)<\/script>/)![1];
+  const window: Record<string, unknown> = {
+    ReactNativeWebView: { postMessage: (value: string) => messages.push(JSON.parse(value)) },
+    addEventListener: () => undefined,
+  };
+  runInNewContext(script, {
+    window,
+    document: {
+      getElementById: (id: string) =>
+        id === 'status-msg' ? status : { getContext: () => ({}), style: {} },
+    },
+    atob: (text: string) => text,
+    pdfjsLib: {
+      GlobalWorkerOptions: {},
+      getDocument: () => ({ promise: Promise.reject(new Error('dañado')) }),
+    },
+  });
+  (window.qcLoadPdf as (b64: string) => void)('x');
+  for (let n = 0; n < 4; n++) await Promise.resolve();
+  expect(messages.at(-1)).toMatchObject({ type: 'ERROR' });
+  expect(status.innerText).toBe('No se pudo abrir este PDF. Vuelve a intentarlo.');
+});
