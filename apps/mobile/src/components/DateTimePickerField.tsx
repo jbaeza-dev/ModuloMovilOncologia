@@ -354,11 +354,14 @@ function useStyles() {
       fontSize: 17,
       fontWeight: '700',
       color: colors.text,
+      // Sin flexShrink, con letra grande el texto no salta de línea y se monta sobre «Cambiar».
+      flexShrink: 1,
     },
     changeActionText: {
       fontSize: 14,
       fontWeight: '700',
       color: colors.primary,
+      flexShrink: 0,
     },
     keyboardToggle: {
       minHeight: 48,

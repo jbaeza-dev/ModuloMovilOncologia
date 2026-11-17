@@ -47,8 +47,7 @@ export function handleHomeTabPress(navigation: {
 export default function TabsLayout() {
   const { theme: appTheme } = useAppTheme();
   const insets = useSafeAreaInsets();
-  const { width, fontScale } = useWindowDimensions();
-  const compactLabels = width < 400 && fontScale >= 1.2;
+  const { fontScale } = useWindowDimensions();
   const tabHeight = 76 + 56 * Math.max(0, fontScale - 1) + insets.bottom;
 
   const styles = StyleSheet.create({
@@ -81,13 +80,16 @@ export default function TabsLayout() {
             tabBarActiveBackgroundColor: appTheme.colors.primaryContainer,
             tabBarLabelPosition: 'below-icon',
             tabBarAllowFontScaling: true,
+            // Una sola línea que se achica lo justo para caber: con letra grande, cortar a mitad de
+            // palabra («Medicion/es», «Formu/lario») dificultaba la lectura.
             tabBarLabel: ({ color, children }) => (
-              <Text numberOfLines={2} style={[styles.label, { color }]}>
-                {compactLabels && children === 'Formulario'
-                  ? 'Formu\nlario'
-                  : compactLabels && children === 'Educación'
-                    ? 'Educa\nción'
-                    : children}
+              <Text
+                numberOfLines={1}
+                adjustsFontSizeToFit
+                minimumFontScale={0.7}
+                style={[styles.label, { color }]}
+              >
+                {children}
               </Text>
             ),
             tabBarItemStyle: styles.item,

@@ -378,6 +378,8 @@ const alarmStyles = StyleSheet.create({
   },
   daysRow: {
     flexDirection: 'row',
+    // Con letra grande los 7 días no caben en una línea; sin wrap el último quedaba cortado.
+    flexWrap: 'wrap',
     gap: 6,
     marginTop: 4,
   },
