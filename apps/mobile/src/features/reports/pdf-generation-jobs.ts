@@ -16,6 +16,53 @@ interface PdfJob {
   promise: Promise<PdfJobResult>;
 }
 
+/**
+ * Límite de cada intento de impresión con expo-print. En Android, la primera impresión después
+ * de instalar la app puede no responder nunca (Redmi 13C, Android 14: se reprodujo 2 veces, y
+ * los intentos siguientes funcionaron). Sin límite, el visor quedaba en «Generando el reporte
+ * PDF…» y el botón de generar seguía bloqueado hasta reiniciar la app. Las generaciones medidas
+ * tardaron menos de 1,3 s.
+ */
+export const PDF_PRINT_TIMEOUT_MS = 15_000;
+/** Intentos de impresión: se reintenta solo cuando el intento anterior no respondió. */
+export const PDF_PRINT_ATTEMPTS = 2;
+
+export class TimeoutError extends Error {}
+
+/** Rechaza con `TimeoutError(message)` si `promise` no termina en `ms` milisegundos. */
+export function withTimeout<T>(promise: Promise<T>, ms: number, message: string): Promise<T> {
+  return new Promise<T>((resolve, reject) => {
+    const timer = setTimeout(() => reject(new TimeoutError(message)), ms);
+    promise.then(
+      (value) => {
+        clearTimeout(timer);
+        resolve(value);
+      },
+      (error: unknown) => {
+        clearTimeout(timer);
+        reject(error);
+      },
+    );
+  });
+}
+
+/**
+ * Ejecuta `run` con límite de tiempo y lo repite solo si no respondió; cualquier otro error se
+ * entrega de inmediato. Tras el último intento sin respuesta, rechaza con `TimeoutError`.
+ */
+export async function retryOnTimeout<T>(
+  run: () => Promise<T>,
+  { attempts, timeoutMs, message }: { attempts: number; timeoutMs: number; message: string },
+): Promise<T> {
+  for (let attempt = 1; ; attempt++) {
+    try {
+      return await withTimeout(run(), timeoutMs, message);
+    } catch (error) {
+      if (!(error instanceof TimeoutError) || attempt >= attempts) throw error;
+    }
+  }
+}
+
 const MAX_JOBS = 3;
 const jobs = new Map<string, PdfJob>();
 let sequence = 0;
