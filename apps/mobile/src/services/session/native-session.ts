@@ -13,6 +13,7 @@ import { HttpSessionAdapter } from './http-session-adapter';
 import { UnconfiguredSessionAdapter } from './unconfigured-session-adapter';
 import { SessionFailure } from './http-session-types';
 import { DeviceClient } from './device-client';
+import { shouldRequestNotificationPermission } from './notification-permission';
 
 export function nativeVault(scope: string): CredentialVault {
   const namespace = Crypto.digestStringAsync(Crypto.CryptoDigestAlgorithm.SHA256, scope).then(
@@ -102,14 +103,24 @@ async function getOrCreateInstallationId(): Promise<string> {
 export function createDeviceClient(session: HttpSessionAdapter) {
   return new DeviceClient(session);
 }
-export async function registerNativePush(devices: DeviceClient) {
+/**
+ * Registra este teléfono para recibir push. Solo muestra el diálogo de permiso la primera vez o si
+ * `userInitiated` es true (un botón); las llamadas automáticas solo consultan el permiso.
+ */
+export async function registerNativePush(
+  devices: DeviceClient,
+  { userInitiated = false }: { userInitiated?: boolean } = {},
+) {
   const context = devices.captureContext();
   if (Platform.OS !== 'android') throw new SessionFailure('invalid');
   await Notifications.setNotificationChannelAsync('quimiocare', {
     name: 'QuimioCare',
     importance: Notifications.AndroidImportance.DEFAULT,
   });
-  const permission = await Notifications.requestPermissionsAsync();
+  const current = await Notifications.getPermissionsAsync();
+  const permission = shouldRequestNotificationPermission(current, userInitiated)
+    ? await Notifications.requestPermissionsAsync()
+    : current;
   if (!permission.granted)
     throw new Error(
       'El permiso de notificaciones está desactivado. Puedes seguir usando tus datos locales.',

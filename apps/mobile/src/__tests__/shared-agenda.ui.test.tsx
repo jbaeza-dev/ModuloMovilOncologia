@@ -19,6 +19,7 @@ import type { GatewayRecordatorio } from '@quimiocare/contracts';
 import { SharedAgendaScreen } from '../features/reminders/SharedAgendaScreen';
 import { SharedAgendaEditScreen } from '../features/reminders/SharedAgendaEditScreen';
 import { ThemeProvider } from '../providers/ThemeProvider';
+import { registerNativePush } from '../services/session/native-session';
 const mockPush = jest.fn(),
   mockBack = jest.fn(),
   mockParams: Record<string, string> = {};
@@ -214,6 +215,28 @@ describe('Agenda compartida: interfaz confirmada', () => {
     );
     await waitFor(() => expect(screen.getByText('Mi registro diario')).toBeTruthy());
     expect(screen.queryByText('Avisos desactivados en este teléfono')).toBeNull();
+  });
+  // El botón es una acción explícita: puede volver a pedir el permiso. Los registros automáticos no
+  // (pedirlo con el permiso concedido generaba un bucle de primer plano en Android 14).
+  it('«Activar notificaciones en este teléfono» registra el teléfono como acción de la persona', async () => {
+    const devices = {};
+    (mockData as { devices: unknown }).devices = devices;
+    try {
+      await render(
+        <ThemeProvider>
+          <SharedAgendaScreen />
+        </ThemeProvider>,
+      );
+      await waitFor(() => expect(screen.getByText('Mi registro diario')).toBeTruthy());
+      await fireEvent.press(
+        screen.getByRole('button', { name: 'Activar notificaciones en este teléfono' }),
+      );
+      await waitFor(() =>
+        expect(registerNativePush).toHaveBeenCalledWith(devices, { userInitiated: true }),
+      );
+    } finally {
+      (mockData as { devices: unknown }).devices = null;
+    }
   });
   // Caso real del Redmi 13C (prueba 1b): si el permiso se rechaza al instalar, el teléfono no llega a
   // asociarse al servidor y no existe coordinador ni cobertura; el aviso debe aparecer igual.
