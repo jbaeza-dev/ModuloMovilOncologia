@@ -39,7 +39,9 @@ export class ExpoAgendaNotifications implements AgendaNotifications {
       content: {
         ...reminderNotificationCopy(kind),
         data: data as unknown as Record<string, unknown>,
-        sound: false,
+        // Con false, expo-notifications marca el aviso como silencioso y Android ignora el sonido
+        // del canal; con true suena y vibra según el canal «Recordatorios de QuimioCare».
+        sound: true,
       },
       trigger: at
         ? {

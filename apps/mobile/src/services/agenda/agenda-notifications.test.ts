@@ -49,7 +49,8 @@ describe('avisos nativos de la agenda', () => {
       trigger: { type: string; date: Date; channelId: string };
     };
     expect(req.content.title).toBe(reminderNotificationCopy('signos').title);
-    expect(req.content.sound).toBe(false);
+    // El aviso debe sonar: con sound=false el teléfono lo mostraba en silencio (Redmi 13C, Android 14).
+    expect(req.content.sound).toBe(true);
     expect(req.trigger).toEqual({
       type: 'date',
       date: new Date('2026-11-05T12:00:00.000Z'),
