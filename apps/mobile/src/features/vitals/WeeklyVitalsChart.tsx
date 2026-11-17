@@ -574,6 +574,10 @@ export function WeeklyVitalsChart({ records }: WeeklyVitalsChartProps) {
                   <Text
                     key={`valor-${day.dateIso}`}
                     numberOfLines={1}
+                    // La etiqueta es visual (el valor se lee en la columna accesible y en la tabla);
+                    // con letra grande se achica para caber en vez de cortarse con «…».
+                    adjustsFontSizeToFit
+                    minimumFontScale={0.6}
                     style={[
                       styles.pointLabel,
                       {
@@ -881,7 +885,9 @@ function createStyles(colors: ReturnType<typeof useAppTheme>['theme']['colors'])
     },
     dayColumn: {
       flex: 1,
-      minWidth: 48,
+      // 7 columnas de 48 no caben en teléfonos de 360 dp (Redmi 13C) y «Hoy» quedaba fuera de la
+      // tarjeta; 44 dp sigue cumpliendo el tamaño de objetivo táctil de WCAG 2.5.5.
+      minWidth: 44,
       height: '100%',
       justifyContent: 'flex-end',
       alignItems: 'center',
