@@ -374,6 +374,7 @@ import { AssistantScreen } from '../features/assistant/AssistantScreen';
 import { AppNavigator } from '../app/_layout';
 import { LocalDataProvider, DEMO_PATIENTS, useLocalData } from '../providers/LocalDataProvider';
 import { activateNativeAgenda } from '../services/agenda/native-agenda';
+import { createDeviceClient, registerNativePush } from '../services/session/native-session';
 import { FakeAssistantAdapter } from '../services/assistant/fake-assistant-adapter';
 import { UnconfiguredSessionAdapter } from '../services/session/unconfigured-session-adapter';
 import { UnconfiguredAssistantAdapter } from '../services/assistant/unconfigured-assistant-adapter';
@@ -508,6 +509,88 @@ describe('Incremento 6: UI de Acceso, Navegación Raíz, Sesión y Asistente', (
         cleanup();
         activate.mockImplementation(async () => null);
       }
+    });
+  });
+
+  // Caso real del Redmi 13C (prueba 1b): sin asociación aceptada, activar la agenda devolvía null y la
+  // agenda quedaba vacía, porque el registro push corría sin esperar y terminaba después.
+  describe('Agenda sin asociación del teléfono', () => {
+    const coverage = {
+      permission: true,
+      confirmed: 0,
+      wanted: 0,
+      truncated: 0,
+      until: null,
+      pendingCancellations: 0,
+      nativeIds: [],
+      horizonEndsAt: '2026-11-12T00:00:00Z',
+      checkedAt: '2026-11-05T00:00:00Z',
+    };
+    const runtime = () =>
+      ({
+        coordinator: { reconcile: jest.fn(async () => coverage), coverage: async () => coverage },
+        taskRegistered: true,
+        dispose: jest.fn(),
+      }) as unknown as Awaited<ReturnType<typeof activateNativeAgenda>>;
+    const renderWithDevices = async () => {
+      jest.mocked(createDeviceClient).mockReturnValue({} as ReturnType<typeof createDeviceClient>);
+      jest.mocked(registerNativePush).mockResolvedValue({} as never);
+      const holder = { current: null as LocalDataContext | null };
+      await render(
+        <LocalDataProvider>
+          <ContextConsumer
+            onReady={(ctx) => {
+              holder.current = ctx;
+            }}
+          />
+        </LocalDataProvider>,
+      );
+      await waitFor(() => expect(holder.current).toBeTruthy());
+      await act(async () => holder.current!.selectPatient(DEMO_PATIENTS[0].id));
+      await waitFor(() => expect(holder.current?.clinicalStore).toBeTruthy());
+      return holder;
+    };
+    afterEach(() => {
+      jest.mocked(activateNativeAgenda).mockImplementation(async () => null);
+      jest.mocked(registerNativePush).mockReset();
+      jest.mocked(createDeviceClient).mockReset();
+    });
+
+    it('espera el registro push y vuelve a activar la agenda cuando aún no había asociación', async () => {
+      const activate = jest.mocked(activateNativeAgenda);
+      const holder = await renderWithDevices();
+      await act(async () => {
+        await holder.current!.prepareAgenda!();
+      });
+      activate.mockClear();
+      jest.mocked(registerNativePush).mockClear();
+      const ready = runtime();
+      activate.mockResolvedValueOnce(null).mockResolvedValueOnce(ready);
+      jest.mocked(registerNativePush).mockResolvedValue({} as never);
+      await act(async () => {
+        await holder.current!.prepareAgenda!();
+      });
+      expect(registerNativePush).toHaveBeenCalledTimes(1);
+      expect(activate).toHaveBeenCalledTimes(2);
+      await waitFor(() => expect(holder.current!.agendaCoordinator).toBe(ready!.coordinator));
+    });
+
+    it('con el permiso rechazado no reintenta la activación y la agenda queda sin coordinador', async () => {
+      const activate = jest.mocked(activateNativeAgenda);
+      const holder = await renderWithDevices();
+      await act(async () => {
+        await holder.current!.prepareAgenda!();
+      });
+      activate.mockClear();
+      activate.mockResolvedValue(null);
+      jest
+        .mocked(registerNativePush)
+        .mockRejectedValue(new Error('El permiso de notificaciones está desactivado.'));
+      await act(async () => {
+        await holder.current!.prepareAgenda!();
+      });
+      expect(activate).toHaveBeenCalledTimes(1);
+      expect(holder.current!.agendaCoordinator).toBeNull();
     });
   });
 
