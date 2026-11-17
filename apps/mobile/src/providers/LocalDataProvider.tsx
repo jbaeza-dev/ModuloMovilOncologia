@@ -315,10 +315,21 @@ export function LocalDataProvider({ children }: { children: ReactNode }) {
         }
         return;
       }
+      let runtime = await runtimePromise;
       if (devices) {
-        void registerNativePush(devices).catch(() => undefined);
+        if (runtime) {
+          // La asociación ya fue aceptada: se refresca el token push sin demorar la agenda.
+          void registerNativePush(devices).catch(() => undefined);
+        } else {
+          // Sin asociación aceptada no hay coordinador. Se espera el registro (que también pide el
+          // permiso) y se vuelve a activar; si no, la agenda queda vacía hasta otra actualización.
+          const registered = await registerNativePush(devices).then(
+            () => true,
+            () => false,
+          );
+          if (registered) runtime = await activateNativeAgenda(identitySession, clinicalStore);
+        }
       }
-      const runtime = await runtimePromise;
       if (
         clinicalStore.closed ||
         identitySession.getCurrentUser()?.id !== clinicalStore.scope.owner ||

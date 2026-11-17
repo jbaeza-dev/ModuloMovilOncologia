@@ -22,12 +22,16 @@ export function SharedAgendaScreen() {
       prepareAgenda,
       agendaBackgroundReady,
       trackOperation,
+      notificationAdapter,
       remindersRevision = 0,
     } = useLocalData(),
     { theme } = useAppTheme();
   const [rules, setRules] = useState<GatewayRecordatorio[]>([]),
     [pending, setPending] = useState<AgendaIntent[]>([]),
     [coverage, setCoverage] = useState<AgendaCoverage | null>(null),
+    // Permiso leído directamente de Android: no depende de que el teléfono ya esté asociado al
+    // servidor, que es cuando existe la cobertura de la agenda.
+    [deviceBlocked, setDeviceBlocked] = useState(false),
     [lastSync, setLastSync] = useState<string | null>(null),
     [error, setError] = useState<string | null>(null),
     [busy, setBusy] = useState(false);
@@ -62,7 +66,12 @@ export function SharedAgendaScreen() {
     const nextCoverage = (await agendaCoordinator?.coverage()) ?? null;
     if (!isCurrent()) return;
     setCoverage(nextCoverage);
-  }, [agenda, agendaCoordinator]);
+    const permission = await notificationAdapter?.getPermissionState().catch(() => null);
+    if (!isCurrent()) return;
+    setDeviceBlocked(
+      !!permission && (permission.status === 'denied' || permission.channelStatus === 'blocked'),
+    );
+  }, [agenda, agendaCoordinator, notificationAdapter]);
   useEffect(() => {
     void load().catch(() => undefined);
   }, [load, remindersRevision]);
@@ -124,7 +133,7 @@ export function SharedAgendaScreen() {
           {error}
         </Text>
       )}
-      {coverage && !coverage.permission && (
+      {((coverage && !coverage.permission) || deviceBlocked) && (
         <InfoCard>
           <Text
             accessibilityRole="alert"
