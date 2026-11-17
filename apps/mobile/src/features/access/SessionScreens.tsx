@@ -488,7 +488,7 @@ export function DevicesScreen() {
       <VisualButton
         label="Registrar este teléfono para push"
         disabled={!data?.devices || busy}
-        onPress={() => void act(() => registerNativePush(data!.devices!))}
+        onPress={() => void act(() => registerNativePush(data!.devices!, { userInitiated: true }))}
       />
       <VisualButton
         label="Actualizar dispositivos"

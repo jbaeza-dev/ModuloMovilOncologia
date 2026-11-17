@@ -332,7 +332,7 @@ export function SharedAgendaScreen() {
           disabled={busy || !devices}
           onPress={() =>
             void act(async () => {
-              if (devices) await registerNativePush(devices);
+              if (devices) await registerNativePush(devices, { userInitiated: true });
               await prepareAgenda?.();
               await reconcileReminders();
             })
