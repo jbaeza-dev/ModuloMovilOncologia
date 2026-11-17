@@ -62,6 +62,7 @@ const rule: GatewayRecordatorio = {
   respaldo_segundos: 120,
 };
 let mockPermission = true;
+const mockPermissionState = jest.fn();
 const mockRead = jest.fn(),
   mockSave = jest.fn(),
   mockIntents = jest.fn(),
@@ -88,10 +89,18 @@ const mockData = {
   reconcileReminders: mockRefresh,
   trackOperation: async (work: () => Promise<unknown>) => work(),
   devices: null,
+  notificationAdapter: { getPermissionState: mockPermissionState },
 };
+const coordinatorWithCoverage = mockData.agendaCoordinator;
 beforeEach(() => {
   jest.clearAllMocks();
   mockPermission = true;
+  mockPermissionState.mockResolvedValue({
+    status: 'granted',
+    canAskAgain: true,
+    channelStatus: 'ok',
+  });
+  (mockData as { agendaCoordinator: unknown }).agendaCoordinator = coordinatorWithCoverage;
   mockMedications = [];
   for (const key of Object.keys(mockParams)) delete mockParams[key];
   mockRead.mockResolvedValue({ rules: [rule], state: { synchronized_at: '2026-10-29T12:00:00Z' } });
@@ -204,6 +213,48 @@ describe('Agenda compartida: interfaz confirmada', () => {
       </ThemeProvider>,
     );
     await waitFor(() => expect(screen.getByText('Mi registro diario')).toBeTruthy());
+    expect(screen.queryByText('Avisos desactivados en este teléfono')).toBeNull();
+  });
+  // Caso real del Redmi 13C (prueba 1b): si el permiso se rechaza al instalar, el teléfono no llega a
+  // asociarse al servidor y no existe coordinador ni cobertura; el aviso debe aparecer igual.
+  it('sin coordinador de agenda, con el permiso rechazado en Android, muestra el aviso', async () => {
+    (mockData as { agendaCoordinator: unknown }).agendaCoordinator = null;
+    mockPermissionState.mockResolvedValue({
+      status: 'denied',
+      canAskAgain: false,
+      channelStatus: 'ok',
+    });
+    await render(
+      <ThemeProvider>
+        <SharedAgendaScreen />
+      </ThemeProvider>,
+    );
+    expect(await screen.findByText('Avisos desactivados en este teléfono')).toBeTruthy();
+    expect(screen.getByRole('button', { name: 'Abrir Ajustes de Android' })).toBeTruthy();
+  });
+  it('sin coordinador de agenda, con el canal de avisos bloqueado, muestra el aviso', async () => {
+    (mockData as { agendaCoordinator: unknown }).agendaCoordinator = null;
+    mockPermissionState.mockResolvedValue({
+      status: 'granted',
+      canAskAgain: true,
+      channelStatus: 'blocked',
+    });
+    await render(
+      <ThemeProvider>
+        <SharedAgendaScreen />
+      </ThemeProvider>,
+    );
+    expect(await screen.findByText('Avisos desactivados en este teléfono')).toBeTruthy();
+  });
+  it('sin coordinador de agenda y con permiso concedido no muestra el aviso', async () => {
+    (mockData as { agendaCoordinator: unknown }).agendaCoordinator = null;
+    await render(
+      <ThemeProvider>
+        <SharedAgendaScreen />
+      </ThemeProvider>,
+    );
+    await waitFor(() => expect(screen.getByText('Mi registro diario')).toBeTruthy());
+    await waitFor(() => expect(mockPermissionState).toHaveBeenCalled());
     expect(screen.queryByText('Avisos desactivados en este teléfono')).toBeNull();
   });
   it('al volver a la app revisa otra vez la agenda y el permiso', async () => {
