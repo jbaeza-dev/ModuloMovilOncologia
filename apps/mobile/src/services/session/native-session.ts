@@ -103,9 +103,13 @@ async function getOrCreateInstallationId(): Promise<string> {
 export function createDeviceClient(session: HttpSessionAdapter) {
   return new DeviceClient(session);
 }
+// El registro automático pide el permiso como máximo una vez por apertura de la app.
+let autoPermissionRequested = false;
+
 /**
- * Registra este teléfono para recibir push. Solo muestra el diálogo de permiso la primera vez o si
- * `userInitiated` es true (un botón); las llamadas automáticas solo consultan el permiso.
+ * Registra este teléfono para recibir push. Si falta el permiso, el registro automático lo pide una
+ * sola vez por apertura de la app; con `userInitiated` (un botón) se pide siempre que Android lo
+ * permita. Las demás llamadas automáticas solo consultan el permiso.
  */
 export async function registerNativePush(
   devices: DeviceClient,
@@ -118,9 +122,10 @@ export async function registerNativePush(
     importance: Notifications.AndroidImportance.DEFAULT,
   });
   const current = await Notifications.getPermissionsAsync();
-  const permission = shouldRequestNotificationPermission(current, userInitiated)
-    ? await Notifications.requestPermissionsAsync()
-    : current;
+  const ask = shouldRequestNotificationPermission(current, userInitiated, autoPermissionRequested);
+  // Se marca antes de esperar: otro registro automático simultáneo ya no vuelve a pedirlo.
+  if (ask && !userInitiated) autoPermissionRequested = true;
+  const permission = ask ? await Notifications.requestPermissionsAsync() : current;
   if (!permission.granted)
     throw new Error(
       'El permiso de notificaciones está desactivado. Puedes seguir usando tus datos locales.',
