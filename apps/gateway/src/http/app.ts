@@ -17,6 +17,7 @@ import type { GatewayConfig } from '../config/index.js';
 import type { Database } from '../persistence/database.js';
 import { databaseReady } from '../persistence/migrations.js';
 import { errorEnvelope, GatewayError } from './errors.js';
+import { RateLimiter } from './rate-limit.js';
 import { createLogger, VERSION } from './logging.js';
 import type { Logger } from './logging.js';
 import { authenticator } from '../auth.js';
@@ -45,6 +46,14 @@ export function createApp(
   const deviceStore = devices(db, config.cursorKey);
   const agenda = agendaStore(db, config.agendaMaxReminders);
   const dependencies = dependencyClients(config, log);
+  // Límite por cuenta autenticada; el asistente tiene su propio límite, más estricto.
+  const operationLimiter = new RateLimiter(config.rateLimitPerMinute);
+  const aiLimiter = new RateLimiter(config.rateLimitAiPerMinute);
+  function enforceRateLimit(operation: OperationId, accountId: string) {
+    const result = (operation === 'G-06' ? aiLimiter : operationLimiter).take(accountId);
+    if (!result.allowed)
+      throw new GatewayError(429, 'LIMITE_DE_SOLICITUDES', result.retryAfterSeconds);
+  }
   async function verifyMedicationBinding(
     token: string,
     input: GatewayCrearRecordatorio | GatewayReemplazarRecordatorio,
@@ -155,7 +164,10 @@ export function createApp(
           }).valid
         )
           throw new GatewayError(422, 'DATOS_INVALIDOS');
-        const principal = await auth.authorize(req.headers.authorization);
+        // El límite se aplica con el JWT ya verificado y antes de consultar el perfil clínico.
+        const principal = await auth.authorize(req.headers.authorization, (verified) =>
+          enforceRateLimit(operation.id, verified.id),
+        );
         if (res.writableEnded || res.destroyed) return;
         let result: { status: number; body?: unknown };
         const query = parseQuery(operation.id, url.searchParams) as {
@@ -286,6 +298,7 @@ export function createApp(
     state.error = failure;
     if (state.operation === 'readiness')
       log({ event: 'dependency', dependency: 'database', state: 'unavailable' });
+    if (failure.retryAfterSeconds) res.set('retry-after', String(failure.retryAfterSeconds));
     res.status(failure.status).json(errorEnvelope(failure, state.requestId));
   };
   app.use(errors);

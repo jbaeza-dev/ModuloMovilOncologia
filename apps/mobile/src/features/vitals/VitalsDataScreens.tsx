@@ -466,7 +466,7 @@ export function RegisterVitalsDataScreen() {
       </PatientFieldRow>
       <PatientFieldRow>
         <VisualField
-          label="Pulso"
+          label="Pulso (lpm)"
           value={values.pulse}
           onChangeText={(p) => handleChange('pulse', p)}
           keyboardType="number-pad"
@@ -492,7 +492,7 @@ export function RegisterVitalsDataScreen() {
       </PatientFieldRow>
 
       <VisualField
-        label="Dolor ENA (0 a 10) *"
+        label="Dolor ENA (0 a 10)"
         value={values.pain}
         onChangeText={(text) => handleChange('pain', text)}
         keyboardType="number-pad"

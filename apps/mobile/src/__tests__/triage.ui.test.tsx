@@ -117,7 +117,7 @@ describe('orientación v0.5: flujo clínico activo y cambio de cuenta', () => {
     mockDemo = true;
     process.env.EXPO_PUBLIC_P07_SYNTHETIC_REVIEW = 'true';
     await beginReview();
-    await fireEvent.press(screen.getAllByRole('button', { name: 'Sí' })[0]);
+    await fireEvent.press(screen.getAllByRole('button', { name: /^Sí, / })[0]);
     expect(screen.getByText('Nivel A1 · Ayuda inmediata')).toBeTruthy();
     expect(screen.getByText(/se conservan las señales conocidas/)).toBeTruthy();
   });
@@ -132,10 +132,15 @@ describe('orientación v0.5: flujo clínico activo y cambio de cuenta', () => {
       await beginReview();
       await fireEvent.press(screen.getByRole('button', { name: 'Paciente' }));
       if (code === 'C') {
+        // Prueba 12 (TalkBack): cada respuesta nombra la pregunta, no solo «Sí», «No» o «No sé».
+        for (const answer of ['Sí', 'No', 'No sé'])
+          expect(
+            screen.getByRole('button', { name: `${answer}, ${questions[0].text}` }),
+          ).toBeTruthy();
         for (const question of questions) {
           await fireEvent.press(
             within(screen.getByLabelText(question.text)).getByRole('button', {
-              name: question.group === 'C' ? 'Sí' : 'No',
+              name: question.group === 'C' ? /^Sí, / : /^No, /,
             }),
           );
         }
@@ -151,7 +156,7 @@ describe('orientación v0.5: flujo clínico activo y cambio de cuenta', () => {
         expect(screen.getByLabelText('Nivel de dolor (escala 0 a 10)')).toHaveProp('value', '0');
         expect(
           within(screen.getByLabelText(questions[0].text)).getByRole('button', {
-            name: 'No',
+            name: /^No, /,
             selected: true,
           }),
         ).toBeTruthy();
@@ -165,7 +170,7 @@ describe('orientación v0.5: flujo clínico activo y cambio de cuenta', () => {
     mockDemo = true;
     process.env.EXPO_PUBLIC_P07_SYNTHETIC_REVIEW = 'true';
     const rendered = await beginReview();
-    await fireEvent.press(screen.getAllByRole('button', { name: 'Sí' })[0]);
+    await fireEvent.press(screen.getAllByRole('button', { name: /^Sí, / })[0]);
     expect(screen.getByText('Nivel A1 · Ayuda inmediata')).toBeTruthy();
     mockPatientId = 'patient-b';
     await rendered.rerender(<TriageScreen />);
@@ -177,7 +182,7 @@ describe('orientación v0.5: flujo clínico activo y cambio de cuenta', () => {
     process.env.EXPO_PUBLIC_P07_SYNTHETIC_REVIEW = 'true';
     mockSave.mockRejectedValueOnce(new Error('Fallo sintético')).mockResolvedValueOnce({});
     await beginReview();
-    await fireEvent.press(screen.getAllByRole('button', { name: 'Sí' })[0]);
+    await fireEvent.press(screen.getAllByRole('button', { name: /^Sí, / })[0]);
     await fireEvent.press(screen.getByRole('button', { name: 'Guardar evaluación' }));
     await waitFor(() =>
       expect(
@@ -213,7 +218,7 @@ describe('orientación v0.5: flujo clínico activo y cambio de cuenta', () => {
     expect(screen.queryByLabelText(questions[0].text)).toBeNull();
     await fireEvent.press(screen.getByRole('button', { name: 'Comenzar orientación de síntomas' }));
     await fireEvent.press(
-      within(screen.getByLabelText(questions[0].text)).getByRole('button', { name: 'Sí' }),
+      within(screen.getByLabelText(questions[0].text)).getByRole('button', { name: /^Sí, / }),
     );
     expect(screen.getByText('Nivel A1 · Ayuda inmediata')).toBeTruthy();
     expect(screen.getByText('Ayuda inmediata')).toBeTruthy();
@@ -232,13 +237,13 @@ describe('orientación v0.5: flujo clínico activo y cambio de cuenta', () => {
       if (code === 'A2') {
         const question = questions.find((q) => q.group === 'A2')!;
         await fireEvent.press(
-          within(screen.getByLabelText(question.text)).getByRole('button', { name: 'Sí' }),
+          within(screen.getByLabelText(question.text)).getByRole('button', { name: /^Sí, / }),
         );
       } else {
         for (const question of questions) {
           await fireEvent.press(
             within(screen.getByLabelText(question.text)).getByRole('button', {
-              name: question.id === 'B-SYMPTOMS' || question.group === 'C' ? 'Sí' : 'No',
+              name: question.id === 'B-SYMPTOMS' || question.group === 'C' ? /^Sí, / : /^No, /,
             }),
           );
         }
@@ -255,7 +260,7 @@ describe('orientación v0.5: flujo clínico activo y cambio de cuenta', () => {
     mockSave.mockResolvedValue({});
     process.env.EXPO_PUBLIC_P07_SYNTHETIC_REVIEW = 'true';
     await beginReview();
-    await fireEvent.press(screen.getAllByRole('button', { name: 'Sí' })[0]);
+    await fireEvent.press(screen.getAllByRole('button', { name: /^Sí, / })[0]);
     await fireEvent.press(screen.getByRole('button', { name: 'Guardar evaluación' }));
     await waitFor(() =>
       expect(screen.getByRole('button', { name: 'Evaluación guardada' })).toBeTruthy(),
@@ -290,7 +295,7 @@ describe('orientación v0.5: flujo clínico activo y cambio de cuenta', () => {
     const alert = jest.spyOn(Alert, 'alert').mockImplementation(() => {});
     try {
       await beginReview();
-      await fireEvent.press(screen.getAllByRole('button', { name: 'Sí' })[0]);
+      await fireEvent.press(screen.getAllByRole('button', { name: /^Sí, / })[0]);
       await fireEvent.press(screen.getByRole('button', { name: 'Empezar otra evaluación' }));
       expect(screen.getByText('Nivel A1 · Ayuda inmediata')).toBeTruthy();
       const buttons = alert.mock.calls[0][2]!;
@@ -311,7 +316,7 @@ describe('orientación v0.5: flujo clínico activo y cambio de cuenta', () => {
     const alert = jest.spyOn(Alert, 'alert').mockImplementation(() => {});
     try {
       const rendered = await beginReview();
-      await fireEvent.press(screen.getAllByRole('button', { name: 'Sí' })[0]);
+      await fireEvent.press(screen.getAllByRole('button', { name: /^Sí, / })[0]);
       await fireEvent.press(screen.getByRole('button', { name: 'Empezar otra evaluación' }));
       const discard = alert.mock.calls[0][2]!.find(
         (button) => button.text === 'Empezar sin guardar',

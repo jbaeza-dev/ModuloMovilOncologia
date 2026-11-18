@@ -147,12 +147,21 @@ describe('Medicamentos y avisos: integración de interfaz real', () => {
     expect(screen.getByText(medB.nombre)).toBeTruthy();
     expect(
       within(screen.getByTestId('medication-card-' + medA.id)).getByRole('button', {
-        name: 'Ya la tomé',
+        name: /^Ya la tomé, /,
       }),
     ).toBeTruthy();
+    // Prueba 12 (TalkBack): cada botón nombra su medicamento y horario, no solo «Ya la tomé».
+    const card = within(screen.getByTestId('medication-card-' + medA.id));
+    expect(
+      card.getByRole('button', {
+        name: new RegExp(`^Ya la tomé, ${medA.nombre}, aviso de las \\d{2}:\\d{2}$`),
+      }),
+    ).toBeTruthy();
+    expect(card.getByRole('button', { name: `Configurar aviso de ${medA.nombre}` })).toBeTruthy();
+    expect(card.getByRole('button', { name: `Ver indicaciones de ${medA.nombre}` })).toBeTruthy();
     const other = within(screen.getByTestId('medication-card-' + medB.id));
-    expect(other.queryByRole('button', { name: 'Ya la tomé' })).toBeNull();
-    await fireEvent.press(other.getByRole('button', { name: 'Configurar aviso' }));
+    expect(other.queryByRole('button', { name: /^Ya la tomé, / })).toBeNull();
+    await fireEvent.press(other.getByRole('button', { name: /^Configurar aviso de / }));
     expect(mockPush).toHaveBeenCalledWith({
       pathname: '/recordatorios/editar',
       params: { tipo: 'medicacion', medicamentoId: medB.id },
@@ -161,12 +170,12 @@ describe('Medicamentos y avisos: integración de interfaz real', () => {
   it('sin agenda confirmada, con aviso genérico o con intención pendiente no habilita tomas', async () => {
     mockRead.mockResolvedValue({ rules: [{ ...rule, medicamento_paciente_id: null }] });
     await start();
-    expect(screen.queryByRole('button', { name: 'Ya la tomé' })).toBeNull();
+    expect(screen.queryByRole('button', { name: /^Ya la tomé, / })).toBeNull();
   });
   it('no aplica una edición pendiente a las confirmaciones', async () => {
     mockIntents.mockResolvedValue([{ id: rule.id }]);
     await start();
-    expect(screen.queryByRole('button', { name: 'No la tomé' })).toBeNull();
+    expect(screen.queryByRole('button', { name: /^No la tomé, / })).toBeNull();
     expect(screen.getByText(/Hay un cambio de aviso pendiente/)).toBeTruthy();
   });
   it('conserva un registro manual previo separado del aviso y exige confirmar antes de guardar', async () => {
@@ -183,7 +192,7 @@ describe('Medicamentos y avisos: integración de interfaz real', () => {
     ]);
     await start();
     expect(screen.getByText(/Otros registros guardados hoy \(1\)/)).toBeTruthy();
-    await fireEvent.press(screen.getByRole('button', { name: 'No la tomé' }));
+    await fireEvent.press(screen.getByRole('button', { name: /^No la tomé, / }));
     expect(mockLog).not.toHaveBeenCalled();
     await accept();
     await waitFor(() => expect(mockLog).toHaveBeenCalled());
@@ -202,7 +211,7 @@ describe('Medicamentos y avisos: integración de interfaz real', () => {
   });
   it('descarta una confirmación abierta si cambia la cuenta o su época', async () => {
     await start();
-    await fireEvent.press(screen.getByRole('button', { name: 'Ya la tomé' }));
+    await fireEvent.press(screen.getByRole('button', { name: /^Ya la tomé, / }));
     mockEpoch = 2;
     await accept();
     await waitFor(() =>
@@ -212,7 +221,7 @@ describe('Medicamentos y avisos: integración de interfaz real', () => {
   });
   it('revalida el aviso al confirmar: eliminarlo o cambiarlo no guarda una dosis', async () => {
     await start();
-    await fireEvent.press(screen.getByRole('button', { name: 'Ya la tomé' }));
+    await fireEvent.press(screen.getByRole('button', { name: /^Ya la tomé, / }));
     mockRead.mockResolvedValue({ rules: [] });
     await accept();
     await waitFor(() =>
@@ -224,12 +233,12 @@ describe('Medicamentos y avisos: integración de interfaz real', () => {
     mockRead.mockResolvedValue({ rules: [{ ...rule, horas: ['20:00'] }] });
     await start();
     expect(screen.getByText('Más tarde')).toBeTruthy();
-    expect(screen.queryByRole('button', { name: 'Ya la tomé' })).toBeNull();
+    expect(screen.queryByRole('button', { name: /^Ya la tomé, / })).toBeNull();
   });
   it('renueva al pasar la medianoche de Chile y vuelve a leer los registros del día nuevo', async () => {
     jest.setSystemTime(new Date('2026-11-04T02:59:59Z'));
     await start();
-    expect(screen.getByRole('button', { name: 'Ya la tomé' })).toBeTruthy();
+    expect(screen.getByRole('button', { name: /^Ya la tomé, / })).toBeTruthy();
     await act(async () => {
       await jest.advanceTimersByTimeAsync(1100);
     });
@@ -237,7 +246,7 @@ describe('Medicamentos y avisos: integración de interfaz real', () => {
       expect(mockRows).toHaveBeenLastCalledWith(expect.anything(), 'paciente-a', '2026-11-04'),
     );
     expect(screen.getByText('Más tarde')).toBeTruthy();
-    expect(screen.queryByRole('button', { name: 'Ya la tomé' })).toBeNull();
+    expect(screen.queryByRole('button', { name: /^Ya la tomé, / })).toBeNull();
   });
   it('al regresar del segundo plano renueva el día aunque el temporizador haya quedado suspendido', async () => {
     await start();

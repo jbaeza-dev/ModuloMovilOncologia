@@ -64,8 +64,17 @@ export function authenticator(config: GatewayConfig, log: Logger) {
   }
   return {
     verify,
-    async authorize(authorization: string | undefined): Promise<Principal> {
+    /**
+     * Verifica el JWT y luego el perfil en el servicio clínico. `beforeProfile` se ejecuta con la
+     * cuenta ya verificada y antes de esa consulta (por ejemplo, para aplicar el límite de
+     * solicitudes sin cargar al servicio clínico).
+     */
+    async authorize(
+      authorization: string | undefined,
+      beforeProfile?: (principal: Principal) => void,
+    ): Promise<Principal> {
       const principal = await verify(authorization);
+      beforeProfile?.(principal);
       const response = await clients.getProfile(principal.token);
       if (response.status === 401) throw new GatewayError(401, 'NO_AUTORIZADO');
       if (response.status === 403) throw new GatewayError(403, 'ACCESO_DENEGADO');

@@ -18,6 +18,10 @@ export interface GatewayConfig {
   pushProvider: 'expo';
   agendaTimezone: 'America/Santiago';
   agendaMaxReminders: number;
+  /** Solicitudes por minuto y cuenta a las operaciones del gateway. */
+  rateLimitPerMinute: number;
+  /** Consultas por minuto y cuenta al asistente (G-06), más costosas que las demás. */
+  rateLimitAiPerMinute: number;
 }
 export class ConfigurationError extends Error {
   constructor(readonly field: string) {
@@ -146,5 +150,7 @@ export function readConfig(env: NodeJS.ProcessEnv = process.env): GatewayConfig 
     pushProvider: 'expo',
     agendaTimezone: 'America/Santiago',
     agendaMaxReminders: integer('AGENDA_MAX_REMINDERS', 100, 1, 100),
+    rateLimitPerMinute: integer('GATEWAY_RATE_LIMIT_PER_MINUTE', 120, 1, 10000),
+    rateLimitAiPerMinute: integer('GATEWAY_RATE_LIMIT_AI_PER_MINUTE', 10, 1, 1000),
   };
 }

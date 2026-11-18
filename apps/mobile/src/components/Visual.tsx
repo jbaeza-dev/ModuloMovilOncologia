@@ -68,6 +68,8 @@ export function StatusPill({
 
 type ButtonProps = {
   label: string;
+  /** Nombre para TalkBack cuando el texto visible necesita contexto (por ejemplo, de qué medicamento). */
+  accessibilityLabel?: string;
   onPress?: () => void;
   secondary?: boolean;
   disabled?: boolean;
@@ -78,6 +80,7 @@ type ButtonProps = {
 
 export function VisualButton({
   label,
+  accessibilityLabel,
   onPress,
   secondary = false,
   disabled = false,
@@ -89,7 +92,7 @@ export function VisualButton({
   return (
     <Pressable
       accessibilityRole="button"
-      accessibilityLabel={label}
+      accessibilityLabel={accessibilityLabel ?? label}
       accessibilityState={{ disabled: disabled || !onPress }}
       disabled={disabled || !onPress}
       onPress={onPress}
@@ -281,11 +284,14 @@ export function FeedbackBanner({
 
 export function ChoiceChip({
   label,
+  accessibilityLabel,
   selected,
   onPress,
   disabled,
 }: {
   label: string;
+  /** Nombre para TalkBack con contexto, por ejemplo la pregunta que responde. */
+  accessibilityLabel?: string;
   selected: boolean;
   onPress: () => void;
   disabled?: boolean;
@@ -294,7 +300,7 @@ export function ChoiceChip({
   return (
     <Pressable
       accessibilityRole="button"
-      accessibilityLabel={label}
+      accessibilityLabel={accessibilityLabel ?? label}
       accessibilityState={{ selected, disabled: !!disabled }}
       disabled={disabled}
       onPress={onPress}

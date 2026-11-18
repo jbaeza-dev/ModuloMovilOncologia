@@ -135,7 +135,7 @@ describe('RNF-08: aviso en todas las pantallas de orientación de síntomas', ()
 
   it('pantalla de resultado urgente (nivel A1)', async () => {
     await comenzar();
-    await fireEvent.press(screen.getAllByRole('button', { name: 'Sí' })[0]);
+    await fireEvent.press(screen.getAllByRole('button', { name: /^Sí, / })[0]);
     expect(screen.getByText('Nivel A1 · Ayuda inmediata')).toBeTruthy();
     mostrarAvisoRnf08();
   });

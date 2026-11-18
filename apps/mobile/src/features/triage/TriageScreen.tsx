@@ -439,6 +439,7 @@ export function TriageScreen() {
                 <ChoiceChip
                   key={value}
                   label={`Aclaración: ${label}`}
+                  accessibilityLabel={`Aclaración: ${label}, ${clarificationQuestion.text}`}
                   selected={false}
                   disabled={busy}
                   onPress={() => {
@@ -712,6 +713,8 @@ export function TriageScreen() {
               <ChoiceChip
                 key={value}
                 label={label}
+                // Al recorrer botón por botón, TalkBack anuncia también la pregunta que responde.
+                accessibilityLabel={`${label}, ${question.text}`}
                 selected={answers[question.id] === value}
                 disabled={busy}
                 onPress={() => answer(question.id, value)}

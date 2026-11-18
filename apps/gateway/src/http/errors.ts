@@ -16,7 +16,8 @@ export type ErrorCode =
   | 'ERROR_SERVIDOR'
   | 'RUTA_NO_ENCONTRADA'
   | 'IA_TIEMPO_AGOTADO'
-  | 'IA_RESPUESTA_INVALIDA';
+  | 'IA_RESPUESTA_INVALIDA'
+  | 'LIMITE_DE_SOLICITUDES';
 const messages: Record<ErrorCode, string> = {
   NO_AUTORIZADO: 'Se requiere una sesión válida.',
   ACCESO_DENEGADO: 'La cuenta no tiene acceso a esta operación.',
@@ -36,11 +37,14 @@ const messages: Record<ErrorCode, string> = {
   RUTA_NO_ENCONTRADA: 'Ruta no encontrada.',
   IA_TIEMPO_AGOTADO: 'Se agotó el tiempo de espera del asistente.',
   IA_RESPUESTA_INVALIDA: 'El asistente devolvió una respuesta incompatible.',
+  LIMITE_DE_SOLICITUDES: 'Demasiadas solicitudes seguidas; vuelve a intentarlo en unos segundos.',
 };
 export class GatewayError extends Error {
   constructor(
     readonly status: number,
     readonly code: ErrorCode,
+    /** Solo para 429: segundos sugeridos antes de reintentar (cabecera Retry-After). */
+    readonly retryAfterSeconds?: number,
   ) {
     super(messages[code]);
   }
