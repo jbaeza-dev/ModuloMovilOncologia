@@ -1,0 +1,14 @@
+# Abre los recordatorios por enlace profundo y vuelve al inicio.
+appId: cl.ubiobio.quimiocare
+name: Recordatorios
+tags: [avisos]
+---
+- runFlow: ../subflows/abrir-inicio.yaml
+- openLink: 'quimiocare://recordatorios'
+- extendedWaitUntil:
+    visible: 'Mis recordatorios'
+    timeout: 10000
+- back
+- extendedWaitUntil:
+    visible: 'Para hoy'
+    timeout: 10000

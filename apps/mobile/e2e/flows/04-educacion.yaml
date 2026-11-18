@@ -1,0 +1,16 @@
+# Filtra el material educativo y abre una categoría CUIDAQUIMIO.
+appId: cl.ubiobio.quimiocare
+name: Material educativo
+tags: [educacion]
+---
+- runFlow: ../subflows/abrir-inicio.yaml
+- tapOn: 'Educación'
+- tapOn: 'Infografías'
+- tapOn: 'Videos'
+- tapOn: 'Todo'
+- scrollUntilVisible:
+    element: 'Signos de alarma'
+- tapOn: 'Signos de alarma'
+- assertVisible: 'Signos de alarma'
+- back
+- tapOn: 'Inicio'
