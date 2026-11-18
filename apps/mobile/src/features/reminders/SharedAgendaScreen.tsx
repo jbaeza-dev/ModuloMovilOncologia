@@ -11,6 +11,7 @@ import { registerNativePush } from '../../services/session/native-session';
 import type { AgendaCoverage } from '../../services/agenda/agenda-coordinator';
 import type { AgendaIntent } from '../../data/agenda/agenda-repository';
 import { useAppTheme } from '../../providers/ThemeProvider';
+import { ReliableNoticesCard } from './ReliableNoticesCard';
 const kinds = { signos: 'Signos vitales', epro: 'Cuestionario diario', medicacion: 'Medicación' };
 const days = ['', 'Lun', 'Mar', 'Mié', 'Jue', 'Vie', 'Sáb', 'Dom'];
 export function SharedAgendaScreen() {
@@ -344,6 +345,9 @@ export function SharedAgendaScreen() {
           onPress={() => void Linking.openSettings()}
         />
       </InfoCard>
+      {rules.some((rule) => rule.activo) && !deviceBlocked ? (
+        <ReliableNoticesCard onlyWhenNeeded />
+      ) : null}
     </Screen>
   );
 }

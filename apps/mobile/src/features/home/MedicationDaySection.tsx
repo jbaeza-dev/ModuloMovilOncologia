@@ -105,6 +105,11 @@ export function MedicationDaySection({ medicamentoId }: { medicamentoId?: string
                           ? 'Corregir: no la tomé'
                           : 'Corregir: sí la tomé'
                       }
+                      accessibilityLabel={`${
+                        slot.intake.estado === 'taken'
+                          ? 'Corregir: no la tomé'
+                          : 'Corregir: sí la tomé'
+                      }, ${card.medication.nombre || 'medicamento sin nombre'}, aviso de las ${slot.time}`}
                       secondary
                       disabled={day.saving || day.isClosing}
                       onPress={() =>
@@ -119,11 +124,17 @@ export function MedicationDaySection({ medicamentoId }: { medicamentoId?: string
                     <>
                       <VisualButton
                         label={day.saving ? 'Guardando…' : 'Ya la tomé'}
+                        accessibilityLabel={
+                          day.saving
+                            ? 'Guardando…'
+                            : `Ya la tomé, ${card.medication.nombre || 'medicamento sin nombre'}, aviso de las ${slot.time}`
+                        }
                         disabled={day.saving || day.isClosing}
                         onPress={() => day.confirm(card, slot, 'taken')}
                       />
                       <VisualButton
                         label="No la tomé"
+                        accessibilityLabel={`No la tomé, ${card.medication.nombre || 'medicamento sin nombre'}, aviso de las ${slot.time}`}
                         secondary
                         disabled={day.saving || day.isClosing}
                         onPress={() => day.confirm(card, slot, 'omitted')}
@@ -157,6 +168,7 @@ export function MedicationDaySection({ medicamentoId }: { medicamentoId?: string
             ) : null}
             <VisualButton
               label="Configurar aviso"
+              accessibilityLabel={`Configurar aviso de ${card.medication.nombre || 'medicamento sin nombre'}`}
               secondary
               disabled={day.isClosing}
               onPress={() =>
@@ -168,6 +180,7 @@ export function MedicationDaySection({ medicamentoId }: { medicamentoId?: string
             />
             <VisualButton
               label="Ver indicaciones"
+              accessibilityLabel={`Ver indicaciones de ${card.medication.nombre || 'medicamento sin nombre'}`}
               secondary
               onPress={() => router.push('/perfil/medicacion')}
             />

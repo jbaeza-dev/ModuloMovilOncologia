@@ -25,6 +25,7 @@ import { useAppTheme } from '../../providers/ThemeProvider';
 import { ExpoNotificationAdapter } from '../../services/notifications/expo-notification-adapter';
 import type { NotificationPermissionState } from '../../services/notifications/notification-adapter';
 import type { CoordinatorResult } from '../../services/reminders/notification-coordinator';
+import { ReliableNoticesCard } from './ReliableNoticesCard';
 import {
   classifyMeasurementReminderStatus,
   classifyReminderStatus,
@@ -422,6 +423,8 @@ function LegacyRemindersListScreen() {
           />
         </InfoCard>
       ) : null}
+
+      {prefs.enabled ? <ReliableNoticesCard onlyWhenNeeded /> : null}
 
       {/* Incidencias de coordinación / errores */}
       {coordinatorResult &&

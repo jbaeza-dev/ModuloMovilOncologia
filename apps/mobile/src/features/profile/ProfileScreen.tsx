@@ -13,6 +13,7 @@ import { useAppTheme } from '../../providers/ThemeProvider';
 import { PALETTE_OPTIONS, theme } from '../../theme';
 import { isDemoMode } from '../../utils/environment';
 import { registerNativePush } from '../../services/session/native-session';
+import { ReliableNoticesCard } from '../reminders/ReliableNoticesCard';
 
 export { ProfileScreen, PersonalDataScreen, ClinicalProfileScreen } from './IdentityProfileScreens';
 
@@ -131,6 +132,7 @@ export function PreferencesScreen() {
             : 'Todos tus avisos están pausados. Tus horarios guardados se conservan.'}
         </BodyText>
       </InfoCard>
+      <ReliableNoticesCard />
       <NavigationCard
         title="Configurar recordatorios"
         description="Gestiona horarios y reglas para signos vitales y medicación."

@@ -63,8 +63,11 @@ export function ContractQuestionInput({
             <Pressable
               key={String(option.codigo)}
               accessibilityRole={multiple ? 'checkbox' : 'radio'}
+              // Incluye la pregunta para no perder el contexto al recorrer opción por opción.
               accessibilityLabel={
                 option.etiqueta +
+                ', ' +
+                q.titulo +
                 (Array.isArray(exclusive) && exclusive.includes(option.codigo)
                   ? ', se selecciona sola'
                   : '')

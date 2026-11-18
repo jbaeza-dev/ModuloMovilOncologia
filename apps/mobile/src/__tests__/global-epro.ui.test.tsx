@@ -150,8 +150,11 @@ describe('active global ePRO UI', () => {
     const next = await screen.findByRole('button', { name: 'Continuar' });
     await fireEvent.press(next);
     expect(await screen.findByText('Falta una respuesta obligatoria.')).toBeTruthy();
+    // Prueba 12 (TalkBack): la opción nombra también la pregunta que responde.
+    const asked = fixture.formulario.preguntas.find((q) => q.codigo === 'P0.1')!;
+    expect(screen.getByRole('radio', { name: `No, ${asked.titulo}` })).toBeTruthy();
     await act(async () => {
-      await fireEvent.press(screen.getByRole('radio', { name: 'No' }));
+      await fireEvent.press(screen.getByRole('radio', { name: /^No, / }));
     });
     await act(async () => {
       await fireEvent.press(screen.getByRole('button', { name: 'Continuar' }));
@@ -162,9 +165,9 @@ describe('active global ePRO UI', () => {
   });
   it('seleccionar una molestia retira la opción que debe ir sola y guarda la elección válida', async () => {
     await render(<ContractEproEditor draftId={draft.id} />);
-    await screen.findByRole('radio', { name: 'Sí' });
+    await screen.findByRole('radio', { name: /^Sí, / });
     await act(async () => {
-      await fireEvent.press(screen.getByRole('radio', { name: 'Sí' }));
+      await fireEvent.press(screen.getByRole('radio', { name: /^Sí, / }));
     });
     const normal = await screen.findByRole('checkbox', { name: /Se ve normal/ });
     const symptom = screen.getByRole('checkbox', { name: /Está un poco sensible/ });
@@ -188,12 +191,14 @@ describe('active global ePRO UI', () => {
   it('shows a failed local save and lets the patient retry without losing the selection', async () => {
     mockRepo.save.mockRejectedValueOnce(new Error('Fallo sintético de almacenamiento'));
     await render(<ContractEproEditor draftId={draft.id} />);
-    await screen.findByRole('radio', { name: 'No' });
+    await screen.findByRole('radio', { name: /^No, / });
     await act(async () => {
-      await fireEvent.press(screen.getByRole('radio', { name: 'No' }));
+      await fireEvent.press(screen.getByRole('radio', { name: /^No, / }));
     });
     expect(await screen.findByText('Fallo sintético de almacenamiento')).toBeTruthy();
-    expect(screen.getByRole('radio', { name: 'No' }).props.accessibilityState.checked).toBe(true);
+    expect(screen.getByRole('radio', { name: /^No, / }).props.accessibilityState.checked).toBe(
+      true,
+    );
     await act(async () => {
       await fireEvent.press(screen.getByRole('button', { name: 'Reintentar guardado' }));
     });

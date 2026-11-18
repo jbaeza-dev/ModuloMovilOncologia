@@ -139,13 +139,13 @@ describe('VitalsDataScreens UI tests (Bloque 3)', () => {
       ['Temperatura corporal (°C)', '30 y 45', '20', '36,8'],
       ['Presión sistólica (mmHg)', '40 y 300', '999', '120'],
       ['Presión diastólica (mmHg)', '30 y 200', '999', '80'],
-      ['Pulso', '30 y 250', '999', '72'],
+      ['Pulso (lpm)', '30 y 250', '999', '72'],
       ['Saturación de oxígeno (%)', '50 y 100', '999', '98'],
     ])(
       'valida %s al escribir, impide guardar valor fuera de rango y permite corregir sin alterar el dato',
       async (label, range, invalid, valid) => {
         await render(<RegisterVitalsDataScreen />);
-        await fireEvent.changeText(screen.getByLabelText('Dolor ENA (0 a 10) *'), '0');
+        await fireEvent.changeText(screen.getByLabelText('Dolor ENA (0 a 10)'), '0');
         await fireEvent.changeText(screen.getByLabelText(label), invalid);
         expect(screen.getByText(new RegExp(`entre ${range}`))).toBeTruthy();
         expect(screen.getByDisplayValue(invalid)).toBeTruthy();
@@ -190,7 +190,7 @@ describe('VitalsDataScreens UI tests (Bloque 3)', () => {
     it('guarda una presión aislada sin exigir una medición ausente', async () => {
       await render(<RegisterVitalsDataScreen />);
       await fireEvent.changeText(screen.getByLabelText('Presión sistólica (mmHg)'), '120');
-      await fireEvent.changeText(screen.getByLabelText('Dolor ENA (0 a 10) *'), '0');
+      await fireEvent.changeText(screen.getByLabelText('Dolor ENA (0 a 10)'), '0');
       await fireEvent.press(screen.getByRole('button', { name: 'Guardar registro' }));
       expect(mockRepository.createVitals).toHaveBeenCalledWith(
         expect.objectContaining({
@@ -207,9 +207,9 @@ describe('VitalsDataScreens UI tests (Bloque 3)', () => {
       const tempInput = screen.getByLabelText('Temperatura corporal (°C)');
       await fireEvent.changeText(tempInput, '36,8');
 
-      const pulseInput = screen.getByLabelText('Pulso');
+      const pulseInput = screen.getByLabelText('Pulso (lpm)');
       await fireEvent.changeText(pulseInput, '72');
-      await fireEvent.changeText(screen.getByLabelText('Dolor ENA (0 a 10) *'), '0');
+      await fireEvent.changeText(screen.getByLabelText('Dolor ENA (0 a 10)'), '0');
 
       await fireEvent.press(screen.getByRole('button', { name: 'Guardar registro' }));
 
