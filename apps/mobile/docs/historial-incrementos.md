@@ -1,4 +1,6 @@
-# @modulo-movil-oncologia/mobile
+# Historial de incrementos de la app móvil
+
+> **Documento histórico.** Este era el README de la app hasta el 17-11-2026. Describe cada incremento tal como se entregó, con cifras y comportamientos de ese momento (por ejemplo, conteos de pruebas antiguos o la etapa en que no había servidor). Para el estado actual, ver [../README.md](../README.md).
 
 Aplicación Android **QuimioCare** para acompañamiento de pacientes en quimioterapia, desarrollada con React Native, Expo, TypeScript y Expo Router.
 
