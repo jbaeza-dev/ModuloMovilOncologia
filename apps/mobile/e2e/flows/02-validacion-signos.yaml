@@ -1,0 +1,24 @@
+# Ingresa una temperatura fuera de rango sin dolor ENA: la app debe mostrar los dos errores y no
+# guardar nada (RNF de validación de entradas; el dolor ENA es obligatorio).
+appId: cl.ubiobio.quimiocare
+name: Validación del registro de signos vitales
+tags: [humo, signos]
+---
+- runFlow: ../subflows/abrir-inicio.yaml
+- tapOn: 'Registrar signos vitales'
+- assertVisible: 'Anota lo que hayas medido.'
+- tapOn: 'Ej.: 36,8'
+- inputText: '50'
+- hideKeyboard
+- scrollUntilVisible:
+    element: 'Guardar registro'
+- tapOn: 'Guardar registro'
+- scrollUntilVisible:
+    element: 'Temperatura: ingresa un valor entre 30 y 45.'
+    direction: UP
+- assertVisible: 'Temperatura: ingresa un valor entre 30 y 45.'
+- scrollUntilVisible:
+    element: 'Ingresa tu dolor ENA de 0 a 10.'
+- assertVisible: 'Ingresa tu dolor ENA de 0 a 10.'
+- assertNotVisible: 'Registro guardado'
+- back

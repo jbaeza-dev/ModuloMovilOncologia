@@ -1,0 +1,17 @@
+# Abre el diálogo de cierre de sesión y lo cancela: la sesión debe seguir abierta.
+appId: cl.ubiobio.quimiocare
+name: Cancelar el cierre de sesión
+tags: [humo, sesion]
+---
+- runFlow: ../subflows/abrir-inicio.yaml
+- tapOn: 'Abrir mi perfil'
+- assertVisible: 'Actualizar mis datos'
+- scrollUntilVisible:
+    element: 'Cerrar sesión'
+- tapOn: 'Cerrar sesión'
+- assertVisible: '¿Cerrar sesión?'
+- tapOn: 'Cancelar'
+- assertNotVisible: '¿Cerrar sesión?'
+- assertVisible: 'Cerrar sesión'
+- back
+- assertVisible: 'Para hoy'

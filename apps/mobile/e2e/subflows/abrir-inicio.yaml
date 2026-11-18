@@ -1,0 +1,11 @@
+# Subflujo: reinicia la app sin borrar datos (la sesión se conserva) y deja Inicio visible.
+# Se abre con el enlace profundo y no con launchApp porque HyperOS (Xiaomi) bloquea que el
+# controlador de Maestro inicie actividades desde segundo plano; openLink usa «am start» por adb.
+# Así tampoco se cambian los permisos de la app.
+appId: cl.ubiobio.quimiocare
+---
+- stopApp
+- openLink: 'quimiocare://'
+- extendedWaitUntil:
+    visible: 'Para hoy'
+    timeout: 60000

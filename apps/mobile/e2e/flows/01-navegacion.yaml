@@ -1,0 +1,19 @@
+# Recorre las cuatro pestañas y comprueba el contenido principal de cada una.
+appId: cl.ubiobio.quimiocare
+name: Navegación por pestañas
+tags: [humo]
+---
+- runFlow: ../subflows/abrir-inicio.yaml
+- assertVisible: 'Registrar signos vitales'
+- assertVisible: 'Cómo me siento hoy'
+- tapOn: 'Mediciones'
+- assertVisible: 'Historial de signos vitales'
+- assertVisible: 'Ver reportes'
+- tapOn: 'Formulario'
+- assertVisible: '¿Cómo te has sentido?'
+- assertVisible: 'Iniciar seguimiento'
+- tapOn: 'Educación'
+- assertVisible: 'Aprende a tu ritmo.'
+- assertVisible: 'Infografías'
+- tapOn: 'Inicio'
+- assertVisible: 'Para hoy'

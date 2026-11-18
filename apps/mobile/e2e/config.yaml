@@ -1,0 +1,13 @@
+# Suite E2E de QuimioCare para Maestro. Se ejecuta en orden sobre un teléfono con la app instalada
+# y una sesión iniciada (ver README.md). Ningún flujo guarda datos clínicos ni cierra la sesión.
+flows:
+  - flows/*.yaml
+executionOrder:
+  continueOnFailure: true
+  flowsOrder:
+    - 01-navegacion
+    - 02-validacion-signos
+    - 03-graficas-signos
+    - 04-educacion
+    - 05-recordatorios
+    - 06-perfil-cancelar-cierre

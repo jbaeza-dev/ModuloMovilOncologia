@@ -1,0 +1,17 @@
+# Cambia el periodo del historial y la gráfica mostrada.
+appId: cl.ubiobio.quimiocare
+name: Historial y gráficas de signos vitales
+tags: [signos]
+---
+- runFlow: ../subflows/abrir-inicio.yaml
+- tapOn: 'Mediciones'
+- tapOn: '30 días'
+- tapOn: '90 días'
+- tapOn: '7 días'
+- tapOn: 'Ver gráfica de Temperatura'
+- assertVisible: 'Temperatura.*'
+- tapOn: 'Ver gráfica de Pulso'
+- assertVisible: 'Pulso.*'
+- tapOn: 'Ver gráfica de Presión arterial'
+- assertVisible: 'Presión arterial \(mmHg\)'
+- tapOn: 'Inicio'
