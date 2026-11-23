@@ -51,6 +51,10 @@ jobs:
           if-no-files-found: error
           retention-days: 14
       - name: Check Expo dependencies
+        # The version check compares against whatever Expo published minutes ago; Expo patches are
+        # updated deliberately in their own PR. The other checks, including duplicates, still run.
+        env:
+          EXPO_DOCTOR_SKIP_DEPENDENCY_VERSION_CHECK: '1'
         run: pnpm --filter @modulo-movil-oncologia/mobile run doctor
       - name: Export Android JavaScript bundle
         run: pnpm --filter @modulo-movil-oncologia/mobile run bundle:android
