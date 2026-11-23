@@ -1,3 +1,4 @@
+import { visibleCommandStatusSql } from '../../sync/paused-command';
 import type { ClinicalCaptureHook } from '../../sync/legacy-command';
 import type { SqlConnection } from '../core/sql';
 import {
@@ -964,7 +965,7 @@ export function createFormRepository(
            f.titulo,
            f.duracion_estimada_min,
            r.fecha_confirmacion,
-           ${clinicalHook ? "COALESCE((SELECT status FROM qc_clinical_command WHERE id=r.id), CASE WHEN c.estado='enviado' THEN 'enviado' ELSE 'guardado_local' END)" : 'c.estado'} AS estado_envio
+           ${clinicalHook ? `COALESCE(${visibleCommandStatusSql('r.id')}, CASE WHEN c.estado='enviado' THEN 'enviado' ELSE 'guardado_local' END)` : 'c.estado'} AS estado_envio
          FROM respuesta_formulario r
          JOIN formulario_cache f
            ON f.formulario_id = r.formulario_id AND f.version = r.version
@@ -989,7 +990,7 @@ export function createFormRepository(
            r.*,
            f.titulo,
            f.descripcion,
-           ${clinicalHook ? "COALESCE((SELECT status FROM qc_clinical_command WHERE id=r.id), CASE WHEN c.estado='enviado' THEN 'enviado' ELSE 'guardado_local' END)" : 'c.estado'} AS estado_envio
+           ${clinicalHook ? `COALESCE(${visibleCommandStatusSql('r.id')}, CASE WHEN c.estado='enviado' THEN 'enviado' ELSE 'guardado_local' END)` : 'c.estado'} AS estado_envio
          FROM respuesta_formulario r
          JOIN formulario_cache f
            ON f.formulario_id = r.formulario_id AND f.version = r.version

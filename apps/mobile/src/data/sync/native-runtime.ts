@@ -1,4 +1,5 @@
 import { isRecoverableSessionPause } from './session-pause';
+import { retryAllSetAside } from './paused-command';
 import { scopeEducationalCopies } from './native-education-files';
 import { cleanupRetiredEducationalCopies } from '../local/education/retired-copy-cleanup';
 import * as Crypto from 'expo-crypto';
@@ -172,6 +173,7 @@ export async function openClinicalStore(
         pauseTimer = undefined;
       }
     },
+    retrySetAside: () => retryAllSetAside(connection, scope),
   });
   const store: ClinicalStore = {
     database,
@@ -227,9 +229,10 @@ export async function openClinicalStore(
     if (persistedPause?.value_json) {
       try {
         const parsed = JSON.parse(persistedPause.value_json) as { code?: string };
-        if (parsed?.code) {
-          store.pauseCode = parsed.code;
-        }
+        // Solo una pausa de sesión detiene la conexión. Una técnica guardada por una versión
+        // anterior ya no bloquea: ese registro quedó apartado y los demás pueden enviarse.
+        if (parsed?.code && isRecoverableSessionPause(parsed.code)) store.pauseCode = parsed.code;
+        else await connection.run("DELETE FROM qc_storage_control WHERE id='runtime:pause'");
       } catch {
         // Ignorar JSON no parseable
       }

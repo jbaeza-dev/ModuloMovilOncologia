@@ -56,8 +56,28 @@ describe('syncPresentation', () => {
     expect(r?.title).toBe('Un registro necesita revisión');
   });
 
-  it('un comando pausado sin código recuperable pide revisar el registro', () => {
-    const r = syncPresentation(estado(), resumen({ paused: 1, pauseCode: null }));
+  it('un registro apartado avisa que los demás siguen enviándose y lleva a revisarlo', () => {
+    const r = syncPresentation(estado(), resumen({ setAside: 1, pending: 2 }));
+    expect(r?.title).toBe('Un registro no se pudo enviar');
+    expect(r?.message).toContain('Los demás registros siguen enviándose');
+    expect(r).toMatchObject({ action: 'details', label: 'Revisar registros' });
+  });
+
+  it('varios registros apartados usan el plural', () => {
+    const r = syncPresentation(estado(), resumen({ setAside: 3 }));
+    expect(r?.title).toBe('3 registros no se pudieron enviar');
+  });
+
+  it('un registro conservado en el teléfono no se presenta como rechazado', () => {
+    const r = syncPresentation(estado(), resumen({ kept: 1 }));
+    expect(r?.message).not.toContain('no fue aceptado');
+  });
+
+  it('una pausa técnica del SDK sin comando conocido pide revisar el registro', () => {
+    const r = syncPresentation(
+      estado(),
+      resumen({ runtimePaused: true, pauseCode: 'COMANDO_SDK_NO_PERMITIDO' }),
+    );
     expect(r?.label).toBe('Ver registro y detalles');
   });
 

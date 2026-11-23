@@ -5,6 +5,7 @@ import { createPatientRepository } from '../../../data/local/repository';
 import { ClinicalConnector } from '../../../data/sync/clinical-connector';
 import { openClinicalStore, type ClinicalStore } from '../../../data/sync/native-runtime';
 import type { ClinicalCommand } from '../../../data/sync/clinical-command';
+import { listSetAside, retrySetAside } from '../../../data/sync/paused-command';
 
 const cases = [
   'a05',
@@ -349,15 +350,34 @@ export async function runNativeRegressions(
       await remote(id, store.scope.owner);
       return { ...result, sdkPending: 0, renewalRecovered: true };
     }
+    if (phase === 'a11-remote') {
+      // Un ACK incoherente aparta solo ese registro: la operación SDK se completa para no
+      // detener la cola, y el registro espera a que el paciente lo reintente.
+      check(
+        !attempt.failed &&
+          !stopped.ack &&
+          stopped.status === 'pausado' &&
+          stopped.errorCode === 'ACK_REMOTO_INCOHERENTE',
+        'No se apartó el ACK incoherente.',
+      );
+      check((await pending(store)) === 0, 'El registro apartado siguió deteniendo la cola SDK.');
+      check(
+        (await listSetAside(store.connection, store.scope)).some((item) => item.id === id),
+        'El registro apartado no aparece para que el paciente lo revise.',
+      );
+      await control('pass');
+      await retrySetAside(store.connection, store.scope, id);
+      await drain(store);
+      const after = await snapshot(store, id);
+      same(before, after);
+      check(after.ack, 'El reintento del paciente no recuperó el ACK coherente.');
+      await remote(id, store.scope.owner);
+      return { ...result, after, sdkPending: 0, setAsideRetried: true };
+    }
     check(
       attempt.failed && !stopped.ack && (await pending(store)) === 1,
       'El fallo se convirtió en un ACK o descartó su operación SDK.',
     );
-    if (phase === 'a11-remote')
-      check(
-        stopped.status === 'pausado' && stopped.errorCode === 'ACK_REMOTO_INCOHERENTE',
-        'No se pausó el ACK incoherente.',
-      );
     if (phase === 'a11-ack-write' || phase === 'a11-reject-write') {
       check(
         stopped.status === 'pendiente',
@@ -376,15 +396,6 @@ export async function runNativeRegressions(
       );
       await remote(id, store.scope.owner);
       return { ...result, after, sdkPending: 0, persistenceFailureRetainedQueue: true };
-    }
-    if (phase === 'a11-remote') {
-      await control('pass');
-      await drain(store);
-      const after = await snapshot(store, id);
-      same(before, after);
-      check(after.ack, 'No se recuperó el ACK coherente.');
-      await remote(id, store.scope.owner);
-      return { ...result, after, sdkPending: 0 };
     }
     await remote(id, store.scope.owner, 0);
     const extra = await capture(store),

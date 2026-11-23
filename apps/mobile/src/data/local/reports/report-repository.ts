@@ -1,3 +1,4 @@
+import { visibleCommandStatusSql } from '../../sync/paused-command';
 import type { FormQuestion } from '@quimiocare/contracts/forms';
 import type { SqlConnection } from '../core/sql';
 import type {
@@ -159,7 +160,7 @@ export function createReportRepository(
           [patientId, periodStart, now],
         );
         const commands = await tx.all<{ id: string; status: string }>(
-          `SELECT c.id,c.status FROM qc_clinical_command c
+          `SELECT c.id,${visibleCommandStatusSql('c.id')} AS status FROM qc_clinical_command c
            JOIN signos_vitales v ON v.id=c.id AND v.fecha_registro=c.captured_at
            WHERE v.paciente_id=? AND c.kind='signos' AND v.fecha_registro>=? AND v.fecha_registro<=?`,
           [patientId, periodStart, now],
@@ -167,7 +168,7 @@ export function createReportRepository(
         for (const c of commands) syncStatuses[c.id] = c.status;
         const rows = await tx.all<ReportEproRow>(
           `SELECT r.id,r.formulario_id,r.version,r.respuestas_json,r.fecha_confirmacion,f.titulo,
-           s.value_json AS snapshot_json,c.status,c.owner,c.environment
+           s.value_json AS snapshot_json,CASE WHEN c.id IS NULL THEN NULL ELSE ${visibleCommandStatusSql('c.id')} END AS status,c.owner,c.environment
            FROM respuesta_formulario r
            LEFT JOIN formulario_cache f ON f.formulario_id=r.formulario_id AND f.version=r.version
            LEFT JOIN qc_storage_control s ON s.id='epro:capture:' || r.id
