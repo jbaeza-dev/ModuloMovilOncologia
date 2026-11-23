@@ -5,6 +5,9 @@ import { seedDatabase, APPROVED_TERMS_ID } from '../src/seed-data.js';
 import { guardScenario } from '../src/scenarios.js';
 import { createLinkCode, consumeLinkCode } from '../src/clinical.js';
 import { migrateSimulator } from '../src/persistence/migrations.js';
+import { requireOperator } from '../src/preparation.js';
+import type { SimulatorConfig } from '../src/config.js';
+import type { Principal } from '../src/types.js';
 
 const url = process.env.TEST_DATABASE_URL;
 if (!url || !new URL(url).pathname.endsWith('_test'))
@@ -145,6 +148,82 @@ describe('PostgreSQL individual linking', () => {
     await expect(
       consumeLinkCode(db, operator, code.codigo, 'DEMO-AC-T-v1', operation),
     ).rejects.toMatchObject({ status: 409 });
+  });
+  async function linkablePatient() {
+    const id = await patient(),
+      code = await createLinkCode(db, id);
+    await db.query(
+      "UPDATE qc_demo_paciente SET perfil=jsonb_set(perfil,'{estado_incorporacion}','\"COMPLETO\"') WHERE id=$1",
+      [id],
+    );
+    await db.query(
+      'INSERT INTO qc_demo_consentimiento(id,paciente_id,definicion_id,request,otorgado_el) VALUES($1,$2,$3,$4,now())',
+      [randomUUID(), id, APPROVED_TERMS_ID, { codigo: 'TERMINOS_PLATAFORMA' }],
+    );
+    return { id, code };
+  }
+  /** Operador dado de alta automáticamente por estar en OPERATOR_ALLOWED_EMAILS. */
+  async function emailOperator() {
+    const subject = randomUUID(),
+      email = `operador-${subject}@example.test`;
+    const config = { issuer, operatorAllowedEmails: [email] } as SimulatorConfig;
+    const principal: Principal = { id: subject, tipo: 'external', issuer, email };
+    return { subject, config, principal, id: await requireOperator(db, config, principal) };
+  }
+  it('vincula con un operador dado de alta por correo, cuyo id no es su usuario de Supabase', async () => {
+    const op = await emailOperator();
+    expect(op.id).not.toBe(op.subject);
+    const { id, code } = await linkablePatient();
+    const result = await consumeLinkCode(
+      db,
+      op.id,
+      code.codigo,
+      'DEMO-FOLFOX-v1',
+      randomUUID(),
+      issuer,
+    );
+    expect(result.status).toBe(200);
+    expect(
+      (
+        await db.query('SELECT operador_id FROM qc_demo_relacion_clinica WHERE paciente_id=$1', [
+          id,
+        ])
+      ).rows[0]?.operador_id,
+    ).toBe(op.id);
+    expect(
+      (
+        await db.query(
+          'SELECT operador_id FROM qc_demo_auditoria_vinculacion WHERE paciente_id=$1',
+          [id],
+        )
+      ).rows[0]?.operador_id,
+    ).toBe(op.id);
+    expect(
+      (await db.query('SELECT consumido_por FROM qc_demo_vinculacion WHERE paciente_id=$1', [id]))
+        .rows[0]?.consumido_por,
+    ).toBe(op.id);
+  });
+  it('rechaza a un operador desactivado o de otro emisor sin asignar contexto', async () => {
+    const op = await emailOperator();
+    const { id, code } = await linkablePatient();
+    await expect(
+      consumeLinkCode(
+        db,
+        op.id,
+        code.codigo,
+        'DEMO-FOLFOX-v1',
+        undefined,
+        'https://otro.example/auth/v1',
+      ),
+    ).rejects.toMatchObject({ status: 403 });
+    await db.query('UPDATE qc_demo_operador SET activo=false WHERE id=$1', [op.id]);
+    await expect(
+      consumeLinkCode(db, op.id, code.codigo, 'DEMO-FOLFOX-v1', undefined, issuer),
+    ).rejects.toMatchObject({ status: 403 });
+    expect(
+      (await db.query('SELECT tratamiento FROM qc_demo_paciente WHERE id=$1', [id])).rows[0]
+        .tratamiento,
+    ).toBeNull();
   });
   it('rejects an unauthorized operator and an expired code without assigning context', async () => {
     const id = await patient(),

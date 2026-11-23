@@ -335,10 +335,11 @@ export async function consumeLinkCode(
   const codeHash = createHash('sha256').update(normalizedCode).digest('hex');
 
   return transaction(db, async (client) => {
-    // 1. Verificar operador autorizado
+    // 1. Verificar operador autorizado. `operatorId` es el id del operador (no su usuario de
+    // Supabase): los operadores dados de alta por correo tienen un id distinto de su auth_subject.
     const operator = await one<{ id: string; nombre: string }>(
       client,
-      'SELECT id, nombre FROM qc_demo_operador WHERE id=$1 AND activo=true AND auth_subject=id::text AND ($2::text IS NULL OR auth_issuer=$2)',
+      'SELECT id, nombre FROM qc_demo_operador WHERE id=$1 AND activo=true AND ($2::text IS NULL OR auth_issuer=$2)',
       [operatorId, expectedIssuer ?? null],
     );
     if (!operator)
