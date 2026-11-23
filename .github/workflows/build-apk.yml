@@ -98,6 +98,10 @@ jobs:
           NODE
 
       - name: Verificar tipos y dependencias nativas
+        # La comparación con el último parche publicado depende de la hora; los parches de Expo se
+        # actualizan en su propio PR. Los demás chequeos, incluidos los duplicados, siguen activos.
+        env:
+          EXPO_DOCTOR_SKIP_DEPENDENCY_VERSION_CHECK: '1'
         run: |
           pnpm run typecheck
           pnpm --filter @modulo-movil-oncologia/mobile run doctor
