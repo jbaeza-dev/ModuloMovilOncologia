@@ -373,7 +373,9 @@ export function createSimulator(config: SimulatorConfig, db: Database) {
         (url.pathname === '/admin/api/v1/vinculaciones/consumir' ||
           url.pathname === '/quimiocare/admin/api/v1/vinculaciones/consumir')
       ) {
-        const principal = await operatorFromHeader(config, req.headers.authorization, db);
+        const principal = await principalFromHeader(config, req.headers.authorization);
+        // Id real del operador (buscado por emisor y usuario), igual que el resto de la preparación.
+        const operatorId = await requireOperator(db, config, principal);
         const raw = await jsonBody(req, 16384);
         const body = record(raw);
         if (typeof body.codigo !== 'string' || typeof body.plantilla_id !== 'string') {
@@ -381,7 +383,7 @@ export function createSimulator(config: SimulatorConfig, db: Database) {
         }
         const result = await consumeLinkCode(
           db,
-          principal.id,
+          operatorId,
           body.codigo as string,
           body.plantilla_id as string,
           typeof body.request_token === 'string' ? (body.request_token as string) : undefined,
