@@ -10,6 +10,7 @@ import { seedClinicalContextDemoInTransaction } from './clinical-context/clinica
 import { createReportRepository } from './reports/report-repository';
 import { createEducationRepository } from './education/education-repository';
 import { createReminderRepository } from './reminders/reminder-repository';
+import { visibleCommandStatusSql } from '../sync/paused-command';
 export * from './clinical-context/clinical-context-types';
 export * from './consents/consent-types';
 export * from './reports/report-types';
@@ -213,7 +214,7 @@ export function createPatientRepository(
 
     latestVital() {
       return database.first<VitalWithSyncRecord>(
-        `SELECT v.*, ${clinicalHook ? "COALESCE((SELECT status FROM qc_clinical_command WHERE id=v.id), CASE WHEN c.estado='enviado' THEN 'enviado' ELSE 'guardado_local' END)" : 'c.estado'} AS estado_envio${clinicalHook ? ", 'powersync' AS gestor_envio" : ''}
+        `SELECT v.*, ${clinicalHook ? `COALESCE(${visibleCommandStatusSql('v.id')}, CASE WHEN c.estado='enviado' THEN 'enviado' ELSE 'guardado_local' END)` : 'c.estado'} AS estado_envio${clinicalHook ? ", 'powersync' AS gestor_envio" : ''}
          FROM signos_vitales AS v
          LEFT JOIN cola_envio AS c
            ON c.tipo_entidad = 'signos_vitales' AND c.registro_id = v.id
@@ -225,7 +226,7 @@ export function createPatientRepository(
 
     vital(id: string) {
       return database.first<VitalWithSyncRecord>(
-        `SELECT v.*, ${clinicalHook ? "COALESCE((SELECT status FROM qc_clinical_command WHERE id=v.id), CASE WHEN c.estado='enviado' THEN 'enviado' ELSE 'guardado_local' END)" : 'c.estado'} AS estado_envio${clinicalHook ? ", 'powersync' AS gestor_envio" : ''}
+        `SELECT v.*, ${clinicalHook ? `COALESCE(${visibleCommandStatusSql('v.id')}, CASE WHEN c.estado='enviado' THEN 'enviado' ELSE 'guardado_local' END)` : 'c.estado'} AS estado_envio${clinicalHook ? ", 'powersync' AS gestor_envio" : ''}
          FROM signos_vitales AS v
          LEFT JOIN cola_envio AS c
            ON c.tipo_entidad = 'signos_vitales' AND c.registro_id = v.id
@@ -236,7 +237,7 @@ export function createPatientRepository(
 
     vitals(since: string, limit = 30, offset = 0) {
       return database.all<VitalWithSyncRecord>(
-        `SELECT v.*, ${clinicalHook ? "COALESCE((SELECT status FROM qc_clinical_command WHERE id=v.id), CASE WHEN c.estado='enviado' THEN 'enviado' ELSE 'guardado_local' END)" : 'c.estado'} AS estado_envio${clinicalHook ? ", 'powersync' AS gestor_envio" : ''}
+        `SELECT v.*, ${clinicalHook ? `COALESCE(${visibleCommandStatusSql('v.id')}, CASE WHEN c.estado='enviado' THEN 'enviado' ELSE 'guardado_local' END)` : 'c.estado'} AS estado_envio${clinicalHook ? ", 'powersync' AS gestor_envio" : ''}
          FROM signos_vitales AS v
          LEFT JOIN cola_envio AS c
            ON c.tipo_entidad = 'signos_vitales' AND c.registro_id = v.id

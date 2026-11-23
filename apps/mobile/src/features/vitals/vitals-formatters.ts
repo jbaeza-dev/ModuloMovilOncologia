@@ -96,7 +96,9 @@ export function getSyncStatusLabel(
 ): string {
   if (
     record.estado_envio &&
-    ['guardado_local', 'pausado', 'aceptado', 'rechazado'].includes(record.estado_envio)
+    ['guardado_local', 'pausado', 'aceptado', 'rechazado', 'conservado_local'].includes(
+      record.estado_envio,
+    )
   )
     return clinicalStatusLabel(record.estado_envio);
   if (record.estado_envio === 'pendiente' && record.gestor_envio === 'powersync')

@@ -17,6 +17,8 @@ export interface ClinicalConnectionControllerOptions {
     disconnect: () => Promise<void>;
   };
   clearPauseTimer?: () => void;
+  /** Devuelve a la cola los registros apartados por un error técnico (solo reanudación completa). */
+  retrySetAside?: () => Promise<unknown>;
 }
 
 export interface ClinicalConnectionController {
@@ -39,6 +41,7 @@ export function createClinicalConnectionController(
     signal,
     database,
     clearPauseTimer,
+    retrySetAside,
   } = options;
 
   let connected = false;
@@ -88,10 +91,9 @@ export function createClinicalConnectionController(
           return;
         }
       } else if (retryPaused === true) {
-        await connection.run(
-          "UPDATE qc_clinical_command SET status='pendiente',error_json=NULL WHERE owner=? AND environment=? AND status='pausado'",
-          [scope.owner, scope.environment],
-        );
+        // Las pausas de sesión conservan su operación en el SDK; los apartados vuelven a la cola.
+        await retrySessionCommands(connection, scope);
+        await retrySetAside?.();
         store.pauseCode = null;
         await connection.run("DELETE FROM qc_storage_control WHERE id='runtime:pause'");
       } else {

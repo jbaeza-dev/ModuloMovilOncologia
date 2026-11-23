@@ -73,12 +73,23 @@ export class ClinicalConnector implements PowerSyncBackendConnector {
     // ACK/rejection is durable before removing any SDK operation, including partial batches.
     await transaction.complete();
   }
-  private async pause(command: ClinicalCommand, code: string, details: unknown): Promise<never> {
+  private async markPaused(command: ClinicalCommand, code: string, details: unknown) {
     await this.local.run(
       `UPDATE qc_clinical_command SET status = 'pausado', error_json = ?, updated_at = ? WHERE id = ? AND owner = ?`,
       [canonical({ code, details }), this.now(), command.id, this.scope.owner],
     );
+  }
+  /** Una pausa de sesión detiene la cola: los registros siguientes fallarían por la misma causa. */
+  private async pause(command: ClinicalCommand, code: string, details: unknown): Promise<never> {
+    await this.markPaused(command, code, details);
     throw new ClinicalUploadPaused(code);
+  }
+  /**
+   * Un error técnico afecta solo a este registro: se conserva pausado con su motivo, se retira de
+   * la cola del SDK y los registros siguientes continúan. Solo el paciente puede reintentarlo.
+   */
+  private async setAside(command: ClinicalCommand, code: string, details: unknown) {
+    await this.markPaused(command, code, details);
   }
   private async uploadOperation(operation: CrudEntry) {
     this.assertOwner();
@@ -101,6 +112,12 @@ export class ClinicalConnector implements PowerSyncBackendConnector {
       command.kind !== kind
     )
       throw new ClinicalUploadPaused('PROPIETARIO_O_SNAPSHOT_INCORRECTO');
+    if (command.status === 'pausado') {
+      const session = storedSessionPause(command.error_json);
+      if (session) throw new ClinicalUploadPaused(session);
+      // Apartado por un error técnico: no se reenvía hasta que el paciente lo reintente.
+      return;
+    }
     const expected = {
       owner: command.owner,
       environment: command.environment,
@@ -114,16 +131,16 @@ export class ClinicalConnector implements PowerSyncBackendConnector {
         legacy_queue_id: operation.opData.legacy_queue_id ?? null,
       }) !== canonical(expected)
     )
-      await this.pause(command, 'SNAPSHOT_SDK_INCOHERENTE', null);
+      return this.setAside(command, 'SNAPSHOT_SDK_INCOHERENTE', null);
     if (command.status === 'rechazado') {
-      if (!command.error_json) await this.pause(command, 'RECHAZO_LOCAL_INCOMPLETO', null);
+      if (!command.error_json) await this.setAside(command, 'RECHAZO_LOCAL_INCOMPLETO', null);
       return;
     }
     let body: Record<string, unknown>;
     try {
       body = payloadOf(command);
     } catch {
-      return this.pause(command, 'SNAPSHOT_FUERA_CONTRATO', null);
+      return this.setAside(command, 'SNAPSHOT_FUERA_CONTRATO', null);
     }
 
     if (command.status === 'aceptado') {
@@ -135,11 +152,9 @@ export class ClinicalConnector implements PowerSyncBackendConnector {
         !('body' in saved) ||
         !coherentAck(command, Number(saved.status), saved.body)
       )
-        await this.pause(command, 'ACK_LOCAL_INCOHERENTE', null);
+        await this.setAside(command, 'ACK_LOCAL_INCOHERENTE', null);
       return;
     }
-    if (command.status === 'pausado')
-      throw new ClinicalUploadPaused(storedSessionPause(command.error_json) ?? 'REQUIERE_REVISION');
     try {
       await this.session.credentialsForSync();
     } catch (error) {
@@ -178,7 +193,7 @@ export class ClinicalConnector implements PowerSyncBackendConnector {
     this.assertOwner();
     if (response.status >= 200 && response.status < 300) {
       if (!coherentAck(command, response.status, response.body))
-        await this.pause(command, 'ACK_REMOTO_INCOHERENTE', null);
+        return this.setAside(command, 'ACK_REMOTO_INCOHERENTE', null);
       await this.local.transaction(async (tx) => {
         await tx.run(
           `UPDATE qc_clinical_command SET status = 'aceptado', ack_json = ?, error_json = NULL, updated_at = ? WHERE id = ? AND owner = ?`,
@@ -200,7 +215,7 @@ export class ClinicalConnector implements PowerSyncBackendConnector {
     const decision = classifyClinicalError(response.status, response.body);
     if (decision.decision === 'retry')
       throw new Error('Dependencia clínica temporalmente no disponible.');
-    if (decision.decision === 'pause') await this.pause(command, decision.code, response);
+    if (decision.decision === 'pause') return this.setAside(command, decision.code, response);
     await this.local.transaction(async (tx) => {
       await tx.run(
         `UPDATE qc_clinical_command SET status = 'rechazado', error_json = ?, updated_at = ? WHERE id = ? AND owner = ?`,

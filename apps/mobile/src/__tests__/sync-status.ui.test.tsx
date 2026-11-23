@@ -22,6 +22,19 @@ jest.mock('../features/sync/ClinicalSyncNotice', () => ({
 jest.mock('../components/Screen', () => ({
   Screen: ({ children }: { children: React.ReactNode }) => <>{children}</>,
 }));
+const mockTrigger = jest.fn();
+let mockStore: unknown = null;
+const mockList = jest.fn();
+const mockRetry = jest.fn();
+const mockKeep = jest.fn();
+jest.mock('../providers/LocalDataProvider', () => ({
+  useOptionalLocalData: () => (mockStore ? { clinicalStore: mockStore } : null),
+}));
+jest.mock('../data/sync/paused-command', () => ({
+  listSetAside: (...args: unknown[]) => mockList(...args),
+  retrySetAside: (...args: unknown[]) => mockRetry(...args),
+  keepSetAsideOnPhone: (...args: unknown[]) => mockKeep(...args),
+}));
 jest.mock('../providers/ThemeProvider', () => ({
   useAppTheme: () => ({ theme: { colors: { surface: '#fff', primary: '#00695c', text: '#222' } } }),
 }));
@@ -41,7 +54,21 @@ beforeEach(() => {
     revision: 0,
   };
   mockSummary = { pending: 0, paused: 0, rejected: 0, runtimePaused: false, pauseCode: null };
+  mockStore = null;
+  mockList.mockResolvedValue([aside]);
+  mockRetry.mockResolvedValue(undefined);
+  mockKeep.mockResolvedValue(undefined);
+  mockTrigger.mockResolvedValue(undefined);
 });
+const aside = {
+  id: 'ed21a163-0102-4b25-98af-4b3552cc87ad',
+  kind: 'signos' as const,
+  capturedAt: '2026-11-20T15:30:00.000Z',
+  code: 'FORMULARIO_NO_ENCONTRADO',
+};
+function setAsideStore() {
+  return { connection: 'connection', scope: 'scope', triggerPendingUpload: mockTrigger };
+}
 describe('Tarjeta de registros con acciones directas', () => {
   it('muestra el estado en una tarjeta normal y permite consultar el detalle', async () => {
     await render(<RecordsStatusCard />);
@@ -95,6 +122,61 @@ describe('Tarjeta de registros con acciones directas', () => {
     expect(screen.getByText(/1 registro no fue aceptado/)).toBeTruthy();
     expect(screen.queryByRole('button', { name: 'Ver registros' })).toBeNull();
     expect(screen.getByRole('button', { name: 'Consultar historial de signos' })).toBeTruthy();
+  });
+  it('lista el registro apartado y pide confirmar antes de reintentar su envío', async () => {
+    mockStore = setAsideStore();
+    await render(<SyncStatusScreen />);
+    expect(await screen.findByText(/Signos vitales del/)).toBeTruthy();
+    expect(screen.getByText(/no detienen el envío de los demás/)).toBeTruthy();
+    await fireEvent.press(
+      screen.getByRole('button', { name: /^Reintentar el envío de Signos vitales/ }),
+    );
+    expect(mockRetry).not.toHaveBeenCalled();
+    expect(screen.getByText(/Si ya había llegado, no se duplicará/)).toBeTruthy();
+    await fireEvent.press(screen.getByRole('button', { name: /^Confirmar reintento de/ }));
+    await waitFor(() => expect(mockRetry).toHaveBeenCalledWith('connection', 'scope', aside.id));
+    expect(mockTrigger).toHaveBeenCalledTimes(1);
+    expect(mockKeep).not.toHaveBeenCalled();
+    await waitFor(() => expect(screen.queryByTestId('set-aside-records')).toBeNull());
+  });
+  it('conservar en el teléfono también pide confirmación y se puede cancelar', async () => {
+    mockStore = setAsideStore();
+    await render(<SyncStatusScreen />);
+    await screen.findByText(/Signos vitales del/);
+    await fireEvent.press(
+      screen.getByRole('button', { name: /^Conservar solo en este teléfono Signos/ }),
+    );
+    expect(screen.getByText(/no se enviará a tu equipo de salud/)).toBeTruthy();
+    await fireEvent.press(screen.getByRole('button', { name: 'Cancelar' }));
+    expect(mockKeep).not.toHaveBeenCalled();
+    await fireEvent.press(
+      screen.getByRole('button', { name: /^Conservar solo en este teléfono Signos/ }),
+    );
+    await fireEvent.press(
+      screen.getByRole('button', { name: /^Confirmar conservar solo en este teléfono/ }),
+    );
+    await waitFor(() => expect(mockKeep).toHaveBeenCalledWith('connection', 'scope', aside.id));
+    expect(mockRetry).not.toHaveBeenCalled();
+    expect(mockTrigger).not.toHaveBeenCalled();
+  });
+  it('si la acción falla, conserva el registro y lo explica', async () => {
+    mockStore = setAsideStore();
+    mockRetry.mockRejectedValueOnce(new Error('sin base'));
+    await render(<SyncStatusScreen />);
+    await screen.findByText(/Signos vitales del/);
+    await fireEvent.press(
+      screen.getByRole('button', { name: /^Reintentar el envío de Signos vitales/ }),
+    );
+    await fireEvent.press(screen.getByRole('button', { name: /^Confirmar reintento de/ }));
+    expect(await screen.findByText(/El registro sigue guardado en este teléfono/)).toBeTruthy();
+    expect(screen.getByTestId('set-aside-' + aside.id)).toBeTruthy();
+  });
+  it('sin registros apartados no muestra la lista', async () => {
+    mockStore = setAsideStore();
+    mockList.mockResolvedValue([]);
+    await render(<SyncStatusScreen />);
+    await waitFor(() => expect(mockList).toHaveBeenCalled());
+    expect(screen.queryByTestId('set-aside-records')).toBeNull();
   });
   it('no mezcla una tarjeta de cuenta anterior cuando ya no existe sesión', async () => {
     mockState = { ...mockState, user: null, state: 'no_identity' };

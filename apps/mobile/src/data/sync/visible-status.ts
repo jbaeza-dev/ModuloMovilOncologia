@@ -12,6 +12,8 @@ export function clinicalStatusLabel(status: string | null): string {
     case 'rechazado':
     case 'conflicto':
       return 'Rechazado · Registro conservado';
+    case 'conservado_local':
+      return 'No enviado · Conservado solo en este teléfono';
     case 'enviado':
       return 'Enviado · Registro anterior';
     default:

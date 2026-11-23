@@ -17,7 +17,8 @@ import {
   type ClinicalCommand,
   type ClinicalScope,
 } from './clinical-command';
-import { ClinicalConnector, ClinicalUploadPaused } from './clinical-connector';
+import { ClinicalConnector } from './clinical-connector';
+import { SessionFailure } from '../../services/session/http-session-types';
 import { coherentAck, classifyClinicalError } from './ack';
 import { migrateOwner, migrationPhases } from './migration';
 import { sqlStatements } from './sql-connection';
@@ -311,16 +312,29 @@ describe('P04 durable clinical writes (SQLite; native SDK acceptance is separate
     expect(x.request).toHaveBeenCalledTimes(3);
     expect(complete).toHaveBeenCalledTimes(1);
   });
-  it('preserves an incoherent ACK and leaves the SDK transaction pending', async () => {
+  it('aparta un ACK incoherente sin marcarlo aceptado y libera la cola del SDK', async () => {
     const db = await database();
     await save(db);
     const x = context(db, async (_p, body) => ack({ ...body, id: second }));
     const complete = vi.fn();
+    await x.connector.uploadTransaction({ crud: [operation(await command(db))], complete });
+    expect(complete).toHaveBeenCalledTimes(1);
+    expect(await command(db)).toMatchObject({ status: 'pausado', ack_json: null });
+    expect(JSON.parse((await command(db)).error_json!).code).toBe('ACK_REMOTO_INCOHERENTE');
+  });
+  it('una pausa de sesión sigue deteniendo la cola sin completar la transacción', async () => {
+    const db = await database();
+    await save(db);
+    const x = context(db, async (_p, body) => ack(body));
+    x.request.mockImplementationOnce(async () => {
+      throw new SessionFailure('expired', 401);
+    });
+    const complete = vi.fn();
     await expect(
       x.connector.uploadTransaction({ crud: [operation(await command(db))], complete }),
-    ).rejects.toBeInstanceOf(ClinicalUploadPaused);
+    ).rejects.toMatchObject({ name: 'ClinicalUploadPaused', code: 'SESION_EXPIRED' });
     expect(complete).not.toHaveBeenCalled();
-    expect((await command(db)).status).toBe('pausado');
+    expect(JSON.parse((await command(db)).error_json!).code).toBe('SESION_EXPIRED');
   });
   it('retains rejected snapshot and history before completing a definitive 422', async () => {
     const db = await database();
@@ -454,6 +468,51 @@ describe('P04 durable clinical writes (SQLite; native SDK acceptance is separate
   });
 });
 
+describe('un registro con error técnico no detiene la cola', () => {
+  const notFound = {
+    status: 404,
+    body: {
+      error: {
+        codigo: 'RECURSO_NO_ENCONTRADO',
+        mensaje: 'Falta la ficha clínica del paciente.',
+        detalles: null,
+        status_code: 404,
+      },
+    },
+  };
+  it('aparta el registro con error técnico, completa su transacción y sigue con el siguiente', async () => {
+    const db = await database();
+    await save(db);
+    await save(db, second);
+    const x = context(db, async (_path, body) => (body.id === capture ? notFound : ack(body)));
+    const first = vi.fn(async () => {});
+    await x.connector.uploadTransaction({ crud: [operation(await command(db))], complete: first });
+    expect(first).toHaveBeenCalledTimes(1);
+    expect(await command(db)).toMatchObject({ status: 'pausado' });
+    expect(JSON.parse((await command(db)).error_json!).code).toBe('RECURSO_NO_ENCONTRADO');
+    const next = vi.fn(async () => {});
+    await x.connector.uploadTransaction({
+      crud: [operation(await command(db, second))],
+      complete: next,
+    });
+    expect(next).toHaveBeenCalledTimes(1);
+    expect((await command(db, second)).status).toBe('aceptado');
+    expect(x.pause).not.toHaveBeenCalled();
+  });
+  it('no vuelve a enviar un registro apartado si la misma operación del SDK se repite', async () => {
+    const db = await database();
+    await save(db);
+    const x = context(db, async () => notFound);
+    const op = operation(await command(db)),
+      complete = vi.fn(async () => {});
+    await x.connector.uploadTransaction({ crud: [op], complete });
+    await x.connector.uploadTransaction({ crud: [op], complete });
+    expect(x.request).toHaveBeenCalledTimes(1);
+    expect(complete).toHaveBeenCalledTimes(2);
+    expect((await command(db)).status).toBe('pausado');
+  });
+});
+
 describe('compatibilidad de snapshots previos con nuevas restricciones', () => {
   async function preservedCommand(db: SqlConnection, status: 'pendiente' | 'rechazado') {
     // Reconstruct a pre-existing snapshot at insertion time. The immutability trigger stays enabled.
@@ -496,18 +555,17 @@ describe('compatibilidad de snapshots previos con nuevas restricciones', () => {
       captured_at: measured,
     });
   });
-  it('conserva un snapshot pendiente inválido y pausa explícitamente sin enviarlo ni retirar su operación', async () => {
+  it('conserva un snapshot pendiente inválido apartado, sin enviarlo y sin detener la cola', async () => {
     const db = await database();
     const payload = await preservedCommand(db, 'pendiente');
     const x = context(db, async () => {
         throw new Error('No debe enviarse');
       }),
       complete = vi.fn();
-    await expect(
-      x.connector.uploadTransaction({ crud: [operation(await command(db))], complete }),
-    ).rejects.toMatchObject({ code: 'SNAPSHOT_FUERA_CONTRATO' });
+    await x.connector.uploadTransaction({ crud: [operation(await command(db))], complete });
     expect(x.request).not.toHaveBeenCalled();
-    expect(complete).not.toHaveBeenCalled();
+    expect(complete).toHaveBeenCalledTimes(1);
+    expect(JSON.parse((await command(db)).error_json!).code).toBe('SNAPSHOT_FUERA_CONTRATO');
     expect(await command(db)).toMatchObject({
       status: 'pausado',
       payload_json: payload,
@@ -517,10 +575,26 @@ describe('compatibilidad de snapshots previos con nuevas restricciones', () => {
 });
 
 describe('Recuperación de la causa de pausa al reabrir el SDK', () => {
-  it.each([
-    ['SESION_EXPIRED', 'SESION_EXPIRED'],
-    ['SNAPSHOT_FUERA_CONTRATO', 'REQUIERE_REVISION'],
-  ])(
+  it('un registro apartado al reabrir no se envía y su transacción se completa', async () => {
+    const db = await database();
+    await save(db);
+    const captured = await command(db);
+    await db.run("UPDATE qc_clinical_command SET status='pausado',error_json=? WHERE id=?", [
+      JSON.stringify({ code: 'SNAPSHOT_FUERA_CONTRATO' }),
+      captured.id,
+    ]);
+    const x = context(db, async () => ({ status: 200, body: {} })),
+      complete = vi.fn(async () => undefined);
+    await x.connector.uploadTransaction({ crud: [operation(captured)], complete });
+    expect(x.request).not.toHaveBeenCalled();
+    expect(complete).toHaveBeenCalledTimes(1);
+    expect(await command(db)).toMatchObject({
+      status: 'pausado',
+      payload_json: captured.payload_json,
+      captured_at: captured.captured_at,
+    });
+  });
+  it.each([['SESION_EXPIRED', 'SESION_EXPIRED']])(
     'conserva %s sin enviar ni completar una transacción todavía pausada',
     async (code, expected) => {
       const db = await database();

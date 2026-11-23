@@ -2,8 +2,14 @@ import type { SessionSnapshot } from '../../services/session/http-session-types'
 import { isRecoverableSessionPause } from '../../data/sync/session-pause';
 export interface SyncSummary {
   pending: number;
+  /** Pausados por la sesión: detienen la cola hasta que la sesión vuelva a permitir envíos. */
   paused: number;
+  /** Apartados por un error técnico: no detienen la cola y esperan la decisión del paciente. */
+  setAside?: number;
+  /** Rechazados por el servidor (excluye los que el paciente decidió conservar en el teléfono). */
   rejected: number;
+  /** Conservados solo en el teléfono por decisión del paciente. */
+  kept?: number;
   runtimePaused: boolean;
   pauseCode?: string | null;
 }
@@ -57,12 +63,18 @@ export function syncPresentation(
       action: 'link',
       label: 'Revisar vinculación',
     };
-  if (
-    (summary?.runtimePaused &&
-      summary.pauseCode &&
-      !isRecoverableSessionPause(summary.pauseCode)) ||
-    (summary?.paused && !isRecoverableSessionPause(summary.pauseCode ?? null))
-  )
+  if (summary?.setAside)
+    return {
+      title:
+        summary.setAside === 1
+          ? 'Un registro no se pudo enviar'
+          : `${summary.setAside} registros no se pudieron enviar`,
+      message:
+        'Se conservan en tu teléfono. Los demás registros siguen enviándose. Puedes reintentar el envío o conservarlos solo en este teléfono.',
+      action: 'details',
+      label: 'Revisar registros',
+    };
+  if (summary?.runtimePaused && summary.pauseCode && !isRecoverableSessionPause(summary.pauseCode))
     return {
       title: 'Un registro necesita revisión',
       message:
