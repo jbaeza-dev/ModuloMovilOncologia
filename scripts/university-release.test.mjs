@@ -53,7 +53,7 @@ test('APK university configuration requires real public inputs and produces inst
 test('academic APKs include labelled triage review by default and respect explicit opt-out', async () => {
   const temp = await mkdtemp(join(tmpdir(), 'qc-triage-config-test-'));
   try {
-    for (const profile of ['demo', 'universidad-demo']) {
+    for (const profile of ['universidad-demo']) {
       for (const flag of [undefined, 'false']) {
         const output = join(temp, profile + '-' + (flag ?? 'default'));
         const env = {
@@ -72,7 +72,7 @@ test('academic APKs include labelled triage review by default and respect explic
           saved,
           new RegExp('EXPO_PUBLIC_P07_SYNTHETIC_REVIEW=' + (flag ?? 'true') + '\\n'),
         );
-        assert.match(saved, new RegExp('EXPO_PUBLIC_DEMO_MODE=' + (profile === 'demo') + '\\n'));
+        assert.match(saved, /EXPO_PUBLIC_DEMO_MODE=false\n/);
       }
     }
   } finally {

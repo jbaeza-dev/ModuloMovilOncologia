@@ -1,7 +1,8 @@
-name: Compilar APK Android (Demo / Universidad)
+name: Compilar APK Android (Universidad)
 
 on:
-  # Se compila automáticamente al integrar en main (perfil universidad-demo). Los pull
+  # Todo APK es universidad-demo: Google OAuth y HTTPS institucional, el mismo que se entrega.
+  # Se compila automáticamente al integrar en main. Los pull
   # requests no compilan APK para no consumir minutos de Actions; la compilación manual
   # (workflow_dispatch) sigue disponible.
   push:
@@ -15,19 +16,6 @@ on:
       - 'scripts/configure-apk.mjs'
   workflow_dispatch:
     inputs:
-      build_profile:
-        description: 'Perfil de compilación: demo (local sintético A/B) o universidad-demo (Google OAuth y HTTPS institucional)'
-        required: true
-        type: choice
-        default: 'demo'
-        options:
-          - 'demo'
-          - 'universidad-demo'
-      p01_probe_enabled:
-        description: 'Incluir acceso a diagnóstico técnico P01 (no prueba aceptación)'
-        required: true
-        type: boolean
-        default: false
       android_abi:
         description: 'ARM64 para el Redmi/Samsung; universal incluye ARM32 y emuladores'
         required: true
@@ -46,8 +34,7 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: ${{ github.event_name == 'workflow_dispatch' && inputs.android_abi == 'universal' && 90 || 60 }}
     env:
-      EXPO_PUBLIC_APP_ENV: ${{ github.event_name == 'workflow_dispatch' && inputs.build_profile || (github.event_name == 'push' && 'universidad-demo' || 'demo') }}
-      EXPO_PUBLIC_P01_PROBE_ENABLED: ${{ github.event_name == 'workflow_dispatch' && inputs.p01_probe_enabled || false }}
+      EXPO_PUBLIC_APP_ENV: universidad-demo
       QC_PUBLIC_ORIGIN: ${{ vars.QC_PUBLIC_ORIGIN }}
       QC_AUTH_ISSUER: ${{ vars.QC_AUTH_ISSUER }}
       QC_AUTH_PUBLIC_KEY: ${{ vars.QC_AUTH_PUBLIC_KEY }}
