@@ -463,6 +463,22 @@ describe('Profile y Reports UI (Bloque 5)', () => {
       expect(mockDeletePatientReport).not.toHaveBeenCalled();
     });
 
+    it('no comparte un reporte guardado si la cuenta cambia con el aviso abierto', async () => {
+      // eslint-disable-next-line @typescript-eslint/no-require-imports
+      const { shareReportFile } = require('../data/local/files/report-storage');
+      const context = mockLocalDataContext as { epoch?: number };
+      const before = context.epoch;
+      const alertSpy = jest.spyOn(Alert, 'alert').mockImplementation((_t, _m, buttons) => {
+        context.epoch = (before ?? 0) + 1;
+        buttons?.find((button) => button.text === 'Compartir')?.onPress?.();
+      });
+      await render(<ReportsScreen />);
+      await fireEvent.press(await screen.findByText('Compartir PDF'));
+      context.epoch = before;
+      expect(alertSpy).toHaveBeenCalled();
+      expect(shareReportFile).not.toHaveBeenCalled();
+    });
+
     it('en PDF abre el visor de inmediato con la generación en curso y luego informa el guardado', async () => {
       // eslint-disable-next-line @typescript-eslint/no-require-imports
       const { generateAndPersistReportPdf } = require('../features/reports/report-pdf');

@@ -5,10 +5,16 @@ import React from 'react';
 import { AccessibilityInfo, Alert } from 'react-native';
 
 // El aviso de identificación aparece antes de cada «Compartir»; por defecto las pruebas lo confirman.
+let mockOnShareNotice: (() => void) | null = null;
+let mockEpoch = 0;
+const mockManager = { getPatientId: () => 'paciente-a', getContextEpoch: () => mockEpoch };
 let mockShareChoice: 'Compartir' | 'Cancelar' = 'Compartir';
 function answerShareNotice() {
   mockShareChoice = 'Compartir';
+  mockOnShareNotice = null;
+  mockEpoch = 0;
   return jest.spyOn(Alert, 'alert').mockImplementation((title, _message, buttons) => {
+    if (title === 'Compartir reporte') mockOnShareNotice?.();
     if (title === 'Compartir reporte')
       buttons?.find((button) => button.text === mockShareChoice)?.onPress?.();
   });
@@ -188,6 +194,7 @@ jest.mock('../data/local/files/report-storage', () => ({
 jest.mock('../providers/LocalDataProvider', () => ({
   useLocalData: () => ({
     patientId: 'paciente-a',
+    manager: mockManager,
     isClosing: false,
   }),
 }));
@@ -268,6 +275,19 @@ describe('Document Viewers UI (Etapa 5)', () => {
       expect(storage.shareReportFile).toHaveBeenCalledWith(mockSearchParams.uri, 'pdf');
       expect(announceSpy).toHaveBeenCalledWith('Menú para compartir reporte abierto.');
       announceSpy.mockRestore();
+    });
+
+    it('no comparte si la cuenta cambia con el aviso abierto', async () => {
+      // eslint-disable-next-line @typescript-eslint/no-require-imports
+      const storage = require('../data/local/files/report-storage');
+      mockOnShareNotice = () => void (mockEpoch += 1);
+      await render(<PdfReportViewer />);
+      await screen.findByTestId('mock-webview');
+      await fireEvent.press(
+        screen.getByRole('button', { name: 'Compartir reporte PDF con tu médico' }),
+      );
+      expect(Alert.alert).toHaveBeenCalled();
+      expect(storage.shareReportFile).not.toHaveBeenCalled();
     });
 
     it('avisa que el reporte incluye nombre y RUT antes de compartir, y cancelar no comparte', async () => {
@@ -470,6 +490,39 @@ describe('Document Viewers UI (Etapa 5)', () => {
         periodDays: '30',
       };
     });
+
+    it.each([
+      ['Cancelar', 0],
+      ['Compartir', 1],
+      ['Compartir con cambio de cuenta', 0],
+    ] as const)(
+      'avisa que la planilla incluye nombre y RUT antes de enviarla: %s',
+      async (choice, shares) => {
+        // eslint-disable-next-line @typescript-eslint/no-require-imports
+        const storage = require('../data/local/files/report-storage');
+        // eslint-disable-next-line @typescript-eslint/no-require-imports
+        const XLSX = require('xlsx');
+        const wb = XLSX.utils.book_new();
+        XLSX.utils.book_append_sheet(wb, XLSX.utils.aoa_to_sheet([['Campo'], ['Dato']]), 'Resumen');
+        const bytes = new Uint8Array(XLSX.write(wb, { type: 'array', bookType: 'xlsx' }));
+        mockXlsxBytesImpl = () => Promise.resolve(bytes);
+        mockShareChoice = choice === 'Cancelar' ? 'Cancelar' : 'Compartir';
+        if (choice === 'Compartir con cambio de cuenta')
+          mockOnShareNotice = () => void (mockEpoch += 1);
+        await render(<SpreadsheetReportViewer />);
+        await screen.findByText('Dato');
+        await fireEvent.press(
+          screen.getByRole('button', { name: 'Compartir planilla Excel con tu médico' }),
+        );
+        expect(Alert.alert).toHaveBeenCalledWith(
+          'Compartir reporte',
+          'Este reporte incluye tu nombre y RUT. Compártelo solo con tu equipo de salud.',
+          expect.any(Array),
+          expect.objectContaining({ cancelable: true }),
+        );
+        await waitFor(() => expect(storage.shareReportFile).toHaveBeenCalledTimes(shares));
+      },
+    );
 
     it('muestra todas las columnas de un resumen cuyo título ocupa solo la primera celda, en pantalla completa y con Enviar', async () => {
       // eslint-disable-next-line @typescript-eslint/no-require-imports

@@ -38,7 +38,7 @@ import { theme } from '../../theme';
 import { generateAndPersistReportPdf } from './report-pdf';
 import { startPdfJob } from './pdf-generation-jobs';
 import { generateAndPersistReportXlsx } from './report-xlsx';
-import { confirmIdentifiedShare } from './share-notice';
+import { captureShareContext, confirmIdentifiedShare } from './share-notice';
 import { useIdentity } from '../access/SessionScreens';
 
 interface SavedReportCardProps {
@@ -333,7 +333,7 @@ export function ReportsScreen() {
     const activePatient = manager?.getPatientId?.() ?? patientId;
     const activeEpoch = manager?.getContextEpoch?.() ?? 0;
     if (!activePatient || saving) return;
-    if (!(await confirmIdentifiedShare())) return;
+    if (!(await confirmIdentifiedShare(captureShareContext(manager, patientId)))) return;
 
     setReportFeedback(null);
     setReportError(null);
@@ -642,7 +642,7 @@ export function ReportsScreen() {
 }
 
 export function ReportStatusScreen() {
-  const { patientId } = useLocalData();
+  const { patientId, manager } = useLocalData();
   const { archivo } = useLocalSearchParams<{ archivo?: string }>();
   const [sharingFeedback, setSharingFeedback] = useState<string | null>(null);
 
@@ -665,7 +665,7 @@ export function ReportStatusScreen() {
 
   async function handleReshare() {
     if (!targetFile || !fileExists) return;
-    if (!(await confirmIdentifiedShare())) return;
+    if (!(await confirmIdentifiedShare(captureShareContext(manager, patientId)))) return;
     setSharingFeedback(null);
     const result = await shareReportFile(targetFile.uri, fileFormat);
     if (result === 'shared_sheet_opened') {

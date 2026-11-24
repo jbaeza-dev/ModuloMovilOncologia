@@ -11,15 +11,33 @@ export const IDENTIFIED_SHARE_NOTICE = {
   cancel: 'Cancelar',
 } as const;
 
-/** Resuelve `true` solo si el paciente confirma; cancelar o cerrar el aviso no comparte nada. */
-export function confirmIdentifiedShare(): Promise<boolean> {
+interface ShareContextSource {
+  getPatientId?: () => string | null;
+  getContextEpoch?: () => number;
+}
+
+/** Recuerda el paciente y la sesión activos; la función indica si siguen siendo los mismos. */
+export function captureShareContext(
+  manager: ShareContextSource | null | undefined,
+  patientId: string | null,
+): () => boolean {
+  const read = () => [manager?.getPatientId?.() ?? patientId, manager?.getContextEpoch?.() ?? 0];
+  const [patient, epoch] = read();
+  return () => {
+    const [currentPatient, currentEpoch] = read();
+    return currentPatient === patient && currentEpoch === epoch;
+  };
+}
+
+/** Resuelve `true` solo si el paciente confirma; y la cuenta no cambió mientras tanto. */
+export function confirmIdentifiedShare(isCurrent: () => boolean): Promise<boolean> {
   return new Promise((resolve) => {
     Alert.alert(
       IDENTIFIED_SHARE_NOTICE.title,
       IDENTIFIED_SHARE_NOTICE.message,
       [
         { text: IDENTIFIED_SHARE_NOTICE.cancel, style: 'cancel', onPress: () => resolve(false) },
-        { text: IDENTIFIED_SHARE_NOTICE.confirm, onPress: () => resolve(true) },
+        { text: IDENTIFIED_SHARE_NOTICE.confirm, onPress: () => resolve(isCurrent()) },
       ],
       { cancelable: true, onDismiss: () => resolve(false) },
     );
