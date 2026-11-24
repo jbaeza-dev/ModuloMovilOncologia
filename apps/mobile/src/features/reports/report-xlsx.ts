@@ -83,7 +83,7 @@ export function buildReportWorkbook(data: ReportData): XLSX.WorkBook {
       makeTextCell('Nombre del paciente'),
       makeTextCell(data.profile?.nombre || 'Paciente en seguimiento'),
     ],
-    [makeTextCell('RUT'), makeTextCell(data.profile?.rut || 'Sin registrar')],
+    [makeTextCell('RUT'), makeTextCell(data.profile?.rut || 'No informado')],
     [
       makeTextCell('Tratamiento'),
       makeTextCell(data.treatment?.nombre ?? data.treatment?.tipo ?? 'En seguimiento oncológico'),

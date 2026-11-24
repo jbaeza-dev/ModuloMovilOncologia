@@ -4,6 +4,16 @@ import { fireEvent, render, screen, waitFor } from '@testing-library/react-nativ
 import React from 'react';
 import { AccessibilityInfo, Alert } from 'react-native';
 
+// El aviso de identificación aparece antes de cada «Compartir»; por defecto las pruebas lo confirman.
+let mockShareChoice: 'Compartir' | 'Cancelar' = 'Compartir';
+function answerShareNotice() {
+  mockShareChoice = 'Compartir';
+  return jest.spyOn(Alert, 'alert').mockImplementation((title, _message, buttons) => {
+    if (title === 'Compartir reporte')
+      buttons?.find((button) => button.text === mockShareChoice)?.onPress?.();
+  });
+}
+
 const mockRouterPush = jest.fn();
 const mockRouterNavigate = jest.fn();
 const mockRouterReplace = jest.fn();
@@ -189,6 +199,7 @@ import { ReportsScreen } from '../features/reports/ReportsScreens';
 describe('Profile y Reports UI (Bloque 5)', () => {
   beforeEach(() => {
     jest.clearAllMocks();
+    answerShareNotice();
     mockSnapshot = {
       state: 'context_ready',
       stale: false,

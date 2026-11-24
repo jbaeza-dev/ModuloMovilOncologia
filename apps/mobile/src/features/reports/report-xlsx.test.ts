@@ -449,7 +449,7 @@ describe('exportador Excel: datos ausentes y capturas ePRO sin respuestas', () =
     );
     const resumen = textos(wb, 'Resumen');
     expect(resumen).toContain('Paciente en seguimiento');
-    expect(resumen).toContain('Sin registrar');
+    expect(resumen).toContain('No informado');
     expect(resumen).toContain('En seguimiento oncológico');
     expect(textos(wb, 'Seguimientos ePRO')).toContain(
       'No hay seguimientos ePRO en el período. Los borradores no se incluyen.',

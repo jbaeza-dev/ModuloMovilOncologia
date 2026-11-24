@@ -17,7 +17,7 @@ La historia de cada incremento, con sus escenarios de aceptación de ese momento
 | Seguimiento ePRO        | Formularios versionados con preguntas condicionales, borradores locales y envío al servidor.                                               |
 | Orientación de síntomas | Motor de reglas versionado que orienta en A1, A2, B, C o D. La definición sigue en `draft` y se evalúa en modo sintético.                  |
 | Educación               | 42 infografías verificadas por SHA-256, 44 videos de YouTube y 4 podcasts (CUIDAQUIMIO).                                                   |
-| Reportes                | PDF (expo-print) y Excel (SheetJS) de 7, 30 o 90 días, cifrados en el teléfono.                                                            |
+| Reportes                | PDF (expo-print) y Excel (SheetJS) de 7, 30 o 90 días, cifrados en el teléfono. Identifican al paciente con nombre y RUT (ver abajo).      |
 | Recordatorios y agenda  | Recordatorios locales y agenda compartida con el gateway: push a la hora y respaldo local 120 s después.                                   |
 | Medicamentos del día    | Confirmación de tomas (tomada u omitida) con historial de correcciones.                                                                    |
 | Asistente               | Consultas vía gateway, 15 s de límite, 2.000 caracteres, aviso permanente de que no reemplaza al equipo médico.                            |
@@ -119,6 +119,24 @@ teléfono. El detalle está en el Anexo D del informe.
 RNF-05 (cambio de paciente en menos de 1 s) se midió con video a 60 cuadros/s en 5 cierres de
 sesión: la pantalla de acceso queda visible en 0,40 a 0,43 s. El drenaje posterior (cancelar avisos
 y cerrar la base) sigue en segundo plano con el aviso «Cerrando la sesión anterior».
+
+## Identificación en los reportes
+
+Decisión del 24-11-2026, que reemplaza la anterior de omitir nombre y RUT. El PDF, el Excel y su
+lectura accesible siguen la misma política (`src/features/reports/report-privacy.ts`):
+
+- **Incluyen** el nombre y el RUT del paciente. Si falta el RUT, dicen «No informado».
+- **Nunca incluyen** el correo, el código de vinculación ni los identificadores internos del
+  tratamiento.
+- **Antes de compartir**, la app avisa: «Este reporte incluye tu nombre y RUT. Compártelo solo con
+  tu equipo de salud.» Cancelar no comparte nada (`src/features/reports/share-notice.ts`).
+
+Por qué: el reporte existe para que el paciente lo entregue a su equipo tratante, que necesita
+archivarlo en la ficha correcta. Sin nombre ni RUT habría que identificarlo a mano, y con varios
+pacientes en el mismo tratamiento eso facilita confundirlos. El archivo se guarda cifrado y solo
+sale del teléfono cuando el paciente pulsa «Compartir», así que entregar sus propios datos a su
+médico es decisión suya. El riesgo que queda es que, una vez enviado (por ejemplo, por WhatsApp o
+correo), el archivo queda fuera del control de la app; por eso el aviso previo.
 
 ## Limitaciones conocidas
 
