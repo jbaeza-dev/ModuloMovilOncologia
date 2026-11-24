@@ -1,3 +1,5 @@
+import { PDF_VIEWER_CSP } from './pdf-viewer-security';
+
 /**
  * HTML del visor PDF basado en pdf.js.
  *
@@ -11,6 +13,7 @@ export function buildPdfJsHtml(base64Pdf?: string): string {
 <html lang="es">
 <head>
   <meta charset="utf-8" />
+  <meta http-equiv="Content-Security-Policy" content="${PDF_VIEWER_CSP}" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=5.0, user-scalable=yes" />
   <style>
     * { box-sizing: border-box; margin: 0; padding: 0; }
