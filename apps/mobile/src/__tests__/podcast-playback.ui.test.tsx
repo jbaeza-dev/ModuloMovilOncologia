@@ -2,7 +2,7 @@
 
 import { fireEvent, render, screen, waitFor } from '@testing-library/react-native';
 import React from 'react';
-import { AccessibilityInfo, Pressable } from 'react-native';
+import { AccessibilityInfo, Pressable, StyleSheet } from 'react-native';
 
 const mockRouterPush = jest.fn();
 const mockRouterBack = jest.fn();
@@ -225,6 +225,19 @@ describe('Podcast Playback & MiniPlayer UI (Etapa 7)', () => {
   });
 
   describe('PodcastPlayerScreen', () => {
+    it('la barra superior y las velocidades bajan de línea si no caben en la pantalla', async () => {
+      await render(
+        <TestPlayerWithProvider>
+          <PodcastPlayerScreen />
+        </TestPlayerWithProvider>,
+      );
+      await fireEvent.press(screen.getByTestId('trigger-play'));
+      for (const id of ['podcast-barra-superior', 'podcast-velocidades'])
+        expect(StyleSheet.flatten((await screen.findByTestId(id)).props.style).flexWrap).toBe(
+          'wrap',
+        );
+    });
+
     it('muestra el reproductor ampliado con transportes grandes y selector de velocidad', async () => {
       const announceSpy = jest.spyOn(AccessibilityInfo, 'announceForAccessibility');
 

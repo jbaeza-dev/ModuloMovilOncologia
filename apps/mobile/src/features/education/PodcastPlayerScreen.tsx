@@ -67,7 +67,7 @@ export function PodcastPlayerScreen() {
     <Screen isRoot={false} scroll={false}>
       <View style={styles.container}>
         {/* Barra superior de navegación */}
-        <View style={styles.topBar}>
+        <View testID="podcast-barra-superior" style={styles.topBar}>
           <Pressable
             accessibilityRole="button"
             accessibilityLabel="Volver a la pantalla anterior"
@@ -167,7 +167,7 @@ export function PodcastPlayerScreen() {
               </View>
 
               {/* Selector de velocidad de reproducción */}
-              <View style={styles.speedRow}>
+              <View testID="podcast-velocidades" style={styles.speedRow}>
                 <Text style={styles.speedLabel}>{MULTIMEDIA_AND_EDUCATION_COPY.audioSpeed}:</Text>
                 {[1.0, 1.25, 1.5].map((rate) => {
                   const isSelected = playbackRate === rate;
@@ -231,6 +231,8 @@ function createStyles(colors: ReturnType<typeof useAppTheme>['theme']['colors'])
     },
     topBar: {
       flexDirection: 'row',
+      flexWrap: 'wrap',
+      gap: theme.spacing.xs,
       alignItems: 'center',
       justifyContent: 'space-between',
       paddingHorizontal: theme.spacing.sm,
@@ -360,6 +362,7 @@ function createStyles(colors: ReturnType<typeof useAppTheme>['theme']['colors'])
     },
     speedRow: {
       flexDirection: 'row',
+      flexWrap: 'wrap',
       alignItems: 'center',
       justifyContent: 'center',
       gap: theme.spacing.sm,
