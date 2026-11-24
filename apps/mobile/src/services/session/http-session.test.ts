@@ -51,7 +51,8 @@ function harness(vault = new Vault()) {
     dropAccept = false,
     profileStatus = 200,
     treatmentStatus = 200,
-    clinicalStatus = 200;
+    clinicalStatus = 200,
+    incorporation = 'COMPLETO';
   const calls: { path: string; method: string; body: string; token: string }[] = [];
   let delay: (() => Promise<void>) | null = null;
   const fake: typeof fetch = vi.fn(async (input, init) => {
@@ -99,7 +100,7 @@ function harness(vault = new Vault()) {
           nombre: identity === owner ? 'Cuenta A' : 'Cuenta B',
           rol: 'paciente',
           activo: true,
-          estado_incorporacion: 'COMPLETO',
+          estado_incorporacion: incorporation,
         },
         profileStatus,
       );
@@ -172,6 +173,9 @@ function harness(vault = new Vault()) {
     },
     setProfile: (v: number) => {
       profileStatus = v;
+    },
+    setIncorporation: (v: string) => {
+      incorporation = v;
     },
     setDelay: (v: () => Promise<void>) => {
       delay = v;
@@ -388,6 +392,72 @@ describe('HTTP identity, credentials and account isolation', () => {
     expect(h.vault.data.has('active')).toBe(true);
     expect(capture.text).toBe('Synthetic preserved capture');
     expect(h.session.getSnapshot().uploadAllowed).toBe(false);
+  });
+  describe('la renovación del token conserva el estado real de la sesión', () => {
+    async function renew(h: ReturnType<typeof harness>) {
+      h.setExpired();
+      const result = await h.session.request('clinical', '/capture', 'POST', { id: randomUUID() });
+      expect(result.status).toBe(200);
+      expect(h.calls.filter((v) => v.path === '/__demo/auth/refresh')).toHaveLength(1);
+    }
+    it('un perfil incompleto sigue pidiendo completar los datos', async () => {
+      const h = harness();
+      h.setIncorporation('PENDIENTE');
+      await login(h);
+      expect(h.session.getState()).toBe('profile_incomplete');
+      await renew(h);
+      expect(h.session.getState()).toBe('profile_incomplete');
+      expect(h.session.getSnapshot().uploadAllowed).toBe(false);
+    });
+    it('un tratamiento sin vincular sigue pendiente de vinculación', async () => {
+      const h = harness();
+      h.setTreatment(404);
+      await login(h);
+      expect(h.session.getState()).toBe('clinical_incomplete');
+      await renew(h);
+      expect(h.session.getState()).toBe('clinical_incomplete');
+    });
+    it('los términos pendientes siguen pendientes', async () => {
+      const h = harness();
+      h.setConsent(true);
+      await login(h);
+      expect(h.session.getState()).toBe('terms_pending');
+      await renew(h);
+      expect(h.session.getState()).toBe('terms_pending');
+    });
+    it('un servicio no disponible no se presenta como sesión lista', async () => {
+      const h = harness();
+      await login(h);
+      h.setProfile(503);
+      await expect(h.session.refreshIdentity()).rejects.toMatchObject({ kind: 'unavailable' });
+      expect(h.session.getState()).toBe('service_unavailable');
+      await renew(h);
+      expect(h.session.getState()).toBe('service_unavailable');
+    });
+    it('tras una renovación fallida, la siguiente recalcula el estado desde lo ya leído', async () => {
+      const h = harness();
+      h.setIncorporation('PENDIENTE');
+      await login(h);
+      h.setExpired();
+      h.setRefresh(401);
+      await expect(
+        h.session.request('clinical', '/capture', 'POST', { id: randomUUID() }),
+      ).rejects.toMatchObject({ kind: 'expired' });
+      expect(h.session.getState()).toBe('expired');
+      h.setRefresh(200);
+      expect(
+        (await h.session.request('clinical', '/capture', 'POST', { id: randomUUID() })).status,
+      ).toBe(200);
+      expect(h.session.getState()).toBe('profile_incomplete');
+    });
+    it('una sesión completa vuelve a quedar lista, sin habilitar envíos hasta revalidar', async () => {
+      const h = harness();
+      await login(h);
+      expect(h.session.getState()).toBe('context_ready');
+      await renew(h);
+      expect(h.session.getState()).toBe('context_ready');
+      expect(h.session.getSnapshot().uploadAllowed).toBe(false);
+    });
   });
   it('keeps an unavailable authorization service distinct from an invalid session', async () => {
     const h = harness();
