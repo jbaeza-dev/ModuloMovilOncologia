@@ -8,6 +8,7 @@ export const MIGRATIONS = [
   '003-agenda-history.sql',
   '004-dispatch-attempts.sql',
   '005-medication-reminder-binding.sql',
+  '006-dispatch-ticket-index.sql',
 ] as const;
 export async function migrate(db: Database, target: number = MIGRATIONS.length): Promise<void> {
   if (!Number.isInteger(target) || target < 1 || target > MIGRATIONS.length)
