@@ -23,6 +23,7 @@ import {
 import { protectedKey } from '../../data/sync/native-cipher';
 import { clinicalSyncSchema } from '../../data/sync/schema';
 import { createSyncConnection } from '../../data/sync/sql-connection';
+import { isSupportedAgendaSchema } from './agenda-schema';
 const TASK = 'quimiocare-agenda-p06',
   ACTIVE = 'quimiocare.p06.active';
 interface NativeBinding extends AgendaBinding {
@@ -94,10 +95,7 @@ async function handle(data: unknown, opened = false) {
     const connection = createSyncConnection(database);
     await assertEncryptedDatabase(connection);
     const version = await connection.first<{ user_version: number }>('PRAGMA user_version');
-    if (
-      ![13, 14, 15, 16, 17, 18, 19, 20].includes(version?.user_version ?? 0) ||
-      !(await isActive(binding))
-    )
+    if (!isSupportedAgendaSchema(version?.user_version ?? 0) || !(await isActive(binding)))
       return null;
     const pref = await connection.first<{ habilitado: number }>(
       'SELECT habilitado FROM preferencia_avisos WHERE paciente_id=?',
