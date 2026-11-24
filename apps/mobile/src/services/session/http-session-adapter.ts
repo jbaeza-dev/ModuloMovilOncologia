@@ -348,6 +348,27 @@ export class HttpSessionAdapter implements SessionAdapter {
           : 'Servicio no disponible. Tus datos locales se conservan.',
     });
   }
+  /**
+   * Renovar el token no cambia lo que se sabe del perfil, los términos ni el contexto clínico, así
+   * que la sesión conserva el estado que tenía. Solo si estaba vencida (el problema que la
+   * renovación resuelve) se recalcula a partir de la identidad y el consentimiento ya leídos.
+   */
+  private stateAfterRenewal(before: SessionState): SessionState {
+    if (before !== 'expired' && before !== 'renewing') return before;
+    const identity = this.snapshot.identity;
+    if (!identity) return 'reauthenticating';
+    if (identity.profile.estado_incorporacion !== 'COMPLETO') return 'profile_incomplete';
+    const { consent, terms } = this.snapshot;
+    if (consent?.requiere_aceptacion || (consent && terms && !check.canUpload(consent, terms)))
+      return 'terms_pending';
+    if (
+      identity.clinicalStatus !== 'available' ||
+      identity.treatmentStatus !== 'available' ||
+      identity.treatment?.tipo_tratamiento_codigo !== 'quimioterapia'
+    )
+      return 'clinical_incomplete';
+    return 'context_ready';
+  }
   async accessToken(failedToken?: string): Promise<string> {
     const current = this.current;
     if (!current) throw new SessionFailure('expired');
@@ -358,7 +379,8 @@ export class HttpSessionAdapter implements SessionAdapter {
       return current.accessToken;
     if (!this.renew) {
       const epoch = this.epoch,
-        owner = current.owner;
+        owner = current.owner,
+        before = this.snapshot.state;
       this.update({ state: 'renewing', uploadAllowed: false });
       const promise = (async () => {
         try {
@@ -384,10 +406,7 @@ export class HttpSessionAdapter implements SessionAdapter {
           this.current = next;
           await this.persist();
           this.assert(epoch, owner);
-          this.update({
-            state: this.snapshot.consent?.requiere_aceptacion ? 'terms_pending' : 'context_ready',
-            uploadAllowed: false,
-          });
+          this.update({ state: this.stateAfterRenewal(before), uploadAllowed: false });
           return next;
         } catch (error) {
           this.assert(epoch, owner);
