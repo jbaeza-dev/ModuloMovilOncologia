@@ -7,6 +7,7 @@ import { usePreventRemove } from 'expo-router/react-navigation';
 import * as Crypto from 'expo-crypto';
 import type { GatewayConfiguracionRecordatorio, GatewayRecordatorio } from '@quimiocare/contracts';
 import { agendaDate } from '@quimiocare/contracts/agenda';
+import { useCivilDay } from '../../hooks/use-civil-day';
 import { Screen } from '../../components/Screen';
 import { DateTimePickerField } from '../../components/DateTimePickerField';
 import {
@@ -70,7 +71,9 @@ export function SharedAgendaEditScreen() {
     ),
     [hours, setHours] = useState('08:00'),
     [weekdays, setWeekdays] = useState([1, 2, 3, 4, 5, 6, 7]),
-    [start, setStart] = useState(() => agendaDate(Date.now())),
+    today = useCivilDay(),
+    [start, setStart] = useState(today),
+    [startChosen, setStartChosen] = useState(false),
     [end, setEnd] = useState(''),
     [active, setActive] = useState(true),
     [dirty, setDirty] = useState(false),
@@ -96,6 +99,7 @@ export function SharedAgendaEditScreen() {
         setHours(rule.horas.join(', '));
         setWeekdays(rule.dias_semana);
         setStart(rule.fecha_inicio);
+        setStartChosen(true);
         setEnd(rule.fecha_fin ?? '');
         setActive(rule.activo);
       }
@@ -105,6 +109,11 @@ export function SharedAgendaEditScreen() {
       current = false;
     };
   }, [agenda, id, params.id, ready]);
+  // Un horario nuevo empieza «hoy»: si el formulario cruza la medianoche y el paciente no eligió
+  // otra fecha, la de inicio pasa al día nuevo. Un horario existente conserva la suya.
+  useEffect(() => {
+    if (!params.id && !startChosen) setStart(today);
+  }, [today, params.id, startChosen]);
   usePreventRemove(dirty && !done, ({ data }) =>
     Alert.alert('¿Descartar los cambios?', 'El horario confirmado se conserva.', [
       { text: 'Seguir editando', style: 'cancel' },
@@ -439,7 +448,10 @@ export function SharedAgendaEditScreen() {
         mode="date"
         label="Fecha de inicio"
         value={start}
-        onChange={update(setStart)}
+        onChange={(value: string) => {
+          setStartChosen(true);
+          update(setStart)(value);
+        }}
         disabled={!ready || busy}
       />
       <DateTimePickerField

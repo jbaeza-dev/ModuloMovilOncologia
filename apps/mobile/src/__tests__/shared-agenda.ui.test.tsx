@@ -46,6 +46,8 @@ jest.mock('expo-router/react-navigation', () => ({
 jest.mock('expo-crypto', () => ({ randomUUID: () => '99999999-9999-4999-8999-999999999999' }));
 jest.mock('../services/session/native-session', () => ({ registerNativePush: jest.fn() }));
 jest.mock('../providers/LocalDataProvider', () => ({ useLocalData: () => mockData }));
+let mockDay = '2026-11-23';
+jest.mock('../hooks/use-civil-day', () => ({ useCivilDay: () => mockDay }));
 const rule: GatewayRecordatorio = {
   id: 'ed21a163-0102-4b25-98af-4b3552cc87ad',
   tipo: 'epro',
@@ -103,6 +105,7 @@ beforeEach(() => {
   });
   (mockData as { agendaCoordinator: unknown }).agendaCoordinator = coordinatorWithCoverage;
   mockMedications = [];
+  mockDay = '2026-11-23';
   for (const key of Object.keys(mockParams)) delete mockParams[key];
   mockRead.mockResolvedValue({ rules: [rule], state: { synchronized_at: '2026-10-29T12:00:00Z' } });
   mockIntents.mockResolvedValue([]);
@@ -343,6 +346,82 @@ describe('Agenda compartida: interfaz confirmada', () => {
     expect(mockBack).not.toHaveBeenCalled();
     await fireEvent.press(screen.getByRole('button', { name: 'Volver a mis recordatorios' }));
     await waitFor(() => expect(mockBack).toHaveBeenCalledTimes(1));
+  });
+  it('un horario nuevo abierto antes de la medianoche empieza el día nuevo si se guarda después', async () => {
+    const view = await render(
+      <ThemeProvider>
+        <SharedAgendaEditScreen />
+      </ThemeProvider>,
+    );
+    await fireEvent.changeText(
+      await screen.findByLabelText('Título del recordatorio'),
+      'Aviso nuevo',
+    );
+    mockDay = '2026-11-24';
+    await view.rerender(
+      <ThemeProvider>
+        <SharedAgendaEditScreen />
+      </ThemeProvider>,
+    );
+    await fireEvent.press(screen.getByLabelText('Guardar y confirmar horario'));
+    await waitFor(() =>
+      expect(mockSave).toHaveBeenCalledWith(
+        '99999999-9999-4999-8999-999999999999',
+        expect.objectContaining({ fecha_inicio: '2026-11-24' }),
+        undefined,
+      ),
+    );
+  });
+  it('si el paciente eligió la fecha de inicio, el cambio de día no la modifica', async () => {
+    const view = await render(
+      <ThemeProvider>
+        <SharedAgendaEditScreen />
+      </ThemeProvider>,
+    );
+    await fireEvent.changeText(
+      await screen.findByLabelText('Título del recordatorio'),
+      'Aviso nuevo',
+    );
+    await fireEvent.press(
+      screen.getByRole('button', { name: 'Escribir fecha con teclado para Fecha de inicio' }),
+    );
+    await fireEvent.changeText(
+      await screen.findByLabelText('Campo de texto fecha para Fecha de inicio'),
+      '2026-12-01',
+    );
+    mockDay = '2026-11-24';
+    await view.rerender(
+      <ThemeProvider>
+        <SharedAgendaEditScreen />
+      </ThemeProvider>,
+    );
+    await fireEvent.press(screen.getByLabelText('Guardar y confirmar horario'));
+    await waitFor(() =>
+      expect(mockSave).toHaveBeenCalledWith(
+        '99999999-9999-4999-8999-999999999999',
+        expect.objectContaining({ fecha_inicio: '2026-12-01' }),
+        undefined,
+      ),
+    );
+  });
+  it('al editar un horario existente el cambio de día no reemplaza su fecha de inicio', async () => {
+    mockParams.id = rule.id;
+    const view = await render(
+      <ThemeProvider>
+        <SharedAgendaEditScreen />
+      </ThemeProvider>,
+    );
+    await screen.findByDisplayValue('Mi registro diario');
+    mockDay = '2026-11-24';
+    await view.rerender(
+      <ThemeProvider>
+        <SharedAgendaEditScreen />
+      </ThemeProvider>,
+    );
+    await fireEvent.press(screen.getByRole('button', { name: 'Guardar y confirmar horario' }));
+    await waitFor(() =>
+      expect(mockSave).toHaveBeenCalledWith(rule.id, normalizedReminder(rule), 1),
+    );
   });
   it('un fallo de red al guardar conserva la edición y no navega como si hubiera ACK', async () => {
     mockParams.id = rule.id;

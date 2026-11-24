@@ -129,3 +129,9 @@ y cerrar la base) sigue en segundo plano con el aviso «Cerrando la sesión ante
   (`CLINICAL_RETENTION_ENABLED`).
 - No hay certificate pinning (el certificado del dominio lo administra la universidad).
 - Solo Android.
+- La agenda, los avisos, los formularios diarios y el gateway usan siempre la hora de Chile
+  continental (`America/Santiago`), no la zona del teléfono. En Magallanes (`America/Punta_Arenas`,
+  que no cambia de hora en invierno) los avisos y el cambio de día quedan una hora desfasados
+  mientras rige el horario de invierno, y en Isla de Pascua (`Pacific/Easter`) quedan dos horas
+  desfasados todo el año. Corregirlo exige que el contrato de agenda acepte otras zonas
+  horarias, porque el gateway hoy rechaza cualquier valor distinto de `America/Santiago`.

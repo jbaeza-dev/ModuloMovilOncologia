@@ -1,6 +1,7 @@
 import { QueryRevisionContext } from '../providers/QueryRevision';
 import { useFocusEffect } from 'expo-router';
 import { useCallback, useContext, useRef, useState, type Context } from 'react';
+import { useCivilDay } from './use-civil-day';
 
 export interface LocalQueryOptions {
   queryKey?: string;
@@ -19,6 +20,8 @@ export function useFocusedValue<T>(
   const extraRevision = options?.extraRevision ?? 0;
   const effectiveRevision = dataRevision + extraRevision;
   const queryKey = options?.queryKey;
+  // Al cambiar el día con la pantalla abierta, lo que depende de «hoy» se vuelve a cargar.
+  const day = useCivilDay();
 
   const [value, setValue] = useState<T>(initial);
   const [loading, setLoading] = useState(true);
@@ -62,7 +65,7 @@ export function useFocusedValue<T>(
       return () => {
         generation.current++;
       };
-    }, [load, revision, effectiveRevision, queryKey]),
+    }, [load, revision, effectiveRevision, queryKey, day]),
   );
 
   return { value, loading, error, refresh: () => setRevision((n) => n + 1) };
@@ -77,6 +80,8 @@ export function useFocusedList<T>(
   const extraRevision = options?.extraRevision ?? 0;
   const effectiveRevision = dataRevision + extraRevision;
   const queryKey = options?.queryKey;
+  // Al cambiar el día con la pantalla abierta, lo que depende de «hoy» se vuelve a cargar.
+  const day = useCivilDay();
   const pageSize = options?.pageSize ?? 30;
 
   const [items, setItems] = useState<T[]>([]);
@@ -127,7 +132,7 @@ export function useFocusedList<T>(
       return () => {
         generation.current++;
       };
-    }, [load, revision, effectiveRevision, queryKey]),
+    }, [load, revision, effectiveRevision, queryKey, day]),
   );
 
   const loadMore = useCallback(async () => {
