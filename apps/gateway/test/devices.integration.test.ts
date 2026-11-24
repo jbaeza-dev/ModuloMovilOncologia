@@ -223,6 +223,90 @@ describe('Device HTTP with real PostgreSQL and authoritative C-01', () => {
       sesion: { activa: false, version: 2, token_registrado: false },
     });
   });
+  it('si A cerró sesión sin conexión, B registra el push en el mismo teléfono y el de A se revoca', async () => {
+    const a = body();
+    expect((await request('push-token', 'POST', a)).status).toBe(201);
+    // A cerró sesión sin conexión: su revocación quedó pendiente en el teléfono y su registro sigue activo.
+    const aOwner = (
+      await db.query<{ owner_id: string }>('SELECT owner_id FROM gw_device WHERE id=$1', [
+        a.sesion_id,
+      ])
+    ).rows[0]!.owner_id;
+    await db.query('INSERT INTO gw_agenda(owner_id,version) VALUES($1,1) ON CONFLICT DO NOTHING', [
+      aOwner,
+    ]);
+    const reminder = randomUUID();
+    await db.query(
+      `INSERT INTO gw_reminder(id,owner_id,kind,title,timezone,hours,weekdays,starts_on,active,create_hash)
+       VALUES($1,$2,'signos','Aviso A','America/Santiago','{08:00}','{1,2,3,4,5,6,7}','2026-01-01',true,$3)`,
+      [reminder, aOwner, 'a'.repeat(64)],
+    );
+    await db.query(
+      `INSERT INTO gw_dispatch(occurrence_id,session_id,owner_id,reminder_id,reminder_version,scheduled_at,backup_at,expires_at)
+       VALUES($1,$2,$3,$4,1,now(),now(),now()+interval '10 minutes')`,
+      [reminder + ':1:2026-01-01:0800', a.sesion_id, aOwner, reminder],
+    );
+    const b = { ...a, sesion_id: randomUUID() };
+    expect((await request('push-token', 'POST', b, other)).status).toBe(201);
+    expect((await request('sesiones/' + a.sesion_id)).body).toMatchObject({
+      sesion: { activa: false, token_registrado: false, version: 2 },
+    });
+    expect(
+      (
+        await db.query<{ status: string }>('SELECT status FROM gw_dispatch WHERE session_id=$1', [
+          a.sesion_id,
+        ])
+      ).rows[0]?.status,
+    ).toBe('cancelled');
+    // La revocación pendiente de A, enviada después, no afecta a B.
+    expect((await request('sesiones/' + a.sesion_id, 'DELETE')).status).toBe(204);
+    expect((await request('sesiones/' + b.sesion_id, 'GET', undefined, other)).body).toMatchObject({
+      sesion: { activa: true, version: 1, token_registrado: true },
+    });
+  });
+  it.each(['instalacion_id', 'token_push'] as const)(
+    'una coincidencia parcial (solo %s) no libera el registro de A',
+    async (field) => {
+      const a = body();
+      expect((await request('push-token', 'POST', a)).status).toBe(201);
+      const b = { ...body(), [field]: a[field] };
+      expect((await request('push-token', 'POST', b, other)).body).toMatchObject({
+        error: { codigo: 'REGISTRO_EN_CONFLICTO' },
+      });
+      expect((await request('sesiones/' + a.sesion_id)).body).toMatchObject({
+        sesion: { activa: true, version: 1 },
+      });
+    },
+  );
+  it('dos registros simultáneos del mismo teléfono dejan exactamente una cuenta activa', async () => {
+    const phone = body();
+    const a = { ...phone },
+      b = { ...phone, sesion_id: randomUUID() };
+    const results = await Promise.all([
+      request('push-token', 'POST', a),
+      request('push-token', 'POST', b, other),
+    ]);
+    expect(results.map((r) => r.status)).toEqual([201, 201]);
+    const active = (
+      await db.query<{ n: string }>(
+        'SELECT count(*) n FROM gw_device WHERE installation_id=$1 AND active',
+        [phone.instalacion_id],
+      )
+    ).rows[0]!.n;
+    expect(Number(active)).toBe(1);
+  });
+  it('A no puede usar el registro de B aunque tenga el mismo teléfono', async () => {
+    const a = body();
+    await request('push-token', 'POST', a);
+    const b = { ...a, sesion_id: randomUUID() };
+    expect((await request('push-token', 'POST', b, other)).status).toBe(201);
+    expect((await request('push-token', 'POST', b)).body).toMatchObject({
+      error: { codigo: 'REGISTRO_EN_CONFLICTO' },
+    });
+    expect((await request('sesiones/' + b.sesion_id, 'GET', undefined, other)).body).toMatchObject({
+      sesion: { activa: true, version: 1 },
+    });
+  });
   it.each([401, 403, 503])(
     'retains identity/authorization/dependency distinction for C-01 %s',
     async (status) => {

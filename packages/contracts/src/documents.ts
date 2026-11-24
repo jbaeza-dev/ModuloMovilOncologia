@@ -1,4 +1,4 @@
-import { withMedicationBinding } from './gateway-extension.js';
+import { withMedicationBinding, withPhoneRelease } from './gateway-extension.js';
 import clinical from '../specs/openapi-clinico-rc32-bundle.json' with { type: 'json' };
 import ai from '../specs/openapi-ia-rc31.json' with { type: 'json' };
 import gateway from '../specs/openapi-gateway-quimiocare-v1.json' with { type: 'json' };
@@ -35,7 +35,7 @@ export interface ContractDocument {
 export const documents = {
   clinical,
   ai,
-  gateway: withMedicationBinding(gateway as unknown as ContractDocument),
+  gateway: withPhoneRelease(withMedicationBinding(gateway as unknown as ContractDocument)),
   demo,
 } as unknown as Record<Service, ContractDocument>;
 export const contractInventory = inventory;

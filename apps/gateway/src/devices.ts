@@ -1,5 +1,6 @@
 import { createHmac, timingSafeEqual } from 'node:crypto';
 import type { GatewayRegistroPush, GatewaySesion, GatewaySesiones } from '@quimiocare/contracts';
+import type { PoolClient } from 'pg';
 import type { Database } from './persistence/database.js';
 import { transaction } from './persistence/database.js';
 import { GatewayError } from './http/errors.js';
@@ -38,6 +39,36 @@ function view(row: DeviceRow): GatewaySesion {
     actualizado_en: row.updated_at.toISOString(),
     token_registrado: row.active && row.token_enabled,
   };
+}
+/**
+ * Decisión del 24-11-2026 (enmienda al contrato de G-02): un teléfono tiene una sola cuenta activa.
+ * Si otra sesión tiene un registro activo con la MISMA instalación Y el MISMO token push (por
+ * ejemplo, la cuenta anterior cerró sesión sin conexión y su revocación quedó pendiente en el
+ * teléfono), ese registro se revoca igual que con DELETE. Las dos cosas juntas solo se obtienen con
+ * el teléfono en la mano. Una coincidencia parcial (solo instalación o solo token) sigue siendo
+ * REGISTRO_EN_CONFLICTO, como dice el contrato. La revocación pendiente que llegue después
+ * encuentra el registro inactivo y no afecta al nuevo.
+ */
+async function releasePhone(client: PoolClient, body: GatewayRegistroPush) {
+  const previous = (
+    await client.query<{ id: string; owner_id: string }>(
+      `SELECT id,owner_id FROM gw_device
+       WHERE active AND id<>$1::uuid AND installation_id=$2::uuid
+         AND push_provider=$3 AND gw_push_digest(push_token)=gw_push_digest($4)
+       ORDER BY id FOR UPDATE`,
+      [body.sesion_id, body.instalacion_id, body.proveedor_push, body.token_push],
+    )
+  ).rows;
+  for (const row of previous) {
+    await client.query(
+      'UPDATE gw_device SET active=false,token_enabled=false,revoked_at=clock_timestamp(),updated_at=clock_timestamp(),version=version+1 WHERE owner_id=$1 AND id=$2',
+      [row.owner_id, row.id],
+    );
+    await client.query(
+      "UPDATE gw_dispatch SET status='cancelled',next_attempt_at=NULL WHERE owner_id=$1 AND session_id=$2 AND status IN ('reserved','retry','sending')",
+      [row.owner_id, row.id],
+    );
+  }
 }
 interface Cursor {
   v: 1;
@@ -88,6 +119,10 @@ export function devices(db: Database, cursorKey: string) {
           await client.query('SELECT pg_advisory_xact_lock(hashtext($1))', [
             'device:' + body.sesion_id.toLowerCase(),
           ]);
+          // Mismo orden de bloqueo para dos registros simultáneos desde el mismo teléfono.
+          await client.query('SELECT pg_advisory_xact_lock(hashtext($1))', [
+            'installation:' + body.instalacion_id.toLowerCase(),
+          ]);
           const existing = (
             await client.query<DeviceRow>('SELECT * FROM gw_device WHERE id=$1 FOR UPDATE', [
               body.sesion_id,
@@ -105,6 +140,7 @@ export function devices(db: Database, cursorKey: string) {
               existing.os_version === (body.version_so ?? null);
             if (!same && body.version_esperada !== existing.version)
               throw new GatewayError(409, 'VERSION_EN_CONFLICTO');
+            await releasePhone(client, body);
             const row = (
               await client.query<DeviceRow>(
                 `UPDATE gw_device SET last_seen_at=clock_timestamp(),
@@ -128,6 +164,7 @@ export function devices(db: Database, cursorKey: string) {
           }
           if (body.version_esperada !== undefined && body.version_esperada !== 1)
             throw new GatewayError(409, 'VERSION_EN_CONFLICTO');
+          await releasePhone(client, body);
           const row = (
             await client.query<DeviceRow>(
               `INSERT INTO gw_device(id,owner_id,installation_id,push_provider,push_token,platform,model,app_version,os_version)

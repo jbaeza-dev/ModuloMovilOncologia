@@ -1,9 +1,8 @@
 import preparation from '../specs/openapi-simulador-preparacion-v1.json' with { type: 'json' };
 import clinical from '../specs/openapi-clinico-rc32-bundle.json' with { type: 'json' };
 import ai from '../specs/openapi-ia-rc31.json' with { type: 'json' };
-import gateway from '../specs/openapi-gateway-quimiocare-v1.json' with { type: 'json' };
 import evaluation from '../specs/openapi-simulador-evaluacion-v1.json' with { type: 'json' };
-import type { ContractDocument, JsonObject } from './documents.js';
+import { documents, type ContractDocument, type JsonObject } from './documents.js';
 
 export interface ServerConfig {
   url: string;
@@ -100,7 +99,8 @@ export function getEvaluationExecutionDoc(
 export function getGatewayExecutionDoc(
   servers: ServerConfig[] = DEFAULT_GATEWAY_SERVERS,
 ): ContractDocument {
-  const gwDoc = JSON.parse(JSON.stringify(gateway)) as ContractDocument;
+  // El mismo documento con el que el gateway valida las solicitudes, con sus enmiendas propias.
+  const gwDoc = structuredClone(documents.gateway);
   gwDoc.servers = servers;
   return gwDoc;
 }
