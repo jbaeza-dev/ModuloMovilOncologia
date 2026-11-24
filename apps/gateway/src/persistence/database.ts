@@ -11,14 +11,31 @@ export function openDatabase(connectionString: string): Database {
     query_timeout: 6000,
   });
 }
-export async function transaction<T>(
+export function transaction<T>(
   db: Database,
+  action: (client: PoolClient) => Promise<T>,
+): Promise<T> {
+  return run(db, 'BEGIN', action);
+}
+/**
+ * Lectura de solo consulta en que todas las sentencias ven la misma foto de la base
+ * (REPEATABLE READ): no toma bloqueos de fila ni espera a una escritura en curso.
+ */
+export function readSnapshot<T>(
+  db: Database,
+  action: (client: PoolClient) => Promise<T>,
+): Promise<T> {
+  return run(db, 'BEGIN ISOLATION LEVEL REPEATABLE READ READ ONLY', action);
+}
+async function run<T>(
+  db: Database,
+  begin: string,
   action: (client: PoolClient) => Promise<T>,
 ): Promise<T> {
   const client = await db.connect();
   let released = false;
   try {
-    await client.query('BEGIN');
+    await client.query(begin);
     const result = await action(client);
     await client.query('COMMIT');
     return result;

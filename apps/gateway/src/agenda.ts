@@ -23,7 +23,7 @@ import {
   validCivilDate,
   validReminderDates,
 } from '@quimiocare/contracts/agenda';
-import { transaction, type Database } from './persistence/database.js';
+import { readSnapshot, transaction, type Database } from './persistence/database.js';
 import { GatewayError } from './http/errors.js';
 
 export interface ReminderRow {
@@ -57,14 +57,15 @@ export async function lockAgenda(client: PoolClient, owner: string): Promise<voi
   await client.query('SELECT owner_id FROM gw_agenda WHERE owner_id=$1 FOR UPDATE', [owner]);
   await client.query('UPDATE gw_agenda SET version=1 WHERE owner_id=$1 AND version=0', [owner]);
 }
+/** Las lecturas no crean la fila: una agenda sin fila todavía es la versión 1, como al crearla. */
 async function agendaVersion(client: PoolClient, owner: string): Promise<number> {
-  const value = Number(
-    (
-      await client.query<{ version: string }>('SELECT version FROM gw_agenda WHERE owner_id=$1', [
-        owner,
-      ])
-    ).rows[0]!.version,
-  );
+  const row = (
+    await client.query<{ version: string }>(
+      'SELECT GREATEST(version,1) AS version FROM gw_agenda WHERE owner_id=$1',
+      [owner],
+    )
+  ).rows[0];
+  const value = row ? Number(row.version) : 1;
   if (!Number.isSafeInteger(value) || value < 1) throw new GatewayError(500, 'ERROR_SERVIDOR');
   return value;
 }
@@ -163,8 +164,8 @@ export function agendaStore(db: Database, maximum = 100, now: () => Date = () =>
         Date.parse(end + 'T00:00:00Z') - Date.parse(start + 'T00:00:00Z') > 30 * 86400000
       )
         throw invalid();
-      return transaction(db, async (client) => {
-        await lockAgenda(client, owner);
+      // Lectura sin bloqueos: la versión y los recordatorios salen de la misma foto de la base.
+      return readSnapshot(db, async (client) => {
         const reminders = await client.query<ReminderRow>(
           `SELECT ${fields} FROM gw_reminder r WHERE owner_id=$1 AND deleted_at IS NULL ORDER BY created_at,id`,
           [owner],
@@ -194,8 +195,7 @@ export function agendaStore(db: Database, maximum = 100, now: () => Date = () =>
       });
     },
     async get(owner: string, id: string) {
-      return transaction(db, async (client) => {
-        await lockAgenda(client, owner);
+      return readSnapshot(db, async (client) => {
         return envelope(client, owner, await owned(client, owner, id));
       });
     },
