@@ -15,8 +15,13 @@ export type TeardownResult = {
   success: boolean;
   cancelledPatientId: string | null;
   pendingNotificationsCount: number;
+  /** Operaciones que no terminaron dentro del límite de espera; el cierre siguió igual. */
+  unfinishedOperations: number;
   error?: string;
 };
+
+/** Tiempo máximo que el cierre espera a las operaciones en curso antes de borrar la sesión. */
+export const DRAIN_TIMEOUT_MS = 10_000;
 
 export type NotificationOpenStatus =
   | 'navigated'
@@ -226,13 +231,26 @@ export class PatientContextManager {
         let cancelSuccess = true;
         let pendingCount = 0;
         let teardownError: string | undefined;
+        let unfinishedOperations = 0;
 
         try {
-          // 1. Aguardar que concluyan las operaciones atómicas en curso sin truncarlas
+          // 1. Aguardar que concluyan las operaciones atómicas en curso sin truncarlas, con un
+          // límite: una operación colgada no puede impedir que se borren las credenciales. Sus
+          // solicitudes ya se cancelaron en la fase 1 y la base se cierra al terminar el cierre.
           if (this.activeOperations > 0) {
-            await new Promise<void>((resolveDrain) => {
-              this.drainResolvers.add(resolveDrain);
+            let timer: ReturnType<typeof setTimeout> | undefined;
+            let resolveDrain!: () => void;
+            const drained = new Promise<void>((resolve) => {
+              resolveDrain = resolve;
+              this.drainResolvers.add(resolve);
             });
+            const timedOut = new Promise<void>((resolve) => {
+              timer = setTimeout(resolve, DRAIN_TIMEOUT_MS);
+            });
+            await Promise.race([drained, timedOut]);
+            clearTimeout(timer);
+            this.drainResolvers.delete(resolveDrain);
+            unfinishedOperations = this.activeOperations;
           }
 
           // 2. Cancelar agenda nativa del paciente saliente con el coordinador activo y limpiar notificaciones
@@ -277,6 +295,7 @@ export class PatientContextManager {
             success: cancelSuccess,
             cancelledPatientId: outgoingPatientId,
             pendingNotificationsCount: pendingCount,
+            unfinishedOperations,
             error: teardownError,
           };
 

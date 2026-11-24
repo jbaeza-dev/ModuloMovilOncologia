@@ -324,6 +324,72 @@ describe('LocalDataProvider Context Teardown and Operation Tracking', () => {
     await teardownPromise;
   });
 
+  it('una operación que nunca termina no impide cerrar la sesión: a los 10 s se borran las credenciales', async () => {
+    vi.useFakeTimers();
+    try {
+      const sessionAdapter = new DemoSessionAdapter();
+      const logout = vi.spyOn(sessionAdapter, 'logout');
+      const manager = new PatientContextManager({
+        sessionAdapter,
+        assistantAdapter: new FakeAssistantAdapter(),
+        router: { replace: () => undefined, push: () => undefined },
+      });
+      await manager.selectPatient(patientA);
+      void manager.trackOperation(() => new Promise<never>(() => undefined));
+      let settled = false;
+      const teardown = manager.closeActiveContext('manual_close').then((result) => {
+        settled = true;
+        return result;
+      });
+      await vi.advanceTimersByTimeAsync(9_000);
+      expect(settled).toBe(false);
+      expect(logout).not.toHaveBeenCalled();
+      await vi.advanceTimersByTimeAsync(1_500);
+      const result = await teardown;
+      expect(logout).toHaveBeenCalledTimes(1);
+      expect(sessionAdapter.getCurrentUser()).toBeNull();
+      expect(result.unfinishedOperations).toBe(1);
+      expect(result.cancelledPatientId).toBe(patientA);
+      expect(manager.getIsClosing()).toBe(false);
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it('una operación que termina antes del límite se espera completa antes de cerrar', async () => {
+    vi.useFakeTimers();
+    try {
+      const sessionAdapter = new DemoSessionAdapter();
+      const logout = vi.spyOn(sessionAdapter, 'logout');
+      const manager = new PatientContextManager({
+        sessionAdapter,
+        assistantAdapter: new FakeAssistantAdapter(),
+        router: { replace: () => undefined, push: () => undefined },
+      });
+      await manager.selectPatient(patientA);
+      let saved = false;
+      void manager.trackOperation(
+        () =>
+          new Promise<void>((resolve) =>
+            setTimeout(() => {
+              saved = true;
+              resolve();
+            }, 4_000),
+          ),
+      );
+      const teardown = manager.closeActiveContext('manual_close');
+      await vi.advanceTimersByTimeAsync(3_000);
+      expect(logout).not.toHaveBeenCalled();
+      await vi.advanceTimersByTimeAsync(1_500);
+      const result = await teardown;
+      expect(saved).toBe(true);
+      expect(logout).toHaveBeenCalledTimes(1);
+      expect(result.unfinishedOperations).toBe(0);
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
   it('closeActiveContext realiza fase 1 en menos de 1 segundo, comparte la promesa y drena escrituras activas', async () => {
     const db = open();
     await migrateDatabase(db);
