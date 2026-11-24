@@ -294,7 +294,7 @@ export function buildReportHtml(data: GenerateReportParams): string {
 
   <div class="meta-grid">
     <div class="meta-item"><span class="meta-label">Paciente:</span> ${escapeHtml(data.profile?.nombre || 'Paciente en seguimiento')}</div>
-    <div class="meta-item"><span class="meta-label">RUT:</span> ${escapeHtml(data.profile?.rut || 'Sin registrar')}</div>
+    <div class="meta-item"><span class="meta-label">RUT:</span> ${escapeHtml(data.profile?.rut || 'No informado')}</div>
     <div class="meta-item"><span class="meta-label">Tratamiento:</span> ${escapeHtml(data.treatment?.nombre ?? data.treatment?.tipo ?? 'En seguimiento oncológico')}</div>
     <div class="meta-item"><span class="meta-label">Período evaluado:</span> ${escapeHtml(periodDisplay)}</div>
     <div class="meta-item"><span class="meta-label">Fecha de emisión:</span> ${generatedAt}</div>

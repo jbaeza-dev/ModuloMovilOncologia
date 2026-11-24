@@ -14,6 +14,7 @@ import {
 } from 'react-native';
 import { WebView } from 'react-native-webview';
 import { PDF_VIEWER_ORIGINS, isAllowedViewerUrl } from './pdf-viewer-security';
+import { confirmIdentifiedShare } from './share-notice';
 
 import { DocumentScreen } from '../../components/DocumentScreen';
 import { BodyText, VisualButton } from '../../components/Visual';
@@ -216,6 +217,7 @@ export function PdfReportViewer() {
   const handleShare = async () => {
     const shareTargetUri = resolvedUri ?? uri;
     if (!shareTargetUri || sharing) return;
+    if (!(await confirmIdentifiedShare())) return;
     setSharing(true);
     setShareFeedback(null);
     try {

@@ -2,7 +2,17 @@
 
 import { fireEvent, render, screen, waitFor } from '@testing-library/react-native';
 import React from 'react';
-import { AccessibilityInfo } from 'react-native';
+import { AccessibilityInfo, Alert } from 'react-native';
+
+// El aviso de identificación aparece antes de cada «Compartir»; por defecto las pruebas lo confirman.
+let mockShareChoice: 'Compartir' | 'Cancelar' = 'Compartir';
+function answerShareNotice() {
+  mockShareChoice = 'Compartir';
+  return jest.spyOn(Alert, 'alert').mockImplementation((title, _message, buttons) => {
+    if (title === 'Compartir reporte')
+      buttons?.find((button) => button.text === mockShareChoice)?.onPress?.();
+  });
+}
 
 const mockRouterPush = jest.fn();
 const mockRouterNavigate = jest.fn();
@@ -190,6 +200,7 @@ import { SpreadsheetReportViewer } from '../features/reports/SpreadsheetReportVi
 describe('Document Viewers UI (Etapa 5)', () => {
   beforeEach(() => {
     jest.clearAllMocks();
+    answerShareNotice();
     mockSearchParams = {
       uri: '/mock/reports/paciente-a/reporte.pdf',
       filename: 'reporte_paciente-a_30d_2026-10-16T12-00-00.pdf',
@@ -257,6 +268,25 @@ describe('Document Viewers UI (Etapa 5)', () => {
       expect(storage.shareReportFile).toHaveBeenCalledWith(mockSearchParams.uri, 'pdf');
       expect(announceSpy).toHaveBeenCalledWith('Menú para compartir reporte abierto.');
       announceSpy.mockRestore();
+    });
+
+    it('avisa que el reporte incluye nombre y RUT antes de compartir, y cancelar no comparte', async () => {
+      // eslint-disable-next-line @typescript-eslint/no-require-imports
+      const storage = require('../data/local/files/report-storage');
+      mockShareChoice = 'Cancelar';
+      await render(<PdfReportViewer />);
+      await screen.findByTestId('mock-webview');
+      await fireEvent.press(
+        screen.getByRole('button', { name: 'Compartir reporte PDF con tu médico' }),
+      );
+      expect(Alert.alert).toHaveBeenCalledWith(
+        'Compartir reporte',
+        'Este reporte incluye tu nombre y RUT. Compártelo solo con tu equipo de salud.',
+        expect.any(Array),
+        expect.objectContaining({ cancelable: true }),
+      );
+      await waitFor(() => expect(screen.getByText('Compartir')).toBeTruthy());
+      expect(storage.shareReportFile).not.toHaveBeenCalled();
     });
 
     it('muestra el error y permite reintentar sin crear un PDF alternativo ni un botón de voz', async () => {

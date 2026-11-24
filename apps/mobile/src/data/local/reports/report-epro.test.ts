@@ -126,7 +126,7 @@ describe('reportes P07 de capturas ePRO y estado de envío', () => {
     };
     expect(() => reportEpro(row)).toThrow('no coincide');
   });
-  it('exporta ePRO literal y seguro, omite datos identificables y conserva presión parcial', async () => {
+  it('exporta ePRO literal y seguro, identifica con nombre y RUT, omite correo y código, y conserva presión parcial', async () => {
     const db = h.open();
     await migrateDatabase(db);
     const data = await createReportRepository(db, patientA, () => when).getReportData(30);
@@ -172,9 +172,14 @@ describe('reportes P07 de capturas ePRO y estado de envío', () => {
     const html = buildReportHtml(shareable),
       wb = XLSX.read(generateReportXlsxBytes(shareable), { type: 'array' }),
       serialized = JSON.stringify(wb);
-    for (const secret of ['PRIVATE-NAME', 'PRIVATE-RUT', 'PRIVATE-EMAIL', 'PRIVATE-CODE']) {
+    // Decisión del 24-11-2026: nombre y RUT identifican el reporte; correo y código nunca salen.
+    for (const secret of ['PRIVATE-EMAIL', 'PRIVATE-CODE']) {
       expect(html).not.toContain(secret);
       expect(serialized).not.toContain(secret);
+    }
+    for (const identity of ['PRIVATE-NAME', 'PRIVATE-RUT']) {
+      expect(html).toContain(identity);
+      expect(serialized).toContain(identity);
     }
     expect(html).toContain('123/— mmHg');
     expect(html).toContain('Rechazado');

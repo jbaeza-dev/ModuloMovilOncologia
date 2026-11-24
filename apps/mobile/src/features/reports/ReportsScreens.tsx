@@ -38,6 +38,7 @@ import { theme } from '../../theme';
 import { generateAndPersistReportPdf } from './report-pdf';
 import { startPdfJob } from './pdf-generation-jobs';
 import { generateAndPersistReportXlsx } from './report-xlsx';
+import { confirmIdentifiedShare } from './share-notice';
 import { useIdentity } from '../access/SessionScreens';
 
 interface SavedReportCardProps {
@@ -332,6 +333,7 @@ export function ReportsScreen() {
     const activePatient = manager?.getPatientId?.() ?? patientId;
     const activeEpoch = manager?.getContextEpoch?.() ?? 0;
     if (!activePatient || saving) return;
+    if (!(await confirmIdentifiedShare())) return;
 
     setReportFeedback(null);
     setReportError(null);
@@ -663,6 +665,7 @@ export function ReportStatusScreen() {
 
   async function handleReshare() {
     if (!targetFile || !fileExists) return;
+    if (!(await confirmIdentifiedShare())) return;
     setSharingFeedback(null);
     const result = await shareReportFile(targetFile.uri, fileFormat);
     if (result === 'shared_sheet_opened') {
