@@ -23,6 +23,7 @@ import { clinicalFileLease, readClinicalFile } from '../../data/sync/file-protec
 import { useLocalData } from '../../providers/LocalDataProvider';
 import { useAppTheme } from '../../providers/ThemeProvider';
 import { theme } from '../../theme';
+import { captureShareContext, confirmIdentifiedShare } from './share-notice';
 
 interface ParsedSheet {
   name: string;
@@ -191,6 +192,7 @@ export function SpreadsheetReportViewer() {
     setSharing(true);
     setShareFeedback(null);
     try {
+      if (!(await confirmIdentifiedShare(captureShareContext(manager, patientId)))) return;
       const res = await reportStorage.shareReportFile(shareTargetUri, 'xlsx');
       const endPatient = manager?.getPatientId?.() ?? patientId;
       const endEpoch = manager?.getContextEpoch?.() ?? 0;
