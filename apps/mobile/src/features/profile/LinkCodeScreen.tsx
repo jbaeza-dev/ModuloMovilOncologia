@@ -1,3 +1,4 @@
+import * as Network from 'expo-network';
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import { AppState, Text, View } from 'react-native';
 import { Screen } from '../../components/Screen';
@@ -10,13 +11,29 @@ import { useAppTheme } from '../../providers/ThemeProvider';
 import { router } from 'expo-router';
 import { refreshMedicalTeam } from '../../data/local/clinical-context/refresh-medical-team';
 
+/** Sin red no se envía la solicitud; si no se puede saber, se intenta igual. */
+async function isOnline(): Promise<boolean> {
+  try {
+    const state = await Network.getNetworkStateAsync();
+    return state.isConnected !== false && state.isInternetReachable !== false;
+  } catch {
+    return true;
+  }
+}
+
 export function LinkCodeScreen() {
   const { clinicalStore, identitySession, trackOperation, isClosing, repository } = useLocalData();
   const { theme } = useAppTheme();
   const client = useMemo(
     () =>
       clinicalStore && identitySession
-        ? createLinkCodeClient(clinicalStore.connection, identitySession, clinicalStore.scope.owner)
+        ? createLinkCodeClient(
+            clinicalStore.connection,
+            identitySession,
+            clinicalStore.scope.owner,
+            Date.now,
+            isOnline,
+          )
         : null,
     [clinicalStore, identitySession],
   );
@@ -179,10 +196,15 @@ export function LinkCodeScreen() {
         {value?.kind === 'uncertain' && !expired ? (
           <>
             <BodyText>
-              Estamos comprobando tu vinculación con el servidor. Si ya le entregaste un código a tu
-              equipo de salud, el estado se actualizará automáticamente. Puedes solicitar otro
-              código después del {formatDate(value.retryAfter)}.
+              {value.conflict
+                ? `Ya existe un código vigente, pero no alcanzó a llegar a este teléfono. Si se lo entregaste a tu equipo de salud, pueden seguir usándolo. Si no, podrás solicitar uno nuevo cuando venza, a más tardar el ${formatDate(value.retryAfter)}.`
+                : 'No recibimos la respuesta del servidor a tu solicitud. Puedes intentar de nuevo: si el código ya se había creado, no se generará uno duplicado.'}
             </BodyText>
+            <VisualButton
+              label={busy ? 'Solicitando…' : 'Intentar de nuevo'}
+              disabled={!client || busy || isClosing}
+              onPress={() => void generate()}
+            />
             <View style={{ marginTop: 8 }}>
               <VisualButton
                 label="Revisar mi equipo de salud"
