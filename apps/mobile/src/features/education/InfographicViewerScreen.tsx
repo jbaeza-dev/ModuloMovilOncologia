@@ -355,7 +355,9 @@ export function InfographicViewerScreen() {
             <Feather name="alert-triangle" size={36} color={appTheme.colors.error} />
             <Text style={styles.errorTitle}>No se pudo cargar la imagen</Text>
             <BodyText style={{ textAlign: 'center', color: '#CCCCCC' }}>
-              El archivo de la imagen no pudo ser renderizado en el dispositivo.
+              {localCopy?.estado === 'descargado' && localCopy.rutaRelativa
+                ? 'El archivo de la imagen no pudo ser renderizado en el dispositivo.'
+                : 'Esta guía no está guardada en el teléfono. Conéctate a internet para verla.'}
             </BodyText>
             <VisualButton
               label="Reintentar visualización"

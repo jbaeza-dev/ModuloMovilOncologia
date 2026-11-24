@@ -776,3 +776,76 @@ describe('Cuota educativa: orden de expulsión sin fecha de acceso y fallos al e
     advertencia.mockRestore();
   });
 });
+
+describe('biblioteca completa sin conexión', () => {
+  const evicted = (id: string): EducationalLocalCopy =>
+    ({
+      patientId: 'paciente-1',
+      contentId: id,
+      rutaRelativa: null,
+      formato: 'png',
+      tamanoBytes: 1024,
+      descargadoEn: '2026-11-18T10:00:00Z',
+      estado: 'pendiente',
+      revisionDeclarada: false,
+      metadataLocal: { versionOrigen: '1.0.0', expulsado_cuota: true },
+    }) as unknown as EducationalLocalCopy;
+  const catalogOf = (count: number) =>
+    new InMemoryEducationalCatalogReader(
+      Array.from({ length: count }, (_, index) => ({
+        id: `res-${index}`,
+        title: `Infografía ${index}`,
+        category: 1,
+        categoryName: 'General',
+        description: 'Desc',
+        type: 'infografia' as const,
+        version: '1.0.0',
+      })),
+    );
+
+  it('vuelve a descargar las guías expulsadas por el límite anterior', async () => {
+    const download = vi
+      .spyOn(storageService, 'downloadAndSaveInfographic')
+      .mockReset()
+      .mockResolvedValue(undefined);
+    vi.spyOn(resourceStorage, 'resourceFileExists').mockReturnValue(false);
+    const result = await runBulkInfographicDownload({
+      patientId: 'paciente-1',
+      repository: createMockRepo([evicted('res-0'), evicted('res-1')]),
+      database: {} as SqlConnection,
+      catalogReader: catalogOf(2),
+    });
+    expect(download).toHaveBeenCalledTimes(2);
+    expect(result.downloaded).toBe(2);
+  });
+
+  it('no las recupera si el catálogo no cabe en el límite', async () => {
+    const download = vi
+      .spyOn(storageService, 'downloadAndSaveInfographic')
+      .mockReset()
+      .mockResolvedValue(undefined);
+    vi.spyOn(resourceStorage, 'resourceFileExists').mockReturnValue(false);
+    await runBulkInfographicDownload({
+      patientId: 'paciente-1',
+      repository: createMockRepo([{ ...evicted('res-0'), tamanoBytes: 900 * 1024 * 1024 }]),
+      database: {} as SqlConnection,
+      catalogReader: catalogOf(1),
+    });
+    expect(download).not.toHaveBeenCalled();
+  });
+
+  it('con los límites predeterminados no expulsa ninguna de 42 guías que pesan 56 MB', async () => {
+    const copies = Array.from({ length: 42 }, (_, index) => ({
+      contentId: `res-${index}`,
+      estado: 'descargado',
+      rutaRelativa: `files/${index}.png`,
+      tamanoBytes: Math.round((56.2 * 1024 * 1024) / 42),
+      descargadoEn: '2026-11-18T10:00:00Z',
+    }));
+    const result = await storageService.enforceEducationStorageQuota({
+      patientId: 'pac-1',
+      repository: createMockRepo(copies as unknown as EducationalLocalCopy[]),
+    });
+    expect(result.evictedCount).toBe(0);
+  });
+});

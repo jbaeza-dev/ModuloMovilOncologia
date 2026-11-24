@@ -693,6 +693,20 @@ describe('Pruebas de interfaz (UI) para módulo de Educación', () => {
       }
     });
 
+    it('si la guía no está guardada y la imagen falla, pide conexión en vez de culpar al archivo', async () => {
+      mockUseLocalSearchParams.mockReturnValue({ recurso: 'edu-infografia-alimentacion' });
+      await render(<InfographicViewerScreen />);
+      const image = await screen.findByLabelText(/Infografía a pantalla completa:/);
+      await fireEvent(image, 'error', { nativeEvent: { error: 'offline' } });
+      expect(
+        await screen.findByText(
+          'Esta guía no está guardada en el teléfono. Conéctate a internet para verla.',
+        ),
+      ).toBeTruthy();
+      expect(screen.queryByText(/no pudo ser renderizado/)).toBeNull();
+      expect(screen.getByRole('button', { name: 'Reintentar visualización' })).toBeTruthy();
+    });
+
     it('renderiza título, botón de cierre superpuesto, imagen a pantalla completa y controles de accesibilidad', async () => {
       mockUseLocalSearchParams.mockReturnValue({ recurso: 'edu-infografia-alimentacion' });
 

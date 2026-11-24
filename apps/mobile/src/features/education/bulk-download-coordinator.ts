@@ -11,6 +11,7 @@ import {
   verifiedLocalImageCopy,
   enforceEducationStorageQuota,
 } from './infographic-storage-service';
+import { canRestoreEvictedCopies } from './education-storage-limits';
 import { devWarn } from '../../services/diagnostics/dev-warn';
 
 export interface BulkDownloadProgress {
@@ -249,6 +250,10 @@ async function executeBulkDownload(options: RunBulkDownloadOptions): Promise<Bul
   // 4. Determinar cuáles necesitan ser descargadas (verificando existencia física Y versión de origen)
   const pendingToDownload: EducationalResource[] = [];
   let alreadyPresentCount = 0;
+  const restoreEvicted = canRestoreEvictedCopies(
+    infographics.length,
+    existingCopies.filter((copy) => !copy.retiradoEn),
+  );
 
   for (const resource of infographics) {
     const copy = copyMap.get(resource.id);
@@ -262,7 +267,7 @@ async function executeBulkDownload(options: RunBulkDownloadOptions): Promise<Bul
         ? await verifiedLocalImageCopy(copy, patientId)
         : copy;
     const versionLocal = copy?.metadataLocal?.versionOrigen;
-    if (copy?.metadataLocal?.expulsado_cuota) {
+    if (copy?.metadataLocal?.expulsado_cuota && !restoreEvicted) {
       alreadyPresentCount++;
       continue;
     }

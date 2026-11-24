@@ -11,6 +11,10 @@ import {
 import { useFocusedValue } from '../../hooks/use-local-query';
 import { useLocalData } from '../../providers/LocalDataProvider';
 import { EducationStatusRevisionContext } from '../../providers/QueryRevision';
+import {
+  EDUCATION_MAX_COPIES,
+  EDUCATION_MAX_MEGABYTES,
+} from '../education/education-storage-limits';
 
 function formatBytes(bytes: number): string {
   if (bytes === 0) return '0 B';
@@ -138,8 +142,9 @@ export function StorageManagementScreen() {
       <InfoCard>
         <BodyText>
           QuimioCare regula automáticamente las guías descargadas para no sobrecargar tu teléfono
-          (límite recomendado: 15 guías o 50 MB). Las guías que no hayas consultado recientemente se
-          liberan solas cuando se alcanza el límite, a menos que elijas conservarlas.
+          (límite: {EDUCATION_MAX_COPIES} guías o {EDUCATION_MAX_MEGABYTES} MB). Las guías que no
+          hayas consultado recientemente se liberan solas cuando se alcanza el límite, a menos que
+          elijas conservarlas.
         </BodyText>
       </InfoCard>
     </Screen>
