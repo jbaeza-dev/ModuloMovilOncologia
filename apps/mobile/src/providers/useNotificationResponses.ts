@@ -10,6 +10,7 @@ import { localAgendaData, notificationPayload } from '../services/agenda/agenda-
 import { handleAgendaNotification } from '../services/agenda/native-agenda';
 import { foregroundNoticesAllowed } from './foreground-notices';
 import type { PatientContextManager } from './patient-context-manager';
+import { devWarn } from '../services/diagnostics/dev-warn';
 
 type Repository = ReturnType<typeof createPatientRepository>;
 
@@ -52,7 +53,7 @@ export function useNotificationResponses({
         if (isValidNotificationPayload(data)) {
           const dedupeKey = `${data.notificacionId}:${identifier || 'cold'}`;
           void manager.handleNotificationOpen(data, dedupeKey).catch((err) => {
-            console.warn('Error en handleNotificationOpen cold start:', err);
+            devWarn('Error en handleNotificationOpen cold start:', err);
           });
         }
       }
@@ -71,7 +72,7 @@ export function useNotificationResponses({
         if (isValidNotificationPayload(data)) {
           const dedupeKey = `${data.notificacionId}:${identifier || 'listener'}`;
           void manager.handleNotificationOpen(data, dedupeKey).catch((err) => {
-            console.warn('Error en handleNotificationOpen listener:', err);
+            devWarn('Error en handleNotificationOpen listener:', err);
           });
         }
       });

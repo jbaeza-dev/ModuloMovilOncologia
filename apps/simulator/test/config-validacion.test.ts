@@ -61,3 +61,29 @@ describe('configuración del simulador', () => {
     expect(readConfig({ ...base, SIMULATOR_SERVICE: 'ai' }).port).toBe(3003);
   });
 });
+
+describe('origen de la configuración', () => {
+  it('no lee archivos .env ni modifica process.env, aunque falte la clave de Gemini', async () => {
+    const { mkdtempSync, writeFileSync, rmSync } = await import('node:fs');
+    const { tmpdir } = await import('node:os');
+    const { join } = await import('node:path');
+    const folder = mkdtempSync(join(tmpdir(), 'qc-sim-env-'));
+    const previous = process.cwd();
+    writeFileSync(
+      join(folder, '.env.local'),
+      'QC_SENTINEL_FROM_FILE=filtrado\nGEMINI_API_KEY=clave-del-archivo\n',
+    );
+    const before = { ...process.env };
+    try {
+      process.chdir(folder);
+      const config = readConfig({ ...base, GEMINI_API_KEY: undefined });
+      expect(config.geminiApiKey).toBeUndefined();
+      expect(process.env.QC_SENTINEL_FROM_FILE).toBeUndefined();
+      expect(process.env).toEqual(before);
+    } finally {
+      process.chdir(previous);
+      rmSync(folder, { recursive: true, force: true });
+      delete process.env.QC_SENTINEL_FROM_FILE;
+    }
+  });
+});

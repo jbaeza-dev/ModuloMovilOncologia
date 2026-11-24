@@ -12,6 +12,7 @@ import type {
 } from '../services/reminders/notification-coordinator';
 import { resetForegroundNoticesCheck, setForegroundNoticesCheck } from './foreground-notices';
 import type { PatientContextManager } from './patient-context-manager';
+import { devWarn } from '../services/diagnostics/dev-warn';
 
 export type ScopedCoordinatorState = {
   patientId: string;
@@ -190,7 +191,7 @@ export function useReminderReconciliation({
     const subscription = AppState.addEventListener('change', (nextState) => {
       if (nextState === 'active' && manager.getPatientId()) {
         void manager.processPendingNotificationIntent().catch((err) => {
-          console.warn('Error al procesar notificación pendiente al volver a primer plano:', err);
+          devWarn('Error al procesar notificación pendiente al volver a primer plano:', err);
         });
         if (coordinator) {
           void prepareAgenda()

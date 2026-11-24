@@ -11,6 +11,7 @@ import {
   verifiedLocalImageCopy,
   enforceEducationStorageQuota,
 } from './infographic-storage-service';
+import { devWarn } from '../../services/diagnostics/dev-warn';
 
 export interface BulkDownloadProgress {
   current: number;
@@ -395,7 +396,7 @@ async function executeBulkDownload(options: RunBulkDownloadOptions): Promise<Bul
   try {
     await enforceEducationStorageQuota({ patientId, repository, database });
   } catch (err) {
-    console.warn('[runBulkInfographicDownload] Falló regulación de cuota:', err);
+    devWarn('[runBulkInfographicDownload] Falló regulación de cuota:', err);
   }
 
   let message: string;

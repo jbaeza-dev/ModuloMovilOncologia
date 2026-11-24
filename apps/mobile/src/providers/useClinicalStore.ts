@@ -5,6 +5,7 @@ import type { SqlConnection } from '../data/local/core/sql';
 import { openClinicalStore, type ClinicalStore } from '../data/sync/native-runtime';
 import type { HttpSessionAdapter } from '../services/session/http-session-adapter';
 import type { PatientContextManager } from './patient-context-manager';
+import { devWarn } from '../services/diagnostics/dev-warn';
 
 type OpenedStore = { store: ClinicalStore; epoch: number };
 
@@ -141,13 +142,13 @@ export function useSyncPauseOnBackground(
       if (state === 'active') {
         if (typeof store.resume === 'function') {
           void store.resume(false).catch((err) => {
-            console.warn('Error al reanudar sincronización al volver a primer plano:', err);
+            devWarn('Error al reanudar sincronización al volver a primer plano:', err);
           });
         }
       } else if (state === 'background' || state === 'inactive') {
         if (typeof store.disconnect === 'function') {
           void store.disconnect().catch((err) => {
-            console.warn('Error al suspender sincronización en segundo plano:', err);
+            devWarn('Error al suspender sincronización en segundo plano:', err);
           });
         }
       }
