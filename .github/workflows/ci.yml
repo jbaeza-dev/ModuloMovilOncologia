@@ -208,7 +208,7 @@ jobs:
         run: |
           python3 -m unittest discover -s infra/universidad/tests -v
           node scripts/audit-delivery.mjs
-          node --test scripts/university-release.test.mjs
+          node --test scripts/university-release.test.mjs scripts/configure-apk.test.mjs
           node --test infra/universidad/tests/*.test.mjs
           find infra/universidad scripts -name "*.sh" -exec bash -n {} \;
           docker run --rm -v "$PWD:/workspace:ro" -w /workspace koalaman/shellcheck:v0.11.0@sha256:61862eba1fcf09a484ebcc6feea46f1782532571a34ed51fedf90dd25f925a8d scripts/ci-deploy-university.sh scripts/ci-deploy-university-local.sh scripts/renew-university-jwks.sh scripts/verify-university-public.sh infra/universidad/scripts/*.sh infra/universidad/postgres/*.sh
