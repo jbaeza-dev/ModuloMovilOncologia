@@ -24,22 +24,12 @@ export interface SimulatorConfig {
   geminiApiKey?: string | undefined;
 }
 
+/**
+ * La configuración sale solo de las variables de entorno, como en el gateway; no se leen archivos
+ * `.env`. Para probar en local con una clave propia:
+ * `node --env-file=apps/simulator/.env.local apps/simulator/dist/server.js`.
+ */
 export function readConfig(env: NodeJS.ProcessEnv = process.env): SimulatorConfig {
-  if (!env.GEMINI_API_KEY && typeof process.loadEnvFile === 'function') {
-    for (const envPath of [
-      '.env.local',
-      '.env',
-      'apps/mobile/.env.local',
-      '../../.env.local',
-      '../.env.local',
-    ]) {
-      try {
-        process.loadEnvFile(envPath);
-      } catch {
-        // Archivo ausente o no legible
-      }
-    }
-  }
   const appEnv = (env.APP_ENV ?? 'demo') as 'demo' | 'universidad-demo';
   if (appEnv !== 'demo' && appEnv !== 'universidad-demo') {
     throw new Error('El simulador exige APP_ENV=demo o APP_ENV=universidad-demo.');

@@ -12,6 +12,7 @@ import {
 import { useColorScheme } from 'react-native';
 
 import { isPaletteId, resolveTheme, type AppTheme, type PaletteId } from '../theme';
+import { devWarn } from '../services/diagnostics/dev-warn';
 
 const PALETTE_STORAGE_KEY = 'quimiocare.appearance.palette';
 
@@ -38,7 +39,7 @@ export function ThemeProvider({ children }: { children: ReactNode }) {
         }
       })
       .catch((error: unknown) => {
-        if (__DEV__) console.warn('No se pudo leer la paleta guardada.', error);
+        devWarn('No se pudo leer la paleta guardada.', error);
       });
 
     return () => {
@@ -50,8 +51,7 @@ export function ThemeProvider({ children }: { children: ReactNode }) {
     hasSelectedPalette.current = true;
     setPaletteId(nextPalette);
     AsyncStorage.setItem(PALETTE_STORAGE_KEY, nextPalette).catch((error: unknown) => {
-      if (__DEV__)
-        console.warn('No se pudo guardar la paleta; se conservará en esta sesión.', error);
+      if (__DEV__) devWarn('No se pudo guardar la paleta; se conservará en esta sesión.', error);
     });
   }, []);
 

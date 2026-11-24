@@ -25,5 +25,11 @@ export default tseslint.config(
       globals: globals.node,
     },
   },
+  {
+    // En el APK los avisos van por devWarn(), que solo escribe en desarrollo.
+    files: ['apps/mobile/src/**/*.{ts,tsx}'],
+    ignores: ['**/*.test.{ts,tsx}', '**/__tests__/**'],
+    rules: { 'no-console': 'error' },
+  },
   eslintConfigPrettier,
 );

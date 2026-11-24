@@ -14,6 +14,7 @@ import type { Database } from './db.js';
 import { transaction } from './db.js';
 import type { SimulatorConfig } from './config.js';
 import { ApiError, record } from './errors.js';
+import { logServerError, type LineWriter } from './error-log.js';
 import {
   issueSession,
   operatorFromHeader,
@@ -157,7 +158,11 @@ function operationFor(
   return undefined;
 }
 
-export function createSimulator(config: SimulatorConfig, db: Database) {
+export function createSimulator(
+  config: SimulatorConfig,
+  db: Database,
+  writeLog: LineWriter = (line) => process.stderr.write(line),
+) {
   return createServer((req, res) => {
     void (async () => {
       if (req.method === 'OPTIONS') {
@@ -652,6 +657,7 @@ export function createSimulator(config: SimulatorConfig, db: Database) {
         error instanceof ApiError
           ? error
           : new ApiError(500, 'ERROR_INTERNO_SERVIDOR', 'Fallo interno del simulador.');
+      logServerError(writeLog, config.service, req, apiError, error);
       const path = req.url?.split('?')[0] ?? '';
       if (config.service === 'ai')
         send(res, apiError.status, {

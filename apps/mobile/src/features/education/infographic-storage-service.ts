@@ -15,6 +15,7 @@ import type {
 import { saveEducationalMediaWithCompensation } from '../../data/local/files/educational-storage';
 import { deleteResourceFile } from '../../data/local/files/resource-storage';
 import type { PatientRepository } from '../../data/local/repository';
+import { devWarn } from '../../services/diagnostics/dev-warn';
 
 /**
  * Resuelve el identificador de recurso empaquetado compatible con Metro y entornos de prueba.
@@ -300,10 +301,7 @@ export async function enforceEducationStorageQuota({
       totalBytes -= candidate.tamanoBytes || 0;
       totalCount -= 1;
     } catch (err) {
-      console.warn(
-        `[enforceEducationStorageQuota] No se pudo evictar ${candidate.contentId}:`,
-        err,
-      );
+      devWarn(`[enforceEducationStorageQuota] No se pudo evictar ${candidate.contentId}:`, err);
     }
   }
 

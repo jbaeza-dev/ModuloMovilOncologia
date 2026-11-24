@@ -6,6 +6,7 @@ import { cleanupRetiredEducationalCopies } from '../data/local/education/retired
 import { ExpoFileStorageAdapter } from '../data/local/files/file-storage-adapter';
 import { importLegacyDrafts } from '../features/medical-forms/form-legacy-import';
 import type { PatientContextManager } from './patient-context-manager';
+import { devWarn } from '../services/diagnostics/dev-warn';
 
 export type PreparationStatus = 'idle' | 'importing' | 'ready' | 'error';
 export type FormImportWarning = {
@@ -49,7 +50,7 @@ export function useFormImport({
     manager
       .trackOperation(() => cleanupRetiredEducationalCopies(database, patientId, { adapter }))
       .catch((err) => {
-        console.warn('Fallo en limpieza de copias educativas retiradas:', err);
+        devWarn('Fallo en limpieza de copias educativas retiradas:', err);
       });
 
     manager
@@ -71,7 +72,7 @@ export function useFormImport({
         }
       })
       .catch((err) => {
-        console.warn('Fallo en importación legacy:', err);
+        devWarn('Fallo en importación legacy:', err);
         if (active) {
           setFormImportStatus('error');
           setFormImportWarning(null);

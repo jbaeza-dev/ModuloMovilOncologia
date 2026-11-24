@@ -8,6 +8,7 @@ import type { SessionAdapter } from '../services/session/session-adapter';
 import type { AssistantAdapter } from '../services/assistant/assistant-adapter';
 import { AssistantController } from '../services/assistant/assistant-controller';
 import { cancelActiveBulkDownload } from '../features/education/bulk-download-coordinator';
+import { devWarn } from '../services/diagnostics/dev-warn';
 
 export type CloseReason = 'change_patient' | 'manual_close' | 'session_required';
 
@@ -264,7 +265,7 @@ export class PatientContextManager {
               cancelSuccess = cancelResult.success && cancelResult.pendingCount === 0;
               pendingCount = cancelResult.pendingCount;
               if (!cancelSuccess) {
-                console.warn(
+                devWarn(
                   `[Teardown] Quedan ${pendingCount} cancelaciones pendientes para paciente saliente.`,
                 );
               }
@@ -272,7 +273,7 @@ export class PatientContextManager {
               cancelSuccess = false;
               pendingCount = -1;
               teardownError = cancelErr instanceof Error ? cancelErr.message : String(cancelErr);
-              console.warn('[Teardown] Excepción en cancelación de agenda nativa:', cancelErr);
+              devWarn('[Teardown] Excepción en cancelación de agenda nativa:', cancelErr);
             }
           }
 
@@ -283,13 +284,13 @@ export class PatientContextManager {
             cancelSuccess = false;
             teardownError =
               'No se pudo conservar el cierre de sesión; reintenta antes de cambiar de cuenta.';
-            console.warn('[Teardown] No se pudo completar el cierre de sesión.');
+            devWarn('[Teardown] No se pudo completar el cierre de sesión.');
             void sessionErr;
           }
         } catch (err) {
           cancelSuccess = false;
           teardownError = err instanceof Error ? err.message : String(err);
-          console.warn('[Teardown] Excepción en drenaje seguro:', err);
+          devWarn('[Teardown] Excepción en drenaje seguro:', err);
         } finally {
           const result: TeardownResult = {
             success: cancelSuccess,
@@ -487,7 +488,7 @@ export class PatientContextManager {
       status = 'discarded';
       return { status, navigated: false };
     } catch (unexpectedErr) {
-      console.warn('Fallo inesperado al procesar apertura de notificación:', unexpectedErr);
+      devWarn('Fallo inesperado al procesar apertura de notificación:', unexpectedErr);
       status = 'transient_failure';
       return { status, navigated: false, error: unexpectedErr };
     } finally {
