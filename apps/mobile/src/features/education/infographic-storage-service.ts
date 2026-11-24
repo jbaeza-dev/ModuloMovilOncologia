@@ -16,6 +16,7 @@ import { saveEducationalMediaWithCompensation } from '../../data/local/files/edu
 import { deleteResourceFile } from '../../data/local/files/resource-storage';
 import type { PatientRepository } from '../../data/local/repository';
 import { devWarn } from '../../services/diagnostics/dev-warn';
+import { EDUCATION_MAX_BYTES, EDUCATION_MAX_COPIES } from './education-storage-limits';
 
 /**
  * Resuelve el identificador de recurso empaquetado compatible con Metro y entornos de prueba.
@@ -232,8 +233,8 @@ export async function enforceEducationStorageQuota({
   patientId,
   repository,
   database,
-  maxCopies = 15,
-  maxBytes = 50 * 1024 * 1024,
+  maxCopies = EDUCATION_MAX_COPIES,
+  maxBytes = EDUCATION_MAX_BYTES,
 }: {
   patientId: string;
   repository: PatientRepository;
