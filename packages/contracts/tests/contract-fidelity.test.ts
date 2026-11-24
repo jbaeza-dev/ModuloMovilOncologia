@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import clinical from '../specs/openapi-clinico-rc32-bundle.json' with { type: 'json' };
 import ai from '../specs/openapi-ia-rc31.json' with { type: 'json' };
+import gatewaySource from '../specs/openapi-gateway-quimiocare-v1.json' with { type: 'json' };
 import {
   contractInventory,
   getClinicalAiExecutionDoc,
@@ -133,6 +134,23 @@ describe('Fidelidad Contractual y Especificaciones de Ejecución', () => {
     expect(multipartSchema?.properties?.operacion_id?.format).toBe('uuid');
   });
 
+  it('el Swagger del gateway publica las enmiendas propias sin modificar la copia original', () => {
+    const doc = getGatewayExecutionDoc();
+    expect(doc.info.version).toBe('1.1.0');
+    const schemas = doc.components.schemas as Record<string, { properties?: object }>;
+    expect(schemas.CrearRecordatorio?.properties).toHaveProperty('medicamento_paciente_id');
+    const g02 = doc.paths['/api/gateway/dispositivo/push-token']?.post as unknown as {
+      description: string;
+      'x-enmiendas'?: { fecha: string; cambio: string }[];
+    };
+    expect(g02.description).toMatch(/misma instalación y el mismo token/);
+    expect(g02['x-enmiendas']?.[0]).toMatchObject({ fecha: '2026-11-24' });
+    expect(
+      (gatewaySource.paths['/api/gateway/dispositivo/push-token'].post as { description: string })
+        .description,
+    ).not.toMatch(/misma instalación y el mismo token/);
+    expect(gatewaySource.info.version).toBe('1.0.0-objetivo-2026-10-23');
+  });
   it('el documento de ejecución de gateway preserva sus 13 operaciones contractuales', () => {
     const doc = getGatewayExecutionDoc();
 
