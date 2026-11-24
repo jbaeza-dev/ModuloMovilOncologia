@@ -37,6 +37,7 @@ import {
 } from '../../data/local/repository';
 import { validateVitalInput, type VitalInput } from '../../data/local/validation';
 import { useFocusedList, useFocusedValue } from '../../hooks/use-local-query';
+import { useCivilDay } from '../../hooks/use-civil-day';
 import { ClinicalRevisionContext } from '../../providers/QueryRevision';
 import { useLocalData } from '../../providers/LocalDataProvider';
 import { useAppTheme } from '../../providers/ThemeProvider';
@@ -62,7 +63,9 @@ const initialValues: VitalInput = {
 function RecordCard({ item }: { item: VitalWithSyncRecord }) {
   const { theme: appTheme } = useAppTheme();
   const styles = useStyles();
-  const nowIso = useMemo(() => new Date().toISOString(), []);
+  // «Hoy» y «Ayer» del lector de pantalla se recalculan al cambiar el día.
+  const day = useCivilDay();
+  const nowIso = useMemo(() => (day ? new Date().toISOString() : ''), [day]);
   const syncLabel = getSyncStatusLabel(item);
   const time = formatRecordTime(item.fecha_registro);
   const summary = formatVitalsSummary(item);
@@ -113,9 +116,10 @@ export function VitalsDataScreen() {
     pageSize: 10,
   });
 
+  const day = useCivilDay();
   const sections = useMemo(
-    () => groupVitalsByDay(list.items, new Date().toISOString()),
-    [list.items],
+    () => (day ? groupVitalsByDay(list.items, new Date().toISOString()) : []),
+    [list.items, day],
   );
 
   return (
