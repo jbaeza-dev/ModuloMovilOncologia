@@ -215,6 +215,18 @@ describe('Document Viewers UI (Etapa 5)', () => {
       expect(screen.getByText('Compartir')).toBeTruthy();
     });
 
+    it('abre el visor sin acceso a archivos ni navegación fuera de pdf.js', async () => {
+      await render(<PdfReportViewer />);
+      const webView = await screen.findByTestId('mock-webview');
+      expect(webView.props.allowUniversalAccessFromFileURLs).toBeFalsy();
+      expect(webView.props.allowFileAccess).toBeFalsy();
+      expect(webView.props.originWhitelist).not.toContain('*');
+      const allow = webView.props.onShouldStartLoadWithRequest;
+      expect(allow({ url: 'file:///android_asset/' })).toBe(true);
+      expect(allow({ url: 'https://servidor-externo.example/' })).toBe(false);
+      expect(allow({ url: 'file:///data/user/0/cl.quimiocare/files/reporte.pdf' })).toBe(false);
+    });
+
     it('no carga la instantánea ni presenta datos del perfil en el visor simplificado', async () => {
       const readSnapshot = jest.fn().mockResolvedValue(mockSnapshotData);
       mockReadPatientReportA11ySnapshotImpl = readSnapshot;

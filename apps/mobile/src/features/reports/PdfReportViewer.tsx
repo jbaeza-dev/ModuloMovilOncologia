@@ -13,6 +13,7 @@ import {
   View,
 } from 'react-native';
 import { WebView } from 'react-native-webview';
+import { PDF_VIEWER_ORIGINS, isAllowedViewerUrl } from './pdf-viewer-security';
 
 import { DocumentScreen } from '../../components/DocumentScreen';
 import { BodyText, VisualButton } from '../../components/Visual';
@@ -420,15 +421,17 @@ export function PdfReportViewer() {
           {pdfJsHtml ? (
             <WebView
               ref={webViewRef}
-              originWhitelist={['*']}
+              originWhitelist={PDF_VIEWER_ORIGINS}
+              onShouldStartLoadWithRequest={(request) => isAllowedViewerUrl(request.url)}
               source={{ html: pdfJsHtml, baseUrl: 'file:///android_asset/' }}
               style={styles.webView}
               scalesPageToFit
               javaScriptEnabled
               domStorageEnabled
-              allowFileAccess
+              allowFileAccess={false}
+              // Solo para crear el worker de pdf.js desde android_asset; sin acceso a otros archivos.
               allowFileAccessFromFileURLs
-              allowUniversalAccessFromFileURLs
+              allowUniversalAccessFromFileURLs={false}
               onMessage={handleWebViewMessage}
             />
           ) : null}
