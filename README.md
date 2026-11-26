@@ -6,7 +6,7 @@ Aplicación Android de acompañamiento durante quimioterapia, organizada como mo
 
 La app conserva registros, borradores, historial y archivos clínicos cifrados y separados por cuenta y entorno. Utiliza el SDK PowerSync como único emisor clínico, sesiones renovables, aceptación de términos por edición y un gateway propio. Los flujos incluyen signos vitales, seguimiento ePRO global, perfil con protocolo formal mFOLFOX6 (cáncer de colon eviQ 637) y fármacos activos, vinculación inmediata con refresco reactivo de formularios e infografías, registro automático de notificaciones push de dispositivo (UUIDv4 estable), rediseño visual de selección de días en recordatorios y agenda compartida, y biblioteca multimedia de imágenes y videos de YouTube.
 
-El flujo de bienvenida guía automáticamente al usuario nuevo al inicio tras aceptar los consentimientos, y la pantalla de inicio permite habilitar avisos pendientes en tiempo real. En el simulador, la interfaz Swagger (/quimiocare/docs/preparacion/) se encuentra organizada en categorías temáticas para facilitar la inspección formal. Los diagnósticos nativos se habilitan solo en builds sintéticas explícitas. Las cuentas de demostración no admiten datos de pacientes reales.
+El flujo de bienvenida guía automáticamente al usuario nuevo al inicio tras aceptar los consentimientos, y la pantalla de inicio permite habilitar avisos pendientes en tiempo real. En el simulador, la interfaz Swagger (/quimiocare/docs/preparacion/) se encuentra organizada en categorías temáticas para facilitar la inspección formal. La app entra solo con Google; las cuentas sintéticas no admiten datos de pacientes reales.
 
 ## Estructura
 
@@ -52,3 +52,5 @@ No ejecutar esta suite sobre la base que usa el teléfono: reinicia datos de pru
 pnpm --filter @modulo-movil-oncologia/mobile start
 pnpm --filter @modulo-movil-oncologia/mobile run android
 ```
+
+Antes hay que definir `EXPO_PUBLIC_APP_ENV=universidad-demo` y las direcciones `EXPO_PUBLIC_*` (ver `apps/mobile/README.md`); sin ellas la app queda «sin configurar».

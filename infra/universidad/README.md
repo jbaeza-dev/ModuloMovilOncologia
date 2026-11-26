@@ -61,6 +61,8 @@ $HOME/quimiocare/
   backups/                        # dumps custom + imágenes + checksums (los 7 más recientes)
 ```
 
+Cada despliegue recrea los contenedores y con ellos se borran sus registros (`podman logs`), incluidos los errores 5xx que anota la clínica. Para revisar un problema hay que consultar los registros antes del siguiente despliegue; no se guardan aparte (decisión del 26-11-2026). Durante el despliegue la ruta pública responde 503 unos segundos, porque hay un solo servidor; la app lo resiste porque guarda primero en el teléfono y reintenta.
+
 El bootstrap de PostgreSQL actúa solo en un volumen nuevo. No rota contraseñas al actualizar. Los medios y volúmenes no forman parte de las imágenes ni se eliminan durante una entrega.
 
 Las entregas inmutables son validadas estrictamente con `infra/universidad/scripts/release.py` verificando los hashes SHA-256 de los archivos contra `manifest.json`. Si se actualizan archivos de configuración en el host, su checksum debe sincronizarse en el manifiesto para que tareas automáticas como `renew-university-jwks.sh` ejecuten con éxito.
