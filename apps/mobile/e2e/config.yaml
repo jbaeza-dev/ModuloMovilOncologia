@@ -1,7 +1,11 @@
 # Suite E2E de QuimioCare para Maestro. Se ejecuta en orden sobre un teléfono con la app instalada
-# y una sesión iniciada (ver README.md). Ningún flujo guarda datos clínicos ni cierra la sesión.
+# y una sesión iniciada (ver README.md). La suite normal no guarda datos clínicos ni cierra la
+# sesión: el flujo 07, que guarda un signo vital sintético, se excluye con su etiqueta y se corre
+# aparte con «pnpm run test:e2e:envio».
 flows:
   - flows/*.yaml
+excludeTags:
+  - guarda-datos
 executionOrder:
   continueOnFailure: true
   flowsOrder:
