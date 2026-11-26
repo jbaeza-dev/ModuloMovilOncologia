@@ -58,7 +58,11 @@ export async function supabaseGoogleLogin(
     const abort = () => controller.abort();
     signal.addEventListener('abort', abort, { once: true });
     if (signal.aborted) controller.abort();
-    const timer = setTimeout(abort, 12000);
+    let timedOut = false;
+    const timer = setTimeout(() => {
+      timedOut = true;
+      abort();
+    }, 12000);
     try {
       const response = await (runtime.fetch ?? fetch)(config.authUrl + '/token?grant_type=pkce', {
         method: 'POST',
@@ -72,12 +76,16 @@ export async function supabaseGoogleLogin(
       });
       if (signal.aborted) throw new SessionFailure('changed');
       if (response.status !== 200)
-        throw new SessionFailure(response.status >= 500 ? 'unavailable' : 'expired');
+        throw new SessionFailure(
+          response.status >= 500 ? 'unavailable' : 'expired',
+          response.status,
+          'auth',
+        );
       return (await response.json()) as unknown;
     } catch (error) {
       if (signal.aborted) throw new SessionFailure('changed');
       if (error instanceof SessionFailure) throw error;
-      throw new SessionFailure('unavailable');
+      throw new SessionFailure('unavailable', 0, 'auth', timedOut ? 'timeout' : 'network');
     } finally {
       clearTimeout(timer);
       signal.removeEventListener('abort', abort);

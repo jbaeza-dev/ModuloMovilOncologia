@@ -1,6 +1,7 @@
 import { describe, expect, it, vi } from 'vitest';
 import { supabaseGoogleLogin, type GoogleLoginRuntime } from './supabase-google-login';
 import { sessionConfig } from './session-config';
+import { failureCode } from './http-session-types';
 
 const env = {
   APP_ENV: 'universidad-demo',
@@ -89,6 +90,36 @@ describe('Supabase Google PKCE', () => {
     await expect(supabaseGoogleLogin(config, h.controller.signal, h.runtime)).rejects.toMatchObject(
       { kind: 'expired' },
     );
+  });
+  it('marca las fallas del intercambio como de Google, con su causa', async () => {
+    const h = harness();
+    h.fetcher.mockResolvedValueOnce(Response.json({}, { status: 502 }));
+    const http = await supabaseGoogleLogin(config, h.controller.signal, h.runtime).catch((e) => e);
+    expect(http).toMatchObject({ kind: 'unavailable', status: 502, origin: 'auth' });
+    expect(failureCode(http)).toBe('G-502');
+
+    h.fetcher.mockRejectedValueOnce(new TypeError('Network request failed'));
+    const network = await supabaseGoogleLogin(config, h.controller.signal, h.runtime).catch(
+      (e) => e,
+    );
+    expect(failureCode(network)).toBe('G-RED');
+  });
+  it('distingue la espera agotada de 12 s en el intercambio', async () => {
+    vi.useFakeTimers();
+    try {
+      const h = harness();
+      h.fetcher.mockImplementationOnce(
+        (_input, init) =>
+          new Promise((_resolve, reject) =>
+            init!.signal!.addEventListener('abort', () => reject(new Error('aborted'))),
+          ),
+      );
+      const pending = supabaseGoogleLogin(config, h.controller.signal, h.runtime).catch((e) => e);
+      await vi.advanceTimersByTimeAsync(12000);
+      expect(failureCode(await pending)).toBe('G-ESPERA');
+    } finally {
+      vi.useRealTimers();
+    }
   });
   it('allows loopback services only for university testing and requires HTTPS Auth', () => {
     expect(config).not.toBeNull();
