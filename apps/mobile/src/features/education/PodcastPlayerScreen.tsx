@@ -142,8 +142,8 @@ export function PodcastPlayerScreen() {
                   accessibilityRole="button"
                   accessibilityLabel={
                     isPlaying
-                      ? MULTIMEDIA_AND_EDUCATION_COPY.audioPaused
-                      : MULTIMEDIA_AND_EDUCATION_COPY.audioPlaying
+                      ? MULTIMEDIA_AND_EDUCATION_COPY.audioPause
+                      : MULTIMEDIA_AND_EDUCATION_COPY.audioResume
                   }
                   onPress={togglePlayPause}
                   style={({ pressed }) => [styles.playPauseBtn, pressed && styles.pressed]}
@@ -375,6 +375,7 @@ function createStyles(colors: ReturnType<typeof useAppTheme>['theme']['colors'])
     },
     rateBtn: {
       minHeight: 48,
+      minWidth: 48,
       paddingHorizontal: theme.spacing.sm,
       paddingVertical: 4,
       borderRadius: theme.radius.sm,

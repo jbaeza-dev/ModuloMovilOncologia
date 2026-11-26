@@ -238,7 +238,7 @@ describe('Podcast Playback & MiniPlayer UI (Etapa 7)', () => {
         );
     });
 
-    it('los botones de velocidad tienen al menos 48 de alto, la medida táctil mínima de Android', async () => {
+    it('los botones de velocidad miden al menos 48 × 48, la medida táctil mínima de Android', async () => {
       await render(
         <TestPlayerWithProvider>
           <PodcastPlayerScreen />
@@ -247,6 +247,26 @@ describe('Podcast Playback & MiniPlayer UI (Etapa 7)', () => {
       await fireEvent.press(screen.getByTestId('trigger-play'));
       const rate = await screen.findByRole('button', { name: 'Velocidad 1.25x' });
       expect(StyleSheet.flatten(rate.props.style).minHeight).toBeGreaterThanOrEqual(48);
+      const narrow = await screen.findByRole('button', { name: 'Velocidad 1x' });
+      expect(StyleSheet.flatten(narrow.props.style).minWidth).toBeGreaterThanOrEqual(48);
+    });
+
+    it('el botón principal anuncia la acción que hará: pausar mientras suena, reanudar en pausa', async () => {
+      await render(
+        <TestPlayerWithProvider>
+          <PodcastPlayerScreen />
+        </TestPlayerWithProvider>,
+      );
+      await fireEvent.press(screen.getByTestId('trigger-play'));
+      // El reproductor simulado parte en pausa: el botón ofrece reanudar.
+      const resume = await screen.findByRole('button', { name: 'Reanudar reproducción' });
+      expect(screen.queryByRole('button', { name: 'Pausar podcast' })).toBeNull();
+      await fireEvent.press(resume);
+      const pause = await screen.findByRole('button', { name: 'Pausar podcast' });
+      expect(mockPlayerPlay).toHaveBeenCalled();
+      await fireEvent.press(pause);
+      expect(await screen.findByRole('button', { name: 'Reanudar reproducción' })).toBeTruthy();
+      expect(mockPlayerPause).toHaveBeenCalled();
     });
 
     it('muestra el reproductor ampliado con transportes grandes y selector de velocidad', async () => {

@@ -124,8 +124,9 @@ export const MULTIMEDIA_AND_EDUCATION_COPY = {
   youtubeExitFullscreen: 'Salir de pantalla completa',
   youtubeOffline:
     'Los videos educativos requieren conexión a internet. Puedes revisar las guías y podcasts que ya tienes descargados en este teléfono.',
-  audioPlaying: 'Reproduciendo',
-  audioPaused: 'Pausado',
+  // Etiquetas del botón principal: describen la acción que ocurre al tocarlo, como el mini reproductor.
+  audioPause: 'Pausar podcast',
+  audioResume: 'Reanudar reproducción',
   audioSpeed: 'Velocidad de reproducción',
   audioRewind15: 'Retroceder 15 segundos',
   audioForward15: 'Adelantar 15 segundos',
