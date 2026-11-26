@@ -27,7 +27,6 @@ import { ClinicalConnector } from './clinical-connector';
 import { publishCatalog } from './catalog';
 import { migrateClinicalFiles } from './native-files';
 import type { ClinicalScope } from './clinical-command';
-import type { MigrationPhase } from './migration';
 
 let transientExportsChecked = false;
 
@@ -46,7 +45,7 @@ export interface ClinicalStore {
   triggerPendingUpload?: () => Promise<void>;
   isConnected?: () => boolean;
 }
-export function configuredSyncEndpoint(demo: boolean) {
+export function configuredSyncEndpoint() {
   const raw = process.env.EXPO_PUBLIC_POWERSYNC_URL;
   if (!raw) return null;
   const url = new URL(raw);
@@ -56,11 +55,7 @@ export function configuredSyncEndpoint(demo: boolean) {
     url.password ||
     url.search ||
     url.hash ||
-    !(
-      url.protocol === 'https:' ||
-      (isLoopback && url.protocol === 'http:') ||
-      (demo && process.env.EXPO_PUBLIC_P04_PROBE_ENABLED === 'true' && url.protocol === 'http:')
-    )
+    !(url.protocol === 'https:' || (isLoopback && url.protocol === 'http:'))
   )
     throw new Error('Configura una dirección segura para la sincronización.');
   return url.href.replace(/\/$/, '');
@@ -84,7 +79,6 @@ export {
 export async function openClinicalStore(
   session: HttpSessionAdapter,
   localPatientId: string,
-  lab?: { databaseName: string; checkpoint?: (phase: MigrationPhase) => Promise<void> },
 ): Promise<ClinicalStore> {
   if (!transientExportsChecked) {
     cleanupTransientReportExports();
@@ -94,17 +88,8 @@ export async function openClinicalStore(
   if (!user || !isUuid(user.id) || (user.localPatientId ?? user.id) !== localPatientId)
     throw new Error('El contexto de almacenamiento no coincide con la sesión.');
   const signal = session.getContextSignal(),
-    demo = session.config.mode === 'demo',
-    endpoint = configuredSyncEndpoint(demo);
-  if (
-    lab &&
-    (!demo ||
-      process.env.EXPO_PUBLIC_P04_PROBE_ENABLED !== 'true' ||
-      process.env.EXPO_PUBLIC_P04_LAB_ONLY !== 'true' ||
-      !/^qc_lab_[0-9a-f]{16}\.db$/.test(lab.databaseName))
-  )
-    throw new Error('El laboratorio requiere una compilación de prueba explícita.');
-  const sourceEnvironment = session.config.scope + (lab ? '|lab:' + lab.databaseName : '');
+    endpoint = configuredSyncEndpoint();
+  const sourceEnvironment = session.config.scope;
   const scope = {
     owner: user.id,
     localPatientId,
@@ -237,11 +222,8 @@ export async function openClinicalStore(
         // Ignorar JSON no parseable
       }
     }
-    await useLegacyArchive(
-      sourceEnvironment,
-      demo,
-      (archive) => migrateOwner(archive, connection, scope, lab?.checkpoint),
-      lab?.databaseName,
+    await useLegacyArchive(sourceEnvironment, (archive) =>
+      migrateOwner(archive, connection, scope),
     );
     if (signal.aborted || session.getCurrentUser()?.id !== scope.owner)
       throw new Error('La cuenta cambió durante la apertura.');
@@ -249,8 +231,8 @@ export async function openClinicalStore(
       'INSERT OR IGNORE INTO paciente_cache(paciente_id,nombre,obtenido_en) VALUES (?,?,?)',
       [localPatientId, user.name ?? 'Paciente', new Date().toISOString()],
     );
-    await migrateClinicalFiles(localPatientId, cipher, connection, undefined, !lab);
-    if (!lab) await scopeEducationalCopies(localPatientId, cipher, connection);
+    await migrateClinicalFiles(localPatientId, cipher, connection, undefined, true);
+    await scopeEducationalCopies(localPatientId, cipher, connection);
     deactivate = activateFileCipher(cipher);
     unregisterSession = session.registerConnector(() => store.disconnect());
     unregisterStatus = database.registerListener({
@@ -294,17 +276,15 @@ export async function openClinicalStore(
       unregister();
     };
     // Local data is available before network authorization; credentialsForSync gates actual uploads.
-    if (!lab)
-      void store
-        .resume(
-          session.getSnapshot().uploadAllowed && isRecoverableSessionPause(store.pauseCode)
-            ? 'session'
-            : false,
-        )
-        .catch((error) => {
-          if (error instanceof SessionFailure)
-            store.pauseCode = 'SESION_' + error.kind.toUpperCase();
-        });
+    void store
+      .resume(
+        session.getSnapshot().uploadAllowed && isRecoverableSessionPause(store.pauseCode)
+          ? 'session'
+          : false,
+      )
+      .catch((error) => {
+        if (error instanceof SessionFailure) store.pauseCode = 'SESION_' + error.kind.toUpperCase();
+      });
     return store;
   } catch (error) {
     await store.close().catch(() => undefined);

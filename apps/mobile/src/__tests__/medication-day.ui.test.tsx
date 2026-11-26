@@ -28,7 +28,6 @@ jest.mock('expo-router', () => ({
 jest.mock('expo-router/react-navigation', () => ({
   useNavigationState: (cb: (v: { index: number }) => unknown) => cb({ index: 0 }),
 }));
-jest.mock('../utils/environment', () => ({ isDemoMode: () => true }));
 const medA = {
   id: 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa',
   medicamento_id: '11111111-1111-4111-8111-111111111111',

@@ -58,13 +58,17 @@ prueban en Node.
 
 ## Modos y configuración
 
-El modo se fija al compilar con `EXPO_PUBLIC_APP_ENV`:
+El modo se fija al compilar con `EXPO_PUBLIC_APP_ENV`. Los dos entran solo con Google + PKCE:
 
 | Modo               | Uso                                                                                          |
 | ------------------ | -------------------------------------------------------------------------------------------- |
-| `demo`             | Solo pruebas automáticas: pacientes sintéticos A/B contra el simulador, sin pantalla propia. |
-| `universidad-demo` | Despliegue universitario con Google + PKCE; es el APK que compila CI en cada push a `main`.  |
+| `universidad-demo` | Despliegue universitario; es el APK que compila CI en cada push a `main`.                    |
 | `production`       | Preparado en el código (exige HTTPS, emisor y clave pública); aún sin perfil de compilación. |
+
+El modo `demo` (pacientes A y B elegidos sin Google) se retiró el 26-11-2026. Sin
+`EXPO_PUBLIC_APP_ENV` la app usa `production` y, si faltan las direcciones, queda «sin configurar».
+Las pruebas entran como un paciente real con un acceso de Google simulado
+(`src/services/session/testing/fake-session-adapter.ts`).
 
 Variables principales: `EXPO_PUBLIC_CLINICAL_URL`, `EXPO_PUBLIC_GATEWAY_URL`,
 `EXPO_PUBLIC_POWERSYNC_URL`, `EXPO_PUBLIC_AUTH_URL`, `EXPO_PUBLIC_AUTH_ISSUER`,
@@ -84,6 +88,10 @@ pnpm install --frozen-lockfile
 pnpm --filter @modulo-movil-oncologia/mobile start
 pnpm --filter @modulo-movil-oncologia/mobile android
 ```
+
+Para desarrollar contra el servidor universitario, define antes `EXPO_PUBLIC_APP_ENV=universidad-demo`
+y las variables `EXPO_PUBLIC_*` de la sección anterior (las mismas que usa
+`.github/workflows/build-apk.yml`).
 
 El APK de entrega lo compila `.github/workflows/build-apk.yml` (`expo prebuild` y
 `./gradlew assembleRelease`, `arm64-v8a` o universal).

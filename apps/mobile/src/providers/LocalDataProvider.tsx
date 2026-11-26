@@ -26,11 +26,9 @@ import {
   NotificationCoordinator,
   type CoordinatorResult,
 } from '../services/reminders/notification-coordinator';
-import { DEMO_USERS } from '../services/session/demo-session-adapter';
 import type { DeviceClient } from '../services/session/device-client';
 import type { HttpSessionAdapter } from '../services/session/http-session-adapter';
 import type { SessionAdapter } from '../services/session/session-adapter';
-import { isDemoMode } from '../utils/environment';
 import './foreground-notices';
 import {
   PatientContextManager,
@@ -59,11 +57,6 @@ import {
 export type { CloseReason, TeardownResult, NotificationOpenResult };
 export type { ScopedCoordinatorState, PreparationStatus, FormImportWarning };
 
-export const DEMO_PATIENTS = [
-  { id: DEMO_USERS[0].id, label: DEMO_USERS[0].name },
-  { id: DEMO_USERS[1].id, label: DEMO_USERS[1].name },
-] as const;
-
 type Repository = ReturnType<typeof createPatientRepository>;
 type DataContextValue = {
   database: SqlConnection | null;
@@ -87,7 +80,6 @@ type DataContextValue = {
   runSave: <T>(work: () => Promise<T>) => Promise<T>;
   trackOperation: <T>(operation: () => Promise<T>) => Promise<T>;
   closeActiveContext: (reason?: CloseReason) => Promise<TeardownResult>;
-  selectPatient: (newPatientId: string) => Promise<void>;
   changePatient: () => void;
   activeTeardownPromise: Promise<TeardownResult> | null;
   assistantController?: AssistantController | null;
@@ -129,10 +121,6 @@ export function LocalDataProvider({ children }: { children: ReactNode }) {
   const patientId = manager.getPatientId();
   const contextEpoch = manager.getContextEpoch();
   const isClosing = manager.getIsClosing();
-  const labOnly =
-    process.env.EXPO_PUBLIC_P04_LAB_ONLY === 'true' &&
-    process.env.EXPO_PUBLIC_P04_PROBE_ENABLED === 'true' &&
-    isDemoMode();
 
   const store = useClinicalStore({
     manager,
@@ -140,7 +128,6 @@ export function LocalDataProvider({ children }: { children: ReactNode }) {
     patientId,
     contextEpoch,
     sessionRestored,
-    labOnly,
   });
   const clinicalStore = store.clinicalStore;
   const database = clinicalStore?.connection ?? null;
@@ -158,15 +145,11 @@ export function LocalDataProvider({ children }: { children: ReactNode }) {
   useEffect(() => {
     if (restoreStarted.current) return;
     restoreStarted.current = true;
-    if (labOnly) {
-      setSessionRestored(true);
-      return;
-    }
     void manager
       .restoreSession()
       .catch(() => undefined)
       .finally(() => setSessionRestored(true));
-  }, [manager, labOnly]);
+  }, [manager]);
 
   useEffect(() => {
     manager.setDatabase(database);
@@ -220,11 +203,6 @@ export function LocalDataProvider({ children }: { children: ReactNode }) {
 
   const closeActiveContext = useCallback(
     (reason?: CloseReason): Promise<TeardownResult> => manager.closeActiveContext(reason),
-    [manager],
-  );
-
-  const selectPatient = useCallback(
-    (newPatientId: string): Promise<void> => manager.selectPatient(newPatientId),
     [manager],
   );
 
@@ -316,7 +294,6 @@ export function LocalDataProvider({ children }: { children: ReactNode }) {
       retryPendingNotification,
       isClosing,
       closeActiveContext,
-      selectPatient,
       trackOperation,
       activeTeardownPromise: manager.getActiveTeardownPromise(),
       assistantController: manager.assistantController,
@@ -351,7 +328,6 @@ export function LocalDataProvider({ children }: { children: ReactNode }) {
       reconcileReminders,
       retryPendingNotification,
       closeActiveContext,
-      selectPatient,
       trackOperation,
       runSave,
       changePatient,
@@ -372,7 +348,7 @@ export function LocalDataProvider({ children }: { children: ReactNode }) {
         <VisualButton label="Reintentar apertura" onPress={store.retryOpen} />
       </Screen>
     );
-  if (!sessionRestored || (!labOnly && patientId && !database)) return <AppLoadingScreen />;
+  if (!sessionRestored || (patientId && !database)) return <AppLoadingScreen />;
 
   return (
     <QueryRevisionContext.Provider value={queryRevision}>

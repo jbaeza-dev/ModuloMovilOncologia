@@ -84,11 +84,6 @@ jest.mock('../providers/ThemeProvider', () => ({
   useAppTheme: () => ({ theme: mockTheme }),
 }));
 
-let mockDemoMode = true;
-jest.mock('../utils/environment', () => ({
-  isDemoMode: () => mockDemoMode,
-}));
-
 const mockCloseActiveContext = jest.fn().mockResolvedValue({
   success: true,
   cancelledPatientId: 'paciente-demo-001',
@@ -154,10 +149,6 @@ const mockUseLocalData = jest.fn().mockReturnValue({
 });
 
 jest.mock('../providers/LocalDataProvider', () => ({
-  DEMO_PATIENTS: [
-    { id: 'paciente-demo-001', label: 'Paciente de prueba A' },
-    { id: 'paciente-demo-002', label: 'Paciente de prueba B' },
-  ],
   useLocalData: () => mockUseLocalData(),
 }));
 
@@ -178,7 +169,6 @@ describe('Screen, NavigationCard, rutas de Inicio y reinicio dirigido (Bloque 1 
   beforeEach(() => {
     jest.clearAllMocks();
     mockNavIndex = 0;
-    mockDemoMode = true;
     mockGetReminderStatusSnapshot.mockResolvedValue(defaultSnapshot);
     clearHomeScrollToTop();
   });
@@ -276,7 +266,6 @@ describe('Screen, NavigationCard, rutas de Inicio y reinicio dirigido (Bloque 1 
           obtenido_en: '2026-10-16T00:00:00.000Z',
         },
         patientId: 'paciente-demo-001',
-        demoMode: true,
       }),
     ).toBe('Hola, te damos la bienvenida');
 
@@ -292,11 +281,10 @@ describe('Screen, NavigationCard, rutas de Inicio y reinicio dirigido (Bloque 1 
           obtenido_en: '2026-10-16T00:00:00.000Z',
         },
         patientId: 'paciente-demo-002',
-        demoMode: false,
       }),
     ).toBe('Hola, te damos la bienvenida');
 
-    // Sin nombre en perfil y en modo demo, usa la etiqueta del paciente demo activo
+    // Sin nombre en el perfil, usa el saludo genérico
     expect(
       resolveHomeGreeting({
         loadingProfile: false,
@@ -308,9 +296,8 @@ describe('Screen, NavigationCard, rutas de Inicio y reinicio dirigido (Bloque 1 
           obtenido_en: '2026-10-16T00:00:00.000Z',
         },
         patientId: 'paciente-demo-002',
-        demoMode: true,
       }),
-    ).toBe('Hola, Paciente de prueba B');
+    ).toBe('Hola, te damos la bienvenida');
   });
 
   it('P-03: HomeScreen muestra el próximo aviso confirmado («Hoy a las 15:00») cuando está programado', async () => {

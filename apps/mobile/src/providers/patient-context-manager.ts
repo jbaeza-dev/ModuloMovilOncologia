@@ -340,26 +340,6 @@ export class PatientContextManager {
       this.selecting = false;
     }
   }
-  async selectPatient(newPatientId: string): Promise<void> {
-    if (!this.sessionAdapter.selectDemoPatient)
-      throw new Error('La selección manual de paciente solo está disponible en modo demostración.');
-    if (this.selecting) throw new Error('Ya hay un acceso en curso.');
-    this.selecting = true;
-    try {
-      if (this.patientId) await this.closeActiveContext('change_patient');
-      if (this.activeTeardownPromise) await this.activeTeardownPromise;
-      const previous = this.sessionAdapter.getCurrentUser();
-      if (!this.patientId && previous)
-        throw new Error('Reintenta el cierre de la cuenta anterior antes de cambiar de paciente.');
-      const result = await this.sessionAdapter.selectDemoPatient(newPatientId);
-      if (!result.success || !result.user)
-        throw new Error(result.error ?? 'No se pudo autenticar al paciente de demostración.');
-      this.activateUser(result.user.localPatientId ?? newPatientId);
-    } finally {
-      this.selecting = false;
-    }
-  }
-
   async processPendingNotificationIntent(): Promise<NotificationOpenResult> {
     const pending = this.pendingNotificationIntent;
     if (!pending) {

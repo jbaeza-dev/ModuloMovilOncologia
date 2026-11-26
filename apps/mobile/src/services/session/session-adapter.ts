@@ -7,5 +7,4 @@ export interface SessionAdapter {
   logout(): Promise<void>;
   restore?(): Promise<SessionResult>;
   cancelRequests?(): void;
-  selectDemoPatient?(patientId: string): Promise<SessionResult>;
 }

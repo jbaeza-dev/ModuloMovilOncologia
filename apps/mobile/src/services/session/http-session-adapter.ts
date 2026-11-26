@@ -5,15 +5,10 @@ import type { CredentialVault } from './credential-vault';
 import type { Credentials, IdentityCache, SessionSnapshot } from './http-session-types';
 import { SessionFailure } from './http-session-types';
 import * as check from './response-checks';
-import { DEMO_USERS } from './demo-session-adapter';
 
 /** Espera de los pedidos de credenciales de PowerSync tras un «servicio no disponible». */
 const SYNC_RETRY_DELAYS = [5_000, 15_000, 30_000, 60_000];
 
-export const DEMO_AUTH_IDS = [
-  '964d32f1-6941-579f-9f08-b60342194da9',
-  '2dcb04f2-a2ad-5ea4-b711-9acd7e570002',
-] as const;
 export interface SessionOptions {
   config: SessionConfig;
   vault: CredentialVault;
@@ -182,15 +177,7 @@ export class HttpSessionAdapter implements SessionAdapter {
     }
   }
   private user(owner: string, name?: string): SessionUser {
-    const index = DEMO_AUTH_IDS.indexOf(owner as (typeof DEMO_AUTH_IDS)[number]);
-    if (this.config.mode === 'demo' && index < 0) throw new SessionFailure('invalid');
-    return {
-      id: owner,
-      name:
-        name ?? (this.config.mode === 'demo' && index >= 0 ? DEMO_USERS[index]!.name : 'Paciente'),
-      isDemo: this.config.mode === 'demo',
-      localPatientId: this.config.mode === 'demo' ? DEMO_USERS[index]!.id : owner,
-    };
+    return { id: owner, name: name ?? 'Paciente', isDemo: false, localPatientId: owner };
   }
   async restore(): Promise<SessionResult> {
     const epoch = this.epoch;
@@ -257,35 +244,9 @@ export class HttpSessionAdapter implements SessionAdapter {
       return { success: false, state: 'no_identity' };
     }
   }
-  async selectDemoPatient(patientId: string): Promise<SessionResult> {
-    if (this.config.mode !== 'demo') return { success: false, state: 'unconfigured' };
-    const index = DEMO_USERS.findIndex(
-      (u) => u.id === patientId || DEMO_AUTH_IDS[DEMO_USERS.indexOf(u)] === patientId,
-    );
-    if (index < 0)
-      return { success: false, state: this.getState(), error: 'Paciente de prueba no reconocido.' };
-    return this.establish(async (epoch) => {
-      const r = await this.raw(
-        this.config.authUrl,
-        '/__demo/auth/session',
-        {
-          method: 'POST',
-          headers: { 'content-type': 'application/json' },
-          body: JSON.stringify({ paciente_demo: index === 0 ? 'A' : 'B' }),
-        },
-        epoch,
-      );
-      if (r.status !== 200) throw new SessionFailure('unavailable');
-      const value = check.credentials(r.body, this.now());
-      if (value.owner !== DEMO_AUTH_IDS[index]) throw new SessionFailure('invalid');
-      return value;
-    });
-  }
   async login(_credentials: SessionCredentials): Promise<SessionResult> {
     void _credentials;
-    const isGoogleAuth =
-      this.config.mode === 'production' || this.config.mode === 'universidad-demo';
-    if (!isGoogleAuth || !this.options.googleLogin)
+    if (!this.options.googleLogin)
       return {
         success: false,
         state: 'unconfigured',
@@ -394,16 +355,12 @@ export class HttpSessionAdapter implements SessionAdapter {
       this.update({ state: 'renewing', uploadAllowed: false });
       const promise = (async () => {
         try {
-          const demo = this.config.mode === 'demo';
           const r = await this.raw(
             this.config.authUrl,
-            demo ? '/__demo/auth/refresh' : '/token?grant_type=refresh_token',
+            '/token?grant_type=refresh_token',
             {
               method: 'POST',
-              headers: {
-                'content-type': 'application/json',
-                ...(!demo ? { apikey: this.config.publicKey! } : {}),
-              },
+              headers: { 'content-type': 'application/json', apikey: this.config.publicKey },
               body: JSON.stringify({ refresh_token: current.refreshToken }),
             },
             epoch,

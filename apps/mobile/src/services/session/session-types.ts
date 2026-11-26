@@ -1,7 +1,6 @@
 export type SessionState =
   | 'preparing_storage'
   | 'no_identity'
-  | 'demo_selection'
   | 'context_ready'
   | 'authenticating'
   | 'reauthenticating'

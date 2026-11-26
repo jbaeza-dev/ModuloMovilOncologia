@@ -36,8 +36,7 @@ export function nativeVault(scope: string): CredentialVault {
 export function createMobileSession() {
   const explicit = process.env.EXPO_PUBLIC_APP_ENV;
   const config = sessionConfig({
-    APP_ENV:
-      explicit ?? (process.env.EXPO_PUBLIC_DEMO_MODE === 'true' || __DEV__ ? 'demo' : 'production'),
+    APP_ENV: explicit ?? 'production',
     CLINICAL_URL: process.env.EXPO_PUBLIC_CLINICAL_URL,
     GATEWAY_URL: process.env.EXPO_PUBLIC_GATEWAY_URL,
     AUTH_URL: process.env.EXPO_PUBLIC_AUTH_URL,
@@ -51,31 +50,27 @@ export function createMobileSession() {
     config,
     vault: nativeVault(config.scope),
     newId: Crypto.randomUUID,
-    ...(config.mode === 'production' || config.mode === 'universidad-demo'
-      ? {
-          googleLogin: (signal: AbortSignal) =>
-            supabaseGoogleLogin(config, signal, {
-              createRequest: async () => {
-                const request = new AuthSession.AuthRequest({
-                  clientId: 'quimiocare',
-                  redirectUri: config.redirectUri!,
-                  responseType: AuthSession.ResponseType.Code,
-                  usePKCE: true,
-                });
-                await request.makeAuthUrlAsync({
-                  authorizationEndpoint: config.authUrl + '/authorize',
-                });
-                return {
-                  state: request.state,
-                  verifier: request.codeVerifier!,
-                  challenge: request.codeChallenge!,
-                };
-              },
-              open: (url, redirect) => WebBrowser.openAuthSessionAsync(url, redirect),
-              dismiss: () => WebBrowser.dismissAuthSession(),
-            }),
-        }
-      : {}),
+    googleLogin: (signal: AbortSignal) =>
+      supabaseGoogleLogin(config, signal, {
+        createRequest: async () => {
+          const request = new AuthSession.AuthRequest({
+            clientId: 'quimiocare',
+            redirectUri: config.redirectUri!,
+            responseType: AuthSession.ResponseType.Code,
+            usePKCE: true,
+          });
+          await request.makeAuthUrlAsync({
+            authorizationEndpoint: config.authUrl + '/authorize',
+          });
+          return {
+            state: request.state,
+            verifier: request.codeVerifier!,
+            challenge: request.codeChallenge!,
+          };
+        },
+        open: (url, redirect) => WebBrowser.openAuthSessionAsync(url, redirect),
+        dismiss: () => WebBrowser.dismissAuthSession(),
+      }),
   });
   return session;
 }
