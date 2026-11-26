@@ -56,9 +56,9 @@ patchedDependencies:
   expo-print@57.0.2: patches/expo-print@57.0.2.patch
 
 overrides:
-  expo-asset: ~57.0.21
-  expo-constants: ~57.0.23
-  expo-dev-client: ~57.0.21
-  expo-notifications: ~57.0.25
-  expo-splash-screen: ~57.0.11
-  expo-task-manager: ~57.0.22
+  expo-asset: ~57.0.22
+  expo-constants: ~57.0.25
+  expo-dev-client: ~57.0.22
+  expo-notifications: ~57.0.26
+  expo-splash-screen: ~57.0.12
+  expo-task-manager: ~57.0.24
