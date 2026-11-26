@@ -110,6 +110,14 @@ export function LinkCodeScreen() {
         : null;
   const expired = !!boundary && Date.parse(boundary) <= clock;
   const isLinked = assignedTeam.length > 0;
+  // El servidor no informa cuándo se usa un código: si hay un vínculo activo posterior a la
+  // solicitud, el equipo de salud ya lo usó (compara la hora del teléfono con la del servidor).
+  const used =
+    value?.kind === 'known' &&
+    !expired &&
+    assignedTeam.some(
+      (professional) => Date.parse(professional.fecha_vinculacion) >= Date.parse(value.requestedAt),
+    );
 
   async function generate() {
     if (!client || busy || isClosing) return;
@@ -160,13 +168,22 @@ export function LinkCodeScreen() {
           {value?.kind === 'known'
             ? expired
               ? 'Código vencido'
-              : 'Código vigente'
+              : used
+                ? 'Código usado'
+                : 'Código vigente'
             : value?.kind === 'uncertain' && !expired
               ? 'Comprobando vinculación'
               : 'Solicitar código'}
         </SectionTitle>
 
-        {value?.kind === 'known' && !expired ? (
+        {used ? (
+          <BodyText>
+            Tu equipo de salud ya usó este código. Si necesitas vincular a otro profesional,
+            solicita uno nuevo.
+          </BodyText>
+        ) : null}
+
+        {value?.kind === 'known' && !expired && !used ? (
           <>
             <Text
               selectable
@@ -217,7 +234,7 @@ export function LinkCodeScreen() {
 
         <BodyText>Necesitas conexión a internet para generar un nuevo código.</BodyText>
 
-        {!value || value.kind === 'empty' || expired ? (
+        {!value || value.kind === 'empty' || expired || used ? (
           <VisualButton
             label={busy ? 'Solicitando…' : isLinked ? 'Solicitar nuevo código' : 'Solicitar código'}
             disabled={!client || busy || isClosing}

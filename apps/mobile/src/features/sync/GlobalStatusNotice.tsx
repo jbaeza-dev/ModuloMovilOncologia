@@ -22,6 +22,9 @@ export function RecordsStatusCard({ details = false }: { details?: boolean }) {
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const model = syncPresentation(snapshot, summary);
+  const shown = model ? model.title + '|' + model.message : null;
+  // Un fallo anterior deja de ser cierto en cuanto cambia el estado (por ejemplo, al reconectar).
+  useEffect(() => setError(null), [shown]);
   if (!model) return null;
   async function act() {
     if (!model || busy) return;
