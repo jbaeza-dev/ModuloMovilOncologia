@@ -85,6 +85,17 @@ describe('Tarjeta de registros con acciones directas', () => {
     expect(mockNavigate).not.toHaveBeenCalled();
     expect(mockAccept).not.toHaveBeenCalled();
   });
+  it('borra el aviso de un intento fallido cuando la conexión se recupera', async () => {
+    mockState = { ...mockState, state: 'service_unavailable', stale: true, uploadAllowed: false };
+    mockRefresh.mockRejectedValueOnce(new Error('sin servidor'));
+    const view = await render(<RecordsStatusCard />);
+    await fireEvent.press(screen.getByRole('button', { name: 'Intentar ahora' }));
+    expect(await screen.findByText(/No pudimos completar la conexión/)).toBeTruthy();
+    mockState = { ...mockState, state: 'context_ready', stale: false, uploadAllowed: true };
+    await view.rerender(<RecordsStatusCard />);
+    expect(screen.getByText('No tienes registros pendientes de envío.')).toBeTruthy();
+    await waitFor(() => expect(screen.queryByText(/No pudimos completar la conexión/)).toBeNull());
+  });
   it('dirige al consentimiento pendiente en una sola acción, sin aceptarlo automáticamente', async () => {
     mockState = { ...mockState, state: 'terms_pending', uploadAllowed: false };
     await render(<RecordsStatusCard />);

@@ -16,6 +16,7 @@ import {
   VisualField,
 } from '../../components/Visual';
 import { useOptionalLocalData } from '../../providers/LocalDataProvider';
+import { formatDate } from '../../data/local/repository';
 import type { SessionSnapshot } from '../../services/session/http-session-types';
 import { registerNativePush } from '../../services/session/native-session';
 import type { GatewaySesion } from '@quimiocare/contracts';
@@ -116,7 +117,7 @@ export function IdentityScreen() {
           }
         />
         {snapshot.identity ? (
-          <DetailRow label="Última consulta" value={snapshot.identity.fetchedAt} />
+          <DetailRow label="Última consulta" value={formatDate(snapshot.identity.fetchedAt)} />
         ) : null}
       </InfoCard>
       {feedback ? <BodyText>{feedback}</BodyText> : null}

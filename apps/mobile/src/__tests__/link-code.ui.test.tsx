@@ -5,6 +5,7 @@ import { fireEvent, render, screen, waitFor } from '@testing-library/react-nativ
 const mockRead = jest.fn();
 const mockGenerate = jest.fn();
 const mockFactory = jest.fn();
+let mockTeam: Array<{ fecha_vinculacion: string }> = [];
 jest.mock('expo-router', () => ({ router: { push: jest.fn() } }));
 jest.mock('expo-network', () => ({
   getNetworkStateAsync: jest.fn(async () => ({ isConnected: true, isInternetReachable: true })),
@@ -33,7 +34,7 @@ const mockLocal = {
   identitySession: { getSnapshot: () => ({ uploadAllowed: true }), refreshIdentity: jest.fn() },
   trackOperation: (work: () => Promise<unknown>) => work(),
   isClosing: false,
-  repository: { assignedMedicalTeam: async () => [] },
+  repository: { assignedMedicalTeam: async () => mockTeam },
 };
 jest.mock('../providers/LocalDataProvider', () => ({ useLocalData: () => mockLocal }));
 import { LinkCodeScreen } from '../features/profile/LinkCodeScreen';
@@ -42,6 +43,7 @@ const future = new Date(Date.now() + 86_400_000).toISOString();
 const uncertain = { kind: 'uncertain', requestedAt: new Date().toISOString(), retryAfter: future };
 beforeEach(() => {
   jest.clearAllMocks();
+  mockTeam = [];
   mockRead.mockResolvedValue({ kind: 'empty' });
 });
 
@@ -84,5 +86,37 @@ describe('Pantalla del código de vinculación', () => {
     expect(await screen.findByText(/Ya existe un código vigente/)).toBeTruthy();
     expect(screen.getByText(/a más tardar el fecha:/)).toBeTruthy();
     expect(screen.getByRole('button', { name: 'Intentar de nuevo' })).toBeTruthy();
+  });
+
+  describe('código ya usado por el equipo de salud', () => {
+    const requestedAt = '2026-11-25T18:49:42.000Z';
+    const known = { kind: 'known', code: 'ABCD1234', expiresAt: future, requestedAt };
+
+    it('si el vínculo es posterior a la solicitud, lo marca como usado y ofrece otro', async () => {
+      mockRead.mockResolvedValue(known);
+      mockTeam = [{ fecha_vinculacion: '2026-11-25T18:50:38.000Z' }];
+      await render(<LinkCodeScreen />);
+      expect(await screen.findByText('Código usado')).toBeTruthy();
+      expect(screen.getByText(/Tu equipo de salud ya usó este código/)).toBeTruthy();
+      expect(screen.queryByText('ABCD1234')).toBeNull();
+      expect(screen.queryByText('Código vigente')).toBeNull();
+      expect(screen.getByRole('button', { name: 'Solicitar nuevo código' })).toBeTruthy();
+    });
+
+    it('si el vínculo es anterior a la solicitud, el código sigue vigente', async () => {
+      mockRead.mockResolvedValue(known);
+      mockTeam = [{ fecha_vinculacion: '2026-11-24T15:19:20.000Z' }];
+      await render(<LinkCodeScreen />);
+      expect(await screen.findByText('Código vigente')).toBeTruthy();
+      expect(screen.getByText('ABCD1234')).toBeTruthy();
+      expect(screen.queryByText('Código usado')).toBeNull();
+    });
+
+    it('sin vínculo, el código sigue vigente', async () => {
+      mockRead.mockResolvedValue(known);
+      await render(<LinkCodeScreen />);
+      expect(await screen.findByText('Código vigente')).toBeTruthy();
+      expect(screen.getByText('ABCD1234')).toBeTruthy();
+    });
   });
 });

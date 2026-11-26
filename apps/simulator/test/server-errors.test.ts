@@ -4,6 +4,9 @@ import type { Server } from 'node:http';
 import { readConfig } from '../src/config.js';
 import { createSimulator } from '../src/app.js';
 import type { Database } from '../src/db.js';
+import { ApiError } from '../src/errors.js';
+import { logServerError } from '../src/error-log.js';
+import type { IncomingMessage } from 'node:http';
 
 const config = readConfig({
   APP_ENV: 'demo',
@@ -71,6 +74,25 @@ describe('errores internos del simulador', () => {
       code: 'SERVICIO_NO_DISPONIBLE',
       errorType: 'ApiError',
     });
+  });
+
+  it('reemplaza en la ruta los identificadores y los números, y quita los parámetros', () => {
+    const lines: string[] = [];
+    const id = '950E8A9D-8575-4293-8E88-F2F4DB1921D9';
+    const req = {
+      method: 'GET',
+      url: '/api/v1/pacientes/' + id + '/signos/42?desde=2026-11-01&rut=12.345.678-5',
+      headers: {},
+    } as unknown as IncomingMessage;
+    logServerError(
+      (line) => lines.push(line),
+      'clinical',
+      req,
+      new ApiError(503, 'SERVICIO_NO_DISPONIBLE', 'Base de datos no disponible.'),
+      leak,
+    );
+    expect(JSON.parse(lines[0]!).path).toBe('/api/v1/pacientes/:id/signos/:n');
+    expect(lines[0]).not.toMatch(/950e8a9d|12\.345|desde|rut/i);
   });
 
   it('no registra los errores del cliente (4xx)', async () => {

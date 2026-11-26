@@ -1,6 +1,7 @@
 /**
  * Límites de la biblioteca educativa en el teléfono. Deben alcanzar para todas las infografías del
- * catálogo (42 imágenes, 56 MB): las de urgencias tienen que poder verse sin conexión.
+ * catálogo (42 imágenes, 76,6 MB según el servidor el 25-11-2026): las de urgencias tienen que
+ * poder verse sin conexión.
  */
 export const EDUCATION_MAX_COPIES = 100;
 export const EDUCATION_MAX_MEGABYTES = 100;
