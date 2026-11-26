@@ -8,6 +8,8 @@ ENGINE=$(printenv CONTAINER_ENGINE || printf podman)
 RESUME=$(printenv RESUME_WRITERS || printf true)
 [[ "$ENGINE" == podman || "$ENGINE" == docker ]] || exit 1
 [[ "$RESUME" == true || "$RESUME" == false ]] || exit 1
+KEEP=$(printenv BACKUP_KEEP || printf 7)
+[[ "$KEEP" =~ ^[1-9][0-9]*$ ]] || { echo 'BACKUP_KEEP must be a positive integer' >&2; exit 1; }
 [[ "$CLINICAL_DATABASE" =~ ^qc_[a-z0-9_]+$ && "$GATEWAY_DATABASE" =~ ^qc_[a-z0-9_]+$ ]] || exit 1
 media_command=()
 if [[ "$ENGINE" == podman ]]; then media_command=(podman unshare); fi
@@ -58,3 +60,20 @@ printf 'version=2\nsource=%s\ngateway=%s\nmode=writers-stopped\n' "$CLINICAL_DAT
 # shellcheck disable=SC2094
 (cd "$out"; find . -type f ! -name checksums.sha256 -print0 | sort -z | xargs -0 sha256sum > checksums.sha256)
 echo "Snapshot confirmed: $out"
+# Rotation (decision 26-11-2026): keep the newest $KEEP confirmed snapshots. Only directories
+# named like a snapshot that hold manifest.txt and checksums.sha256 count; partial snapshots,
+# links and foreign folders are never touched, and neither is the snapshot just created.
+# A failed removal is reported but does not fail the deployment. Off-site copies are out of scope.
+previous=()
+for dir in "$BACKUP_ROOT"/*; do
+ name=${dir##*/}
+ [[ "$name" =~ ^[0-9]{8}T[0-9]{6}Z-[0-9]+$ && "$dir" != "$out" && -d "$dir" && ! -L "$dir" ]] || continue
+ if [[ -f "$dir/manifest.txt" && -f "$dir/checksums.sha256" ]]; then previous+=("$name"); fi
+done
+if (( ${#previous[@]} > KEEP - 1 )); then
+ mapfile -t previous < <(printf '%s\n' "${previous[@]}" | LC_ALL=C sort -r)
+ for name in "${previous[@]:KEEP-1}"; do
+  if "${media_command[@]}" rm -rf -- "${BACKUP_ROOT:?}/$name"; then echo "Old snapshot removed: $name"
+  else echo "Could not remove old snapshot: $name" >&2; fi
+ done
+fi
