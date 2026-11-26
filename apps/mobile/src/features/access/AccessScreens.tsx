@@ -10,11 +10,9 @@ import {
   BodyText,
   DemoBadge,
   InfoCard,
-  ProgressBar,
   SectionTitle,
   StatusPill,
   VisualButton,
-  VisualField,
 } from '../../components/Visual';
 import { isDemoMode } from '../../utils/environment';
 import { theme } from '../../theme';
@@ -119,151 +117,7 @@ export function LoginScreen() {
   );
 }
 
-export function RegisterScreen() {
-  const [values, setValues] = useState({ name: '', surname: '', email: '', password: '' });
-  return (
-    <Screen title="Crear cuenta">
-      <DemoBadge />
-      <InfoCard>
-        <SectionTitle>Registro de usuarios</SectionTitle>
-        <BodyText>
-          El registro de cuentas centrales no está configurado en este entorno. Puedes revisar los
-          términos y consentimientos disponibles o seleccionar un paciente de prueba en modo
-          demostración.
-        </BodyText>
-      </InfoCard>
-      {isDemoMode() ? (
-        <VisualButton
-          label="Seleccionar paciente de prueba"
-          onPress={() => router.push('/acceso/seleccionar-paciente')}
-        />
-      ) : null}
-      <VisualField
-        label="Nombre (deshabilitado · sin servicio central)"
-        value={values.name}
-        onChangeText={(name) => setValues({ ...values, name })}
-        placeholder="No configurado"
-        editable={false}
-      />
-      <VisualField
-        label="Apellido (deshabilitado · sin servicio central)"
-        value={values.surname}
-        onChangeText={(surname) => setValues({ ...values, surname })}
-        placeholder="No configurado"
-        editable={false}
-      />
-      <VisualField
-        label="Correo electrónico (deshabilitado · sin servicio central)"
-        value={values.email}
-        onChangeText={(email) => setValues({ ...values, email })}
-        keyboardType="email-address"
-        placeholder="No configurado"
-        editable={false}
-      />
-      <VisualField
-        label="Contraseña (deshabilitado · sin servicio central)"
-        value={values.password}
-        onChangeText={(password) => setValues({ ...values, password })}
-        secureTextEntry
-        placeholder="No configurado"
-        editable={false}
-      />
-      <VisualButton
-        label="Ver consentimientos"
-        onPress={() => router.push('/acceso/consentimientos')}
-      />
-      <VisualButton label="Registrarse · No configurado" secondary disabled />
-    </Screen>
-  );
-}
-
 export { OnlineConsentScreen as AccessConsentScreen } from './SessionScreens';
-
-export function RecoverScreen() {
-  const [email, setEmail] = useState('');
-  return (
-    <Screen title="Olvidé mi contraseña">
-      <DemoBadge />
-      <ProgressBar progress={33} />
-      <BodyText>Paso 1 de 3 · Ingresa tu correo</BodyText>
-      <InfoCard>
-        <BodyText>
-          La recuperación de contraseña no está disponible. Usa Google para entrar.
-        </BodyText>
-      </InfoCard>
-      <VisualField
-        label="Correo electrónico (deshabilitado · sin servicio central)"
-        value={email}
-        onChangeText={setEmail}
-        keyboardType="email-address"
-        placeholder="No configurado"
-        editable={false}
-      />
-      <VisualButton label="Enviar enlace · No configurado" disabled />
-      <VisualButton
-        label="Ver estado de correo enviado"
-        secondary
-        onPress={() => router.push('/acceso/correo')}
-      />
-    </Screen>
-  );
-}
-
-export function MailSentScreen() {
-  return (
-    <Screen title="Revisa tu correo">
-      <DemoBadge />
-      <ProgressBar progress={66} />
-      <BodyText>Paso 2 de 3 · Vista de ejemplo</BodyText>
-      <InfoCard>
-        <BodyText>
-          Cuando el flujo de identidad esté conectado, aquí se explicará cómo usar el enlace
-          recibido.
-        </BodyText>
-      </InfoCard>
-      <VisualButton label="Reenviar correo · No configurado" disabled />
-      <VisualButton
-        label="Ver nueva contraseña"
-        secondary
-        onPress={() => router.push('/acceso/nueva-clave')}
-      />
-    </Screen>
-  );
-}
-
-export function NewPasswordScreen() {
-  const [password, setPassword] = useState('');
-  const [confirmation, setConfirmation] = useState('');
-  return (
-    <Screen title="Nueva contraseña">
-      <DemoBadge />
-      <ProgressBar progress={100} />
-      <BodyText>Paso 3 de 3 · Vista de ejemplo</BodyText>
-      <InfoCard>
-        <BodyText>
-          La validación y actualización de la contraseña se incorporarán con autenticación central.
-        </BodyText>
-      </InfoCard>
-      <VisualField
-        label="Nueva contraseña (deshabilitado · sin servicio central)"
-        value={password}
-        onChangeText={setPassword}
-        secureTextEntry
-        placeholder="No configurado"
-        editable={false}
-      />
-      <VisualField
-        label="Confirmar contraseña (deshabilitado · sin servicio central)"
-        value={confirmation}
-        onChangeText={setConfirmation}
-        secureTextEntry
-        placeholder="No configurado"
-        editable={false}
-      />
-      <VisualButton label="Actualizar contraseña · No configurado" disabled />
-    </Screen>
-  );
-}
 
 const styles = StyleSheet.create({
   cardHeaderRow: {

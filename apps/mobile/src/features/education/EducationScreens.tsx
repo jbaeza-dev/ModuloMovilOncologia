@@ -1313,28 +1313,6 @@ export function EducationResourceScreen() {
   );
 }
 
-export function EducationStateScreen() {
-  const { estado } = useLocalSearchParams<{ estado?: string }>();
-  const state =
-    estado === 'cargando' || estado === 'error' || estado === 'sin-conexion' ? estado : 'vacia';
-  const copy = {
-    vacia: ['Sin recursos', 'Todavía no hay materiales en esta categoría.'],
-    cargando: ['Cargando recursos', 'Estado de carga de ejemplo.'],
-    error: ['No se pudo mostrar el contenido', 'Estado de error de ejemplo.'],
-    'sin-conexion': ['Requiere conexión', 'Este recurso no está descargado.'],
-  }[state];
-  return (
-    <Screen mascotPose="resumen" title="Estado de biblioteca">
-      <DemoBadge />
-      <EmptyState
-        icon={state === 'sin-conexion' ? 'wifi-off' : 'book-open'}
-        title={copy[0]}
-        description={copy[1]}
-      />
-    </Screen>
-  );
-}
-
 function useStyles() {
   const { theme: appTheme } = useAppTheme();
   return StyleSheet.create({

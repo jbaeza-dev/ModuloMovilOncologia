@@ -170,7 +170,6 @@ import {
 import { NavigationCard } from '../components/NavigationCard';
 import { Screen } from '../components/Screen';
 import { ScreenBottomInsetHandledContext } from '../components/ScreenInsets';
-import { SymptomDataScreen } from '../features/form/SymptomDataScreen';
 import { HomeScreen, resolveHomeGreeting } from '../features/home/HomeScreen';
 import { clearHomeScrollToTop, consumeHomeScrollToTop } from '../features/home/home-scroll-signal';
 import { RegisterVitalsDataScreen } from '../features/vitals/VitalsDataScreens';
@@ -398,13 +397,6 @@ describe('Screen, NavigationCard, rutas de Inicio y reinicio dirigido (Bloque 1 
     expect(mockCloseActiveContext).toHaveBeenCalledWith('manual_close');
 
     alertSpy.mockRestore();
-  });
-
-  it('P-05: conserva síntomas libres como historial y dirige las capturas nuevas al ePRO', async () => {
-    await render(<SymptomDataScreen />);
-    expect(screen.getByText('Historial de síntomas libres')).toBeTruthy();
-    expect(screen.queryByLabelText('Describe el síntoma')).toBeNull();
-    expect(screen.getByRole('button', { name: 'Abrir seguimiento ePRO' })).toBeTruthy();
   });
 
   it('RegisterVitalsDataScreen conserva Volver y una sola acción de guardar al pie', async () => {

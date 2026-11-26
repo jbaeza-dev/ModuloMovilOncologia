@@ -505,14 +505,6 @@ export function HomeScreen() {
           />
         </ActionCardGrid>
         <NavigationCard title="Bandeja de avisos" icon="bell" href="/avisos" compact />
-        {__DEV__ ? (
-          <NavigationCard
-            title="Galería de revisión"
-            description="Todas las pantallas y variantes del prototipo."
-            icon="grid"
-            href="/galeria"
-          />
-        ) : null}
       </View>
     </Screen>
   );

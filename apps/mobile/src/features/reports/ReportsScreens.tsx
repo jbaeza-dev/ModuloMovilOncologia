@@ -1,6 +1,5 @@
 import { AppIcon as Feather } from '../../components/AppIcon';
-import { File } from 'expo-file-system';
-import { router, useFocusEffect, useLocalSearchParams } from 'expo-router';
+import { router, useFocusEffect } from 'expo-router';
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { AccessibilityInfo, Alert, Pressable, StyleSheet, Text, View } from 'react-native';
 
@@ -9,7 +8,6 @@ import { DetailsDisclosure } from '../../components/DetailsDisclosure';
 import {
   BodyText,
   ChoiceChip,
-  DemoBadge,
   DetailRow,
   EmptyState,
   InfoCard,
@@ -18,12 +16,9 @@ import {
   VisualButton,
 } from '../../components/Visual';
 import {
-  assertSafeReportFileName,
   deletePatientReport,
   getPatientReportDirectory,
   getPatientReportList,
-  parseFormatFromReportFilename,
-  parseTimestampFromReportFilename,
   shareReportFile,
   type PatientReportItem,
   type ReportFileFormat,
@@ -637,112 +632,6 @@ export function ReportsScreen() {
           />
         ))
       )}
-    </Screen>
-  );
-}
-
-export function ReportStatusScreen() {
-  const { patientId, manager } = useLocalData();
-  const { archivo } = useLocalSearchParams<{ archivo?: string }>();
-  const [sharingFeedback, setSharingFeedback] = useState<string | null>(null);
-
-  let isValidFormat = false;
-  try {
-    if (archivo) {
-      assertSafeReportFileName(archivo);
-      isValidFormat = true;
-    }
-  } catch {
-    isValidFormat = false;
-  }
-
-  // Reconstrucción estricta dentro del directorio del paciente activo
-  const patientDir = patientId ? getPatientReportDirectory(patientId) : null;
-  const targetFile = patientDir && isValidFormat && archivo ? new File(patientDir, archivo) : null;
-  const fileExists = targetFile ? targetFile.exists : false;
-
-  const fileFormat = archivo ? (parseFormatFromReportFilename(archivo) ?? 'pdf') : 'pdf';
-
-  async function handleReshare() {
-    if (!targetFile || !fileExists) return;
-    if (!(await confirmIdentifiedShare(captureShareContext(manager, patientId)))) return;
-    setSharingFeedback(null);
-    const result = await shareReportFile(targetFile.uri, fileFormat);
-    if (result === 'shared_sheet_opened') {
-      setSharingFeedback('Hoja de compartir del sistema abierta.');
-    } else {
-      setSharingFeedback(
-        'No se pudo abrir la hoja de compartir. El archivo permanece guardado en el dispositivo.',
-      );
-    }
-  }
-
-  if (!isValidFormat || !fileExists || !targetFile || !archivo) {
-    return (
-      <Screen mascotPose="confirmacion" title="Estado del reporte">
-        <DemoBadge />
-        <EmptyState
-          icon="alert-circle"
-          title="Reporte no encontrado"
-          description="El documento solicitado no existe o no pertenece al paciente activo."
-        />
-        <VisualButton
-          label="Volver a Reportes"
-          secondary
-          onPress={() => router.replace('/vitales/reportes')}
-        />
-      </Screen>
-    );
-  }
-
-  const sizeKb = targetFile.size ? (targetFile.size / 1024).toFixed(1) : null;
-  const timestampIso =
-    targetFile.creationTime != null
-      ? new Date(targetFile.creationTime).toISOString()
-      : targetFile.modificationTime != null
-        ? new Date(targetFile.modificationTime).toISOString()
-        : parseTimestampFromReportFilename(archivo);
-  const formattedDate = timestampIso ? formatDate(timestampIso) : 'Reciente';
-
-  return (
-    <Screen mascotPose="confirmacion" title="Estado del reporte">
-      <DemoBadge />
-      <InfoCard>
-        <SectionTitle>Reporte generado y guardado</SectionTitle>
-        <StatusPill>Archivo guardado. Puedes compartirlo cuando quieras.</StatusPill>
-        <DetailRow label="Archivo" value={archivo} layout="vertical" />
-        <DetailRow
-          label="Formato"
-          value={fileFormat === 'pdf' ? 'Documento PDF' : 'Planilla Excel (.xlsx)'}
-        />
-        <DetailRow label="Tamaño" value={sizeKb ? `${sizeKb} KB` : 'No disponible'} />
-        <DetailRow label="Generado el" value={formattedDate} />
-        {sharingFeedback ? <StatusPill>{sharingFeedback}</StatusPill> : null}
-      </InfoCard>
-
-      <VisualButton
-        label={fileFormat === 'pdf' ? 'Ver reporte PDF' : 'Ver planilla Excel'}
-        onPress={() => {
-          const route = fileFormat === 'pdf' ? '/reportes/visor-pdf' : '/reportes/visor-xlsx';
-          router.push({
-            pathname: route as never,
-            params: {
-              uri: targetFile.uri,
-              filename: archivo,
-            },
-          });
-        }}
-      />
-      <VisualButton
-        label={fileFormat === 'pdf' ? 'Compartir PDF' : 'Compartir Excel'}
-        secondary
-        onPress={handleReshare}
-      />
-      <VisualButton
-        label="Volver a reportes guardados"
-        secondary
-        onPress={() => router.replace('/vitales/reportes')}
-      />
     </Screen>
   );
 }

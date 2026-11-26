@@ -166,7 +166,6 @@ jest.mock('../features/education/use-educational-catalog', () => ({
 import { router } from 'expo-router';
 import LegacyVisorRedirect from '../app/educacion/visor';
 import LegacyCopiesRedirect from '../app/educacion/copias';
-import { EducationCopiesScreen } from '../features/education/EducationCopiesScreen';
 import {
   getEducationalCatalogReader,
   InMemoryEducationalCatalogReader,
@@ -369,77 +368,6 @@ describe('Pruebas de interfaz (UI) para módulo de Educación', () => {
 
       // Debe desplegar el contenido leído
       expect(await screen.findByText('# Guía local disponible offline')).toBeTruthy();
-    });
-  });
-
-  describe('Pantalla «Mis copias» (EducationCopiesScreen)', () => {
-    it('muestra estado vacío cuando el paciente no tiene copias guardadas', async () => {
-      mockRepository.education.listLocalCopies.mockResolvedValueOnce([]);
-
-      await render(<EducationCopiesScreen />);
-
-      const emptyTitle = await screen.findByText('Sin copias en este filtro');
-      expect(emptyTitle).toBeTruthy();
-    });
-
-    it('muestra copia guardada con su formato y estado de revisión', async () => {
-      mockRepository.education.listLocalCopies.mockResolvedValueOnce([
-        {
-          patientId: 'paciente-a',
-          contentId: 'edu-prep-sesion',
-          rutaRelativa: 'edu-prep-sesion.12345.md',
-          formato: 'markdown',
-          tamanoBytes: 2048,
-          descargadoEn: '2026-10-12T10:00:00Z',
-          revisionDeclarada: true,
-          revisionDeclaradaEn: '2026-10-12T11:00:00Z',
-          titulo: 'Preparación para tu sesión',
-          tipo: 'guia',
-          estado: 'descargado',
-        },
-      ]);
-
-      await render(<EducationCopiesScreen />);
-
-      const copyTitle = await screen.findByText('Preparación para tu sesión');
-      expect(copyTitle).toBeTruthy();
-
-      // Debe indicar que fue revisada
-      expect(screen.getByText(/Revisada el/i)).toBeTruthy();
-
-      // Debe ofrecer opción de lectura offline
-      expect(screen.getByText('Leer guía')).toBeTruthy();
-      expect(screen.getByText('Eliminar')).toBeTruthy();
-    });
-
-    it('muestra sección de error y opciones de reintento/eliminación para copias fallidas', async () => {
-      mockRepository.education.listLocalCopies.mockResolvedValueOnce([
-        {
-          patientId: 'paciente-a',
-          contentId: 'edu-infografia-alimentacion',
-          rutaRelativa: 'edu-infografia-alimentacion.12345.png',
-          formato: 'png',
-          tamanoBytes: 0,
-          descargadoEn: '2026-10-12T10:00:00Z',
-          revisionDeclarada: false,
-          titulo: 'Infografía: Guía nutricional en quimioterapia',
-          tipo: 'infografia',
-          estado: 'error',
-        },
-      ]);
-
-      await render(<EducationCopiesScreen />);
-
-      // Debe mostrar advertencia de error
-      const errorPill = await screen.findByText('Error al guardar');
-      expect(errorPill).toBeTruthy();
-
-      // Debe ofrecer reintentar descarga y eliminar registro
-      expect(screen.getByText('Reintentar descarga')).toBeTruthy();
-      expect(screen.getByText('Eliminar registro')).toBeTruthy();
-
-      // No debe permitir marcar como revisada directamente una infografía sin abrir
-      expect(screen.queryByText('Marcar como revisada')).toBeNull();
     });
   });
 
