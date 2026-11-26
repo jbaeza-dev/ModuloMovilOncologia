@@ -19,7 +19,7 @@ El flujo de bienvenida guía automáticamente al usuario nuevo al inicio tras ac
 | `infra/powersync/`    | Servicio fijado y reglas de réplica autorizada                                                                 |
 | `apps/gateway/`       | Gateway operativo con autenticación y asociaciones de dispositivos; agenda y asistente se completan en su plan |
 
-La biblioteca permite descargar imágenes PNG/JPEG con verificación de integridad y consultar videos de YouTube solo online. No ofrece PDF educativos. Los reportes PDF/XLSX son una función diferente y se conservan. El catálogo CUIDAQUIMIO corresponde a las 42 imágenes y 44 videos publicados en su sitio el 28-10-2026, con sus fuentes y textos accesibles. La sección Podcast enlaza los cuatro audios originales de Google Drive, solo online y en orden pedagógico; no descarga ni almacena audio.
+La biblioteca permite descargar imágenes PNG/JPEG con verificación de integridad y consultar videos de YouTube solo online. No ofrece PDF educativos. Los reportes PDF/XLSX son una función diferente y se conservan. El catálogo CUIDAQUIMIO corresponde a las 42 infografías publicadas en el servidor universitario el 02-11-2026 (mismo contenido del sitio revisado el 28-10-2026, exportado de nuevo en PNG) y sus 44 videos, con sus fuentes y textos accesibles. La sección Podcast enlaza los cuatro audios originales de Google Drive, solo online y en orden pedagógico; no descarga ni almacena audio.
 
 ## Requisitos
 
