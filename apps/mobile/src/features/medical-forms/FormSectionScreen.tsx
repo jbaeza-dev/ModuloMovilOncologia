@@ -11,13 +11,7 @@ import {
 } from 'react-native';
 
 import { Screen } from '../../components/Screen';
-import {
-  BodyText,
-  DemoBadge,
-  FeedbackBanner,
-  ProgressBar,
-  VisualButton,
-} from '../../components/Visual';
+import { BodyText, FeedbackBanner, ProgressBar, VisualButton } from '../../components/Visual';
 import type { FormAnswerValue, QuestionConfiguration } from '../../data/local/forms/form-types';
 import {
   type FullFormDefinition,
@@ -435,8 +429,6 @@ export function FormSectionScreen() {
         contentContainerStyle={styles.scrollContent}
         keyboardShouldPersistTaps="handled"
       >
-        <DemoBadge />
-
         {autosaveError && (
           <View style={{ marginBottom: 16 }}>
             <FeedbackBanner

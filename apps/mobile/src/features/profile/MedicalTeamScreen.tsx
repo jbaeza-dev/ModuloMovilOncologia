@@ -3,7 +3,6 @@ import { useCallback } from 'react';
 import { Screen } from '../../components/Screen';
 import {
   BodyText,
-  DemoBadge,
   DetailRow,
   EmptyState,
   InfoCard,
@@ -46,7 +45,6 @@ export function MedicalTeamScreen() {
 
   return (
     <Screen mascotPose="explicacion" title="Equipo tratante">
-      <DemoBadge />
       <BodyText>
         Profesionales de salud vinculados a tu atención oncológica disponibles para consulta sin
         conexión en este dispositivo.

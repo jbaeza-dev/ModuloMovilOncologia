@@ -43,10 +43,6 @@ export function RecordsStatusCard({ details = false }: { details?: boolean }) {
         router.push('/perfil/estado-envios');
         return;
       case 'login':
-        if (session?.config.mode === 'demo') {
-          router.push('/acceso/seleccionar-paciente');
-          return;
-        }
         if (!data?.manager) {
           router.push('/acceso');
           return;

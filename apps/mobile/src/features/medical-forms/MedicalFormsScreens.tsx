@@ -11,7 +11,6 @@ import { Screen } from '../../components/Screen';
 import {
   BodyText,
   ChoiceChip,
-  DemoBadge,
   DetailRow,
   EmptyState,
   InfoCard,
@@ -88,7 +87,6 @@ export function MedicalFormsHubScreen() {
 
   return (
     <Screen mascotPose="registro" isRoot title="Cuestionarios médicos">
-      <DemoBadge />
       <BodyText>
         Muestras de evaluaciones estructuradas para el seguimiento continuo de tu bienestar.
       </BodyText>
@@ -309,7 +307,6 @@ export function MedicalFormDetailScreen() {
     if (formImportStatus === 'error') {
       return (
         <Screen mascotPose="apoyo" title="Error de almacenamiento">
-          <DemoBadge />
           <InfoCard>
             <EmptyState
               icon="alert-circle"
@@ -325,7 +322,6 @@ export function MedicalFormDetailScreen() {
     }
     return (
       <Screen title="Cargando cuestionario…">
-        <DemoBadge />
         <InfoCard>
           <StatusPill>Preparando evaluación…</StatusPill>
           <BodyText>Buscando tu borrador…</BodyText>
@@ -337,7 +333,6 @@ export function MedicalFormDetailScreen() {
   if (loadingDetail) {
     return (
       <Screen title="Cargando cuestionario…">
-        <DemoBadge />
         <InfoCard>
           <StatusPill>Recuperando cuestionario…</StatusPill>
           <BodyText>Cargando definición y borrador previo en este dispositivo…</BodyText>
@@ -349,7 +344,6 @@ export function MedicalFormDetailScreen() {
   if (detailError) {
     return (
       <Screen mascotPose="apoyo" title="Error de carga">
-        <DemoBadge />
         <InfoCard>
           <EmptyState
             icon="alert-circle"
@@ -367,7 +361,6 @@ export function MedicalFormDetailScreen() {
   if (!formDef) {
     return (
       <Screen mascotPose="apoyo" title="Cuestionario no encontrado">
-        <DemoBadge />
         <EmptyState
           icon="alert-circle"
           title="Cuestionario no disponible"
@@ -554,7 +547,6 @@ export function MedicalFormDetailScreen() {
   if (isReviewing) {
     return (
       <Screen mascotPose="explicacion" title={`Revisión: ${formDef.titulo}`}>
-        <DemoBadge />
         <InfoCard>
           <StatusPill>
             {isConfirmed ? (feedback ?? 'Guardado en este dispositivo') : 'Respuestas verificadas'}
@@ -637,7 +629,6 @@ export function MedicalFormDetailScreen() {
 
   return (
     <Screen title={formDef.titulo}>
-      <DemoBadge />
       <BodyText>{formDef.descripcion}</BodyText>
 
       {feedback ? (
@@ -803,7 +794,6 @@ export function MedicalFormSubmissionsScreen() {
 
   return (
     <Screen mascotPose="resumen" title="Historial de evaluaciones">
-      <DemoBadge />
       <BodyText>Tus evaluaciones guardadas en este teléfono.</BodyText>
 
       {historyError ? (
@@ -933,7 +923,6 @@ export function MedicalFormSubmissionDetailScreen() {
   if (loading) {
     return (
       <Screen title="Detalle de evaluación">
-        <DemoBadge />
         <InfoCard>
           <BodyText>Cargando respuestas registradas…</BodyText>
         </InfoCard>
@@ -944,7 +933,6 @@ export function MedicalFormSubmissionDetailScreen() {
   if (!submission || !formDef || !medicalForm) {
     return (
       <Screen mascotPose="apoyo" title="Evaluación no encontrada">
-        <DemoBadge />
         <EmptyState
           icon="alert-circle"
           title="Registro no disponible"
@@ -956,7 +944,6 @@ export function MedicalFormSubmissionDetailScreen() {
 
   return (
     <Screen mascotPose="confirmacion" title={`Entrega: ${submission.titulo}`}>
-      <DemoBadge />
       <InfoCard>
         <StatusPill>{clinicalStatusLabel(submission.estado_envio)}</StatusPill>
         <DetailRow

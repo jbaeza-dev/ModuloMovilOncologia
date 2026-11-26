@@ -2,7 +2,6 @@ import { Text, View } from 'react-native';
 import { router } from 'expo-router';
 import { InfoCard, SectionTitle, StatusPill, VisualButton } from '../../components/Visual';
 import { useAppTheme } from '../../providers/ThemeProvider';
-import { isDemoMode } from '../../utils/environment';
 import { useMedicationDay } from './use-medication-day';
 
 export function MedicationDaySection({ medicamentoId }: { medicamentoId?: string } = {}) {
@@ -46,7 +45,6 @@ export function MedicationDaySection({ medicamentoId }: { medicamentoId?: string
         )
         .map((card) => (
           <InfoCard key={card.medication.id} testID={`medication-card-${card.medication.id}`}>
-            {isDemoMode() ? <StatusPill>Ejemplo de prueba</StatusPill> : null}
             <SectionTitle>{card.medication.nombre || 'Nombre no informado'}</SectionTitle>
             {card.medication.dosis ? (
               <Text style={{ color: theme.colors.text }}>
