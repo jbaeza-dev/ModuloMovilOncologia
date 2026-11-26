@@ -374,7 +374,7 @@ function createStyles(colors: ReturnType<typeof useAppTheme>['theme']['colors'])
       color: colors.text,
     },
     rateBtn: {
-      minHeight: 36,
+      minHeight: 48,
       paddingHorizontal: theme.spacing.sm,
       paddingVertical: 4,
       borderRadius: theme.radius.sm,
