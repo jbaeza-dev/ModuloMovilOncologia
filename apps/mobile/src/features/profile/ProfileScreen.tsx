@@ -6,12 +6,11 @@ import { Pressable, StyleSheet, Text, View } from 'react-native';
 import { ConfirmLogoutButton } from '../../components/ConfirmLogoutButton';
 import { NavigationCard } from '../../components/NavigationCard';
 import { Screen } from '../../components/Screen';
-import { BodyText, DemoBadge, InfoCard, SectionTitle, VisualButton } from '../../components/Visual';
+import { BodyText, InfoCard, SectionTitle } from '../../components/Visual';
 import { useFocusedValue } from '../../hooks/use-local-query';
 import { useLocalData } from '../../providers/LocalDataProvider';
 import { useAppTheme } from '../../providers/ThemeProvider';
 import { PALETTE_OPTIONS, theme } from '../../theme';
-import { isDemoMode } from '../../utils/environment';
 import { registerNativePush } from '../../services/session/native-session';
 import { ReliableNoticesCard } from '../reminders/ReliableNoticesCard';
 
@@ -28,8 +27,6 @@ export function PreferencesScreen() {
     reconcileReminders,
     bumpRemindersRevision,
     trackOperation,
-    closeActiveContext,
-    isClosing,
     devices,
   } = useLocalData();
   const { theme: appTheme, paletteId, selectPalette } = useAppTheme();
@@ -75,7 +72,6 @@ export function PreferencesScreen() {
 
   return (
     <Screen mascotPose="lectura" title="Preferencias">
-      <DemoBadge />
       <InfoCard>
         <SectionTitle>Accesibilidad y apariencia</SectionTitle>
         <BodyText>
@@ -154,18 +150,8 @@ export function PreferencesScreen() {
       <InfoCard>
         <SectionTitle>Cuenta y seguridad</SectionTitle>
         <BodyText>
-          {isDemoMode()
-            ? 'Acceso al simulador con datos sintéticos. Puedes cambiar de paciente o cerrar sesión conservando sus capturas.'
-            : 'Consulta el estado de tu sesión y los dispositivos asociados a tu cuenta.'}
+          Consulta el estado de tu sesión y los dispositivos asociados a tu cuenta.
         </BodyText>
-        {isDemoMode() ? (
-          <VisualButton
-            label={isClosing ? 'Cerrando contexto…' : 'Cambiar paciente de prueba'}
-            secondary
-            disabled={isClosing}
-            onPress={() => void closeActiveContext('change_patient')}
-          />
-        ) : null}
         <NavigationCard title="Sesión y dispositivos" icon="shield" href="/perfil/sesion" compact />
         <ConfirmLogoutButton />
       </InfoCard>

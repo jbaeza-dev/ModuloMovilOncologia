@@ -368,7 +368,6 @@ jest.mock('../providers/ThemeProvider', () => ({
   ThemeProvider: ({ children }: { children: React.ReactNode }) => children,
 }));
 
-import { ContextGuard } from '../components/ContextGuard';
 import { LoginScreen, AccessConsentScreen } from '../features/access/AccessScreens';
 import { AssistantScreen } from '../features/assistant/AssistantScreen';
 import { AppNavigator } from '../app/_layout';
@@ -641,7 +640,7 @@ describe('Incremento 6: UI de Acceso, Navegación Raíz, Sesión y Asistente', (
 
       // AppNavigator detecta ausencia de paciente en (tabs) y redirige
       await waitFor(() => {
-        expect(mockRouter.replace).toHaveBeenCalledWith('/acceso/seleccionar-paciente');
+        expect(mockRouter.replace).toHaveBeenCalledWith('/acceso');
       });
     });
 
@@ -754,8 +753,10 @@ describe('Incremento 6: UI de Acceso, Navegación Raíz, Sesión y Asistente', (
     it('LoginScreen presenta la bienvenida con MascotHero (pose saludo), sin campos falsos de correo/contraseña y acceso a términos', async () => {
       await render(<LoginScreen />);
 
-      expect(await screen.findByText('VISTA DE DEMOSTRACIÓN · DATOS FICTICIOS')).toBeTruthy();
       expect(await screen.findByText('QUIMIOCARE · CONTIGO EN CASA')).toBeTruthy();
+      // Sin distintivo ni selección de pacientes de prueba: el acceso es solo con Google.
+      expect(screen.queryByText('VISTA DE DEMOSTRACIÓN · DATOS FICTICIOS')).toBeNull();
+      expect(screen.queryByText('Seleccionar paciente de prueba')).toBeNull();
       expect(await screen.findByText('Te damos la bienvenida.')).toBeTruthy();
       expect(
         screen.getByTestId('mascot-avatar-saludo', { includeHiddenElements: true }),
@@ -769,28 +770,9 @@ describe('Incremento 6: UI de Acceso, Navegación Raíz, Sesión y Asistente', (
         screen.queryByLabelText('Contraseña (deshabilitado · sin servicio central)'),
       ).toBeNull();
 
-      const selectBtn = screen.getByText('Seleccionar paciente de prueba');
-      await fireEvent.press(selectBtn);
-      expect(mockRouter.push).toHaveBeenCalledWith('/acceso/seleccionar-paciente');
-
       const termsCard = screen.getByLabelText('Términos y consentimiento informado');
       await fireEvent.press(termsCard);
       expect(mockRouter.push).toHaveBeenCalledWith('/acceso/consentimientos');
-    });
-
-    it('ContextGuard permite seleccionar paciente cuando isClosing es false y se deshabilita cuando isClosing es true', async () => {
-      const onSelect = jest.fn();
-      await render(<ContextGuard isClosing={false} onSelectPatient={onSelect} />);
-
-      const patientABtn = await screen.findByText('Paciente de prueba A');
-      await fireEvent.press(patientABtn);
-      expect(onSelect).toHaveBeenCalledWith(DEMO_PATIENTS[0].id);
-
-      await screen.rerender(<ContextGuard isClosing={true} onSelectPatient={onSelect} />);
-      expect(await screen.findByText('Cerrando contexto anterior…')).toBeTruthy();
-      onSelect.mockClear();
-      await fireEvent.press(screen.getByText('Paciente de prueba A'));
-      expect(onSelect).not.toHaveBeenCalled();
     });
   });
 

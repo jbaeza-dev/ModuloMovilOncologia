@@ -212,9 +212,7 @@ export class PatientContextManager {
     this.notify();
 
     // Redirección inmediata según motivo de salida
-    if (reason === 'change_patient') {
-      this.router.replace('/acceso/seleccionar-paciente');
-    } else if (reason === 'session_required') {
+    if (reason === 'session_required') {
       this.router.replace('/acceso?motivo=sesion_requerida');
     } else {
       this.router.replace('/acceso');

@@ -7,7 +7,6 @@ import { Linking, Pressable, StyleSheet, Text, View } from 'react-native';
 import { Screen } from '../../components/Screen';
 import {
   BodyText,
-  DemoBadge,
   InfoCard,
   SectionTitle,
   StatusPill,
@@ -371,8 +370,6 @@ function LegacyRemindersListScreen() {
 
   return (
     <Screen mascotPose="recordatorio" title="Recordatorios">
-      <DemoBadge />
-
       {/* Switch Maestro */}
       <InfoCard>
         <SectionTitle>Mis recordatorios</SectionTitle>

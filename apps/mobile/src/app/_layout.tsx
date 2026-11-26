@@ -66,11 +66,7 @@ export function AppNavigator() {
         segments[0] === 'vitales' ||
         segments[0] === 'formulario';
       if (inProtected) {
-        if (isDemoMode()) {
-          router.replace('/acceso/seleccionar-paciente');
-        } else {
-          router.replace('/acceso');
-        }
+        router.replace('/acceso');
       }
     } else if (patientId && !isClosing && !isProfileComplete) {
       if (segments[0] === '(tabs)') {

@@ -22,7 +22,6 @@ import { EDUCATIONAL_CATEGORIES } from './educational-categories';
 import { MascotHero } from '../../components/MascotAvatar';
 import {
   BodyText,
-  DemoBadge,
   EmptyState,
   InfoCard,
   SectionTitle,
@@ -124,7 +123,6 @@ export function EducationScreen() {
         description="Guías, videos y podcasts para acompañarte."
         compact
       />
-      <DemoBadge />
       <VisualField
         label="Buscar contenido"
         placeholder="Infografía, video o podcast"
@@ -467,7 +465,6 @@ export function EducationCategoryScreen() {
   return (
     <Screen mascotPose="lectura" title={value?.currentCategory?.title ?? 'Categoría educativa'}>
       <CatalogStatusNotice />
-      <DemoBadge />
       <BodyText>Recursos y guías diseñadas para acompañarte en tu cuidado diario.</BodyText>
 
       {/* Selector de formato: Todos, Videos, Infografías */}
@@ -888,7 +885,6 @@ export function EducationResourceScreen() {
   if (loadingResource) {
     return (
       <Screen title="Cargando recurso">
-        <DemoBadge />
         <BodyText>Obteniendo información del recurso educativo…</BodyText>
       </Screen>
     );
@@ -897,7 +893,6 @@ export function EducationResourceScreen() {
   if (!effectiveResource) {
     return (
       <Screen mascotPose="apoyo" title="Recurso no encontrado">
-        <DemoBadge />
         <EmptyState
           icon="alert-circle"
           title="Recurso no disponible"
@@ -1104,7 +1099,6 @@ export function EducationResourceScreen() {
           obtener la publicación vigente.
         </BodyText>
       ) : null}
-      <DemoBadge />
 
       <InfoCard>
         <SectionTitle>{effectiveResource.title}</SectionTitle>

@@ -10,18 +10,18 @@ La historia de cada incremento, con sus escenarios de aceptación de ese momento
 
 ## Funcionalidades
 
-| Funcionalidad           | Qué hace                                                                                                                                   |
-| ----------------------- | ------------------------------------------------------------------------------------------------------------------------------------------ |
-| Acceso y consentimiento | Google con OAuth 2.0 + PKCE (Supabase) en `universidad-demo`, selección de pacientes sintéticos A/B en `demo`, términos versionados y RUT. |
-| Signos vitales          | Registro validado (temperatura, presión, pulso, SatO2, dolor ENA obligatorio), historial por día y gráfico semanal.                        |
-| Seguimiento ePRO        | Formularios versionados con preguntas condicionales, borradores locales y envío al servidor.                                               |
-| Orientación de síntomas | Motor de reglas versionado que orienta en A1, A2, B, C o D. La definición sigue en `draft` y se evalúa en modo sintético.                  |
-| Educación               | 42 infografías verificadas por SHA-256, 44 videos de YouTube y 4 podcasts (CUIDAQUIMIO).                                                   |
-| Reportes                | PDF (expo-print) y Excel (SheetJS) de 7, 30 o 90 días, cifrados en el teléfono. Identifican al paciente con nombre y RUT (ver abajo).      |
-| Recordatorios y agenda  | Recordatorios locales y agenda compartida con el gateway: push a la hora y respaldo local 120 s después.                                   |
-| Medicamentos del día    | Confirmación de tomas (tomada u omitida) con historial de correcciones.                                                                    |
-| Asistente               | Consultas vía gateway, 15 s de límite, 2.000 caracteres, aviso permanente de que no reemplaza al equipo médico.                            |
-| Perfil y preferencias   | Tratamiento, equipo tratante, código de vinculación, dispositivos, almacenamiento, 4 paletas accesibles y guía de ahorro de batería.       |
+| Funcionalidad           | Qué hace                                                                                                                              |
+| ----------------------- | ------------------------------------------------------------------------------------------------------------------------------------- |
+| Acceso y consentimiento | Google con OAuth 2.0 + PKCE (Supabase), términos versionados y RUT.                                                                   |
+| Signos vitales          | Registro validado (temperatura, presión, pulso, SatO2, dolor ENA obligatorio), historial por día y gráfico semanal.                   |
+| Seguimiento ePRO        | Formularios versionados con preguntas condicionales, borradores locales y envío al servidor.                                          |
+| Orientación de síntomas | Motor de reglas versionado que orienta en A1, A2, B, C o D. La definición sigue en `draft` y se evalúa en modo sintético.             |
+| Educación               | 42 infografías verificadas por SHA-256, 44 videos de YouTube y 4 podcasts (CUIDAQUIMIO).                                              |
+| Reportes                | PDF (expo-print) y Excel (SheetJS) de 7, 30 o 90 días, cifrados en el teléfono. Identifican al paciente con nombre y RUT (ver abajo). |
+| Recordatorios y agenda  | Recordatorios locales y agenda compartida con el gateway: push a la hora y respaldo local 120 s después.                              |
+| Medicamentos del día    | Confirmación de tomas (tomada u omitida) con historial de correcciones.                                                               |
+| Asistente               | Consultas vía gateway, 15 s de límite, 2.000 caracteres, aviso permanente de que no reemplaza al equipo médico.                       |
+| Perfil y preferencias   | Tratamiento, equipo tratante, código de vinculación, dispositivos, almacenamiento, 4 paletas accesibles y guía de ahorro de batería.  |
 
 ## Arquitectura
 
@@ -62,7 +62,7 @@ El modo se fija al compilar con `EXPO_PUBLIC_APP_ENV`:
 
 | Modo               | Uso                                                                                          |
 | ------------------ | -------------------------------------------------------------------------------------------- |
-| `demo`             | Pacientes sintéticos A/B contra el simulador (`EXPO_PUBLIC_DEMO_MODE=true`).                 |
+| `demo`             | Solo pruebas automáticas: pacientes sintéticos A/B contra el simulador, sin pantalla propia. |
 | `universidad-demo` | Despliegue universitario con Google + PKCE; es el APK que compila CI en cada push a `main`.  |
 | `production`       | Preparado en el código (exige HTTPS, emisor y clave pública); aún sin perfil de compilación. |
 

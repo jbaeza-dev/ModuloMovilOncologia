@@ -7,7 +7,6 @@ import { DateTimePickerField } from '../../components/DateTimePickerField';
 import { MascotHero } from '../../components/MascotAvatar';
 import {
   BodyText,
-  DemoBadge,
   ChoiceChip,
   DetailRow,
   InfoCard,
@@ -76,7 +75,6 @@ export function IdentityScreen() {
   }
   return (
     <Screen mascotPose="explicacion" title="Sesión y permisos">
-      <DemoBadge />
       <InfoCard>
         <SectionTitle>{snapshot.user?.name ?? 'Sin sesión configurada'}</SectionTitle>
         <BodyText>{snapshot.message ?? 'Consulta y administra tu sesión.'}</BodyText>
@@ -130,11 +128,9 @@ export function IdentityScreen() {
         <VisualButton
           label="Volver a autenticarme"
           onPress={() => {
-            if (session?.config.mode === 'demo') router.push('/acceso/seleccionar-paciente');
-            else
-              void data?.manager
-                .authenticate()
-                .catch((e) => setFeedback(e instanceof Error ? e.message : 'No se pudo acceder.'));
+            void data?.manager
+              .authenticate()
+              .catch((e) => setFeedback(e instanceof Error ? e.message : 'No se pudo acceder.'));
           }}
         />
       ) : null}
@@ -199,7 +195,6 @@ export function OnlineConsentScreen() {
     current = snapshot.consent?.consentimiento_actual;
   return (
     <Screen mascotPose="lectura" title="Consentimientos">
-      <DemoBadge />
       <BodyText>
         {session?.config.mode === 'demo'
           ? 'Demostración con cuentas compartidas: usa solo datos ficticios. Esta aceptación no acredita atención médica ni aprobación institucional.'

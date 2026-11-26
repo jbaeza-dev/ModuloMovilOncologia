@@ -5,7 +5,7 @@ import type { GatewayRecordatorio } from '@quimiocare/contracts';
 import { normalizedReminder } from '@quimiocare/contracts/agenda';
 import { Screen } from '../../components/Screen';
 import { DetailsDisclosure } from '../../components/DetailsDisclosure';
-import { BodyText, DemoBadge, InfoCard, SectionTitle, VisualButton } from '../../components/Visual';
+import { BodyText, InfoCard, SectionTitle, VisualButton } from '../../components/Visual';
 import { useLocalData } from '../../providers/LocalDataProvider';
 import { registerNativePush } from '../../services/session/native-session';
 import type { AgendaCoverage } from '../../services/agenda/agenda-coordinator';
@@ -128,7 +128,6 @@ export function SharedAgendaScreen() {
     });
   return (
     <Screen mascotPose="recordatorio" title="Mis recordatorios">
-      <DemoBadge />
       {Boolean(error) && (
         <Text accessibilityRole="alert" style={{ color: theme.colors.error }}>
           {error}

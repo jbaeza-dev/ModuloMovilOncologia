@@ -108,7 +108,7 @@ describe('Tarjeta de registros con acciones directas', () => {
     mockState = { ...mockState, state: 'expired', stale: true, uploadAllowed: false };
     await render(<RecordsStatusCard />);
     await fireEvent.press(screen.getByRole('button', { name: 'Volver a ingresar' }));
-    expect(mockNavigate).toHaveBeenCalledWith('/acceso/seleccionar-paciente');
+    expect(mockNavigate).toHaveBeenCalledWith('/acceso');
     expect(mockRefresh).not.toHaveBeenCalled();
   });
   it('un error técnico del registro no se presenta como un problema que deba resolver actualizando sesión', async () => {

@@ -6,7 +6,6 @@ import { Linking, Pressable, StyleSheet, Text, View } from 'react-native';
 import { Screen } from '../../components/Screen';
 import {
   BodyText,
-  DemoBadge,
   DetailRow,
   EmptyState,
   InfoCard,
@@ -220,8 +219,6 @@ export function NoticesTrayScreen() {
 
   return (
     <Screen mascotPose="recordatorio" title="Bandeja de avisos">
-      <DemoBadge />
-
       <InfoCard>
         <SectionTitle>Avisos planificados y actividad</SectionTitle>
         <BodyText>

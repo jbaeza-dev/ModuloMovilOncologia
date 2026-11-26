@@ -7,14 +7,7 @@ import { Alert, Linking, Pressable, StyleSheet, Text, View } from 'react-native'
 
 import { DateTimePickerField } from '../../components/DateTimePickerField';
 import { Screen } from '../../components/Screen';
-import {
-  BodyText,
-  DemoBadge,
-  DetailRow,
-  InfoCard,
-  SectionTitle,
-  VisualButton,
-} from '../../components/Visual';
+import { BodyText, DetailRow, InfoCard, SectionTitle, VisualButton } from '../../components/Visual';
 import type { ActiveMedicationRecord } from '../../data/local/clinical-context/clinical-context-types';
 import type {
   ReminderActivationIntent,
@@ -695,7 +688,6 @@ function LegacyReminderEditScreen() {
   if (isEditing && ruleLoadingState === 'loading') {
     return (
       <Screen title={screenTitle} isRoot={false}>
-        <DemoBadge />
         <InfoCard>
           <BodyText>Cargando recordatorio...</BodyText>
         </InfoCard>
@@ -706,7 +698,6 @@ function LegacyReminderEditScreen() {
   if (isEditing && ruleLoadingState === 'not_found') {
     return (
       <Screen title={screenTitle} isRoot={false}>
-        <DemoBadge />
         <InfoCard>
           <View style={styles.errorHeader}>
             <Feather name="alert-circle" size={20} color={appTheme.colors.error} />
@@ -724,7 +715,6 @@ function LegacyReminderEditScreen() {
   if (isEditing && ruleLoadingState === 'error') {
     return (
       <Screen title={screenTitle} isRoot={false}>
-        <DemoBadge />
         <InfoCard>
           <View style={styles.errorHeader}>
             <Feather name="alert-circle" size={20} color={appTheme.colors.error} />
@@ -778,8 +768,6 @@ function LegacyReminderEditScreen() {
 
   return (
     <Screen title={screenTitle} isRoot={false} bottomAction={bottomAction}>
-      <DemoBadge />
-
       {errorMsg ? (
         <InfoCard>
           <View style={styles.errorHeader}>

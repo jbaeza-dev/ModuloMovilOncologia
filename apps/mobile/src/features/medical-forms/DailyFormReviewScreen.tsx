@@ -6,7 +6,6 @@ import { Alert, ScrollView, StyleSheet, Text, View } from 'react-native';
 import { Screen } from '../../components/Screen';
 import {
   BodyText,
-  DemoBadge,
   InfoCard,
   SectionTitle,
   StatusPill,
@@ -179,8 +178,6 @@ export function DailyFormReviewScreen() {
       title={isConfirmed ? 'Seguimiento registrado' : `Revisión: ${formDef.titulo}`}
     >
       <ScrollView contentContainerStyle={styles.scrollContent}>
-        <DemoBadge />
-
         <InfoCard>
           <StatusPill>
             {isConfirmed
