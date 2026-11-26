@@ -3,6 +3,8 @@ import type { SessionSnapshot } from './http-session-types';
 
 type Session = Pick<HttpSessionAdapter, 'getSnapshot' | 'subscribe' | 'refreshIdentity'>;
 const retryDelays = [2000, 5000, 15000, 30000, 60000];
+/** Sin vincular puede pasar mucho tiempo: la espera sigue creciendo para no consultar cada minuto. */
+const unlinkedDelays = [...retryDelays, 120000, 300000];
 const blockedStates = new Set([
   'no_identity',
   'closing',
@@ -111,7 +113,9 @@ export class SessionRecovery {
     } finally {
       this.running = false;
       if (this.eligible(false)) {
-        const delay = retryDelays[Math.min(this.attempt, retryDelays.length - 1)];
+        const delays =
+          this.session.getSnapshot().state === 'clinical_incomplete' ? unlinkedDelays : retryDelays;
+        const delay = delays[Math.min(this.attempt, delays.length - 1)];
         this.attempt++;
         this.schedule(delay);
       }

@@ -9,8 +9,7 @@ import {
 import { router, useLocalSearchParams, useNavigation } from 'expo-router';
 import { usePreventRemove } from 'expo-router/react-navigation';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { AccessibilityInfo, Animated, AppState, Modal, StyleSheet, Text, View } from 'react-native';
-import { AppIcon as Feather } from '../../components/AppIcon';
+import { AccessibilityInfo, AppState, Text } from 'react-native';
 import { Screen } from '../../components/Screen';
 import { MascotHero } from '../../components/MascotAvatar';
 import { NavigationCard } from '../../components/NavigationCard';
@@ -33,6 +32,7 @@ import { clinicalStatusLabel } from '../../data/sync/visible-status';
 import { ContractQuestionInput } from './ContractQuestionInput';
 import { useEproRepository } from './use-epro-repository';
 import { FormSectionScreen } from './FormSectionScreen';
+import { SubmissionSuccessModal } from './SubmissionSuccessModal';
 import { MedicalFormSubmissionDetailScreen } from './MedicalFormsScreens';
 
 function answerLabel(q: FormQuestion, value: AnswerValue | undefined): string {
@@ -204,7 +204,6 @@ export function ContractEproEditor({ draftId }: { draftId: string }) {
     [review, setReview] = useState(false);
   const [showErrors, setShowErrors] = useState(false);
   const [showSuccessPopup, setShowSuccessPopup] = useState(false);
-  const popupAnim = useRef(new Animated.Value(0)).current;
   const [pendingAction, setPendingAction] = useState<
     Parameters<typeof navigation.dispatch>[0] | null
   >(null);
@@ -347,18 +346,6 @@ export function ContractEproEditor({ draftId }: { draftId: string }) {
         await queue.current;
         await trackOperation(() => repo.submit(draft.id));
         setShowSuccessPopup(true);
-        popupAnim.setValue(0);
-        Animated.spring(popupAnim, {
-          toValue: 1,
-          useNativeDriver: true,
-          friction: 6,
-        }).start();
-        setTimeout(() => {
-          if (mounted.current) {
-            setShowSuccessPopup(false);
-            router.replace('/formulario');
-          }
-        }, 1400);
       }
     } catch (e) {
       setSaveError(e instanceof Error ? e.message : 'No se pudo enviar el cuestionario.');
@@ -493,42 +480,13 @@ export function ContractEproEditor({ draftId }: { draftId: string }) {
           />
         </>
       )}
-      <Modal
+      <SubmissionSuccessModal
         visible={showSuccessPopup}
-        transparent
-        animationType="fade"
-        onRequestClose={() => {
+        onDone={() => {
           setShowSuccessPopup(false);
           router.replace('/formulario');
         }}
-      >
-        <View style={modalStyles.overlay}>
-          <Animated.View
-            style={[
-              modalStyles.card,
-              {
-                opacity: popupAnim,
-                transform: [
-                  {
-                    scale: popupAnim.interpolate({
-                      inputRange: [0, 1],
-                      outputRange: [0.85, 1],
-                    }),
-                  },
-                ],
-              },
-            ]}
-            accessibilityViewIsModal
-            accessibilityLiveRegion="polite"
-          >
-            <Feather name="check-circle" size={48} color="#2e7d32" />
-            <Text style={modalStyles.title}>¡Cuestionario enviado!</Text>
-            <Text style={modalStyles.message}>
-              Tus respuestas fueron registradas y guardadas exitosamente.
-            </Text>
-          </Animated.View>
-        </View>
-      </Modal>
+      />
     </Screen>
   );
 }
@@ -591,39 +549,3 @@ export function EproSubmissionRoute() {
     </Screen>
   );
 }
-
-const modalStyles = StyleSheet.create({
-  overlay: {
-    flex: 1,
-    backgroundColor: 'rgba(0, 0, 0, 0.45)',
-    justifyContent: 'center',
-    alignItems: 'center',
-    padding: 24,
-  },
-  card: {
-    width: '100%',
-    maxWidth: 360,
-    backgroundColor: '#ffffff',
-    borderRadius: 24,
-    padding: 28,
-    alignItems: 'center',
-    gap: 12,
-    elevation: 8,
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 4 },
-    shadowOpacity: 0.15,
-    shadowRadius: 12,
-  },
-  title: {
-    fontSize: 22,
-    fontWeight: '700',
-    color: '#1a1a1a',
-    textAlign: 'center',
-  },
-  message: {
-    fontSize: 15,
-    color: '#666666',
-    textAlign: 'center',
-    lineHeight: 22,
-  },
-});

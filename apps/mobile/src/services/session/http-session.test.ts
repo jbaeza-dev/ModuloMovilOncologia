@@ -728,6 +728,42 @@ describe('Actualización automática y concurrente de identidad', () => {
     expect(h.session.getSnapshot().uploadAllowed).toBe(true);
     expect(h.session.getSnapshot().stale).toBe(false);
   });
+  it('con el servidor caído, los pedidos de credenciales de PowerSync esperan antes de volver a consultar', async () => {
+    vi.useFakeTimers({ toFake: ['Date'] });
+    try {
+      vi.setSystemTime(new Date('2026-11-26T12:00:00Z'));
+      const h = harness();
+      await login(h);
+      h.setProfile(503);
+      await expect(h.session.refreshIdentity()).rejects.toMatchObject({ kind: 'unavailable' });
+      const me = () => h.calls.filter((call) => call.path === '/api/v1/auth/me').length;
+      h.calls.splice(0);
+      // El primer pedido consulta; los siguientes, dentro de la espera, no salen a la red.
+      await expect(h.session.credentialsForSync()).rejects.toMatchObject({ kind: 'unavailable' });
+      await expect(h.session.credentialsForSync()).rejects.toMatchObject({ kind: 'unavailable' });
+      expect(me()).toBe(1);
+      vi.setSystemTime(new Date('2026-11-26T12:00:04Z'));
+      await expect(h.session.credentialsForSync()).rejects.toMatchObject({ kind: 'unavailable' });
+      expect(me()).toBe(1);
+      // Pasados 5 s consulta otra vez, y la espera siguiente crece a 15 s.
+      vi.setSystemTime(new Date('2026-11-26T12:00:06Z'));
+      await expect(h.session.credentialsForSync()).rejects.toMatchObject({ kind: 'unavailable' });
+      expect(me()).toBe(2);
+      vi.setSystemTime(new Date('2026-11-26T12:00:16Z'));
+      await expect(h.session.credentialsForSync()).rejects.toMatchObject({ kind: 'unavailable' });
+      expect(me()).toBe(2);
+      // Una consulta directa (recuperación automática o «Intentar ahora») siempre sale y, si
+      // funciona, levanta la espera.
+      h.setProfile(200);
+      await h.session.refreshIdentity();
+      expect(me()).toBe(3);
+      const credentials = await h.session.credentialsForSync();
+      expect(credentials.owner).toBe(owner);
+      expect(h.session.getSnapshot().uploadAllowed).toBe(true);
+    } finally {
+      vi.useRealTimers();
+    }
+  });
   it('una actualización cancelada no reemplaza la nueva verificación del mismo contexto', async () => {
     const h = harness();
     await login(h);

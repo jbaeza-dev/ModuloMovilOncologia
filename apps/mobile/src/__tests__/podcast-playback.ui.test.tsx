@@ -238,6 +238,17 @@ describe('Podcast Playback & MiniPlayer UI (Etapa 7)', () => {
         );
     });
 
+    it('los botones de velocidad tienen al menos 48 de alto, la medida táctil mínima de Android', async () => {
+      await render(
+        <TestPlayerWithProvider>
+          <PodcastPlayerScreen />
+        </TestPlayerWithProvider>,
+      );
+      await fireEvent.press(screen.getByTestId('trigger-play'));
+      const rate = await screen.findByRole('button', { name: 'Velocidad 1.25x' });
+      expect(StyleSheet.flatten(rate.props.style).minHeight).toBeGreaterThanOrEqual(48);
+    });
+
     it('muestra el reproductor ampliado con transportes grandes y selector de velocidad', async () => {
       const announceSpy = jest.spyOn(AccessibilityInfo, 'announceForAccessibility');
 
