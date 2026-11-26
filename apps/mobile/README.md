@@ -77,7 +77,7 @@ Variables principales: `EXPO_PUBLIC_CLINICAL_URL`, `EXPO_PUBLIC_GATEWAY_URL`,
 direcciones públicas y la clave pública de verificación.
 
 El manifiesto Android desactiva el respaldo automático (`allowBackup: false`) y el tráfico HTTP sin
-cifrar (`plugins/withSecureNetwork.js`), salvo en la build de diagnóstico P01 por USB.
+cifrar (`plugins/withSecureNetwork.js`) en cualquier compilación.
 
 ## Ejecutar y compilar
 
@@ -106,11 +106,13 @@ pnpm --filter @modulo-movil-oncologia/mobile run doctor
 pnpm --filter @modulo-movil-oncologia/mobile run bundle:android
 ```
 
-Al 17-11-2026: **1.069 pruebas Vitest** y **316 pruebas Jest**, todas en verde. Las de SQLite usan
+Al 26-11-2026: **1.125 pruebas Vitest** y **336 pruebas Jest**, todas en verde. Las de SQLite usan
 una base real (`data/local/testing/sqlite-test-harness.ts`), no simulaciones.
 
-Las pruebas de extremo a extremo en Android (6 flujos de Maestro, `pnpm run test:e2e`) están en
-[e2e/](e2e/README.md); se corren a mano con un teléfono conectado, no en CI.
+Las pruebas de extremo a extremo en Android (7 flujos de Maestro) están en [e2e/](e2e/README.md);
+se corren a mano con un teléfono conectado, no en CI. `pnpm run test:e2e` corre los 6 que no guardan
+datos; el 07 guarda un signo vital sintético y lo envía, y se corre aparte con
+`pnpm run test:e2e:envio`.
 
 ## Verificación en dispositivo
 
@@ -119,6 +121,13 @@ adb: permisos, alarmas exactas, avisos con la app cerrada, tras reinicio, en rep
 ahorro de batería y sin red, tiempo de apertura del PDF (máximo 1,23 s, RNF-06 < 3 s), TalkBack y
 letra máxima. Los hallazgos se corrigieron en los PR #28 a #34 y se verificaron de nuevo en el
 teléfono. El detalle está en el Anexo D del informe.
+
+Del 24 al 26-11-2026 se ejecutó en el mismo teléfono un segundo lote, R01 a R15, sobre las
+correcciones de los PR #36 a #49: cola de sincronización, código sin conexión, cierre de sesión,
+push tras cambiar de cuenta, operador del simulador, cambio de día a medianoche, renovación de
+sesión, agenda, visor PDF, identificación en reportes y un recorrido general. Las 15 terminaron
+con éxito, con sus límites escritos en el Anexo D. Los hallazgos y la limpieza final se
+resolvieron en los PR #50 a #60.
 
 RNF-05 (cambio de paciente en menos de 1 s) se midió con video a 60 cuadros/s en 5 cierres de
 sesión: la pantalla de acceso queda visible en 0,40 a 0,43 s. El drenaje posterior (cancelar avisos
@@ -148,7 +157,17 @@ correo), el archivo queda fuera del control de la app; por eso el aviso previo.
   desactivado.
 - Las reglas de PowerSync solo admiten a los pacientes sintéticos A y B.
 - La retención de datos clínicos de 90 días está implementada pero desactivada
-  (`CLINICAL_RETENTION_ENABLED`).
+  (`CLINICAL_RETENTION_ENABLED`). Activarla borra datos del teléfono y habría que probarla aparte;
+  con datos sintéticos no hace falta (decisión del 26-11-2026).
+- Las 42 guías educativas (76,6 MB por paciente) se descargan también con datos móviles. A
+  propósito no se limita a Wi-Fi: las guías de signos de alarma deben estar disponibles sin depender
+  de una red Wi-Fi.
+- Durante cada despliegue del servidor universitario la ruta pública responde 503 unos segundos.
+  Es normal con un solo servidor; la app guarda todo en el teléfono y reintenta (pruebas R02 y
+  R14). Evitarlo exigiría duplicar los servicios.
+- El APK se firma con la clave de depuración: es para la evaluación y se instala a mano. Cambiar a
+  una firma propia obligaría a desinstalar la app y perder los datos guardados en el teléfono.
+- La app solo entra con Google: el modo de demostración con cuentas A y B se retiró el 26-11-2026.
 - No hay certificate pinning (el certificado del dominio lo administra la universidad).
 - Solo Android.
 - La agenda, los avisos, los formularios diarios y el gateway usan siempre la hora de Chile
