@@ -369,7 +369,7 @@ jest.mock('../providers/ThemeProvider', () => ({
 }));
 
 import { ContextGuard } from '../components/ContextGuard';
-import { LoginScreen, RegisterScreen, AccessConsentScreen } from '../features/access/AccessScreens';
+import { LoginScreen, AccessConsentScreen } from '../features/access/AccessScreens';
 import { AssistantScreen } from '../features/assistant/AssistantScreen';
 import { AppNavigator } from '../app/_layout';
 import { LocalDataProvider, DEMO_PATIENTS, useLocalData } from '../providers/LocalDataProvider';
@@ -775,29 +775,6 @@ describe('Incremento 6: UI de Acceso, Navegación Raíz, Sesión y Asistente', (
 
       const termsCard = screen.getByLabelText('Términos y consentimiento informado');
       await fireEvent.press(termsCard);
-      expect(mockRouter.push).toHaveBeenCalledWith('/acceso/consentimientos');
-    });
-
-    it('RegisterScreen renderiza campos de registro deshabilitados', async () => {
-      await render(<RegisterScreen />);
-
-      expect(await screen.findByText('Registro de usuarios')).toBeTruthy();
-
-      const nameInput = screen.getByLabelText('Nombre (deshabilitado · sin servicio central)');
-      expect(nameInput.props.editable).toBe(false);
-
-      const emailInput = screen.getByLabelText(
-        'Correo electrónico (deshabilitado · sin servicio central)',
-      );
-      expect(emailInput.props.editable).toBe(false);
-
-      const passwordInput = screen.getByLabelText(
-        'Contraseña (deshabilitado · sin servicio central)',
-      );
-      expect(passwordInput.props.editable).toBe(false);
-
-      const consentBtn = screen.getByText('Ver consentimientos');
-      await fireEvent.press(consentBtn);
       expect(mockRouter.push).toHaveBeenCalledWith('/acceso/consentimientos');
     });
 

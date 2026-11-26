@@ -86,11 +86,7 @@ pnpm --filter @modulo-movil-oncologia/mobile android
 ```
 
 El APK de entrega lo compila `.github/workflows/build-apk.yml` (`expo prebuild` y
-`./gradlew assembleRelease`, `arm64-v8a` o universal). Para una build demo local:
-
-```bash
-pnpm --filter @modulo-movil-oncologia/mobile run run:android:demo
-```
+`./gradlew assembleRelease`, `arm64-v8a` o universal).
 
 ## Pruebas
 

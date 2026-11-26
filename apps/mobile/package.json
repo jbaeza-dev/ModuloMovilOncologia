@@ -7,7 +7,6 @@
     "start": "expo start",
     "android": "expo run:android",
     "run:android": "expo run:android",
-    "run:android:demo": "cross-env EXPO_PUBLIC_DEMO_MODE=true expo run:android --variant release",
     "bundle:android": "expo export --platform android",
     "doctor": "expo-doctor",
     "test:ui": "jest --runInBand",
