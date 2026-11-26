@@ -75,8 +75,7 @@ printf 'synthetic custom dump'
         def prepare(backups):
             for name in old:
                 (backups/name).mkdir(parents=True)
-                (backups/name/'manifest.txt').write_text('version=2
-')
+                (backups/name/'manifest.txt').write_text('version=2\n')
                 (backups/name/'checksums.sha256').write_text('')
             (backups/'20190101T000000Z-1').mkdir()  # partial snapshot: no manifest
             (backups/'notas').mkdir()
