@@ -1,0 +1,59 @@
+# Guarda un signo vital sintético y comprueba que el servidor confirma la recepción.
+# A diferencia de los demás flujos, GUARDA un registro en la cuenta en uso: por eso lleva la
+# etiqueta guarda-datos y la suite normal lo excluye (ver config.yaml y README.md).
+# Los valores son datos de prueba dentro de los rangos que la app acepta, no umbrales clínicos.
+# El pulso cambia en cada ejecución para reconocer el registro nuevo en el historial.
+appId: cl.ubiobio.quimiocare
+name: Guardar y enviar un signo vital
+tags: [guarda-datos, signos, sincronizacion]
+---
+- evalScript: ${output.pulso = String(60 + Math.floor(Math.random() * 30))}
+- runFlow: ../subflows/abrir-inicio.yaml
+- tapOn: 'Registrar signos vitales'
+- assertVisible: 'Anota lo que hayas medido.'
+- tapOn: 'Temperatura corporal \(°C\)'
+- inputText: '36,7'
+- hideKeyboard
+- scrollUntilVisible:
+    element: 'Presión sistólica \(mmHg\)'
+- tapOn: 'Presión sistólica \(mmHg\)'
+- inputText: '118'
+- hideKeyboard
+- scrollUntilVisible:
+    element: 'Presión diastólica \(mmHg\)'
+- tapOn: 'Presión diastólica \(mmHg\)'
+- inputText: '76'
+- hideKeyboard
+- scrollUntilVisible:
+    element: 'Pulso \(lpm\)'
+- tapOn: 'Pulso \(lpm\)'
+- inputText: ${output.pulso}
+- hideKeyboard
+- scrollUntilVisible:
+    element: 'Saturación de oxígeno \(%\)'
+- tapOn: 'Saturación de oxígeno \(%\)'
+- inputText: '97'
+- hideKeyboard
+- scrollUntilVisible:
+    element: 'Dolor ENA \(0 a 10\)'
+- tapOn: 'Dolor ENA \(0 a 10\)'
+- inputText: '1'
+- hideKeyboard
+- scrollUntilVisible:
+    element: 'Guardar registro'
+- tapOn: 'Guardar registro'
+# Al guardar, la app vuelve a la pantalla desde donde se abrió el formulario (Inicio).
+- extendedWaitUntil:
+    visible: 'Para hoy'
+    timeout: 15000
+- tapOn: 'Mediciones'
+- assertVisible: 'Historial de signos vitales'
+# El servidor confirma la recepción: el registro nuevo pasa a «Enviado al Médico».
+- scrollUntilVisible:
+    element: '.*Pulso: ${output.pulso} latidos/min.*Enviado al Médico.*'
+    timeout: 60000
+- openLink: 'quimiocare://perfil/estado-envios'
+- extendedWaitUntil:
+    visible: 'No tienes registros pendientes de envío.'
+    timeout: 30000
+- back
