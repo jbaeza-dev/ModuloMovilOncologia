@@ -7,6 +7,9 @@ import { SessionFailure } from './http-session-types';
 import * as check from './response-checks';
 import { DEMO_USERS } from './demo-session-adapter';
 
+/** Espera de los pedidos de credenciales de PowerSync tras un «servicio no disponible». */
+const SYNC_RETRY_DELAYS = [5_000, 15_000, 30_000, 60_000];
+
 export const DEMO_AUTH_IDS = [
   '964d32f1-6941-579f-9f08-b60342194da9',
   '2dcb04f2-a2ad-5ea4-b711-9acd7e570002',
@@ -60,6 +63,13 @@ export class HttpSessionAdapter implements SessionAdapter {
     revision: 0,
   };
   private closeHandlers = new Set<() => Promise<void>>();
+  /**
+   * PowerSync pide credenciales cada pocos segundos mientras no logra conectarse. Con el servidor
+   * caído, cada pedido consultaba la sesión: tras un fallo, esos pedidos esperan antes de volver a
+   * salir a la red. Las consultas directas (recuperación automática, botones) no esperan.
+   */
+  private syncRetryAt = 0;
+  private syncFailures = 0;
   private connectorStops = new Set<() => Promise<void>>();
   constructor(private readonly options: SessionOptions) {
     this.config = options.config;
@@ -562,6 +572,8 @@ export class HttpSessionAdapter implements SessionAdapter {
         treatmentStatus: treatment.status,
       };
       const isStale = clinical.status === 'unavailable' || treatment.status === 'unavailable';
+      this.syncRetryAt = 0;
+      this.syncFailures = 0;
       this.update({
         identity,
         user,
@@ -702,8 +714,18 @@ export class HttpSessionAdapter implements SessionAdapter {
     const epoch = this.epoch,
       owner = this.current?.owner;
     if (!owner) throw new SessionFailure('expired');
-    if (this.snapshot.stale || !this.snapshot.identity) await this.refreshIdentity();
-    else await this.refreshConsent();
+    if (this.snapshot.stale || !this.snapshot.identity) {
+      if (this.now() < this.syncRetryAt) throw new SessionFailure('unavailable');
+      try {
+        await this.refreshIdentity();
+      } catch (error) {
+        if (!(error instanceof SessionFailure) || error.kind === 'unavailable') {
+          this.syncRetryAt = this.now() + SYNC_RETRY_DELAYS[Math.min(this.syncFailures, 3)]!;
+          this.syncFailures++;
+        }
+        throw error;
+      }
+    } else await this.refreshConsent();
     this.assert(epoch, owner);
     if (!this.snapshot.uploadAllowed) throw new SessionFailure('denied');
     const token = await this.accessToken();

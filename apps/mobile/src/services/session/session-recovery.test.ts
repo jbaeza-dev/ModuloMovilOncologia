@@ -153,6 +153,42 @@ describe('Recuperación automática de sesión sin interacción ni aceptación i
   });
 });
 
+it('sin vincular, espera hasta 5 minutos entre consultas', async () => {
+  // Consultas a los 0, 2, 7, 22, 52 y 112 s; después, 2 min y luego 5 min sin vincular.
+  const h = harness();
+  h.update({ state: 'clinical_incomplete', stale: false, uploadAllowed: false });
+  h.refreshIdentity.mockImplementation(async () => undefined);
+  h.recovery.setForeground(true);
+  await vi.advanceTimersByTimeAsync(112_000);
+  expect(h.refreshIdentity).toHaveBeenCalledTimes(6);
+  await vi.advanceTimersByTimeAsync(119_000);
+  expect(h.refreshIdentity).toHaveBeenCalledTimes(6);
+  await vi.advanceTimersByTimeAsync(1_000);
+  expect(h.refreshIdentity).toHaveBeenCalledTimes(7);
+  await vi.advanceTimersByTimeAsync(299_000);
+  expect(h.refreshIdentity).toHaveBeenCalledTimes(7);
+  await vi.advanceTimersByTimeAsync(1_000);
+  expect(h.refreshIdentity).toHaveBeenCalledTimes(8);
+  await vi.advanceTimersByTimeAsync(300_000);
+  expect(h.refreshIdentity).toHaveBeenCalledTimes(9);
+  // Volver a la app consulta de inmediato y reinicia la espera.
+  h.recovery.setForeground(false);
+  h.recovery.setForeground(true);
+  await vi.advanceTimersByTimeAsync(0);
+  expect(h.refreshIdentity).toHaveBeenCalledTimes(10);
+});
+
+it('con el servidor caído mantiene el tope de 60 s', async () => {
+  const h = harness();
+  h.recovery.setForeground(true);
+  await vi.advanceTimersByTimeAsync(112_000);
+  expect(h.refreshIdentity).toHaveBeenCalledTimes(6);
+  await vi.advanceTimersByTimeAsync(60_000);
+  expect(h.refreshIdentity).toHaveBeenCalledTimes(7);
+  await vi.advanceTimersByTimeAsync(60_000);
+  expect(h.refreshIdentity).toHaveBeenCalledTimes(8);
+});
+
 it('conserva el intervalo creciente aunque el token pase por renovando antes de cada fallo', async () => {
   const h = harness();
   h.refreshIdentity.mockImplementation(async () => {
