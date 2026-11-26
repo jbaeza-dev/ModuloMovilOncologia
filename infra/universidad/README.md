@@ -26,7 +26,7 @@ Podman rootless, Quadlet y red privada `qc-net`. Un PostgreSQL 17 con bases y pr
 | Worker       | sin puerto público   |         256 MiB |
 | Dos proxies  | loopback 8018 y 8019 | 64 MiB cada uno |
 
-Total configurado: 2.688 MiB; esto no constituye una medición de carga. Cada servicio limita CPU a un núcleo. No hay compilaciones en el servidor. Las imágenes se descargan en serie, por digest, antes de detener escritores. Se exige AMD64, aproximadamente 4 GB RAM y 5 GiB libres como mínimo operativo. Un disco de 20 GB requiere supervisión y exportación de respaldos; no se borran datos para liberar espacio automáticamente.
+Total configurado: 2.688 MiB; esto no constituye una medición de carga. Cada servicio limita CPU a un núcleo. No hay compilaciones en el servidor. Las imágenes se descargan en serie, por digest, antes de detener escritores. Se exige AMD64, aproximadamente 4 GB RAM y 5 GiB libres como mínimo operativo. Un disco de 20 GB requiere supervisión. Cada respaldo confirmado rota los anteriores: se conservan los 7 más recientes (`BACKUP_KEEP`) y solo se borran carpetas de respaldo completas (con `manifest.txt` y `checksums.sha256`); nunca la recién creada, las parciales ni carpetas ajenas. La copia externa de respaldos queda fuera del alcance de este despliegue; si se necesita conservar uno más antiguo, hay que exportarlo antes del siguiente despliegue.
 
 ## Rutas públicas
 
@@ -58,7 +58,7 @@ $HOME/quimiocare/
   current -> releases/…           # activación atómica
   media/educacion/                 # archivos persistentes
   media/temp/                     # mismo filesystem que los archivos definitivos
-  backups/                        # dumps custom + imágenes + checksums
+  backups/                        # dumps custom + imágenes + checksums (los 7 más recientes)
 ```
 
 El bootstrap de PostgreSQL actúa solo en un volumen nuevo. No rota contraseñas al actualizar. Los medios y volúmenes no forman parte de las imágenes ni se eliminan durante una entrega.

@@ -9,7 +9,7 @@ SCRIPT = Path(__file__).resolve().parents[1]/'scripts/backup.sh'
 
 @unittest.skipIf(os.name=='nt','Linux shell tests run in the isolated CI/container')
 class BackupTests(unittest.TestCase):
-    def exercise(self, failure=None):
+    def exercise(self, failure=None, prepare=None, **extra):
         temp=tempfile.TemporaryDirectory(prefix='qc-backup-test-')
         self.addCleanup(temp.cleanup)
         root=Path(temp.name); binaries=root/'bin';binaries.mkdir()
@@ -37,7 +37,8 @@ printf 'synthetic custom dump'
             commands['df']="#!/usr/bin/env bash\nprintf 'Filesystem 1024-blocks Used Available Capacity Mounted\\nsynthetic 2000000 1999000 1000 99%% /test\\n'\n"
         for name,script in commands.items():
             path=binaries/name;path.write_text(script);path.chmod(0o700)
-        env=dict(os.environ,PATH=str(binaries)+':'+os.environ['PATH'],TEST_ROOT=str(root),COMMAND_LOG=str(root/'commands'),ENGINE_LOG=str(root/'engine'),FAIL_STOP=str(failure=='stop').lower(),FAIL_DRAIN=str(failure=='drain').lower(),FAIL_DUMP=str(failure=='dump').lower(),CONTAINER_ENGINE='docker',DATABASE_CONTAINER='qc_explicit_test',DATABASE_USER='postgres',CLINICAL_DATABASE='qc_source_test',GATEWAY_DATABASE='qc_gateway_test',MEDIA_ROOT=str(media),BACKUP_ROOT=str(root/'backups'),RESUME_WRITERS='true')
+        env=dict(os.environ,PATH=str(binaries)+':'+os.environ['PATH'],TEST_ROOT=str(root),COMMAND_LOG=str(root/'commands'),ENGINE_LOG=str(root/'engine'),FAIL_STOP=str(failure=='stop').lower(),FAIL_DRAIN=str(failure=='drain').lower(),FAIL_DUMP=str(failure=='dump').lower(),CONTAINER_ENGINE='docker',DATABASE_CONTAINER='qc_explicit_test',DATABASE_USER='postgres',CLINICAL_DATABASE='qc_source_test',GATEWAY_DATABASE='qc_gateway_test',MEDIA_ROOT=str(media),BACKUP_ROOT=str(root/'backups'),RESUME_WRITERS='true',**extra)
+        if prepare: prepare(root/'backups')
         result=subprocess.run(['bash',str(SCRIPT)],env=env,stdout=subprocess.PIPE,stderr=subprocess.PIPE,text=True)
         return root,result
 
@@ -68,5 +69,33 @@ printf 'synthetic custom dump'
         self.assertNotEqual(result.returncode,0)
         self.assertFalse((root/'commands').exists())
         self.assertNotIn('pg_dump',(root/'engine').read_text())
+
+    def test_rotation_keeps_newest_confirmed_snapshots_only(self):
+        old=['20200101T0000%02dZ-1'%i for i in range(9)]
+        def prepare(backups):
+            for name in old:
+                (backups/name).mkdir(parents=True)
+                (backups/name/'manifest.txt').write_text('version=2
+')
+                (backups/name/'checksums.sha256').write_text('')
+            (backups/'20190101T000000Z-1').mkdir()  # partial snapshot: no manifest
+            (backups/'notas').mkdir()
+            (backups/'notas/manifest.txt').write_text('foreign')
+        root,result=self.exercise(prepare=prepare)
+        self.assertEqual(result.returncode,0,result.stderr)
+        names=sorted(p.name for p in (root/'backups').iterdir())
+        confirmed=[n for n in names if n!='notas' and (root/'backups'/n/'checksums.sha256').exists()]
+        self.assertEqual(len(confirmed),7)
+        self.assertEqual(confirmed[:6],old[3:])
+        self.assertTrue(all(name not in names for name in old[:3]))
+        self.assertIn('20190101T000000Z-1',names)
+        self.assertIn('notas',names)
+
+    def test_invalid_keep_aborts_before_stopping_writers(self):
+        for keep in ('0','siete','-1'):
+            with self.subTest(keep=keep):
+                root,result=self.exercise(BACKUP_KEEP=keep)
+                self.assertNotEqual(result.returncode,0)
+                self.assertFalse((root/'commands').exists())
 
 if __name__=='__main__': unittest.main()
