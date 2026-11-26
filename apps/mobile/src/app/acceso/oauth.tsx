@@ -48,6 +48,9 @@ export default function OAuthReturn() {
             ? 'La comprobación está tardando demasiado. Revisa la conexión y vuelve a intentar.'
             : (snapshot.message ?? 'No se pudo completar el acceso. Vuelve a iniciar sesión.')}
       </BodyText>
+      {!waiting && snapshot.state === 'service_unavailable' && snapshot.failureCode ? (
+        <BodyText>{'Código de diagnóstico: ' + snapshot.failureCode}</BodyText>
+      ) : null}
       {!waiting ? (
         <VisualButton
           label="Volver al acceso"

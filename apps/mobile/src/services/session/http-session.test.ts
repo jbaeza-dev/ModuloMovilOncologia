@@ -717,6 +717,78 @@ describe('Durable device revocation and environment settings', () => {
   });
 });
 
+describe('Código de diagnóstico cuando el acceso no está disponible', () => {
+  const adapterWith = (
+    h: ReturnType<typeof harness>,
+    fetcher: typeof fetch,
+    googleLogin = h.googleLogin,
+  ) =>
+    new HttpSessionAdapter({
+      config,
+      vault: new Vault(),
+      fetch: fetcher,
+      newId: randomUUID,
+      googleLogin,
+    });
+  it('un 503 de QuimioCare queda como Q-503 y se borra al volver a entrar bien', async () => {
+    const h = harness();
+    h.setProfile(503);
+    expect((await login(h)).success).toBe(false);
+    expect(h.session.getSnapshot()).toMatchObject({
+      state: 'service_unavailable',
+      failureCode: 'Q-503',
+    });
+    h.setProfile(200);
+    expect((await login(h)).success).toBe(true);
+    expect(h.session.getSnapshot().failureCode).toBeNull();
+  });
+  it('sin respuesta de QuimioCare queda como Q-RED', async () => {
+    const h = harness();
+    const session = adapterWith(h, async (input, init) => {
+      if (new URL(String(input)).pathname === '/api/v1/auth/me')
+        throw new TypeError('Network request failed');
+      return h.fake(input, init);
+    });
+    await session.login({});
+    expect(session.getSnapshot().failureCode).toBe('Q-RED');
+  });
+  it('una espera de más de 12 s en QuimioCare queda como Q-ESPERA', async () => {
+    vi.useFakeTimers();
+    try {
+      const h = harness();
+      const session = adapterWith(h, (input, init) =>
+        new URL(String(input)).pathname === '/api/v1/auth/me'
+          ? new Promise((_resolve, reject) =>
+              init!.signal!.addEventListener('abort', () => reject(new Error('aborted'))),
+            )
+          : h.fake(input, init),
+      );
+      const pending = session.login({});
+      await vi.advanceTimersByTimeAsync(12000);
+      await pending;
+      expect(session.getSnapshot().failureCode).toBe('Q-ESPERA');
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+  it('un error inesperado solo muestra su tipo, nunca su texto', async () => {
+    const h = harness();
+    const session = adapterWith(h, h.fake, async () => {
+      throw new TypeError('detalle interno con datos');
+    });
+    await session.login({});
+    expect(session.getSnapshot()).toMatchObject({
+      state: 'service_unavailable',
+      failureCode: 'INTERNO-TypeError',
+    });
+  });
+  it('credenciales incompatibles de Supabase quedan como G-INCOMPATIBLE', async () => {
+    const h = harness();
+    const session = adapterWith(h, h.fake, async () => ({ token_type: 'bearer' }));
+    await session.login({});
+    expect(session.getSnapshot().failureCode).toBe('G-INCOMPATIBLE');
+  });
+});
 describe('Actualización automática y concurrente de identidad', () => {
   it('comparte una sola verificación entre varios disparadores y deja permisos confirmados', async () => {
     const h = harness();

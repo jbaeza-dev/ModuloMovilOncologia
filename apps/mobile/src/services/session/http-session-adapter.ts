@@ -3,7 +3,7 @@ import type { SessionCredentials, SessionResult, SessionState, SessionUser } fro
 import type { SessionConfig } from './session-config';
 import type { CredentialVault } from './credential-vault';
 import type { Credentials, IdentityCache, SessionSnapshot } from './http-session-types';
-import { SessionFailure } from './http-session-types';
+import { SessionFailure, failureCode } from './http-session-types';
 import * as check from './response-checks';
 
 /** Espera de los pedidos de credenciales de PowerSync tras un «servicio no disponible». */
@@ -55,6 +55,7 @@ export class HttpSessionAdapter implements SessionAdapter {
     terms: null,
     uploadAllowed: false,
     message: null,
+    failureCode: null,
     revision: 0,
   };
   private closeHandlers = new Set<() => Promise<void>>();
@@ -99,7 +100,17 @@ export class HttpSessionAdapter implements SessionAdapter {
     };
   }
   private update(patch: Partial<SessionSnapshot>) {
-    this.snapshot = { ...this.snapshot, ...patch, revision: this.snapshot.revision + 1 };
+    // El código de diagnóstico solo acompaña al estado «no disponible»; cualquier otro lo borra.
+    const clearCode =
+      patch.state !== undefined &&
+      patch.state !== 'service_unavailable' &&
+      !('failureCode' in patch);
+    this.snapshot = {
+      ...this.snapshot,
+      ...patch,
+      ...(clearCode ? { failureCode: null } : {}),
+      revision: this.snapshot.revision + 1,
+    };
     this.listeners.forEach((fn) => fn());
   }
   private assert(epoch: number, owner?: string) {
@@ -167,9 +178,10 @@ export class HttpSessionAdapter implements SessionAdapter {
     } catch (error) {
       this.assert(epoch);
       if (options.signal?.aborted) throw cancelledRequest();
-      if (timedOut) throw new SessionFailure('unavailable', 408);
+      const origin = base === this.config.authUrl ? 'auth' : 'clinical';
+      if (timedOut) throw new SessionFailure('unavailable', 408, origin, 'timeout');
       if (error instanceof SessionFailure) throw error;
-      throw new SessionFailure('unavailable');
+      throw new SessionFailure('unavailable', 0, origin, 'network');
     } finally {
       clearTimeout(timer);
       parent.removeEventListener('abort', abort);
@@ -255,7 +267,13 @@ export class HttpSessionAdapter implements SessionAdapter {
     return this.establish(async (epoch) => {
       const value = await this.options.googleLogin!(this.controller.signal);
       this.assert(epoch);
-      return check.credentials(value, this.now());
+      try {
+        return check.credentials(value, this.now());
+      } catch (error) {
+        if (error instanceof SessionFailure && error.kind === 'invalid')
+          throw new SessionFailure('invalid', 0, 'auth');
+        throw error;
+      }
     });
   }
   private async establish(issue: (epoch: number) => Promise<Credentials>): Promise<SessionResult> {
@@ -304,13 +322,11 @@ export class HttpSessionAdapter implements SessionAdapter {
   }
   private markFailure(error: unknown) {
     const kind = error instanceof SessionFailure ? error.kind : 'unavailable';
+    const state =
+      kind === 'expired' ? 'expired' : kind === 'denied' ? 'access_denied' : 'service_unavailable';
     this.update({
-      state:
-        kind === 'expired'
-          ? 'expired'
-          : kind === 'denied'
-            ? 'access_denied'
-            : 'service_unavailable',
+      state,
+      failureCode: state === 'service_unavailable' ? failureCode(error) : null,
       stale: true,
       uploadAllowed: false,
       message:
@@ -367,7 +383,7 @@ export class HttpSessionAdapter implements SessionAdapter {
           );
           this.assert(epoch, owner);
           if (r.status === 401 || r.status === 400) throw new SessionFailure('expired');
-          if (r.status !== 200) throw new SessionFailure('unavailable');
+          if (r.status !== 200) throw new SessionFailure('unavailable', r.status, 'auth');
           const next = check.credentials(r.body, this.now());
           if (next.owner !== owner) throw new SessionFailure('invalid');
           this.current = next;
@@ -477,7 +493,7 @@ export class HttpSessionAdapter implements SessionAdapter {
     if (!owner) throw new SessionFailure('expired');
     try {
       const r = await this.request('clinical', '/api/v1/auth/me');
-      if (r.status !== 200) throw new SessionFailure('unavailable');
+      if (r.status !== 200) throw new SessionFailure('unavailable', r.status);
       const profile = check.profile(r.body, owner);
       if (!profile.activo || profile.rol !== 'paciente') throw new SessionFailure('denied');
       const user = this.user(owner, profile.nombre ?? undefined),
@@ -672,7 +688,8 @@ export class HttpSessionAdapter implements SessionAdapter {
       owner = this.current?.owner;
     if (!owner) throw new SessionFailure('expired');
     if (this.snapshot.stale || !this.snapshot.identity) {
-      if (this.now() < this.syncRetryAt) throw new SessionFailure('unavailable');
+      if (this.now() < this.syncRetryAt)
+        throw new SessionFailure('unavailable', 0, 'clinical', 'throttled');
       try {
         await this.refreshIdentity();
       } catch (error) {

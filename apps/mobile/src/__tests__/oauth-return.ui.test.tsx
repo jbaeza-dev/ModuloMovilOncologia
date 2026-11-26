@@ -4,12 +4,23 @@ import { act, fireEvent, render, screen } from '@testing-library/react-native';
 import { router } from 'expo-router';
 import OAuthReturn from '../app/acceso/oauth';
 
-const mockIdentity = {
+const mockIdentity: {
+  data: { patientId: string | null };
+  session: { cancelRequests: jest.Mock };
+  snapshot: {
+    state: string;
+    message: string | null;
+    failureCode?: string | null;
+    identity: unknown;
+    consent: unknown;
+  };
+} = {
   data: { patientId: null as string | null },
   session: { cancelRequests: jest.fn() },
   snapshot: {
     state: 'authenticating',
     message: null as string | null,
+    failureCode: null as string | null,
     identity: null as unknown,
     consent: null as unknown,
   },
@@ -44,6 +55,7 @@ beforeEach(() => {
   mockIdentity.snapshot = {
     state: 'authenticating',
     message: null,
+    failureCode: null,
     identity: null,
     consent: null,
   };
@@ -54,11 +66,13 @@ it('shows a failed verification and lets the patient return to login', async () 
   mockIdentity.snapshot = {
     state: 'service_unavailable',
     message: 'Servicio no disponible.',
+    failureCode: 'Q-ESPERA',
     identity: null,
     consent: null,
   };
   await render(<OAuthReturn />);
   expect(screen.getByText('Servicio no disponible.')).toBeOnTheScreen();
+  expect(screen.getByText('Código de diagnóstico: Q-ESPERA')).toBeOnTheScreen();
   await fireEvent.press(screen.getByRole('button', { name: 'Volver al acceso' }));
   expect(mockIdentity.session.cancelRequests).toHaveBeenCalledTimes(1);
   expect(router.replace).toHaveBeenCalledWith('/acceso');
@@ -67,6 +81,7 @@ it('shows a failed verification and lets the patient return to login', async () 
 it('does not remain in an indefinite waiting screen', async () => {
   jest.useFakeTimers();
   await render(<OAuthReturn />);
+  expect(screen.queryByText(/Código de diagnóstico/)).not.toBeOnTheScreen();
   expect(screen.getByText('Comprobando acceso')).toBeOnTheScreen();
   await act(async () => {
     jest.advanceTimersByTime(30000);
