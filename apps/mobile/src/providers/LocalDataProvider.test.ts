@@ -271,7 +271,7 @@ describe('LocalDataProvider Notification Processing', () => {
 });
 
 import { PatientContextManager } from './patient-context-manager';
-import { DemoSessionAdapter } from '../services/session/demo-session-adapter';
+import { FakeSessionAdapter, signInAs } from '../services/session/testing/fake-session-adapter';
 import { FakeAssistantAdapter } from '../services/assistant/fake-assistant-adapter';
 import type { PatientRepository } from '../data/local/repository';
 import type { SqlConnection } from '../data/local/core/sql';
@@ -282,7 +282,7 @@ import type { EducationalCatalogReader } from '../features/education/educational
 
 describe('LocalDataProvider Context Teardown and Operation Tracking', () => {
   it('trackOperation protege el contador frente a excepciones síncronas y asíncronas', async () => {
-    const sessionAdapter = new DemoSessionAdapter();
+    const sessionAdapter = new FakeSessionAdapter();
     const assistantAdapter = new FakeAssistantAdapter();
     const router = { replace: () => undefined, push: () => undefined };
     const manager = new PatientContextManager({
@@ -327,14 +327,14 @@ describe('LocalDataProvider Context Teardown and Operation Tracking', () => {
   it('una operación que nunca termina no impide cerrar la sesión: a los 10 s se borran las credenciales', async () => {
     vi.useFakeTimers();
     try {
-      const sessionAdapter = new DemoSessionAdapter();
+      const sessionAdapter = new FakeSessionAdapter();
       const logout = vi.spyOn(sessionAdapter, 'logout');
       const manager = new PatientContextManager({
         sessionAdapter,
         assistantAdapter: new FakeAssistantAdapter(),
         router: { replace: () => undefined, push: () => undefined },
       });
-      await manager.selectPatient(patientA);
+      await signInAs(manager, sessionAdapter, patientA);
       void manager.trackOperation(() => new Promise<never>(() => undefined));
       let settled = false;
       const teardown = manager.closeActiveContext('manual_close').then((result) => {
@@ -359,14 +359,14 @@ describe('LocalDataProvider Context Teardown and Operation Tracking', () => {
   it('una operación que termina antes del límite se espera completa antes de cerrar', async () => {
     vi.useFakeTimers();
     try {
-      const sessionAdapter = new DemoSessionAdapter();
+      const sessionAdapter = new FakeSessionAdapter();
       const logout = vi.spyOn(sessionAdapter, 'logout');
       const manager = new PatientContextManager({
         sessionAdapter,
         assistantAdapter: new FakeAssistantAdapter(),
         router: { replace: () => undefined, push: () => undefined },
       });
-      await manager.selectPatient(patientA);
+      await signInAs(manager, sessionAdapter, patientA);
       let saved = false;
       void manager.trackOperation(
         () =>
@@ -397,7 +397,7 @@ describe('LocalDataProvider Context Teardown and Operation Tracking', () => {
 
     const adapter = new FakeNotificationAdapter();
     const coordinator = new NotificationCoordinator(db, adapter, () => '2026-10-13T00:00:00Z');
-    const sessionAdapter = new DemoSessionAdapter();
+    const sessionAdapter = new FakeSessionAdapter();
     const assistantAdapter = new FakeAssistantAdapter();
     const router = { replace: () => undefined, push: () => undefined };
 
@@ -409,7 +409,7 @@ describe('LocalDataProvider Context Teardown and Operation Tracking', () => {
       router,
     });
 
-    await manager.selectPatient(patientA);
+    await signInAs(manager, sessionAdapter, patientA);
     expect(manager.getPatientId()).toBe(patientA);
 
     // Simular escritura asíncrona activa de Paciente A
@@ -455,7 +455,7 @@ describe('LocalDataProvider Context Teardown and Operation Tracking', () => {
   });
 
   it('cerrar contexto cancela la sesión de descarga en curso del paciente, drenando el primer archivo y evitando que comience el segundo', async () => {
-    const sessionAdapter = new DemoSessionAdapter();
+    const sessionAdapter = new FakeSessionAdapter();
     const assistantAdapter = new FakeAssistantAdapter();
     const router = { replace: () => undefined, push: () => undefined };
 
@@ -465,7 +465,7 @@ describe('LocalDataProvider Context Teardown and Operation Tracking', () => {
       router,
     });
 
-    await manager.selectPatient(patientA);
+    await signInAs(manager, sessionAdapter, patientA);
 
     const catalog: EducationalCatalogReader = {
       async getCategories() {
@@ -567,14 +567,14 @@ describe('LocalDataProvider Context Teardown and Operation Tracking', () => {
     expect(downloadSpy).toHaveBeenCalledTimes(1);
   });
 
-  it('selectPatient fuerza y espera el cierre del contexto previo antes de activar el nuevo', async () => {
+  it('entrar con otra cuenta fuerza y espera el cierre del contexto previo antes de activar el nuevo', async () => {
     const db = open();
     await migrateDatabase(db);
     await seedPatientContextIfEmpty(db, patientA, patientB);
 
     const adapter = new FakeNotificationAdapter();
     const coordinator = new NotificationCoordinator(db, adapter, () => '2026-10-13T00:00:00Z');
-    const sessionAdapter = new DemoSessionAdapter();
+    const sessionAdapter = new FakeSessionAdapter();
     const assistantAdapter = new FakeAssistantAdapter();
     const router = { replace: () => undefined, push: () => undefined };
 
@@ -586,7 +586,7 @@ describe('LocalDataProvider Context Teardown and Operation Tracking', () => {
       router,
     });
 
-    await manager.selectPatient(patientA);
+    await signInAs(manager, sessionAdapter, patientA);
     expect(manager.getPatientId()).toBe(patientA);
 
     let resolveActiveOperation!: () => void;
@@ -599,7 +599,7 @@ describe('LocalDataProvider Context Teardown and Operation Tracking', () => {
     });
 
     // Iniciar conmutación hacia Paciente B mientras Paciente A tiene una operación en curso
-    const selectPromise = manager.selectPatient(patientB);
+    const selectPromise = signInAs(manager, sessionAdapter, patientB);
 
     // Mientras la operación de A está en curso, Paciente B NO debe haber sido activado aún
     expect(manager.getPatientId()).toBeNull();
@@ -614,15 +614,10 @@ describe('LocalDataProvider Context Teardown and Operation Tracking', () => {
     expect(manager.getIsClosing()).toBe(false);
     expect(manager.getPatientId()).toBe(patientB);
     expect(sessionAdapter.getCurrentUser()?.id).toBe(patientB);
-
-    // Validar rechazo de paciente no registrado en demostración
-    await expect(manager.selectPatient('paciente-invalido-999')).rejects.toThrow(
-      "Paciente de prueba 'paciente-invalido-999' no reconocido.",
-    );
   });
 
   it('cierre provocado por session_required cancela la agenda nativa tras abrir SQLite', async () => {
-    const sessionAdapter = new DemoSessionAdapter();
+    const sessionAdapter = new FakeSessionAdapter();
     const assistantAdapter = new FakeAssistantAdapter({ shouldSimulateSessionRequired: true });
     let replacedRoute = '';
     const router = {
@@ -653,7 +648,7 @@ describe('LocalDataProvider Context Teardown and Operation Tracking', () => {
     manager.setCoordinator(coordinator);
 
     // 3. Paciente A se activa y tiene recordatorios programados en SQLite y la agenda nativa
-    await manager.selectPatient(patientA);
+    await signInAs(manager, sessionAdapter, patientA);
     const repo = createReminderRepository(db, patientA);
     await repo.setPreferences(true);
     await repo.saveRule({
@@ -689,7 +684,7 @@ describe('LocalDataProvider Context Teardown and Operation Tracking', () => {
     await migrateDatabase(db);
     await seedPatientContextIfEmpty(db, patientA, patientB);
 
-    const sessionAdapter = new DemoSessionAdapter();
+    const sessionAdapter = new FakeSessionAdapter();
     const assistantAdapter = new FakeAssistantAdapter();
     const router = { replace: () => undefined, push: () => undefined };
 
@@ -701,7 +696,7 @@ describe('LocalDataProvider Context Teardown and Operation Tracking', () => {
       router,
     });
 
-    await manager.selectPatient(patientA);
+    await signInAs(manager, sessionAdapter, patientA);
 
     const payloadA: NotificationJobPayload = {
       version: 1,
@@ -750,7 +745,7 @@ describe('LocalDataProvider Context Teardown and Operation Tracking', () => {
     const scheduledJobs = Array.from(adapter.scheduled.values());
     const payload = scheduledJobs[0].payload!;
 
-    const sessionAdapter = new DemoSessionAdapter();
+    const sessionAdapter = new FakeSessionAdapter();
     const assistantAdapter = new FakeAssistantAdapter();
     const pushedRoutes: string[] = [];
     const router = {
@@ -768,7 +763,7 @@ describe('LocalDataProvider Context Teardown and Operation Tracking', () => {
       router,
     });
 
-    await manager.selectPatient(patientA);
+    await signInAs(manager, sessionAdapter, patientA);
 
     const dedupeKey = `${payload.notificacionId}:test-channel`;
 
@@ -813,7 +808,7 @@ describe('LocalDataProvider Context Teardown and Operation Tracking', () => {
     const scheduledJobs = Array.from(adapter.scheduled.values());
     const payload = scheduledJobs[0].payload!;
 
-    const sessionAdapter = new DemoSessionAdapter();
+    const sessionAdapter = new FakeSessionAdapter();
     const assistantAdapter = new FakeAssistantAdapter();
     const pushedRoutes: string[] = [];
     const router = {
@@ -849,7 +844,7 @@ describe('LocalDataProvider Context Teardown and Operation Tracking', () => {
     };
 
     // 3. Seleccionar paciente activa el contexto
-    await manager.selectPatient(patientA);
+    await signInAs(manager, sessionAdapter, patientA);
 
     // 4. Intentar procesar la intención pendiente durante el fallo transitorio
     const failedAttempt = await manager.processPendingNotificationIntent();
@@ -893,7 +888,7 @@ describe('LocalDataProvider Context Teardown and Operation Tracking', () => {
     const payloadA = scheduledJobs[0].payload!;
     const dedupeKey = `${payloadA.notificacionId}:channel-1`;
 
-    const sessionAdapter = new DemoSessionAdapter();
+    const sessionAdapter = new FakeSessionAdapter();
     const assistantAdapter = new FakeAssistantAdapter();
     const pushedRoutes: string[] = [];
     const router = {
@@ -911,7 +906,7 @@ describe('LocalDataProvider Context Teardown and Operation Tracking', () => {
       router,
     });
 
-    await manager.selectPatient(patientA);
+    await signInAs(manager, sessionAdapter, patientA);
 
     // 1. Simular fallo transitorio en SQLite mientras el paciente A está activo
     let simulateFailure = true;
@@ -967,7 +962,7 @@ describe('LocalDataProvider Context Teardown and Operation Tracking', () => {
     const payloadA = scheduledJobs[0].payload!;
     const dedupeKey = `${payloadA.notificacionId}:channel-1`;
 
-    const sessionAdapter = new DemoSessionAdapter();
+    const sessionAdapter = new FakeSessionAdapter();
     const assistantAdapter = new FakeAssistantAdapter();
     const pushedRoutes: string[] = [];
     const router = {
@@ -985,7 +980,7 @@ describe('LocalDataProvider Context Teardown and Operation Tracking', () => {
       router,
     });
 
-    await manager.selectPatient(patientA);
+    await signInAs(manager, sessionAdapter, patientA);
 
     // Coordinar la pausa de ambas consultas
     let resolveFirstQuery!: () => void;
@@ -1017,9 +1012,9 @@ describe('LocalDataProvider Context Teardown and Operation Tracking', () => {
 
     // 2. Cambiar de contexto: cerrar A, seleccionar B, cerrar B y volver a A
     await manager.closeActiveContext('change_patient');
-    await manager.selectPatient(patientB);
+    await signInAs(manager, sessionAdapter, patientB);
     await manager.closeActiveContext('change_patient');
-    await manager.selectPatient(patientA);
+    await signInAs(manager, sessionAdapter, patientA);
 
     // 3. Iniciar intento 2 con la misma dedupeKey
     const promiseAttempt2 = manager.handleNotificationOpen(payloadA, dedupeKey);
@@ -1059,7 +1054,7 @@ describe('LocalDataProvider Context Teardown and Operation Tracking', () => {
     await migrateDatabase(db);
     await seedPatientContextIfEmpty(db, patientA, patientB);
 
-    const sessionAdapter = new DemoSessionAdapter();
+    const sessionAdapter = new FakeSessionAdapter();
     const assistantAdapter = new FakeAssistantAdapter();
     const router = { replace: () => undefined, push: () => undefined };
 
@@ -1087,7 +1082,7 @@ describe('LocalDataProvider Context Teardown and Operation Tracking', () => {
     expect(manager.getPendingNotificationIntent()).not.toBeNull();
 
     // 2. Seleccionar paciente activa el contexto
-    await manager.selectPatient(patientA);
+    await signInAs(manager, sessionAdapter, patientA);
 
     // 3. Procesar la intención guardada: en SQLite la notificación no existe
     const resProcess = await manager.processPendingNotificationIntent();
@@ -1119,7 +1114,7 @@ describe('LocalDataProvider Context Teardown and Operation Tracking', () => {
     const payloadA = scheduledJobs[0].payload!;
     const dedupeKey = `${payloadA.notificacionId}:channel-1`;
 
-    const sessionAdapter = new DemoSessionAdapter();
+    const sessionAdapter = new FakeSessionAdapter();
     const assistantAdapter = new FakeAssistantAdapter();
     const router = { replace: () => undefined, push: () => undefined };
 
@@ -1131,7 +1126,7 @@ describe('LocalDataProvider Context Teardown and Operation Tracking', () => {
       router,
     });
 
-    await manager.selectPatient(patientA);
+    await signInAs(manager, sessionAdapter, patientA);
 
     // 1. Simular fallo transitorio en primer intento
     let simulateFailure = true;
@@ -1184,7 +1179,7 @@ describe('LocalDataProvider Context Teardown and Operation Tracking', () => {
     const dedupeKeyOld = `${payloadA.notificacionId}:channel-old`;
     const dedupeKeyNew = `${payloadA.notificacionId}:channel-new`;
 
-    const sessionAdapter = new DemoSessionAdapter();
+    const sessionAdapter = new FakeSessionAdapter();
     const assistantAdapter = new FakeAssistantAdapter();
     const pushedRoutes: string[] = [];
     const router = {
@@ -1202,7 +1197,7 @@ describe('LocalDataProvider Context Teardown and Operation Tracking', () => {
       router,
     });
 
-    await manager.selectPatient(patientA);
+    await signInAs(manager, sessionAdapter, patientA);
 
     // Pausar la consulta del intento 1 antiguo
     let resolveFirstQuery!: () => void;
@@ -1225,9 +1220,9 @@ describe('LocalDataProvider Context Teardown and Operation Tracking', () => {
 
     // 2. Conmutar contexto: cerrar A (epoch 2), abrir B (epoch 3), cerrar B (epoch 4), volver a A (epoch 5)
     await manager.closeActiveContext('change_patient');
-    await manager.selectPatient(patientB);
+    await signInAs(manager, sessionAdapter, patientB);
     await manager.closeActiveContext('change_patient');
-    await manager.selectPatient(patientA);
+    await signInAs(manager, sessionAdapter, patientA);
 
     // 3. En contexto nuevo (epoch 5), simular fallo transitorio que guarda una nueva intención
     let simulateTransientFailure = true;

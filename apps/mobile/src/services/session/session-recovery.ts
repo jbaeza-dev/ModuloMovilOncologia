@@ -12,7 +12,6 @@ const blockedStates = new Set([
   'authenticating',
   'reauthenticating',
   'renewing',
-  'demo_selection',
   'preparing_storage',
   'expired',
   'access_denied',

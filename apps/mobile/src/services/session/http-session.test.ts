@@ -1,19 +1,21 @@
 import { describe, it, expect, vi } from 'vitest';
 import { randomUUID } from 'node:crypto';
-import { HttpSessionAdapter, DEMO_AUTH_IDS } from './http-session-adapter';
+import { HttpSessionAdapter } from './http-session-adapter';
 import { DeviceClient } from './device-client';
-import { DEMO_USERS } from './demo-session-adapter';
 import { sessionConfig } from './session-config';
 import type { CredentialVault } from './credential-vault';
 import { canUpload } from './response-checks';
-const owner = DEMO_AUTH_IDS[0],
-  other = DEMO_AUTH_IDS[1];
+const owner = '964d32f1-6941-579f-9f08-b60342194da9',
+  other = '2dcb04f2-a2ad-5ea4-b711-9acd7e570002';
 const config = sessionConfig({
-  APP_ENV: 'demo',
-  CLINICAL_URL: 'http://clinical.test',
-  GATEWAY_URL: 'http://gateway.test',
-  AUTH_ISSUER: 'quimiocare-demo',
+  APP_ENV: 'universidad-demo',
+  CLINICAL_URL: 'https://clinical.test',
+  GATEWAY_URL: 'https://gateway.test',
+  AUTH_URL: 'https://auth.test',
+  AUTH_ISSUER: 'https://auth.test',
   AUTH_AUDIENCE: 'authenticated',
+  AUTH_PUBLIC_KEY: 'synthetic-public-key',
+  AUTH_REDIRECT_URI: 'quimiocare://acceso/oauth',
 })!;
 class Vault implements CredentialVault {
   data = new Map<string, string>();
@@ -43,6 +45,7 @@ const terms = {
 };
 function harness(vault = new Vault()) {
   let identity = owner as string,
+    nextIdentity = owner as string,
     generation = 0,
     expired = false,
     refreshStatus = 200,
@@ -68,16 +71,16 @@ function harness(vault = new Vault()) {
         refresh_token: 'refresh-' + identity + '-' + generation,
         token_type: 'bearer',
         expires_in: 3600,
-        user: { id: identity, paciente_demo: identity === owner ? 'A' : 'B' },
+        user: { id: identity },
       };
     }
-    if (path === '/__demo/auth/session') {
-      identity = JSON.parse(body).paciente_demo === 'A' ? owner : other;
+    if (path === '/google') {
+      identity = nextIdentity;
       generation++;
       expired = false;
       return response(creds());
     }
-    if (path === '/__demo/auth/refresh') {
+    if (path === '/token') {
       await Promise.resolve();
       if (refreshStatus !== 200) return response({}, refreshStatus);
       generation++;
@@ -146,9 +149,22 @@ function harness(vault = new Vault()) {
       return new Response(null, { status: 204 });
     return response({ ok: true });
   });
-  const session = new HttpSessionAdapter({ config, vault, fetch: fake, newId: randomUUID });
+  // Simula la vuelta de Google con la cuenta elegida por la prueba.
+  const googleLogin = async () =>
+    (await fake('https://auth.test/google', { method: 'POST' })).json();
+  const session = new HttpSessionAdapter({
+    config,
+    vault,
+    fetch: fake,
+    newId: randomUUID,
+    googleLogin,
+  });
   return {
     session,
+    googleLogin,
+    useAccount: (index: number) => {
+      nextIdentity = index === 0 ? owner : other;
+    },
     vault,
     fake,
     calls,
@@ -182,8 +198,10 @@ function harness(vault = new Vault()) {
     },
   };
 }
-const login = (h: ReturnType<typeof harness>, index = 0) =>
-  h.session.selectDemoPatient(DEMO_USERS[index]!.id);
+const login = (h: ReturnType<typeof harness>, index = 0) => {
+  h.useAccount(index);
+  return h.session.login({});
+};
 describe('Transporte de chat con presupuesto propio y sin replay automático', () => {
   it('conserva errores del gateway sin pausar el contexto clínico por una caída del asistente', async () => {
     const h = harness();
@@ -308,7 +326,7 @@ describe('HTTP identity, credentials and account isolation', () => {
     const h = harness();
     await login(h);
     const saved = JSON.parse(h.vault.data.get('active')!);
-    saved.identity.user.localPatientId = DEMO_USERS[1].id;
+    saved.identity.user.localPatientId = randomUUID();
     await h.vault.write('active', JSON.stringify(saved));
     const restored = new HttpSessionAdapter({
       config,
@@ -317,41 +335,19 @@ describe('HTTP identity, credentials and account isolation', () => {
       newId: randomUUID,
     });
     expect((await restored.restore()).success).toBe(true);
-    expect(restored.getCurrentUser()?.localPatientId).toBe(DEMO_USERS[0].id);
-  });
-  it('keeps a real UUID independent of demo aliases even if it equals a fixture UUID', async () => {
-    const h = harness();
-    const real = new HttpSessionAdapter({
-      config: { ...config, mode: 'production', scope: 'production-distinct' },
-      vault: new Vault(),
-      fetch: h.fake,
-      newId: randomUUID,
-      googleLogin: async () => ({
-        access_token: 'token-' + owner + '-0',
-        refresh_token: 'synthetic-real-test',
-        expires_in: 3600,
-        token_type: 'bearer',
-        user: { id: owner },
-      }),
-    });
-    expect((await real.login({})).success).toBe(true);
-    expect(real.getCurrentUser()).toMatchObject({
-      id: owner,
-      localPatientId: owner,
-      isDemo: false,
-    });
+    expect(restored.getCurrentUser()?.localPatientId).toBe(owner);
   });
   it('maps Auth UUID independently from preserved local identity, profile and treatment', async () => {
     const h = harness();
     expect((await login(h)).success).toBe(true);
     const s = h.session.getSnapshot();
-    expect(s.user).toMatchObject({ id: owner, localPatientId: DEMO_USERS[0].id });
+    expect(s.user).toMatchObject({ id: owner, localPatientId: owner, isDemo: false });
     expect(s.identity?.clinicalProfile?.id).toBe(profileId);
     expect(s.identity?.treatment?.id).toBe(treatmentId);
     expect(s.uploadAllowed).toBe(true);
     expect(JSON.parse(h.vault.data.get('active')!).credentials.owner).toBe(owner);
   });
-  it('restores the same account after a new adapter instance without selecting a new demo session', async () => {
+  it('restores the same account after a new adapter instance without signing in with Google again', async () => {
     const h = harness();
     await login(h);
     const restored = new HttpSessionAdapter({
@@ -362,7 +358,7 @@ describe('HTTP identity, credentials and account isolation', () => {
     });
     expect((await restored.restore()).success).toBe(true);
     expect(restored.getCurrentUser()?.id).toBe(owner);
-    expect(h.calls.filter((v) => v.path === '/__demo/auth/session')).toHaveLength(1);
+    expect(h.calls.filter((v) => v.path === '/google')).toHaveLength(1);
   });
   it('coordinates concurrent 401s into one refresh and retries identical immutable operations', async () => {
     const h = harness();
@@ -373,7 +369,7 @@ describe('HTTP identity, credentials and account isolation', () => {
       Array.from({ length: 20 }, () => h.session.request('clinical', '/capture', 'POST', original)),
     );
     expect(results.every((v) => v.status === 200)).toBe(true);
-    expect(h.calls.filter((v) => v.path === '/__demo/auth/refresh')).toHaveLength(1);
+    expect(h.calls.filter((v) => v.path === '/token')).toHaveLength(1);
     const sent = h.calls.filter((v) => v.path === '/capture');
     expect(new Set(sent.map((v) => v.body)).size).toBe(1);
     expect(JSON.parse(sent[0]!.body)).toEqual(original);
@@ -398,7 +394,7 @@ describe('HTTP identity, credentials and account isolation', () => {
       h.setExpired();
       const result = await h.session.request('clinical', '/capture', 'POST', { id: randomUUID() });
       expect(result.status).toBe(200);
-      expect(h.calls.filter((v) => v.path === '/__demo/auth/refresh')).toHaveLength(1);
+      expect(h.calls.filter((v) => v.path === '/token')).toHaveLength(1);
     }
     it('un perfil incompleto sigue pidiendo completar los datos', async () => {
       const h = harness();
@@ -487,7 +483,7 @@ describe('HTTP identity, credentials and account isolation', () => {
     expect(h.session.getCurrentUser()?.id).toBe(other);
     expect(h.session.getSnapshot().identity?.owner).toBe(other);
   });
-  it('never reuses demo credentials or identity when APP_ENV or service scope changes', async () => {
+  it('never reuses credentials or identity when APP_ENV or service scope changes', async () => {
     const h = harness();
     await login(h);
     for (const changed of [
@@ -637,8 +633,10 @@ describe('Durable device revocation and environment settings', () => {
       vault: h.vault,
       fetch: transport,
       newId: randomUUID,
+      googleLogin: h.googleLogin,
     });
-    await session.selectDemoPatient(DEMO_USERS[0].id);
+    h.useAccount(0);
+    await session.login({});
     const devices = new DeviceClient(session);
     const first = devices.register('synthetic-pending-A'),
       second = devices.register('synthetic-queued-A');
@@ -646,7 +644,8 @@ describe('Durable device revocation and environment settings', () => {
       secondRejected = expect(second).rejects.toMatchObject({ kind: 'changed' });
     await vi.waitFor(() => expect(release).toBeTypeOf('function'));
     await session.logout();
-    await session.selectDemoPatient(DEMO_USERS[1].id);
+    h.useAccount(1);
+    await session.login({});
     release();
     await Promise.all([firstRejected, secondRejected]);
     expect(sentOwners).toHaveLength(1);
@@ -688,17 +687,32 @@ describe('Durable device revocation and environment settings', () => {
     expect(h.session.getCurrentUser()?.id).toBe(owner);
     expect(h.vault.data.has('active')).toBe(true);
   });
-  it('fails closed with incomplete production config, HTTP and misleading demo issuer', () => {
+  it('fails closed with incomplete production config, HTTP, credentials in URLs and the retired demo mode', () => {
+    const complete = {
+      CLINICAL_URL: 'https://clinical.test',
+      GATEWAY_URL: 'https://gateway.test',
+      AUTH_URL: 'https://auth.test',
+      AUTH_ISSUER: 'https://auth.test',
+      AUTH_AUDIENCE: 'authenticated',
+      AUTH_PUBLIC_KEY: 'synthetic-public-key',
+      AUTH_REDIRECT_URI: 'quimiocare://acceso/oauth',
+    };
     expect(sessionConfig({ APP_ENV: 'production' })).toBeNull();
     expect(sessionConfig({ APP_ENV: 'other' })).toBeNull();
+    expect(sessionConfig({ ...complete, APP_ENV: 'demo' })).toBeNull();
+    expect(sessionConfig({ ...complete, APP_ENV: 'production' })).not.toBeNull();
+    expect(
+      sessionConfig({ ...complete, APP_ENV: 'production', CLINICAL_URL: 'http://clinical.test' }),
+    ).toBeNull();
     expect(
       sessionConfig({
-        APP_ENV: 'demo',
-        CLINICAL_URL: 'http://user:password@test',
-        GATEWAY_URL: 'http://test',
-        AUTH_ISSUER: 'demo',
-        AUTH_AUDIENCE: 'authenticated',
+        ...complete,
+        APP_ENV: 'universidad-demo',
+        CLINICAL_URL: 'https://user:password@clinical.test',
       }),
+    ).toBeNull();
+    expect(
+      sessionConfig({ ...complete, APP_ENV: 'production', AUTH_ISSUER: 'demo', AUTH_URL: 'demo' }),
     ).toBeNull();
   });
 });

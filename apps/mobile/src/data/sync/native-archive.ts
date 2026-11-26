@@ -7,8 +7,6 @@ import { PowerSyncDatabase } from '@powersync/react-native';
 import { Schema } from '@powersync/common';
 import { createExpoConnection } from '../local/core/expo-connection';
 import { migrateDatabase } from '../local/migrations';
-import { seedPatientContextIfEmpty, seedDemoVitalsAndSymptoms } from '../local/repository';
-import { DEMO_USERS } from '../../services/session/demo-session-adapter';
 import type { SqlConnection } from '../local/core/sql';
 import { protectedKey } from './native-cipher';
 import { createSyncConnection } from './sql-connection';
@@ -50,24 +48,13 @@ async function legacyFence(databaseName: string, hash: string) {
 /** The encrypted archive preserves the complete old database; it is never connected to sync or exposed as an account repository. */
 async function withArchive<T>(
   sourceEnvironment: string,
-  demo: boolean,
   work: (archive: SqlConnection) => Promise<T>,
-  labDatabaseName?: string,
 ): Promise<T> {
   const hash = (
     await Crypto.digestStringAsync(Crypto.CryptoDigestAlgorithm.SHA256, sourceEnvironment)
   ).slice(0, 24);
   const markerKey = 'quimiocare.p04.archive.' + hash;
-  if (
-    labDatabaseName &&
-    (!demo ||
-      process.env.EXPO_PUBLIC_P04_PROBE_ENABLED !== 'true' ||
-      process.env.EXPO_PUBLIC_P04_LAB_ONLY !== 'true' ||
-      !/^qc_lab_[0-9a-f]{16}\.db$/.test(labDatabaseName))
-  )
-    throw new Error('Origen de laboratorio no autorizado.');
-  const databaseName =
-    labDatabaseName ?? (demo ? 'quimiocare_local.db' : 'quimiocare_production_' + hash + '.db');
+  const databaseName = 'quimiocare_production_' + hash + '.db';
   const directory = protectedDirectory();
   directory.create({ intermediates: true, idempotent: true });
   const file = new File(directory, 'archive_' + hash + '.db');
@@ -96,12 +83,6 @@ async function withArchive<T>(
       legacy = await SQLite.openDatabaseAsync(databaseName);
       const source = createExpoConnection(legacy);
       await migrateDatabase(source);
-      const profiles =
-        (await source.first<{ n: number }>('SELECT count(*) n FROM paciente_cache'))?.n ?? 0;
-      if (demo && profiles === 0) {
-        await seedPatientContextIfEmpty(source, DEMO_USERS[0].id, DEMO_USERS[1].id);
-        await seedDemoVitalsAndSymptoms(source, DEMO_USERS[0].id, DEMO_USERS[1].id);
-      }
       const inventory = await inventoryLegacy(source, null);
       await copyLegacyInventory(inventory, connection);
       await verifyLegacyInventory(inventory, connection);
@@ -141,9 +122,7 @@ async function withArchive<T>(
 
 export async function useLegacyArchive<T>(
   sourceEnvironment: string,
-  demo: boolean,
   work: (archive: SqlConnection) => Promise<T>,
-  labDatabaseName?: string,
 ): Promise<T> {
   const previous = archiveJobs;
   let release!: () => void;
@@ -152,7 +131,7 @@ export async function useLegacyArchive<T>(
   });
   await previous;
   try {
-    return await withArchive(sourceEnvironment, demo, work, labDatabaseName);
+    return await withArchive(sourceEnvironment, work);
   } finally {
     release();
   }

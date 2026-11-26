@@ -65,10 +65,10 @@ jest.mock('../services/agenda/native-agenda', () => ({
 // are replaced in this UI suite. Android tests verify their real implementations.
 jest.mock('../services/session/http-session-adapter', () => {
   // eslint-disable-next-line @typescript-eslint/no-require-imports
-  const { DemoSessionAdapter } = require('../services/session/demo-session-adapter');
+  const { FakeSessionAdapter } = require('../services/session/testing/fake-session-adapter');
   return {
-    HttpSessionAdapter: class extends DemoSessionAdapter {
-      config = { mode: 'demo', scope: 'ui-test', clinicalUrl: 'http://clinical.test' };
+    HttpSessionAdapter: class extends FakeSessionAdapter {
+      config = { mode: 'universidad-demo', scope: 'ui-test', clinicalUrl: 'https://clinical.test' };
       signal = new AbortController().signal;
       getContextSignal = () => this.signal;
       request = async () => ({ status: 503, body: {} });
@@ -334,12 +334,6 @@ jest.mock('expo-notifications', () => ({
   clearLastNotificationResponse: jest.fn(),
 }));
 
-// Mock environment as demo
-jest.mock('../utils/environment', () => ({
-  isDemoMode: () => true,
-  getEnvironmentConfig: () => ({ mode: 'demo' }),
-}));
-
 // Mock ThemeProvider
 const mockTheme = {
   colors: {
@@ -371,7 +365,20 @@ jest.mock('../providers/ThemeProvider', () => ({
 import { LoginScreen, AccessConsentScreen } from '../features/access/AccessScreens';
 import { AssistantScreen } from '../features/assistant/AssistantScreen';
 import { AppNavigator } from '../app/_layout';
-import { LocalDataProvider, DEMO_PATIENTS, useLocalData } from '../providers/LocalDataProvider';
+import { LocalDataProvider, useLocalData } from '../providers/LocalDataProvider';
+import {
+  TEST_USERS,
+  type FakeSessionAdapter,
+} from '../services/session/testing/fake-session-adapter';
+
+/** Entra con la cuenta indicada por el flujo normal de acceso (Google simulado). */
+function signIn(
+  ctx: { sessionAdapter: unknown; manager: { authenticate(): Promise<void> } } | null | undefined,
+  id: string,
+) {
+  (ctx!.sessionAdapter as FakeSessionAdapter).useAccount(id);
+  return ctx!.manager.authenticate();
+}
 import { activateNativeAgenda } from '../services/agenda/native-agenda';
 import { createDeviceClient, registerNativePush } from '../services/session/native-session';
 import { FakeAssistantAdapter } from '../services/assistant/fake-assistant-adapter';
@@ -452,7 +459,7 @@ describe('Incremento 6: UI de Acceso, Navegación Raíz, Sesión y Asistente', (
           </LocalDataProvider>,
         );
         await waitFor(() => expect(holder.current).toBeTruthy());
-        await act(async () => holder.current!.selectPatient(DEMO_PATIENTS[0].id));
+        await act(async () => signIn(holder.current, TEST_USERS[0].id));
         await waitFor(() => expect(holder.current?.agendaCoordinator).toBeTruthy());
         const beforeRegistration = holder.current!.reconcileReminders;
         const old = holder.current!.agendaCoordinator;
@@ -485,7 +492,7 @@ describe('Incremento 6: UI de Acceso, Navegación Raíz, Sesión y Asistente', (
           </LocalDataProvider>,
         );
         await waitFor(() => expect(holder.current).toBeTruthy());
-        await act(async () => holder.current!.selectPatient(DEMO_PATIENTS[0].id));
+        await act(async () => signIn(holder.current, TEST_USERS[0].id));
         await waitFor(() => expect(holder.current?.clinicalStore).toBeTruthy());
         await act(async () => {
           await holder.current!.prepareAgenda!();
@@ -545,7 +552,7 @@ describe('Incremento 6: UI de Acceso, Navegación Raíz, Sesión y Asistente', (
         </LocalDataProvider>,
       );
       await waitFor(() => expect(holder.current).toBeTruthy());
-      await act(async () => holder.current!.selectPatient(DEMO_PATIENTS[0].id));
+      await act(async () => signIn(holder.current, TEST_USERS[0].id));
       await waitFor(() => expect(holder.current?.clinicalStore).toBeTruthy());
       return holder;
     };
@@ -607,19 +614,19 @@ describe('Incremento 6: UI de Acceso, Navegación Raíz, Sesión y Asistente', (
       );
       await waitFor(() => expect(holder.current).toBeTruthy());
       await act(async () => {
-        await holder.current!.selectPatient(DEMO_PATIENTS[0].id);
+        await signIn(holder.current, TEST_USERS[0].id);
       });
       await waitFor(() => expect(holder.current?.clinicalStore).toBeTruthy());
       const previous = holder.current!.clinicalStore;
       await act(async () => {
-        await holder.current!.selectPatient(DEMO_PATIENTS[0].id);
+        await signIn(holder.current, TEST_USERS[0].id);
       });
       await waitFor(() => {
         expect(holder.current?.clinicalStore).toBeTruthy();
         expect(holder.current?.clinicalStore).not.toBe(previous);
       });
       expect(previous?.closed).toBe(true);
-      expect(holder.current!.patientId).toBe(DEMO_PATIENTS[0].id);
+      expect(holder.current!.patientId).toBe(TEST_USERS[0].id);
     });
     it('sin paciente activo, Stack.Protected excluye (tabs) y AppNavigator redirige si se accede a tabs', async () => {
       mockRouteHistory[0] = '/(tabs)';
@@ -659,7 +666,7 @@ describe('Incremento 6: UI de Acceso, Navegación Raíz, Sesión y Asistente', (
 
       // Seleccionar paciente A usando la función de producción
       await act(async () => {
-        await contextRef?.selectPatient(DEMO_PATIENTS[0].id);
+        await signIn(contextRef, TEST_USERS[0].id);
       });
 
       // Ahora Stack.Protected DEBE incluir (tabs)
@@ -679,7 +686,7 @@ describe('Incremento 6: UI de Acceso, Navegación Raíz, Sesión y Asistente', (
       await screen.findByTestId('root-stack');
 
       await act(async () => {
-        await contextRef?.selectPatient(DEMO_PATIENTS[0].id);
+        await signIn(contextRef, TEST_USERS[0].id);
       });
 
       expect(screen.getByTestId('screen-(tabs)')).toBeTruthy();
@@ -724,10 +731,10 @@ describe('Incremento 6: UI de Acceso, Navegación Raíz, Sesión y Asistente', (
 
       // 1. Activar Paciente A
       await act(async () => {
-        await contextHolder.current?.selectPatient(DEMO_PATIENTS[0].id);
+        await signIn(contextHolder.current, TEST_USERS[0].id);
       });
-      expect(contextHolder.current?.patientId).toBe(DEMO_PATIENTS[0].id);
-      expect(contextHolder.current?.sessionAdapter.getCurrentUser()?.id).toBe(DEMO_PATIENTS[0].id);
+      expect(contextHolder.current?.patientId).toBe(TEST_USERS[0].id);
+      expect(contextHolder.current?.sessionAdapter.getCurrentUser()?.id).toBe(TEST_USERS[0].id);
 
       // 2. Navegar a una ruta privada profunda de Paciente A
       mockRouter.navigate('/(tabs)/recordatorios');
@@ -735,12 +742,12 @@ describe('Incremento 6: UI de Acceso, Navegación Raíz, Sesión y Asistente', (
 
       // 3. Conmutar a Paciente B
       await act(async () => {
-        await contextHolder.current?.selectPatient(DEMO_PATIENTS[1].id);
+        await signIn(contextHolder.current, TEST_USERS[1].id);
       });
 
       // 4. Verificar que ambas identidades coinciden en Paciente B y la sesión está activa
-      expect(contextHolder.current?.patientId).toBe(DEMO_PATIENTS[1].id);
-      expect(contextHolder.current?.sessionAdapter.getCurrentUser()?.id).toBe(DEMO_PATIENTS[1].id);
+      expect(contextHolder.current?.patientId).toBe(TEST_USERS[1].id);
+      expect(contextHolder.current?.sessionAdapter.getCurrentUser()?.id).toBe(TEST_USERS[1].id);
       expect(contextHolder.current?.sessionAdapter.getState()).toBe('context_ready');
 
       // 5. Presionar botón Atrás: el historial de A fue purgado y no restaura pantallas privadas previas de A
@@ -1188,11 +1195,11 @@ describe('Incremento 6: UI de Acceso, Navegación Raíz, Sesión y Asistente', (
 
       // Seleccionar paciente A
       await act(async () => {
-        await contextRef.selectPatient(DEMO_PATIENTS[0].id);
+        await signIn(contextRef, TEST_USERS[0].id);
       });
 
       await waitFor(() => expect(contextRef.database).toBeTruthy());
-      expect(contextRef.patientId).toBe(DEMO_PATIENTS[0].id);
+      expect(contextRef.patientId).toBe(TEST_USERS[0].id);
       const coordinator = contextRef.coordinator;
       expect(coordinator).not.toBeNull();
 
@@ -1206,7 +1213,7 @@ describe('Incremento 6: UI de Acceso, Navegación Raíz, Sesión y Asistente', (
           zonaHoraria: 'America/Santiago',
           habilitado: true,
         });
-        await coordinator?.reconcile(DEMO_PATIENTS[0].id, () => true);
+        await coordinator?.reconcile(TEST_USERS[0].id, () => true);
       });
 
       // Confirmar que hay notificaciones programadas
@@ -1287,7 +1294,7 @@ describe('Incremento 6: UI de Acceso, Navegación Raíz, Sesión y Asistente', (
       await waitFor(() => expect(contextRef).toBeTruthy());
       await waitFor(() => expect(contextRef?.database).toBeNull());
       await act(async () => {
-        await contextRef?.selectPatient(DEMO_PATIENTS[0].id);
+        await signIn(contextRef, TEST_USERS[0].id);
       });
       await waitFor(() => expect(contextRef?.database).toBeTruthy());
 
@@ -1295,7 +1302,7 @@ describe('Incremento 6: UI de Acceso, Navegación Raíz, Sesión y Asistente', (
       const payload = {
         version: 1,
         notificacionId: notifId,
-        pacienteId: DEMO_PATIENTS[0].id,
+        pacienteId: TEST_USERS[0].id,
         recordatorioId: 'rec-ui-1',
         revision: 1,
         tipo: 'registro_vitales',
@@ -1311,7 +1318,7 @@ describe('Incremento 6: UI de Acceso, Navegación Raíz, Sesión y Asistente', (
            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
           [
             payload.recordatorioId,
-            DEMO_PATIENTS[0].id,
+            TEST_USERS[0].id,
             payload.tipo,
             '1,2,3',
             '08:00',
@@ -1328,7 +1335,7 @@ describe('Incremento 6: UI de Acceso, Navegación Raíz, Sesión y Asistente', (
            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
           [
             notifId,
-            DEMO_PATIENTS[0].id,
+            TEST_USERS[0].id,
             payload.recordatorioId,
             1,
             payload.tipo,

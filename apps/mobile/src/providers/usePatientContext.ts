@@ -64,10 +64,7 @@ export function usePatientContext() {
 
   useEffect(() => {
     if (!identitySession) return;
-    const localTransport =
-      identitySession.config.mode === 'demo' &&
-      ['localhost', '127.0.0.1'].includes(new URL(identitySession.config.clinicalUrl).hostname);
-    const recovery = new SessionRecovery(identitySession, localTransport);
+    const recovery = new SessionRecovery(identitySession);
     recovery.setForeground(AppState.currentState === 'active');
     const app = AppState.addEventListener('change', (state) => {
       recovery.setForeground(state === 'active');

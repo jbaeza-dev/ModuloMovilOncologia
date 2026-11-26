@@ -82,11 +82,7 @@ jest.mock('../providers/ThemeProvider', () => ({
   useAppTheme: () => ({ theme: mockTheme }),
 }));
 
-let mockDemoMode = true;
 mockIdentity = null;
-jest.mock('../utils/environment', () => ({
-  isDemoMode: () => mockDemoMode,
-}));
 
 const mockProfile = {
   paciente_id: 'paciente-demo-001',
@@ -145,10 +141,6 @@ const mockLocalData = {
 };
 
 jest.mock('../providers/LocalDataProvider', () => ({
-  DEMO_PATIENTS: [
-    { id: 'paciente-demo-001', label: 'Paciente de prueba A' },
-    { id: 'paciente-demo-002', label: 'Paciente de prueba B' },
-  ],
   useLocalData: () => mockLocalData,
 }));
 
@@ -199,7 +191,6 @@ import type {
 describe('HomeScreen UI tests (Bloque 2)', () => {
   beforeEach(() => {
     jest.clearAllMocks();
-    mockDemoMode = true;
     mockMedReminderState = null;
     mockLocalData.patientId = 'paciente-demo-001';
     mockRepository.profile.mockResolvedValue(mockProfile);
@@ -380,7 +371,6 @@ describe('HomeScreen UI tests (Bloque 2)', () => {
         obtenido_en: '2026-10-16T00:00:00.000Z',
       },
       patientId: 'paciente-b',
-      demoMode: true,
     });
     expect(greetingDuringTransition).toBe('Hola, te damos la bienvenida');
     expect(greetingDuringTransition).not.toContain('Paciente A');
@@ -396,7 +386,6 @@ describe('HomeScreen UI tests (Bloque 2)', () => {
         obtenido_en: '2026-10-16T00:00:00.000Z',
       },
       patientId: 'paciente-b',
-      demoMode: false,
     });
     expect(greetingDesync).toBe('Hola, te damos la bienvenida');
     expect(greetingDesync).not.toContain('Paciente A');

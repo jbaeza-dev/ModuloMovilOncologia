@@ -96,7 +96,6 @@ export function IdentityScreen() {
               clinical_incomplete: 'Contexto clínico incompleto',
               service_unavailable: 'Servicio no disponible',
               preparing_storage: 'Preparando almacenamiento',
-              demo_selection: 'Seleccionando cuenta',
             }[snapshot.state]
           }
         />
@@ -195,11 +194,7 @@ export function OnlineConsentScreen() {
     current = snapshot.consent?.consentimiento_actual;
   return (
     <Screen mascotPose="lectura" title="Consentimientos">
-      <BodyText>
-        {session?.config.mode === 'demo'
-          ? 'Demostración con cuentas compartidas: usa solo datos ficticios. Esta aceptación no acredita atención médica ni aprobación institucional.'
-          : 'Revisa los términos vigentes y si tu aceptación está confirmada.'}
-      </BodyText>
+      <BodyText>Revisa los términos vigentes y si tu aceptación está confirmada.</BodyText>
       {feedback ? (
         <InfoCard>
           <BodyText>{feedback}</BodyText>

@@ -8,7 +8,6 @@ import { ThemeProvider, useAppTheme } from '../providers/ThemeProvider';
 import { LocalDataProvider, useLocalData } from '../providers/LocalDataProvider';
 import { PodcastPlaybackProvider } from '../features/education/PodcastPlaybackContext';
 import { useIdentity } from '../features/access/SessionScreens';
-import { isDemoMode } from '../utils/environment';
 
 export { ErrorBoundary } from 'expo-router';
 
@@ -47,7 +46,6 @@ export function AppNavigator() {
   const segments = useSegments();
 
   const isProfileComplete =
-    isDemoMode() ||
     !snapshot.identity ||
     Boolean(snapshot.identity.profile?.rut && snapshot.identity.profile.rut.trim().length > 0);
 

@@ -1,8 +1,7 @@
 /// <reference types="jest" />
 import React from 'react';
 import { render, screen, fireEvent, waitFor } from '@testing-library/react-native';
-import { HttpSessionAdapter, DEMO_AUTH_IDS } from '../services/session/http-session-adapter';
-import { DEMO_USERS } from '../services/session/demo-session-adapter';
+import { HttpSessionAdapter } from '../services/session/http-session-adapter';
 import { sessionConfig } from '../services/session/session-config';
 import type { CredentialVault } from '../services/session/credential-vault';
 const mockData: { identitySession: HttpSessionAdapter | null } = { identitySession: null };
@@ -26,15 +25,18 @@ jest.mock('expo-router', () => ({
 }));
 jest.mock('expo-router/react-navigation', () => ({ useNavigationState: () => false }));
 import { OnlineConsentScreen } from '../features/access/SessionScreens';
-const owner = DEMO_AUTH_IDS[0],
+const owner = '964d32f1-6941-579f-9f08-b60342194da9',
   term = '8fa30249-41a0-434f-a624-36dfba1c0cd1',
   operation = 'e2f21f9e-9ab1-439c-93b7-9d24e3f52410';
 const config = sessionConfig({
-  APP_ENV: 'demo',
-  CLINICAL_URL: 'http://clinical.test',
-  GATEWAY_URL: 'http://gateway.test',
-  AUTH_ISSUER: 'quimiocare-demo',
+  APP_ENV: 'universidad-demo',
+  CLINICAL_URL: 'https://clinical.test',
+  GATEWAY_URL: 'https://gateway.test',
+  AUTH_URL: 'https://auth.test',
+  AUTH_ISSUER: 'https://auth.test',
   AUTH_AUDIENCE: 'authenticated',
+  AUTH_PUBLIC_KEY: 'synthetic-public-key',
+  AUTH_REDIRECT_URI: 'quimiocare://acceso/oauth',
 })!;
 async function setup(revoked = false, missingContext = false) {
   const values = new Map<string, string>(),
@@ -68,15 +70,7 @@ async function setup(revoked = false, missingContext = false) {
   const fake: typeof fetch = async (input, init) => {
     const path = new URL(String(input)).pathname;
     let value: unknown;
-    if (path === '/__demo/auth/session')
-      value = {
-        access_token: 'synthetic-access',
-        refresh_token: 'synthetic-refresh',
-        token_type: 'bearer',
-        expires_in: 3600,
-        user: { id: owner, paciente_demo: 'A' },
-      };
-    else if (path === '/api/v1/auth/me')
+    if (path === '/api/v1/auth/me')
       value = {
         id: owner,
         email: 'synthetic@example.com',
@@ -118,8 +112,22 @@ async function setup(revoked = false, missingContext = false) {
       text: async () => JSON.stringify(value),
     } as unknown as Response;
   };
-  const session = new HttpSessionAdapter({ config, vault, newId: () => operation, fetch: fake });
-  await session.selectDemoPatient(DEMO_USERS[0].id);
+  // Simula la vuelta de Google con la cuenta A.
+  const googleLogin = async () => ({
+    access_token: 'synthetic-access',
+    refresh_token: 'synthetic-refresh',
+    token_type: 'bearer',
+    expires_in: 3600,
+    user: { id: owner },
+  });
+  const session = new HttpSessionAdapter({
+    config,
+    vault,
+    newId: () => operation,
+    fetch: fake,
+    googleLogin,
+  });
+  await session.login({});
   mockData.identitySession = session;
   return { session, bodies };
 }

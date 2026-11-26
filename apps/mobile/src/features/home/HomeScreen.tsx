@@ -15,7 +15,7 @@ import { eproHomeDescription } from './epro-home-status';
 import type { PatientProfileRecord } from '../../data/local/repository';
 import { useFocusedValue } from '../../hooks/use-local-query';
 import { useReminderStatus } from '../../hooks/use-reminder-status';
-import { DEMO_PATIENTS, useLocalData } from '../../providers/LocalDataProvider';
+import { useLocalData } from '../../providers/LocalDataProvider';
 import { FormsRevisionContext } from '../../providers/QueryRevision';
 import { useAppTheme } from '../../providers/ThemeProvider';
 
@@ -24,16 +24,14 @@ import {
   formatNextReminderLabel,
 } from '../../services/reminders/reminder-status';
 import { theme } from '../../theme';
-import { isDemoMode } from '../../utils/environment';
 import { consumeHomeScrollToTop, subscribeHomeScrollToTop } from './home-scroll-signal';
 
 export function resolveHomeGreeting(options: {
   loadingProfile: boolean;
   profile: PatientProfileRecord | null;
   patientId: string | null;
-  demoMode: boolean;
 }): string {
-  const { loadingProfile, profile, patientId, demoMode } = options;
+  const { loadingProfile, profile, patientId } = options;
   if (loadingProfile || !patientId) {
     return 'Hola, te damos la bienvenida';
   }
@@ -42,13 +40,6 @@ export function resolveHomeGreeting(options: {
     const trimmedName = profile.nombre.trim();
     if (trimmedName.length > 0) {
       return `Hola, ${trimmedName}`;
-    }
-  }
-
-  if (demoMode) {
-    const demoLabel = DEMO_PATIENTS.find((p) => p.id === patientId)?.label?.trim() ?? '';
-    if (demoLabel.length > 0) {
-      return `Hola, ${demoLabel}`;
     }
   }
 
@@ -160,7 +151,6 @@ export function HomeScreen() {
     loadingProfile,
     profile,
     patientId,
-    demoMode: isDemoMode(),
   });
 
   const handleResumeNotices = async () => {

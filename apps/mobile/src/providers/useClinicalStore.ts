@@ -20,14 +20,12 @@ export function useClinicalStore({
   patientId,
   contextEpoch,
   sessionRestored,
-  labOnly,
 }: {
   manager: PatientContextManager;
   identitySession: HttpSessionAdapter | null;
   patientId: string | null;
   contextEpoch: number;
   sessionRestored: boolean;
-  labOnly: boolean;
 }) {
   const [storage, setStorage] = useState<OpenedStore | null>(null);
   const [clinicalRevision, setClinicalRevision] = useState(0);
@@ -39,7 +37,7 @@ export function useClinicalStore({
   const openJobs = useRef<Promise<void>>(Promise.resolve());
 
   useEffect(() => {
-    if (!sessionRestored || !patientId || !identitySession || labOnly) return;
+    if (!sessionRestored || !patientId || !identitySession) return;
     let active = true,
       current: ClinicalStore | null = null,
       unwatch: (() => void) | null = null;
@@ -99,7 +97,7 @@ export function useClinicalStore({
         }
       });
     };
-  }, [sessionRestored, patientId, identitySession, labOnly, attempt, contextEpoch]);
+  }, [sessionRestored, patientId, identitySession, attempt, contextEpoch]);
 
   const retryOpen = useCallback(() => {
     setError(null);
