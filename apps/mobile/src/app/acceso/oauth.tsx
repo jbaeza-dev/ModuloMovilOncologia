@@ -4,10 +4,23 @@ import { Screen } from '../../components/Screen';
 import { BodyText, VisualButton } from '../../components/Visual';
 import { useIdentity } from '../../features/access/SessionScreens';
 
+/**
+ * Estados en que el acceso falló. Cualquier otro (por ejemplo, la sesión ya lista mientras la app abre
+ * la base) sigue mostrando «Comprobando acceso»: antes, en ese instante aparecía «No se pudo completar
+ * el acceso» aunque el ingreso hubiera funcionado (regresión del 26-11-2026).
+ */
+const FAILED_STATES: ReadonlySet<string> = new Set([
+  'service_unavailable',
+  'expired',
+  'access_denied',
+  'unconfigured',
+  'no_identity',
+]);
+
 export default function OAuthReturn() {
   const { data, session, snapshot } = useIdentity();
   const [timedOut, setTimedOut] = useState(false);
-  const checking = ['authenticating', 'reauthenticating', 'renewing'].includes(snapshot.state);
+  const checking = !FAILED_STATES.has(snapshot.state);
 
   useEffect(() => {
     // Si la sesión requiere completar datos personales o términos:
