@@ -35,6 +35,7 @@
       "./plugins/withReproducibleGradle.js",
       "./plugins/withPdfJsAssets.js",
       "./plugins/withSecureNetwork.js",
+      "./plugins/withOkHttpKeepalive.js",
       [
         "expo-splash-screen",
         {
