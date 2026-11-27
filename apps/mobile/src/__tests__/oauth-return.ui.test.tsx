@@ -92,6 +92,28 @@ it('does not remain in an indefinite waiting screen', async () => {
   ).not.toBeOnTheScreen();
 });
 
+it('no muestra un error mientras la app termina de abrir una sesión que ya funcionó', async () => {
+  mockIdentity.snapshot = {
+    state: 'context_ready',
+    message: null,
+    identity: null,
+    consent: null,
+  };
+  await render(<OAuthReturn />);
+  expect(screen.getByText('Comprobando acceso')).toBeOnTheScreen();
+  expect(screen.queryByText(/No se pudo completar el acceso/)).not.toBeOnTheScreen();
+  expect(screen.queryByRole('button', { name: 'Volver al acceso' })).not.toBeOnTheScreen();
+});
+
+it('muestra el error cuando el ingreso se canceló o falló', async () => {
+  mockIdentity.snapshot = { state: 'no_identity', message: null, identity: null, consent: null };
+  await render(<OAuthReturn />);
+  expect(
+    screen.getByText('No se pudo completar el acceso. Vuelve a iniciar sesión.'),
+  ).toBeOnTheScreen();
+  expect(screen.getByRole('button', { name: 'Volver al acceso' })).toBeOnTheScreen();
+});
+
 it('navigates out of the callback once the patient context is ready', async () => {
   mockIdentity.data.patientId = 'verified-owner';
   await render(<OAuthReturn />);
