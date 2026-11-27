@@ -1,4 +1,4 @@
-import { afterEach, describe, expect, it } from 'vitest';
+import { afterEach, describe, expect, it, vi } from 'vitest';
 
 import { migrateDatabase } from './migrations';
 import { createPatientRepository, seedPatientContextIfEmpty, sinceDays } from './repository';
@@ -217,6 +217,40 @@ describe('reportes locales y generación de contenido para PDF', () => {
     expect(reportData.symptoms[0].descripcion).toBe('Náuseas leves por la mañana');
     expect(reportData.summary.vitalsCount).toBe(1);
     expect(reportData.summary.symptomsCount).toBe(1);
+  });
+
+  it('usa la hora de Chile aunque el teléfono esté en otra zona, igual que el historial', async () => {
+    const database = open();
+    await migrateDatabase(database);
+    await seedPatientContextIfEmpty(database, patientA, patientB);
+    // 24-11-2026 14:55 UTC = 11:55 en Chile continental y 09:55 en Isla de Pascua.
+    const captureIso = '2026-11-24T14:55:00.000Z';
+    await createPatientRepository(database, patientA, ids(), () => captureIso).createVitals({
+      ...validVitals,
+      temperatura: 36.8,
+    });
+    const real = Intl.DateTimeFormat.prototype.resolvedOptions;
+    const spy = vi
+      .spyOn(Intl.DateTimeFormat.prototype, 'resolvedOptions')
+      .mockImplementation(function (this: Intl.DateTimeFormat) {
+        return { ...real.call(this), timeZone: 'Pacific/Easter' };
+      });
+    try {
+      const reportData = await createPatientRepository(
+        database,
+        patientA,
+        ids(),
+        () => '2026-11-27T23:00:00.000Z',
+      ).getReportData(7);
+      expect(reportData.timeZone).toBe('America/Santiago');
+      const html = buildReportHtml(reportData);
+      expect(html).toContain('Fecha y hora (America/Santiago)');
+      expect(html).toContain('11:55');
+      expect(html).not.toContain('09:55');
+      expect(html).not.toContain('Pacific/Easter');
+    } finally {
+      spy.mockRestore();
+    }
   });
 
   it('rechaza instantes now inválidos con error descriptivo', async () => {
