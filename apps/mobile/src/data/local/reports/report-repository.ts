@@ -237,7 +237,8 @@ export function createReportRepository(
         pacienteId: patientId,
         periodDays,
         generatedAt: now,
-        timeZone: Intl.DateTimeFormat().resolvedOptions().timeZone || 'UTC',
+        // Misma zona que la agenda, el historial y los formularios: el reporte no depende de la zona del teléfono.
+        timeZone: 'America/Santiago',
         periodStart,
         periodEnd: now,
         profile: frozenProfile,
